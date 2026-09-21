@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(blas_abi_contract LANGUAGES NONE)
 include("${UNI20_SOURCE_DIR}/cmake/Uni20BlasAbi.cmake")
 add_library(${provider}::${provider} INTERFACE IMPORTED)

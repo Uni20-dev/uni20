@@ -2,6 +2,12 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
+add_test(NAME CMakeSubproject.dependency_arguments
+  COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/dependency_arguments"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dependency_arguments.cmake")
+set_tests_properties(CMakeSubproject.dependency_arguments PROPERTIES LABELS cmake TIMEOUT 60)
+
 # Do not compile the entire MPLAPACK provider three more times in nested builds.
 # Main-suite tests cover the fetched provider; an installed package also gives
 # these downstream consumers inexpensive binary128 compile/link/run coverage.
@@ -12,6 +18,21 @@ else()
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)
+configure_file(run_dependency_build.cmake.in run_dependency_build.cmake @ONLY)
+configure_file(run_ipo.cmake.in run_ipo.cmake @ONLY)
+foreach(ipo_case IN ITEMS enabled disabled debug inherited unsupported)
+  add_test(NAME CMakeSubproject.ipo_${ipo_case}
+    COMMAND "${CMAKE_COMMAND}" "-Dipo_case=${ipo_case}"
+      -P "${CMAKE_CURRENT_BINARY_DIR}/run_ipo.cmake")
+  set_tests_properties(CMakeSubproject.ipo_${ipo_case} PROPERTIES LABELS cmake TIMEOUT 120)
+endforeach()
+foreach(external_tests IN ITEMS OFF ON)
+  add_test(NAME CMakeSubproject.dependency_build_${external_tests}
+    COMMAND "${CMAKE_COMMAND}" "-Dexternal_tests=${external_tests}" "-Dconfig=$<CONFIG>"
+      -P "${CMAKE_CURRENT_BINARY_DIR}/run_dependency_build.cmake")
+  set_tests_properties(CMakeSubproject.dependency_build_${external_tests}
+    PROPERTIES LABELS cmake TIMEOUT 120)
+endforeach()
 foreach(fixture IN ITEMS blas_vendor package_hints)
   add_test(NAME CMakeSubproject.${fixture}
     COMMAND "${CMAKE_COMMAND}" --fresh
@@ -50,6 +71,10 @@ foreach(mode IN ITEMS subdirectory fetchcontent)
   set_tests_properties(CMakeSubproject.${mode} PROPERTIES LABELS cmake TIMEOUT 300)
 endforeach()
 if(CMAKE_GENERATOR MATCHES "^Ninja")
+  add_test(NAME CMakeSubproject.ipo_multiconfig
+    COMMAND "${CMAKE_COMMAND}" -Dipo_case=enabled "-Dgenerator=Ninja Multi-Config"
+      -P "${CMAKE_CURRENT_BINARY_DIR}/run_ipo.cmake")
+  set_tests_properties(CMakeSubproject.ipo_multiconfig PROPERTIES LABELS cmake TIMEOUT 120)
   add_test(NAME CMakeSubproject.blas_vendor_multiconfig
     COMMAND "${CMAKE_COMMAND}" --fresh -G "Ninja Multi-Config"
       -S "${CMAKE_CURRENT_SOURCE_DIR}/blas_vendor/multiconfig"

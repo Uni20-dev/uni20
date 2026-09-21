@@ -10,6 +10,19 @@ Independent AI review is useful for substantial changes, but a model approval is
 not proof. Compilers, tests, sanitizers, reference calculations, and explicit
 contracts provide the primary evidence.
 
+## Platform Scope
+
+Follow the [platform policy in AGENTS.md](../../AGENTS.md#23-platform-scope).
+Linux is primary, macOS CPU portability is in scope, and Windows users should
+use WSL. Native Windows-only findings are out of scope unless explicitly
+requested. Existing MSVC branches or synthetic Windows fixtures do not extend
+that scope. A finding must still be reported when it affects Linux or macOS.
+Do not describe a macOS compiler or configuration as verified without evidence.
+
+Root `AGENTS.md` carries the shared agent policy. Gemini's review entry point is
+[`.gemini/styleguide.md`](../../.gemini/styleguide.md); keep its platform summary
+consistent with the canonical policy.
+
 ## Review Order
 
 Read a change in this order:

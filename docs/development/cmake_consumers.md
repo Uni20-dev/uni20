@@ -3,11 +3,12 @@
 Uni20 can be consumed directly from source using `add_subdirectory` or CMake
 FetchContent. It currently does not provide an installed CMake package or
 exported targets for `find_package(uni20)`.
+Source integration requires CMake 3.28 or newer, including for CUDA builds.
 
 ## Local checkout
 
 ```cmake
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(my_solver LANGUAGES CXX)
 
 set(UNI20_SOURCE_DIR "" CACHE PATH "Path to a Uni20 source checkout")
@@ -74,6 +75,27 @@ otherwise, for example, Clang's bitcode archives can fail to link. The parent ca
 instead configure IPO for the whole build using CMake's
 `CMAKE_INTERPROCEDURAL_OPTIMIZATION[_<CONFIG>]` variables before creating targets.
 
+Uni20's automatic policy enables IPO for `Release`, `RelWithDebInfo`,
+`MinSizeRel`, and `DebugOpt` after checking C++ support and, when enabled, CUDA
+support. It uses per-configuration target defaults for both single- and
+multi-configuration generators. The check is skipped when automatic LTO is off
+or no optimized configuration is selected. These defaults are set after the
+fetched dependencies have created their targets and do not change those targets.
+The CUDA support check does not turn on separate compilation. CMake applies
+device LTO to targets with `CUDA_SEPARABLE_COMPILATION` enabled and a configured
+CUDA architecture; Uni20's existing whole-program CUDA compilation remains
+unchanged.
+
+`UNI20_ENABLE_LTO=OFF` disables only Uni20's automatic policy; it does not clear
+IPO requested by a parent or toolchain. With the option `ON`, Uni20 enables the
+optimized configurations when supported, overriding inherited defaults for
+those configurations. Debug and custom configurations retain inherited IPO
+settings. Parents managing IPO themselves should leave `UNI20_ENABLE_LTO=OFF`.
+
+Uni20 disables C++ module scanning in its own directory scope because its
+targets use headers rather than named modules. The parent's
+`CMAKE_CXX_SCAN_FOR_MODULES` setting is preserved.
+
 When enabling `UNI20_BUILD_TESTS`, the parent must call `enable_testing()` (or
 include `CTest`) at its source root for `ctest --test-dir <parent-build>` to
 discover the embedded tests. Enabling tests only in Uni20's subdirectory does
@@ -86,6 +108,15 @@ its directory scope. Optional dependency settings, such as `BUILD_GMOCK` and
 provider settings still apply when Uni20 populates that provider. FetchContent
 populates a shared dependency once, so parents should declare their dependency
 choices before adding Uni20.
+
+Uni20's FetchContent declarations mark dependency headers as `SYSTEM` and use
+`EXCLUDE_FROM_ALL` unless `UNI20_BUILD_EXTERNAL_TESTS=ON`. Linked dependency
+targets still build when needed; unrelated dependency targets and install rules
+are excluded from the enclosing project's default build/install. Explicitly
+requested dependency components remain available as named targets. A parent's
+earlier FetchContent declaration takes precedence over these declaration defaults.
+Warning options for compiling dependency sources are controlled separately by
+`UNI20_EXTERNAL_NO_WARN` and `UNI20_EXTERNAL_NO_WERROR`.
 
 If the parent has already created `BLAS::BLAS` or `LAPACK::LAPACK`, it must set
 `BLA_SIZEOF_INTEGER` to the actual integer ABI of those targets before adding

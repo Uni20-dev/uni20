@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(package_hint_child LANGUAGES NONE)
 include("${UNI20_SOURCE_DIR}/cmake/Uni20Dependencies.cmake")
 set(UNI20_FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps")

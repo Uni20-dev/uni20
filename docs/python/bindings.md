@@ -55,7 +55,7 @@ See [Tensor Operations](../tensor/operations.md),
 Before configuring the project ensure the following are available:
 
 - A supported C++23 compiler: GCC 13 or newer, or upstream Clang 19 or newer.
-- CMake 3.24 or newer.
+- CMake 3.28 or newer.
 - Python 3.11 or newer with development-module headers. On Debian-based systems:
 
   ```bash

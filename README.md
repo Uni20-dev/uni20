@@ -51,7 +51,7 @@ Uni20 already contains several connected, tested vertical slices:
 
 ## Run the DMRG Vertical Slice
 
-A supported C++23 compiler, CMake 3.24 or newer, and BLAS/LAPACK are required.
+A supported C++23 compiler, CMake 3.28 or newer, and BLAS/LAPACK are required.
 Compatible versions of oneTBB, fmt, GoogleTest, and Google Benchmark can be
 fetched by CMake when they are not installed locally.
 

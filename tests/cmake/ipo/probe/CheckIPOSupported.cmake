@@ -1,0 +1,8 @@
+if(NOT ipo_case STREQUAL "unsupported")
+  message(FATAL_ERROR "The IPO probe must not run for ${ipo_case}")
+endif()
+function(check_ipo_supported)
+  cmake_parse_arguments(PARSE_ARGV 0 probe "" "RESULT;OUTPUT" "LANGUAGES")
+  set(${probe_RESULT} NO PARENT_SCOPE)
+  set(${probe_OUTPUT} "IPO unavailable in fixture toolchain" PARENT_SCOPE)
+endfunction()

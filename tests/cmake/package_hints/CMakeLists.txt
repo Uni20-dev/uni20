@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(package_hint_contract LANGUAGES NONE)
 
 # Packages live outside every default search prefix, with no fetched sources.

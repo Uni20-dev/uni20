@@ -19,6 +19,8 @@ sudo apt-get install -y \
 
 * Do **not** modify `CMakeLists.txt` to bypass dependency detection.
 * If BLAS/LAPACK detection fails, re-run the install step above.
+* Uni20 requires CMake 3.28 or newer. Ubuntu 24.04's CMake 3.28.3 meets
+  this minimum, including the CUDA C++20 configuration requirements.
 * Uni20 requires oneTBB 2022.3 or newer. CMake fetches the pinned oneTBB
   source when no compatible system installation is available. Ubuntu 24.04's
   `libtbb-dev` 2021.11 package is below the supported minimum.
@@ -100,6 +102,20 @@ pre-populate the CMake FetchContent sources instead.
 * See `docs/development/agent_assisted_development.md` and
   `docs/development/code_review.md` for the current workflow and review
   guidance.
+
+### 2.3 Platform Scope
+
+* Linux is the primary platform. Windows users should use the Linux build
+  through WSL.
+* macOS CPU portability is an intended target and is in scope for reviews,
+  subject to Uni20's C++23 and compiler/library requirements. Distinguish
+  intended portability from configurations actually verified by tests.
+* Native Windows support is out of scope. Unless explicitly requested, do not
+  raise findings or add work solely for MSVC, the Windows CRT, Win32 APIs, or
+  native Windows build tooling. Issues that also affect Linux or macOS remain
+  actionable.
+* Existing Windows-specific branches, upstream dependency support, or synthetic
+  Windows test fixtures do not imply a native Windows support commitment.
 
 ---
 

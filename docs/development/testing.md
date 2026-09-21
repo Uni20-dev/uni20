@@ -117,14 +117,25 @@ When both modes are enabled, CTest registers the per-module executables discover
 
 ### CMake integration tests
 
+CI runs the GCC Debug build with CMake 3.28.3 and the Clang Debug build with a
+current CMake 4.x release. This covers the supported minimum and newer imported
+target policies explicitly, independently of the runner's preinstalled tools.
+
 Run `ctest --test-dir build --output-on-failure -R '^CMakeSubproject\.'` to
 configure, build, and execute small parent projects using `add_subdirectory`
 and FetchContent. The consumers deliberately request C++17, own common helper
 target names, and check that Uni20 preserves their settings. Their linked
 Uni20 targets must supply C++23, generated headers, and transitive libraries.
+The parent enables C++ module scanning; Uni20 disables it only for its own
+targets and preserves the parent's setting.
 Embedded LTO defaults to off, so the parent can link Uni20 without enabling IPO
 on its own targets. The optimized Ninja Multi-Config consumer checks this with
 the outer build's compiler, including Clang's bitcode-sensitive archive linkage.
+Small IPO fixtures build and run a static library and its executable with
+automatic IPO enabled, disabled, unsupported, or inherited from a parent. They
+check that Debug skips the probe, that directory defaults do not alter earlier
+dependencies or parent targets, and that all four optimized configurations work
+with Ninja Multi-Config.
 Additional checks cover parent-owned package hints and shared dependency
 options. ABI contract checks accept matching 4/8-byte declarations and reject
 missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
@@ -137,6 +148,12 @@ unrelated package variables to detect accidental reuse of stale link flags or
 vendor metadata. A dependency export containing multiple include directories
 inside a generator expression checks that warning handling preserves valid
 install exports, as required by fetched MPLAPACK.
+A small fetched dependency also checks an actual default build: linked libraries
+must build and run, and a warning-producing dependency header must compile in
+the consumer under `-Werror`. An unrelated dependency target is excluded by
+default and included with `UNI20_BUILD_EXTERNAL_TESTS=ON`.
+A dependency-argument check requires a specific diagnostic for omitted or empty
+`TARGET` arguments before the helper can perform package discovery.
 Vendor-detection checks cover imported configuration mappings, fallback
 locations, and import libraries, using CMake's resolved locations as an
 independent oracle. The configuration-only vendor fixture models a Windows

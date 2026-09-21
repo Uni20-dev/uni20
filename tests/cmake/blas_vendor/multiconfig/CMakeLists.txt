@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(blas_vendor_multiconfig LANGUAGES NONE)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Configurations under test" FORCE)
 add_library(BLAS::BLAS UNKNOWN IMPORTED)

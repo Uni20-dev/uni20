@@ -330,6 +330,8 @@ TEST(AsyncSvdTest, SupportsConfiguredFloat128Backend)
   uni20::async::ScopedScheduler scoped(&scheduler);
   matrix128_type matrix_value(2, 2);
   matrix_value[0, 0] = real_type{3};
+  matrix_value[0, 1] = real_type{0};
+  matrix_value[1, 0] = real_type{0};
   matrix_value[1, 1] = real_type{2};
   uni20::async::Async<matrix128_type> matrix = matrix_value;
 

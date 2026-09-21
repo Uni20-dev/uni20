@@ -1,0 +1,22 @@
+file(MAKE_DIRECTORY "${test_binary_dir}")
+foreach(form IN ITEMS omitted empty)
+  set(fixture "${test_binary_dir}/${form}.cmake")
+  file(WRITE "${fixture}"
+    "include([==[${UNI20_SOURCE_DIR}/cmake/Uni20Dependencies.cmake]==])\n")
+  file(APPEND "${fixture}" [=[
+function(find_package)
+  message(FATAL_ERROR "Dependency lookup was reached before argument validation")
+endfunction()
+]=])
+  if(form STREQUAL "omitted")
+    file(APPEND "${fixture}" "uni20_add_dependency(NAME Fixture)\n")
+  else()
+    file(APPEND "${fixture}" "uni20_add_dependency(NAME Fixture TARGET \"\")\n")
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -P "${fixture}"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 20)
+  string(FIND "${error}" "uni20_add_dependency() requires TARGET parameter" diagnostic_offset)
+  if(result EQUAL 0 OR diagnostic_offset EQUAL -1)
+    message(FATAL_ERROR "Expected early TARGET rejection for ${form}:\n${output}\n${error}")
+  endif()
+endforeach()

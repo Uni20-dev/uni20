@@ -46,6 +46,12 @@ jobs:
             libbenchmark-dev \
             libgtest-dev
 
+      - name: Use minimum supported CMake
+        run: |
+          python -m pip install "cmake==3.28.3"
+          cmake --version
+          ctest --version
+
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja \
@@ -199,6 +205,12 @@ jobs:
             liblapack-dev \
             libbenchmark-dev \
             libgtest-dev
+
+      - name: Use current CMake 4.x
+        run: |
+          python -m pip install --upgrade "cmake>=4.2,<5"
+          cmake --version
+          ctest --version
 
       - name: Configure
         run: |

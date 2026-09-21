@@ -1,0 +1,32 @@
+set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/dependency-build-${external_tests}")
+file(MAKE_DIRECTORY "${build_dir}")
+
+function(run_checked)
+  cmake_parse_arguments(PARSE_ARGV 0 step "" "" "COMMAND")
+  execute_process(COMMAND ${step_COMMAND} RESULT_VARIABLE result
+    OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Command failed (${result}): ${step_COMMAND}\n${output}\n${error}")
+  endif()
+endfunction()
+
+run_checked(COMMAND "@CMAKE_COMMAND@" --fresh
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/dependency_build" -B "${build_dir}"
+  -G "@CMAKE_GENERATOR@"
+  "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@"
+  "-DCMAKE_BUILD_TYPE=${config}"
+  "-DUNI20_BUILD_EXTERNAL_TESTS=${external_tests}"
+@UNI20_SUBPROJECT_TEST_ARGS@
+)
+set(marker "${build_dir}/dependencies/fixture-build/extra-built")
+file(REMOVE "${marker}")
+# Build ALL: linked libraries must be built, but unrelated dependency targets
+# belong to it only when external testing is explicitly enabled.
+run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}" --parallel 2)
+if(external_tests AND NOT EXISTS "${marker}")
+  message(FATAL_ERROR "External-test opt-in did not build the dependency's extra target")
+elseif(NOT external_tests AND EXISTS "${marker}")
+  message(FATAL_ERROR "Default build included an unrelated dependency target")
+endif()
+run_checked(COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}"
+  --output-on-failure --no-tests=error -R "^dependency_consumer_runs$")
