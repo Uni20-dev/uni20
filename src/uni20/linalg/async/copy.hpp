@@ -128,7 +128,8 @@ async::AsyncTask co_make_tensor(BackendSelector const selector, async::WriteBuff
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  ResultTensor result(convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
+  ResultTensor result(uninitialized,
+                      convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
   uni20::copy(selector, result, input_value);
   storage.emplace(std::move(result));
   co_return;
@@ -147,7 +148,8 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  ResultTensor result(*resources, convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
+  ResultTensor result(uninitialized, *resources,
+                      convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
   auto output_descriptor = mdspec_of(result);
   auto input_descriptor = mdspec_of(input_value);
   co_await linalg::co_dispatch_kernel(linalg::CudaReferenceBackend{}, linalg::copy_op{}, output_descriptor,

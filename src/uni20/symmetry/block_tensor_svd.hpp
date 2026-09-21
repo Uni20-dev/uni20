@@ -651,9 +651,9 @@ template <ImmediateBlockTensorView Tensor, class Measurements, class Event, clas
   auto factorize_sector = [&](std::size_t sector) {
     auto& domain = sector_inputs[sector].domain;
     auto& codomain = sector_inputs[sector].codomain;
+    // Missing stored blocks remain zero in the assembled sector.
     ColumnMajorTensor<scalar_type, 2> matrix(static_cast<uni20::index_type>(codomain.flattened_extent),
                                              static_cast<uni20::index_type>(domain.flattened_extent));
-    uni20::fill(matrix, scalar_type{});
     std::vector<typename decomposition_type::source_key_type> stored_source_keys;
     for (auto const& domain_fragment : domain.fragments)
     {
@@ -841,9 +841,9 @@ template <BlockTensorView Tensor, class DomainSector, class CodomainSector>
 {
   using scalar_type = block_tensor_value_t<Tensor>;
   using source_key_type = typename block_tensor_type_t<Tensor>::key_type;
+  // Missing stored blocks remain zero in the assembled sector.
   CudaMatrix<scalar_type> matrix(resources, static_cast<uni20::index_type>(codomain.flattened_extent),
                                  static_cast<uni20::index_type>(domain.flattened_extent));
-  uni20::fill(matrix, scalar_type{});
 
   for (auto const& domain_fragment : domain.fragments)
   {
@@ -885,9 +885,9 @@ template <class Scalar>
   std::size_t const rank = std::min(rows, columns);
   std::size_t const left_columns = options.left == linalg::SvdVectorExtent::Full ? rows : rank;
   std::size_t const right_rows = options.right == linalg::SvdVectorExtent::Full ? columns : rank;
-  CudaTensor<Scalar, 1> device_values(resources, rank);
-  CudaMatrix<Scalar> device_left(resources, rows, left_columns);
-  CudaMatrix<Scalar> device_right(resources, right_rows, columns);
+  CudaTensor<Scalar, 1> device_values(uninitialized, resources, rank);
+  CudaMatrix<Scalar> device_left(uninitialized, resources, rows, left_columns);
+  CudaMatrix<Scalar> device_right(uninitialized, resources, right_rows, columns);
 
   if (rank == 0)
   {
@@ -907,18 +907,19 @@ template <class Scalar>
   }
   else
   {
-    CudaMatrix<Scalar> transposed_work(resources, columns, rows);
+    CudaMatrix<Scalar> transposed_work(uninitialized, resources, columns, rows);
     copy_transposed_cuda_matrix(transposed_work, matrix_work);
-    CudaMatrix<Scalar> transposed_left(resources, columns,
+    CudaMatrix<Scalar> transposed_left(uninitialized, resources, columns,
                                        options.right == linalg::SvdVectorExtent::Full ? columns : rank);
-    CudaMatrix<Scalar> transposed_right(resources, options.left == linalg::SvdVectorExtent::Full ? rows : rank, rows);
+    CudaMatrix<Scalar> transposed_right(uninitialized, resources,
+                                         options.left == linalg::SvdVectorExtent::Full ? rows : rank, rows);
     linalg::singular_value_decomposition(linalg::CusolverBackend{}, device_values, transposed_left, transposed_right,
                                          transposed_work, {.left = options.right, .right = options.left});
     copy_transposed_cuda_matrix(device_left, transposed_right);
     copy_transposed_cuda_matrix(device_right, transposed_left);
   }
 
-  ColumnMajorTensor<Scalar, 1> values(rank);
+  ColumnMajorTensor<Scalar, 1> values(uninitialized, rank);
   uni20::copy(values, device_values);
   std::vector<Scalar> host_values(rank);
   for (std::size_t index = 0; index < rank; ++index)
