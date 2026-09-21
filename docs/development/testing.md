@@ -122,6 +122,9 @@ configure, build, and execute small parent projects using `add_subdirectory`
 and FetchContent. The consumers deliberately request C++17, own common helper
 target names, and check that Uni20 preserves their settings. Their linked
 Uni20 targets must supply C++23, generated headers, and transitive libraries.
+Embedded LTO defaults to off, so the parent can link Uni20 without enabling IPO
+on its own targets. The optimized Ninja Multi-Config consumer checks this with
+the outer build's compiler, including Clang's bitcode-sensitive archive linkage.
 Additional checks cover parent-owned package hints and shared dependency
 options. ABI contract checks accept matching 4/8-byte declarations and reject
 missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
@@ -134,11 +137,22 @@ unrelated package variables to detect accidental reuse of stale link flags or
 vendor metadata. A dependency export containing multiple include directories
 inside a generator expression checks that warning handling preserves valid
 install exports, as required by fetched MPLAPACK.
+Vendor-detection checks cover imported configuration mappings, fallback
+locations, and import libraries, using CMake's resolved locations as an
+independent oracle. The configuration-only vendor fixture models a Windows
+target system to exercise independent DLL/import-library fallbacks on every
+host without requiring a Windows compiler or runtime. On CMake 4.2 or newer,
+both `CMP0200` modes are tested with the detector defined under the opposite
+policy, ensuring that the imported target's saved policy governs resolution.
+A separate package-hint check resolves private packages in
+a fresh child configure through the same arguments used by the consumers.
 On Unix with a Python interpreter, recording stand-ins execute the
 documentation and formatting target commands and validate their arguments
 without rewriting the source checkout. When Python bindings are enabled in the
 outer build, an embedded consumer builds the extension and runs its Python
-tests from the parent build root, also checking fetched GoogleMock population.
+tests from the parent build root. It reuses installed GoogleTest and nanobind
+packages or fetched sources according to the outer build's dependency policy;
+when GoogleTest is fetched, it also checks requested GoogleMock population.
 When the outer build uses an
 installed MPLAPACK package, the consumers also compile and execute binary128
 arithmetic and a BLAS call. Fetched MPLAPACK builds use ordinary precision in
@@ -147,7 +161,12 @@ the main test suite covers their binary128 operations.
 
 These tests reuse the outer build's dependency source locations or package
 paths and generator platform, toolset, and instance settings, with separate
-build directories under `tests/cmake`. They register
+build directories under `tests/cmake`. The consumer retains `ConsumerSpecial`
+and generates the standard configurations, `DebugOpt`, and any requested custom
+configuration. Ninja builds additionally exercise a real Ninja Multi-Config
+consumer in `RelWithDebInfo`. The Python package hints and disconnected-fetch
+policy are forwarded so an offline outer build does not silently require
+downloads in its nested consumers. These tests register
 directly with CTest because they test CMake integration rather than C++ units.
 
 ### C++ unit tests

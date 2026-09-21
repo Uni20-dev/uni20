@@ -134,7 +134,9 @@ option(UNI20_BUILD_TESTS          "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_COMBINED_TESTS "Build combined test executable (in addition to per-module tests)" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_BENCH          "Build benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_ENABLE_WARNINGS      "Enable compiler warnings" ON)
-option(UNI20_ENABLE_LTO           "Enable LTO/IPO for optimized builds" ON)
+# IPO is not a transitive usage requirement. Embedded builds leave the parent
+# responsible for enabling it on both the libraries and their final link targets.
+option(UNI20_ENABLE_LTO           "Enable LTO/IPO for optimized builds" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_ASM            "Build stand-alone assembly dumps for snippets in asm/" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_DEBUG_DAG            "Enable DAG debug info (for Async buffer tracking and visualization)" ${_uni20_debug_default})
 uni20_detect_stacktrace()

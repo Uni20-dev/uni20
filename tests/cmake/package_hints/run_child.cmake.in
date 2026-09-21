@@ -1,0 +1,8 @@
+execute_process(COMMAND "@CMAKE_COMMAND@" --fresh
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/child" -B "@CMAKE_CURRENT_BINARY_DIR@/child"
+  "-DUNI20_SOURCE_DIR=@UNI20_SOURCE_DIR@"
+@UNI20_SUBPROJECT_TEST_ARGS@
+  RESULT_VARIABLE result)
+if(NOT result EQUAL 0)
+  message(FATAL_ERROR "Child package lookup failed")
+endif()

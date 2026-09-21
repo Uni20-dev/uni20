@@ -67,6 +67,13 @@ to `OFF`. Each can be enabled explicitly. Standalone defaults remain `ON`.
 These are initial cache defaults: changing how a checkout is consumed does not
 reset an existing build cache. Use a separate build directory for each setup.
 
+`UNI20_ENABLE_LTO` also defaults to `OFF` when embedded and `ON` standalone.
+IPO/LTO does not propagate through target linkage. A parent opting into Uni20
+LTO must also enable compatible IPO on its final executables or shared libraries;
+otherwise, for example, Clang's bitcode archives can fail to link. The parent can
+instead configure IPO for the whole build using CMake's
+`CMAKE_INTERPROCEDURAL_OPTIMIZATION[_<CONFIG>]` variables before creating targets.
+
 When enabling `UNI20_BUILD_TESTS`, the parent must call `enable_testing()` (or
 include `CTest`) at its source root for `ctest --test-dir <parent-build>` to
 discover the embedded tests. Enabling tests only in Uni20's subdirectory does
@@ -95,7 +102,17 @@ add legacy `BLAS_LINKER_FLAGS` or `LAPACK_LINKER_FLAGS` to them. Supplying both
 targets avoids BLAS/LAPACK package discovery entirely, without requiring
 `BLAS_FOUND`, `LAPACK_FOUND`, or a separately discoverable installation. Missing
 providers still require discovery, including their transitive dependencies.
-BLAS vendor detection uses the supplied target's direct link information.
+BLAS vendor detection uses the supplied target's direct link information and
+imported library locations, including import libraries. Configuration-specific
+locations follow the active build configurations, `MAP_IMPORTED_CONFIG_<CONFIG>`,
+and `IMPORTED_CONFIGURATIONS`. With CMake 4.2 or newer, detection uses CMake's
+resolved location to honor the `CMP0200` policy recorded on the supplied target,
+which may differ from Uni20's policy scope. After configuration selection, a missing
+runtime or import-library property falls back independently to its unsuffixed
+property. An artifact shared by several configurations can leave the companion
+artifact ambiguous; conflicting candidate vendors report
+generic BLAS, since vendor macros and extension availability apply to every
+build configuration.
 Opaque targets default to generic BLAS unless `UNI20_BLAS_VENDOR` explicitly
 identifies the provider for vendor extensions.
 

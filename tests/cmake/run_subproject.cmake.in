@@ -1,4 +1,9 @@
 set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/${mode}")
+if(generator)
+  string(APPEND build_dir "-multiconfig")
+else()
+  set(generator "@CMAKE_GENERATOR@")
+endif()
 if(abi_case)
   string(APPEND build_dir "-blas-${abi_case}")
 endif()
@@ -25,7 +30,7 @@ endfunction()
 file(MAKE_DIRECTORY "${build_dir}")
 execute_process(COMMAND "@CMAKE_COMMAND@" --fresh
   -S "@CMAKE_CURRENT_SOURCE_DIR@/subproject" -B "${build_dir}"
-  -G "@CMAKE_GENERATOR@"
+  -G "${generator}"
   "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@"
   "-DUNI20_INTEGRATION_MODE=${mode}"
   "-DUNI20_TEST_DEVELOPER_TARGETS=${developer_targets}"
