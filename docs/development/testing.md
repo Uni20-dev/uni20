@@ -152,6 +152,8 @@ A small fetched dependency also checks an actual default build: linked libraries
 must build and run, and a warning-producing dependency header must compile in
 the consumer under `-Werror`. An unrelated dependency target is excluded by
 default and included with `UNI20_BUILD_EXTERNAL_TESTS=ON`.
+A dependency-argument check requires a specific diagnostic for omitted or empty
+`TARGET` arguments before the helper can perform package discovery.
 Vendor-detection checks cover imported configuration mappings, fallback
 locations, and import libraries, using CMake's resolved locations as an
 independent oracle. The configuration-only vendor fixture models a Windows

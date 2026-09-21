@@ -2,6 +2,12 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
+add_test(NAME CMakeSubproject.dependency_arguments
+  COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/dependency_arguments"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dependency_arguments.cmake")
+set_tests_properties(CMakeSubproject.dependency_arguments PROPERTIES LABELS cmake TIMEOUT 60)
+
 # Do not compile the entire MPLAPACK provider three more times in nested builds.
 # Main-suite tests cover the fetched provider; an installed package also gives
 # these downstream consumers inexpensive binary128 compile/link/run coverage.
