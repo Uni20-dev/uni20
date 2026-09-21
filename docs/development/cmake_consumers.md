@@ -67,6 +67,13 @@ to `OFF`. Each can be enabled explicitly. Standalone defaults remain `ON`.
 These are initial cache defaults: changing how a checkout is consumed does not
 reset an existing build cache. Use a separate build directory for each setup.
 
+`UNI20_ENABLE_LTO` also defaults to `OFF` when embedded and `ON` standalone.
+IPO/LTO does not propagate through target linkage. A parent opting into Uni20
+LTO must also enable compatible IPO on its final executables or shared libraries;
+otherwise, for example, Clang's bitcode archives can fail to link. The parent can
+instead configure IPO for the whole build using CMake's
+`CMAKE_INTERPROCEDURAL_OPTIMIZATION[_<CONFIG>]` variables before creating targets.
+
 When enabling `UNI20_BUILD_TESTS`, the parent must call `enable_testing()` (or
 include `CTest`) at its source root for `ctest --test-dir <parent-build>` to
 discover the embedded tests. Enabling tests only in Uni20's subdirectory does

@@ -122,6 +122,9 @@ configure, build, and execute small parent projects using `add_subdirectory`
 and FetchContent. The consumers deliberately request C++17, own common helper
 target names, and check that Uni20 preserves their settings. Their linked
 Uni20 targets must supply C++23, generated headers, and transitive libraries.
+Embedded LTO defaults to off, so the parent can link Uni20 without enabling IPO
+on its own targets. The optimized Ninja Multi-Config consumer checks this with
+the outer build's compiler, including Clang's bitcode-sensitive archive linkage.
 Additional checks cover parent-owned package hints and shared dependency
 options. ABI contract checks accept matching 4/8-byte declarations and reject
 missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
