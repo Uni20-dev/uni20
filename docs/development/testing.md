@@ -136,7 +136,12 @@ inside a generator expression checks that warning handling preserves valid
 install exports, as required by fetched MPLAPACK.
 Vendor-detection checks cover imported configuration mappings, fallback
 locations, and import libraries, using CMake's resolved locations as an
-independent oracle. A separate package-hint check resolves private packages in
+independent oracle. The configuration-only vendor fixture models a Windows
+target system to exercise independent DLL/import-library fallbacks on every
+host without requiring a Windows compiler or runtime. On CMake 4.2 or newer,
+both `CMP0200` modes are tested with the detector defined under the opposite
+policy, ensuring that the imported target's saved policy governs resolution.
+A separate package-hint check resolves private packages in
 a fresh child configure through the same arguments used by the consumers.
 On Unix with a Python interpreter, recording stand-ins execute the
 documentation and formatting target commands and validate their arguments

@@ -19,6 +19,15 @@ foreach(fixture IN ITEMS blas_vendor package_hints)
       -B "${CMAKE_CURRENT_BINARY_DIR}/${fixture}"
       "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}")
 endforeach()
+if(POLICY CMP0200)
+  foreach(policy IN ITEMS OLD NEW)
+    add_test(NAME CMakeSubproject.blas_vendor_policy_${policy}
+      COMMAND "${CMAKE_COMMAND}" --fresh
+        -S "${CMAKE_CURRENT_SOURCE_DIR}/blas_vendor"
+        -B "${CMAKE_CURRENT_BINARY_DIR}/blas_vendor_policy_${policy}"
+        "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}" "-Dvendor_policy=${policy}")
+  endforeach()
+endif()
 add_test(NAME CMakeSubproject.blas_abi_contract
   COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/blas_abi_contract"

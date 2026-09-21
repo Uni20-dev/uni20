@@ -29,10 +29,18 @@ elseif(vendor_case MATCHES "^mapped_.*empty$")
   if(vendor_case STREQUAL "mapped_list_empty")
     set_property(TARGET BLAS::BLAS PROPERTY MAP_IMPORTED_CONFIG_RELWITHDEBINFO "Missing;;Release")
   endif()
+  if(vendor_policy STREQUAL "NEW")
+    # An explicit empty mapping is only usable without an advertised list
+    # that excludes it under CMP0200 NEW.
+    set_property(TARGET BLAS::BLAS PROPERTY IMPORTED_CONFIGURATIONS)
+  endif()
 elseif(vendor_case STREQUAL "default_location")
   set_target_properties(BLAS::BLAS PROPERTIES
     IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${other}"
     IMPORTED_LOCATION "${openblas}")
+  if(vendor_policy STREQUAL "NEW")
+    set(expected_vendor MKL)
+  endif()
 elseif(vendor_case STREQUAL "fallback")
   set_target_properties(BLAS::BLAS PROPERTIES
     IMPORTED_CONFIGURATIONS "RELEASE;DEBUG"
@@ -44,10 +52,29 @@ elseif(vendor_case STREQUAL "implib")
   set_target_properties(BLAS::BLAS PROPERTIES
     IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/provider.dll"
     IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/openblas.lib")
+elseif(vendor_case MATCHES "^implib_default")
+  set_target_properties(BLAS::BLAS PROPERTIES
+    IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/provider.dll"
+    IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/openblas.lib")
+  if(vendor_case STREQUAL "implib_default_mapped")
+    set_property(TARGET BLAS::BLAS PROPERTY MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
+  else()
+    set(CMAKE_BUILD_TYPE Release)
+  endif()
+elseif(vendor_case MATCHES "^implib_runtime_default")
+  set_target_properties(BLAS::BLAS PROPERTIES
+    IMPORTED_LOCATION "${openblas}"
+    IMPORTED_IMPLIB_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/provider.lib")
+  if(vendor_case STREQUAL "implib_runtime_default_mapped")
+    set_property(TARGET BLAS::BLAS PROPERTY MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
+  else()
+    set(CMAKE_BUILD_TYPE Release)
+  endif()
 elseif(vendor_case MATCHES "^implib_")
   set_target_properties(BLAS::BLAS PROPERTIES
     IMPORTED_CONFIGURATIONS "DEBUG;RELEASE"
     IMPORTED_IMPLIB_DEBUG "${other}"
+    IMPORTED_IMPLIB "${other}"
     IMPORTED_IMPLIB_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/openblas.lib"
     MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
   if(vendor_case STREQUAL "implib_mapped")
@@ -59,7 +86,17 @@ elseif(vendor_case STREQUAL "opaque")
   set(expected_vendor Generic)
 endif()
 
+cmake_policy(PUSH)
+if(POLICY CMP0200)
+  # The provider's saved policy must win over the detector's defining scope.
+  if(vendor_policy STREQUAL "NEW")
+    cmake_policy(SET CMP0200 OLD)
+  else()
+    cmake_policy(SET CMP0200 NEW)
+  endif()
+endif()
 include("${UNI20_SOURCE_DIR}/cmake/DetectBlasVendor.cmake")
+cmake_policy(POP)
 detect_blas_vendor()
 if(NOT UNI20_DETECTED_BLAS_VENDOR STREQUAL expected_vendor)
   message(FATAL_ERROR "${vendor_case}: expected ${expected_vendor}, got ${UNI20_DETECTED_BLAS_VENDOR}")

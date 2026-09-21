@@ -98,8 +98,12 @@ providers still require discovery, including their transitive dependencies.
 BLAS vendor detection uses the supplied target's direct link information and
 imported library locations, including import libraries. Configuration-specific
 locations follow the active build configurations, `MAP_IMPORTED_CONFIG_<CONFIG>`,
-and the fallback order in `IMPORTED_CONFIGURATIONS`; unused configurations do
-not override the selected provider. Conflicting identified vendors report
+and `IMPORTED_CONFIGURATIONS`. With CMake 4.2 or newer, detection uses CMake's
+resolved location to honor the `CMP0200` policy recorded on the supplied target,
+which may differ from Uni20's policy scope. After configuration selection, a missing
+runtime or import-library property falls back independently to its unsuffixed
+property. An artifact shared by several configurations can leave the companion
+artifact ambiguous; conflicting candidate vendors report
 generic BLAS, since vendor macros and extension availability apply to every
 build configuration.
 Opaque targets default to generic BLAS unless `UNI20_BLAS_VENDOR` explicitly

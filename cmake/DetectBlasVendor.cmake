@@ -83,6 +83,60 @@ function(_uni20_vendor_macro_name vendor_name output_var)
 endfunction()
 
 function(_uni20_imported_blas_files target config output_var)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.2)
+    # CMP0200 is recorded on the imported target, not on this function's
+    # policy scope. Let CMake resolve its location under that saved policy.
+    get_target_property(_imported ${target} IMPORTED)
+    get_target_property(_type ${target} TYPE)
+    if(NOT _imported OR NOT _type MATCHES "^(STATIC|SHARED|UNKNOWN)_LIBRARY$")
+      set(${output_var} "" PARENT_SCOPE)
+      return()
+    endif()
+    get_target_property(_resolved ${target} "LOCATION_${config}")
+    set(_files "${_resolved}")
+
+    # There is no equivalent configure-time query for the resolved import
+    # library. Only consider artifact pairs containing CMake's resolved file
+    # (which can itself be an import library). Shared paths can leave the
+    # other artifact ambiguous; conflicting vendor names then stay generic.
+    string(TOUPPER "${config}" _config)
+    get_property(_mapped TARGET ${target} PROPERTY "MAP_IMPORTED_CONFIG_${_config}" SET)
+    if(_mapped)
+      get_target_property(_configs ${target} "MAP_IMPORTED_CONFIG_${_config}")
+    else()
+      get_target_property(_available ${target} IMPORTED_CONFIGURATIONS)
+      set(_configs "${config};")
+      if(_available)
+        list(APPEND _configs ${_available})
+      endif()
+    endif()
+    # Prefixing entries retains an empty mapping/configuration as a real list
+    # item, including the special case where the entire mapping is empty.
+    string(TOUPPER "${_configs}" _configs)
+    string(REPLACE ";" ";_" _suffixes "_${_configs}")
+    foreach(_suffix IN LISTS _suffixes)
+      if(_suffix STREQUAL "_")
+        set(_suffix "")
+      endif()
+      foreach(_property IN ITEMS IMPORTED_LOCATION IMPORTED_IMPLIB)
+        get_target_property(${_property} ${target} "${_property}${_suffix}")
+        if(NOT ${_property})
+          get_target_property(${_property} ${target} "${_property}")
+        endif()
+      endforeach()
+      if(IMPORTED_LOCATION STREQUAL _resolved OR IMPORTED_IMPLIB STREQUAL _resolved)
+        foreach(_property IN ITEMS IMPORTED_LOCATION IMPORTED_IMPLIB)
+          if(${_property})
+            list(APPEND _files "${${_property}}")
+          endif()
+        endforeach()
+      endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _files)
+    set(${output_var} "${_files}" PARENT_SCOPE)
+    return()
+  endif()
+
   # Follow CMake's imported-configuration selection order. A declared mapping
   # is exclusive; its empty entries select the configuration-less properties.
   string(TOUPPER "${config}" _config)
@@ -124,6 +178,18 @@ function(_uni20_imported_blas_files target config output_var)
       endif()
     endforeach()
     if(_files)
+      # Selection chooses one configuration for both artifacts. CMake then
+      # falls back independently to each unsuffixed property if that artifact
+      # is missing in the selected configuration (ComputeImportInfo).
+      foreach(_property IN ITEMS IMPORTED_LOCATION IMPORTED_IMPLIB)
+        get_target_property(_file ${target} "${_property}${_suffix}")
+        if(NOT _file)
+          get_target_property(_file ${target} "${_property}")
+          if(_file)
+            list(APPEND _files "${_file}")
+          endif()
+        endif()
+      endforeach()
       break()
     endif()
   endforeach()
