@@ -232,7 +232,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 [[nodiscard]] auto sum(BackendSelector&& selector, InputTensor const& input)
 {
   using result_type = ScalarTensor<tensor_element_t<InputTensor>, detail::reduction_result_storage_t<InputTensor>>;
-  result_type result;
+  result_type result(uninitialized);
   sum(std::forward<BackendSelector>(selector), result, input);
   return result;
 }
@@ -262,7 +262,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor,
   constexpr std::size_t reduced_rank = 1 + sizeof...(RestAxes);
   auto axes = linalg::make_reduction_axes<input_rank>(first_axis, rest_axes...);
   using result_type = detail::sum_reduction_result_t<InputTensor, reduced_rank>;
-  result_type result(detail::reduction_output_extents(input, axes));
+  result_type result(uninitialized, detail::reduction_output_extents(input, axes));
   auto output_descriptor = mdspec_of(result);
   auto input_descriptor = mdspec_of(input);
   detail::dispatch_sum(std::forward<BackendSelector>(selector), output_descriptor, input_descriptor, std::move(axes));
@@ -374,7 +374,7 @@ template <class BackendSelector, class LhsTensor, class RhsTensor>
 {
   using result_type =
       ScalarTensor<tensor_element_t<LhsTensor>, detail::reduction_result_storage_t<LhsTensor, RhsTensor>>;
-  result_type result;
+  result_type result(uninitialized);
   inner_product(std::forward<BackendSelector>(selector), result, lhs, rhs);
   return result;
 }
@@ -472,7 +472,7 @@ template <class BackendSelector, TensorView InputTensor>
 {
   using result_type =
       ScalarTensor<make_real_t<tensor_element_t<InputTensor>>, detail::reduction_result_storage_t<InputTensor>>;
-  result_type result;
+  result_type result(uninitialized);
   norm(std::forward<BackendSelector>(selector), result, input);
   return result;
 }

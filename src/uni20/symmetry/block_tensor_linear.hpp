@@ -755,7 +755,8 @@ template <class OutputStorage = void, BlockTensorView Lhs, BlockTensorView Rhs>
   using lhs_type = block_tensor_type_t<Lhs>;
   using result_type = BlockTensor<typename lhs_type::value_type, typename lhs_type::domain_type,
                                   typename lhs_type::codomain_type, storage_type>;
-  auto result = result_type(lhs.symmetry(), lhs.domain(), lhs.codomain(), detail::stored_key_union(lhs, rhs));
+  auto result =
+      result_type(uninitialized, lhs.symmetry(), lhs.domain(), lhs.codomain(), detail::stored_key_union(lhs, rhs));
   add(result, lhs, rhs);
   return result;
 }
@@ -836,7 +837,7 @@ template <BlockTensorView Lhs, BlockTensorView Rhs>
 [[nodiscard]] auto inner_product(Lhs const& lhs, Rhs const& rhs)
 {
   using value_type = block_tensor_value_t<Lhs>;
-  ScalarTensor<value_type> result;
+  ScalarTensor<value_type> result(uninitialized);
   result[] = inner_product_host(lhs, rhs);
   return result;
 }
@@ -905,7 +906,7 @@ template <BlockTensorView Tensor>
 [[nodiscard]] auto norm(Tensor const& tensor)
 {
   using real_type = make_real_t<block_tensor_value_t<Tensor>>;
-  ScalarTensor<real_type> result;
+  ScalarTensor<real_type> result(uninitialized);
   result[] = norm_host(tensor);
   return result;
 }

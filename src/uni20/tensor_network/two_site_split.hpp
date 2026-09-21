@@ -103,13 +103,13 @@ auto materialize_block_tensor_copy(Source const& source)
   std::vector<key_type> keys(source.stored_keys().begin(), source.stored_keys().end());
   auto result = [&] {
     if constexpr (requires {
-                    output_type(source.symmetry(), source.domain(), source.codomain(), keys,
+                    output_type(uninitialized, source.symmetry(), source.domain(), source.codomain(), keys,
                                 source.allocation_context());
                   })
-      return output_type(source.symmetry(), source.domain(), source.codomain(), std::move(keys),
+      return output_type(uninitialized, source.symmetry(), source.domain(), source.codomain(), std::move(keys),
                          source.allocation_context());
     else
-      return output_type(source.symmetry(), source.domain(), source.codomain(), std::move(keys));
+      return output_type(uninitialized, source.symmetry(), source.domain(), source.codomain(), std::move(keys));
   }();
   for (std::size_t ordinal = 0; ordinal < result.stored_block_count(); ++ordinal)
   {

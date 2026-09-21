@@ -47,7 +47,10 @@ template <AsyncTensorOutput OutputTensor, TensorView InputTensor, std::size_t In
   if constexpr (std::constructible_from<OutputTensor, extents_type const&>)
   {
     auto const extents = convert_tensor_extents<extents_type>(required);
-    return storage.emplace(extents);
+    if constexpr (std::constructible_from<OutputTensor, uninitialized_t, extents_type const&>)
+      return storage.emplace(uninitialized, extents);
+    else
+      return storage.emplace(extents);
   }
   else
   {

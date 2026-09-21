@@ -105,7 +105,7 @@ KernelAttempt matrix_exponential(OutputMdspan& output, InputMdspan& input, TimeS
 
   std::size_t const rows = static_cast<std::size_t>(input.extent(0));
   std::size_t const cols = static_cast<std::size_t>(input.extent(1));
-  uni20::DenseMatrix<input_scalar> materialized(rows, cols);
+  uni20::DenseMatrix<input_scalar> materialized(uni20::uninitialized, rows, cols);
   for (input_index_type row = 0; row < input.extent(0); ++row)
   {
     for (input_index_type col = 0; col < input.extent(1); ++col)

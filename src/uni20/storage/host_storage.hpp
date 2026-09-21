@@ -18,7 +18,7 @@ namespace uni20
 
 /// \brief Owning contiguous host buffer used by `HostStorage`.
 /// \details Allocation and growth leave `uninitialized_ok` elements unspecified.
-///          Other element types are default-constructed and destroyed normally.
+///          Other element types are value-constructed and destroyed normally.
 ///          Copying preserves every stored object representation, and resizing
 ///          preserves the common prefix just like `std::vector::resize`.
 /// \tparam ElementType Element type held in pageable host memory.
@@ -35,11 +35,27 @@ template <typename ElementType> class HostBuffer {
 
     /// \brief Allocate storage for `size` elements.
     /// \details Values are unspecified when `value_type` satisfies
-    ///          `uninitialized_ok`; otherwise elements are default-constructed.
-    explicit HostBuffer(size_type size) : data_(allocate(size)), size_(size) {}
+    ///          `uninitialized_ok`; otherwise elements are value-constructed.
+    explicit HostBuffer(size_type size) : HostBuffer(size, StorageInitialization::Uninitialized) {}
+
+    /// \brief Allocate elements with an explicit numerical initialization policy.
+    /// \throws std::invalid_argument If Zero is requested for a type without a zero/default value.
+    HostBuffer(size_type size, StorageInitialization initialization)
+        : data_(allocate(size, initialization)), size_(size)
+    {
+      try
+      {
+        detail::initialize_host_elements(data_, size_, initialization);
+      }
+      catch (...)
+      {
+        release(data_, size_);
+        throw;
+      }
+    }
 
     /// \brief Allocate and fill storage with one value.
-    HostBuffer(size_type size, value_type const& value) : HostBuffer(size)
+    HostBuffer(size_type size, value_type const& value) : data_(allocate(size)), size_(size)
     {
       try
       {
@@ -54,7 +70,7 @@ template <typename ElementType> class HostBuffer {
       }
     }
 
-    HostBuffer(HostBuffer const& other) : HostBuffer(other.size_)
+    HostBuffer(HostBuffer const& other) : data_(allocate(other.size_)), size_(other.size_)
     {
       try
       {
@@ -94,15 +110,20 @@ template <typename ElementType> class HostBuffer {
 
     /// \brief Replace the allocation while preserving the common prefix.
     /// \details Newly added `uninitialized_ok` elements have unspecified values.
-    void resize(size_type size)
+    void resize(size_type size) { this->resize(size, StorageInitialization::Uninitialized); }
+
+    /// \brief Preserve the common prefix and initialize only newly added elements.
+    void resize(size_type size, StorageInitialization initialization)
     {
       if (size == size_) return;
 
-      value_type* replacement = allocate(size);
+      value_type* replacement = allocate(size, initialization);
       size_type const copied_size = std::min(size_, size);
       try
       {
         copy_values(replacement, data_, copied_size);
+        if (size > copied_size)
+          detail::initialize_host_elements(replacement + copied_size, size - copied_size, initialization);
       }
       catch (...)
       {
@@ -143,7 +164,8 @@ template <typename ElementType> class HostBuffer {
     [[nodiscard]] auto operator[](size_type index) const noexcept -> value_type const& { return data_[index]; }
 
   private:
-    static auto allocate(size_type size) -> value_type*
+    static auto allocate(size_type size,
+                         StorageInitialization initialization = StorageInitialization::Uninitialized) -> value_type*
     {
       if (size == 0) return nullptr;
       if (size > std::numeric_limits<size_type>::max() / sizeof(value_type)) throw std::bad_array_new_length{};
@@ -154,12 +176,36 @@ template <typename ElementType> class HostBuffer {
       {
         try
         {
-          std::uninitialized_default_construct_n(result, size);
+          std::uninitialized_value_construct_n(result, size);
         }
         catch (...)
         {
           detail::aligned_deleter<value_type>{}(result);
           throw;
+        }
+      }
+      else if constexpr (!std::is_assignable_v<value_type&, value_type>)
+      {
+        if (initialization == StorageInitialization::Zero)
+        {
+          // Such elements cannot be assigned by initialize_host_elements.
+          try
+          {
+            if constexpr (detail::zero_initializable_v<value_type>)
+            {
+              for (size_type i = 0; i < size; ++i)
+                ::new (static_cast<void*>(result + i)) value_type(detail::zero_value<value_type>());
+            }
+            else
+            {
+              throw std::invalid_argument("Zero initialization requires an element type with a zero/default value");
+            }
+          }
+          catch (...)
+          {
+            detail::aligned_deleter<value_type>{}(result);
+            throw;
+          }
         }
       }
       return result;
@@ -180,7 +226,9 @@ template <typename ElementType> class HostBuffer {
       if (size == 0) return;
       if constexpr (uninitialized_ok<value_type>)
       {
-        std::memcpy(output, input, size * sizeof(value_type));
+        // Copy the representation, including undefined-value shadow, even for
+        // trivially copyable elements that do not have an assignment operator.
+        std::memcpy(static_cast<void*>(output), input, size * sizeof(value_type));
       }
       else
       {
@@ -208,6 +256,14 @@ struct HostStorage
     static constexpr std::size_t allocation_alignment = 64;
 
     template <typename ElementType> using storage_t = HostBuffer<ElementType>;
+
+    /// \brief Allocate host elements with the requested numerical initialization.
+    template <typename ElementType>
+    [[nodiscard]] static auto make_storage(std::size_t size,
+                                           StorageInitialization initialization) -> storage_t<ElementType>
+    {
+      return storage_t<ElementType>(size, initialization);
+    }
 
     template <typename ElementType> static auto make_handle(storage_t<ElementType>& storage) noexcept -> ElementType*
     {

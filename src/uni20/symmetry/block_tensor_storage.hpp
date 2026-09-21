@@ -7,6 +7,7 @@
 #pragma once
 
 #include <uni20/async/async.hpp>
+#include <uni20/common/initialization.hpp>
 #include <uni20/core/types.hpp>
 #include <uni20/mdspan/diagonal_accessor.hpp>
 #include <uni20/mdspan/generated_layout.hpp>
@@ -177,15 +178,18 @@ template <std::size_t KeyCoordinateCount, std::size_t DenseBlockOrder> struct Bl
 };
 
 template <class Tensor, std::size_t Order, std::size_t... I>
-auto make_block_tensor(std::array<std::size_t, Order> const& extents, std::index_sequence<I...>) -> Tensor
+auto make_block_tensor(std::array<std::size_t, Order> const& extents, StorageInitialization initialization,
+                       std::index_sequence<I...>) -> Tensor
 {
+  if (initialization == StorageInitialization::Uninitialized)
+    return Tensor(uninitialized, static_cast<index_type>(extents[I])...);
   return Tensor(static_cast<index_type>(extents[I])...);
 }
 
 template <class Tensor, std::size_t Order>
-auto make_block_tensor(std::array<std::size_t, Order> const& extents) -> Tensor
+auto make_block_tensor(std::array<std::size_t, Order> const& extents, StorageInitialization initialization) -> Tensor
 {
-  return make_block_tensor<Tensor>(extents, std::make_index_sequence<Order>{});
+  return make_block_tensor<Tensor>(extents, initialization, std::make_index_sequence<Order>{});
 }
 
 template <class Extents, std::size_t Order, std::size_t... I>
@@ -226,38 +230,50 @@ constexpr auto diagonal_extent(std::array<std::size_t, Rank> const& extents) noe
   }
 }
 
-template <class Storage, class T> auto make_storage(std::size_t size) -> typename Storage::template storage_t<T>
+template <class Storage, class T>
+auto make_storage(std::size_t size, StorageInitialization initialization) -> typename Storage::template storage_t<T>
 {
   using storage_type = typename Storage::template storage_t<T>;
-  if constexpr (std::default_initializable<storage_type> && requires(storage_type& storage) { storage.resize(size); })
+  if constexpr (requires { Storage::template make_storage<T>(size, initialization); })
   {
-    storage_type storage;
-    storage.resize(size);
-    return storage;
+    return Storage::template make_storage<T>(size, initialization);
   }
   else
   {
-    static_assert(std::constructible_from<storage_type, std::size_t>,
-                  "packed BlockTensor leaf storage must be resizable or constructible from a size");
-    return storage_type(size);
+    // Legacy contiguous host containers can initialize through their live elements.
+    // Descriptor-backed or opaque storage must provide an initialization-aware factory.
+    auto storage = [&] {
+      if constexpr (std::default_initializable<storage_type> && requires(storage_type& value) { value.resize(size); })
+      {
+        storage_type result;
+        result.resize(size);
+        return result;
+      }
+      else
+      {
+        return storage_type(size);
+      }
+    }();
+    initialize_host_elements(storage.data(), size, initialization);
+    return storage;
   }
 }
 
 template <class Storage, class T>
-auto make_storage_like(typename Storage::template storage_t<T> const& prototype, std::size_t size) ->
-    typename Storage::template storage_t<T>
+auto make_storage_like(typename Storage::template storage_t<T> const& prototype, std::size_t size,
+                       StorageInitialization initialization) -> typename Storage::template storage_t<T>
 {
   if constexpr (requires {
                   {
-                    Storage::template make_storage_like<T>(prototype, size)
+                    Storage::template make_storage_like<T>(prototype, size, initialization)
                   } -> std::same_as<typename Storage::template storage_t<T>>;
                 })
   {
-    return Storage::template make_storage_like<T>(prototype, size);
+    return Storage::template make_storage_like<T>(prototype, size, initialization);
   }
   else
   {
-    return make_storage<Storage, T>(size);
+    return make_storage<Storage, T>(size, initialization);
   }
 }
 
@@ -275,37 +291,39 @@ struct PackedStorageType<Storage, T, std::void_t<typename Storage::template pack
 template <class Storage, class T> using packed_storage_t = typename PackedStorageType<Storage, T>::type;
 
 template <class Storage, class T>
-auto make_packed_storage(std::size_t size, std::span<std::size_t const> offsets) -> packed_storage_t<Storage, T>
+auto make_packed_storage(std::size_t size, std::span<std::size_t const> offsets,
+                         StorageInitialization initialization) -> packed_storage_t<Storage, T>
 {
   if constexpr (requires {
                   {
-                    Storage::template make_packed_storage<T>(size, offsets)
+                    Storage::template make_packed_storage<T>(size, offsets, initialization)
                   } -> std::same_as<packed_storage_t<Storage, T>>;
                 })
   {
-    return Storage::template make_packed_storage<T>(size, offsets);
+    return Storage::template make_packed_storage<T>(size, offsets, initialization);
   }
   else
   {
-    return make_storage<Storage, T>(size);
+    return make_storage<Storage, T>(size, initialization);
   }
 }
 
 template <class Storage, class T>
 auto make_packed_storage_like(packed_storage_t<Storage, T> const& prototype, std::size_t size,
-                              std::span<std::size_t const> offsets) -> packed_storage_t<Storage, T>
+                              std::span<std::size_t const> offsets,
+                              StorageInitialization initialization) -> packed_storage_t<Storage, T>
 {
   if constexpr (requires {
                   {
-                    Storage::template make_packed_storage_like<T>(prototype, size, offsets)
+                    Storage::template make_packed_storage_like<T>(prototype, size, offsets, initialization)
                   } -> std::same_as<packed_storage_t<Storage, T>>;
                 })
   {
-    return Storage::template make_packed_storage_like<T>(prototype, size, offsets);
+    return Storage::template make_packed_storage_like<T>(prototype, size, offsets, initialization);
   }
   else
   {
-    return make_storage_like<Storage, T>(prototype, size);
+    return make_storage_like<Storage, T>(prototype, size, initialization);
   }
 }
 
@@ -333,7 +351,7 @@ void initialize_packed_padding(Buffer& buffer, std::span<std::size_t const> offs
         "aligned packed storage must provide immediate access or initialize_packed_padding");
     auto* data = Storage::make_handle(buffer);
     for (std::size_t ordinal = 0; ordinal < block_ends.size(); ++ordinal)
-      std::fill(data + block_ends[ordinal], data + offsets[ordinal + 1], T{});
+      std::fill(data + block_ends[ordinal], data + offsets[ordinal + 1], zero_value<T>());
   }
 }
 
@@ -350,14 +368,15 @@ class SeparateSparseBlockStorageData {
     static_assert(block_type::immediately_readable && block_type::immediately_writable,
                   "separate sparse block storage currently requires immediate leaf access");
 
-    explicit SeparateSparseBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs)
+    explicit SeparateSparseBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                            StorageInitialization initialization = StorageInitialization::Zero)
     {
       keys_.reserve(specs.size());
       blocks_.reserve(specs.size());
       for (auto const& spec : specs)
       {
         keys_.push_back(spec.key);
-        blocks_.push_back(make_block_tensor<block_type>(spec.extents));
+        blocks_.push_back(make_block_tensor<block_type>(spec.extents, initialization));
       }
     }
 
@@ -515,18 +534,23 @@ class PackedBlockStorageData {
             return false;
         }(),
         "nontrivial packed block alignment must divide the leaf allocation alignment");
-    explicit PackedBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs)
-        : PackedBlockStorageData(make_layout(specs))
+    explicit PackedBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                    StorageInitialization initialization = StorageInitialization::Zero)
+        : PackedBlockStorageData(make_layout(specs), initialization)
     {}
 
     /// \brief Construct packed storage in an explicit leaf allocation context.
     template <class Context>
-      requires requires(Context& context, std::size_t size, std::span<std::size_t const> offsets) {
-        { LeafStorage::template make_packed_storage<T>(context, size, offsets) } -> std::same_as<buffer_type>;
+      requires requires(Context& context, std::size_t size, std::span<std::size_t const> offsets,
+                        StorageInitialization initialization) {
+        {
+          LeafStorage::template make_packed_storage<T>(context, size, offsets, initialization)
+        } -> std::same_as<buffer_type>;
       }
     explicit PackedBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
-                                    Context& context)
-        : PackedBlockStorageData(make_layout(specs), context)
+                                    Context& context,
+                                    StorageInitialization initialization = StorageInitialization::Zero)
+        : PackedBlockStorageData(make_layout(specs), context, initialization)
     {}
 
     auto size() const noexcept -> std::size_t { return keys_.size(); }
@@ -573,11 +597,13 @@ class PackedBlockStorageData {
     }
 
     /// \brief Allocate storage with the same packed block layout.
-    /// \details Numerical values are unspecified until an operation writes them.
+    /// \details Alignment padding remains zero for either initialization policy.
     /// \return Independent storage retaining the canonical keys and offsets.
-    [[nodiscard]] auto allocate_like() const -> PackedBlockStorageData
+    [[nodiscard]] auto
+    allocate_like(StorageInitialization initialization = StorageInitialization::Zero) const -> PackedBlockStorageData
     {
-      return PackedBlockStorageData(Layout{.keys = keys_, .offsets = offsets_, .block_ends = block_ends_}, buffer_);
+      return PackedBlockStorageData(Layout{.keys = keys_, .offsets = offsets_, .block_ends = block_ends_}, buffer_,
+                                    initialization);
     }
 
   private:
@@ -626,29 +652,44 @@ class PackedBlockStorageData {
       return layout;
     }
 
-    explicit PackedBlockStorageData(Layout layout)
+    explicit PackedBlockStorageData(Layout layout, StorageInitialization initialization)
         : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)), block_ends_(std::move(layout.block_ends)),
-          buffer_(make_packed_storage<LeafStorage, T>(offsets_.back(), offsets_))
+          buffer_(make_packed_storage<LeafStorage, T>(offsets_.back(), offsets_, initialization))
     {
-      if constexpr (BlockAlignment > 1) initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      if constexpr (BlockAlignment > 1)
+      {
+        if (initialization == StorageInitialization::Uninitialized)
+          initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      }
     }
 
-    PackedBlockStorageData(Layout layout, buffer_type const& prototype)
+    PackedBlockStorageData(Layout layout, buffer_type const& prototype, StorageInitialization initialization)
         : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)), block_ends_(std::move(layout.block_ends)),
-          buffer_(make_packed_storage_like<LeafStorage, T>(prototype, offsets_.back(), offsets_))
+          buffer_(make_packed_storage_like<LeafStorage, T>(prototype, offsets_.back(), offsets_, initialization))
     {
-      if constexpr (BlockAlignment > 1) initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      if constexpr (BlockAlignment > 1)
+      {
+        if (initialization == StorageInitialization::Uninitialized)
+          initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      }
     }
 
     template <class Context>
-      requires requires(Context& context, std::size_t size, std::span<std::size_t const> offsets) {
-        { LeafStorage::template make_packed_storage<T>(context, size, offsets) } -> std::same_as<buffer_type>;
+      requires requires(Context& context, std::size_t size, std::span<std::size_t const> offsets,
+                        StorageInitialization initialization) {
+        {
+          LeafStorage::template make_packed_storage<T>(context, size, offsets, initialization)
+        } -> std::same_as<buffer_type>;
       }
-    PackedBlockStorageData(Layout layout, Context& context)
+    PackedBlockStorageData(Layout layout, Context& context, StorageInitialization initialization)
         : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)), block_ends_(std::move(layout.block_ends)),
-          buffer_(LeafStorage::template make_packed_storage<T>(context, offsets_.back(), offsets_))
+          buffer_(LeafStorage::template make_packed_storage<T>(context, offsets_.back(), offsets_, initialization))
     {
-      if constexpr (BlockAlignment > 1) initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      if constexpr (BlockAlignment > 1)
+      {
+        if (initialization == StorageInitialization::Uninitialized)
+          initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
+      }
     }
 
     std::vector<key_type> keys_;
@@ -688,8 +729,9 @@ class PackedDiagonalBlockStorageData {
           { LeafStorage::make_handle(const_buffer) } -> std::same_as<T const*>;
         }, "packed diagonal block storage currently requires immediate contiguous host leaf storage");
 
-    explicit PackedDiagonalBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs)
-        : PackedDiagonalBlockStorageData(make_layout(specs))
+    explicit PackedDiagonalBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                            StorageInitialization initialization = StorageInitialization::Zero)
+        : PackedDiagonalBlockStorageData(make_layout(specs), initialization)
     {}
 
     auto size() const noexcept -> std::size_t { return keys_.size(); }
@@ -775,9 +817,9 @@ class PackedDiagonalBlockStorageData {
       return layout;
     }
 
-    explicit PackedDiagonalBlockStorageData(Layout layout)
+    explicit PackedDiagonalBlockStorageData(Layout layout, StorageInitialization initialization)
         : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)),
-          buffer_(make_storage<LeafStorage, T>(offsets_.back()))
+          buffer_(make_storage<LeafStorage, T>(offsets_.back(), initialization))
     {}
 
     std::vector<key_type> keys_;
@@ -825,14 +867,15 @@ class AsyncSeparateSparseBlockStorageData {
                   "async separate sparse block storage currently requires default-accessor leaf storage");
 
     explicit AsyncSeparateSparseBlockStorageData(
-        std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs)
+        std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+        StorageInitialization initialization = StorageInitialization::Zero)
     {
       keys_.reserve(specs.size());
       blocks_.reserve(specs.size());
       for (auto const& spec : specs)
       {
         keys_.push_back(spec.key);
-        blocks_.emplace_back(make_block_tensor<block_value_type>(spec.extents));
+        blocks_.emplace_back(make_block_tensor<block_value_type>(spec.extents, initialization));
       }
     }
 

@@ -108,6 +108,131 @@ template <class Storage> class CompleteBlockTensorTest : public ::testing::Test 
 using CompleteStorageTypes = ::testing::Types<PackedCompleteBlockStorage<>, ParallelPackedCompleteBlockStorage<>>;
 TYPED_TEST_SUITE(CompleteBlockTensorTest, CompleteStorageTypes);
 
+TYPED_TEST(SparseBlockTensorTest, ShapeConstructionZeroInitializesOnlyStoredBlocks)
+{
+  Symmetry const sym{"N:U(1)"};
+  auto const q0 = QNum::identity(sym);
+  auto const q1 = make_qnum(sym, {{"N", 1}});
+  BlockSpace const space(sym, {{q0, 2}, {q1, 3}});
+  using Tensor = BlockTensor<complex<double>, Domain<BlockSpace>, Codomain<BlockSpace>, TypeParam>;
+  using Key = typename Tensor::key_type;
+  Tensor tensor(sym, Domain{space}, Codomain{space}, {Key{{1, 1}}});
+
+  EXPECT_EQ(tensor.stored_block_count(), 1);
+  EXPECT_FALSE(tensor.contains(Key{{0, 0}}));
+  auto block = tensor.block(Key{{1, 1}});
+  for (index_type row = 0; row < block.extent(0); ++row)
+    for (index_type column = 0; column < block.extent(1); ++column)
+      EXPECT_EQ((block[row, column]), complex<double>{});
+
+  Tensor output(uninitialized, sym, Domain{space}, Codomain{space}, {Key{{1, 1}}});
+  auto output_block = output.block(Key{{1, 1}});
+  for (index_type row = 0; row < output_block.extent(0); ++row)
+    for (index_type column = 0; column < output_block.extent(1); ++column)
+      output_block[row, column] = complex<double>{2.0, -1.0};
+  for (index_type row = 0; row < output_block.extent(0); ++row)
+    for (index_type column = 0; column < output_block.extent(1); ++column)
+      EXPECT_EQ((output_block[row, column]), (complex<double>{2.0, -1.0}));
+}
+
+TYPED_TEST(CompleteBlockTensorTest, ShapeAndAllocateLikeConstructionInitializeZeros)
+{
+  Symmetry const sym{"N:U(1)"};
+  BlockSpace const space(sym, {{QNum::identity(sym), 2}});
+  using Tensor = BlockTensor<double, Domain<BlockSpace>, Codomain<BlockSpace>, TypeParam>;
+  Tensor tensor(sym, Domain{space}, Codomain{space});
+  auto block = tensor.block_by_ordinal(0);
+  for (index_type row = 0; row < 2; ++row)
+    for (index_type column = 0; column < 2; ++column)
+    {
+      EXPECT_DOUBLE_EQ((block[row, column]), 0.0);
+      block[row, column] = 7.0;
+    }
+
+  auto zero = tensor.allocate_like();
+  for (index_type row = 0; row < 2; ++row)
+    for (index_type column = 0; column < 2; ++column)
+      EXPECT_DOUBLE_EQ((zero.block_by_ordinal(0)[row, column]), 0.0);
+
+  auto output = tensor.allocate_like(uninitialized);
+  EXPECT_EQ(output.domain(), tensor.domain());
+  EXPECT_EQ(output.codomain(), tensor.codomain());
+  EXPECT_TRUE(std::ranges::equal(output.stored_keys(), tensor.stored_keys()));
+  for (index_type row = 0; row < 2; ++row)
+    for (index_type column = 0; column < 2; ++column)
+    {
+      output.block_by_ordinal(0)[row, column] = 3.0;
+      EXPECT_DOUBLE_EQ((tensor.block_by_ordinal(0)[row, column]), 7.0);
+    }
+
+  using ScalarTensor = BlockTensor<double, Domain<>, Codomain<>, TypeParam>;
+  ScalarTensor scalar(sym, Domain<>{}, Codomain<>{});
+  EXPECT_DOUBLE_EQ(scalar.block_by_ordinal(0)[], 0.0);
+  ScalarTensor scratch(uninitialized, sym, Domain<>{}, Codomain<>{});
+  scratch.block_by_ordinal(0)[] = 4.0;
+  EXPECT_DOUBLE_EQ(scratch.block_by_ordinal(0)[], 4.0);
+}
+
+namespace
+{
+
+// Record the policy at the allocation boundary without inspecting undefined payload bytes.
+struct InitializationRecordingStorage : HostStorage
+{
+    static inline std::vector<StorageInitialization> allocations;
+
+    template <class T> static auto make_storage(std::size_t size, StorageInitialization initialization) -> HostBuffer<T>
+    {
+      allocations.push_back(initialization);
+      return HostBuffer<T>(size, initialization);
+    }
+
+    template <class T>
+    static auto make_storage_like(HostBuffer<T> const&, std::size_t size,
+                                  StorageInitialization initialization) -> HostBuffer<T>
+    {
+      return make_storage<T>(size, initialization);
+    }
+};
+
+} // namespace
+
+template <class Storage> class BlockInitializationPolicyTest : public ::testing::Test {};
+using InitializationStorageTypes = ::testing::Types<SeparateSparseBlockStorage<InitializationRecordingStorage>,
+                                                    PackedSparseBlockStorage<InitializationRecordingStorage>,
+                                                    PackedDiagonalBlockStorage<InitializationRecordingStorage>,
+                                                    AsyncSeparateSparseBlockStorage<InitializationRecordingStorage>>;
+TYPED_TEST_SUITE(BlockInitializationPolicyTest, InitializationStorageTypes);
+
+TYPED_TEST(BlockInitializationPolicyTest, ExplicitTagReachesTheLeafAllocation)
+{
+  Symmetry const sym{"N:U(1)"};
+  BlockSpace const space(sym, {{QNum::identity(sym), 2}});
+  using Tensor = BlockTensor<double, Domain<BlockSpace>, Codomain<BlockSpace>, TypeParam>;
+  using Key = typename Tensor::key_type;
+  InitializationRecordingStorage::allocations.clear();
+  Tensor zero(sym, Domain{space}, Codomain{space}, {Key{{0, 0}}});
+  EXPECT_EQ(InitializationRecordingStorage::allocations, (std::vector{StorageInitialization::Zero}));
+  InitializationRecordingStorage::allocations.clear();
+  Tensor output(uninitialized, sym, Domain{space}, Codomain{space}, {Key{{0, 0}}});
+  EXPECT_EQ(InitializationRecordingStorage::allocations, (std::vector{StorageInitialization::Uninitialized}));
+}
+
+TEST(BlockTensorTest, PackedAllocateLikeUsesTheRequestedInitializationOnce)
+{
+  Symmetry const sym{"N:U(1)"};
+  BlockSpace const space(sym, {{QNum::identity(sym), 2}});
+  using Tensor = BlockTensor<double, Domain<BlockSpace>, Codomain<BlockSpace>,
+                             PackedCompleteBlockStorage<InitializationRecordingStorage>>;
+  Tensor prototype(sym, Domain{space}, Codomain{space});
+  InitializationRecordingStorage::allocations.clear();
+  auto zero = prototype.allocate_like();
+  EXPECT_EQ(InitializationRecordingStorage::allocations, (std::vector{StorageInitialization::Zero}));
+  InitializationRecordingStorage::allocations.clear();
+  auto output = prototype.allocate_like(uninitialized);
+  EXPECT_EQ(InitializationRecordingStorage::allocations, (std::vector{StorageInitialization::Uninitialized}));
+}
+
 TYPED_TEST(CompleteBlockTensorTest, DerivesCanonicalLegalKeysAndPackedOffsets)
 {
   Symmetry const sym{"N:U(1)"};
@@ -589,6 +714,13 @@ TEST(BlockTensorTest, AlignedPackedStoragePadsBlockStartsWithinOneBuffer)
   EXPECT_TRUE(std::ranges::equal(tensor.storage().block_ends(), std::array<std::size_t, 2>{9, 20}));
   for (std::size_t offset = 9; offset < 16; ++offset)
     EXPECT_DOUBLE_EQ(tensor.storage().buffer().data()[offset], 0.0);
+  Tensor scratch(uninitialized, sym, Domain{rows}, Codomain{columns}, {Key{{0, 0}}, Key{{1, 1}}});
+  auto scratch_copy = scratch.allocate_like(uninitialized);
+  for (std::size_t offset = 9; offset < 16; ++offset)
+  {
+    EXPECT_DOUBLE_EQ(scratch.storage().buffer().data()[offset], 0.0);
+    EXPECT_DOUBLE_EQ(scratch_copy.storage().buffer().data()[offset], 0.0);
+  }
   EXPECT_EQ(reinterpret_cast<std::uintptr_t>(tensor.block_by_ordinal(0).mdspan().data_handle()) % 64, 0);
   EXPECT_EQ(reinterpret_cast<std::uintptr_t>(tensor.block_by_ordinal(1).mdspan().data_handle()) % 64, 0);
 }
@@ -619,6 +751,9 @@ TEST(BlockTensorTest, AsyncSeparateStorageReturnsMdspecWithStableBlockEpochIdent
   EXPECT_THROW(static_cast<void>(tensor.async_block_by_ordinal(1)), std::out_of_range);
 
   auto& block_value = tensor.async_block(key).unsafe_value_ref();
+  for (index_type row = 0; row < 2; ++row)
+    for (index_type column = 0; column < 3; ++column)
+      EXPECT_DOUBLE_EQ((block_value[row, column]), 0.0);
   block_value[1, 2] = 4.5;
   EXPECT_DOUBLE_EQ((std::as_const(tensor).async_block(key).unsafe_value_ref()[1, 2]), 4.5);
 }
@@ -639,6 +774,8 @@ TEST(BlockTensorTest, PackedDiagonalStorageRepresentsRectangularBlocksWithoutStr
   auto values = tensor.diagonal_values(key);
   ASSERT_EQ(values.size(), 2);
   EXPECT_EQ(tensor.storage().buffer().size(), 2);
+  EXPECT_DOUBLE_EQ(values[0], 0.0);
+  EXPECT_DOUBLE_EQ(values[1], 0.0);
   values[0] = 2.0;
   values[1] = -3.0;
 

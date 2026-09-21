@@ -204,16 +204,18 @@ template <class MatrixTensor> consteval bool can_transfer_svd_storage()
     return matrix_type::extents_type::rank_dynamic() == 2 &&
            std::same_as<typename matrix_type::storage_policy, uni20::HostStorage> &&
            std::same_as<typename matrix_type::accessor_factory_type, uni20::DefaultAccessorFactory> &&
-           uni20::DefaultAccessorMdspanLike<uni20::mutable_immediate_tensor_mdspan_t<matrix_type>>&&
-             requires(matrix_type & matrix, typename factor_type::mapping_type mapping,
-                      typename factor_type::storage_type storage,
-                      typename factor_type::accessor_factory_type accessor_factory)
-    {
-      {std::move(matrix).release_storage()}->std::same_as<typename factor_type::storage_type>;
-      {std::move(matrix).release_accessor_factory()}->std::same_as<typename factor_type::accessor_factory_type>;
-      {factor_type::adopt_storage(std::move(mapping), std::move(storage), std::move(accessor_factory))}
-          ->std::same_as<factor_type>;
-    };
+           uni20::DefaultAccessorMdspanLike<uni20::mutable_immediate_tensor_mdspan_t<matrix_type>> &&
+           requires(matrix_type& matrix, typename factor_type::mapping_type mapping,
+                    typename factor_type::storage_type storage,
+                    typename factor_type::accessor_factory_type accessor_factory) {
+             { std::move(matrix).release_storage() } -> std::same_as<typename factor_type::storage_type>;
+             {
+               std::move(matrix).release_accessor_factory()
+             } -> std::same_as<typename factor_type::accessor_factory_type>;
+             {
+               factor_type::adopt_storage(std::move(mapping), std::move(storage), std::move(accessor_factory))
+             } -> std::same_as<factor_type>;
+           };
   }
   else
   {
@@ -225,7 +227,7 @@ template <class FactorTensor> [[nodiscard]] FactorTensor make_svd_factor(std::si
 {
   using index_type = typename FactorTensor::index_type;
   using extents_type = typename FactorTensor::extents_type;
-  return FactorTensor(extents_type{static_cast<index_type>(rows), static_cast<index_type>(cols)},
+  return FactorTensor(uni20::uninitialized, extents_type{static_cast<index_type>(rows), static_cast<index_type>(cols)},
                       uni20::layout::LayoutLeft{});
 }
 
@@ -265,6 +267,7 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
 [[nodiscard]] auto singular_values_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work)
 {
   svd_value_tensor_t<MatrixTensor> values(
+      uni20::uninitialized,
       svd_value_extents{static_cast<uni20::index_type>(std::min(matrix_work.extent(0), matrix_work.extent(1)))});
   dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix_work);
   return values;
@@ -279,8 +282,8 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
   std::size_t const cols = static_cast<std::size_t>(matrix_work.extent(1));
   std::size_t const rank = std::min(rows, cols);
   std::size_t const left_cols = extent == SvdVectorExtent::Full ? rows : rank;
-  svd_matrix_tensor_t<MatrixTensor> left(rows, left_cols);
-  svd_value_tensor_t<MatrixTensor> values(rank);
+  svd_matrix_tensor_t<MatrixTensor> left(uni20::uninitialized, rows, left_cols);
+  svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, rank);
   dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix_work);
   return SvdLeftResult<decltype(left), decltype(values)>{.left_singular_vectors = std::move(left),
                                                          .singular_values = std::move(values)};
@@ -295,8 +298,8 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
   std::size_t const cols = static_cast<std::size_t>(matrix_work.extent(1));
   std::size_t const rank = std::min(rows, cols);
   std::size_t const right_rows = extent == SvdVectorExtent::Full ? cols : rank;
-  svd_value_tensor_t<MatrixTensor> values(rank);
-  svd_matrix_tensor_t<MatrixTensor> right(right_rows, cols);
+  svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, rank);
+  svd_matrix_tensor_t<MatrixTensor> right(uni20::uninitialized, right_rows, cols);
   dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right,
                      matrix_work);
   return SvdRightResult<decltype(values), decltype(right)>{.singular_values = std::move(values),
@@ -353,7 +356,7 @@ template <class BackendSelector, class MatrixTensor>
   {
     if (direct_column_major_svd_stage(matrix))
     {
-      svd_value_tensor_t<MatrixTensor> values(std::min(matrix.extent(0), matrix.extent(1)));
+      svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, std::min(matrix.extent(0), matrix.extent(1)));
       dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix);
       return values;
     }
@@ -374,7 +377,7 @@ template <class BackendSelector, class MatrixTensor>
   std::size_t const cols = static_cast<std::size_t>(matrix.extent(1));
   std::size_t const rank = std::min(rows, cols);
   std::size_t const left_cols = extent == SvdVectorExtent::Full ? rows : rank;
-  value_type values(rank);
+  value_type values(uni20::uninitialized, rank);
 
   auto stage = direct_column_major_svd_stage(matrix);
   if (stage)
@@ -419,7 +422,7 @@ template <class BackendSelector, class MatrixTensor>
   std::size_t const cols = static_cast<std::size_t>(matrix.extent(1));
   std::size_t const rank = std::min(rows, cols);
   std::size_t const right_rows = extent == SvdVectorExtent::Full ? cols : rank;
-  value_type values(rank);
+  value_type values(uni20::uninitialized, rank);
 
   auto stage = direct_column_major_svd_stage(matrix);
   if (stage)
@@ -465,7 +468,7 @@ template <class BackendSelector, class MatrixTensor>
   std::size_t const rank = std::min(rows, cols);
   std::size_t const left_cols = options.left == SvdVectorExtent::Full ? rows : rank;
   std::size_t const right_rows = options.right == SvdVectorExtent::Full ? cols : rank;
-  value_type values(rank);
+  value_type values(uni20::uninitialized, rank);
   factor_type left;
   factor_type right;
 

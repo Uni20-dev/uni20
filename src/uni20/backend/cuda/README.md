@@ -11,6 +11,8 @@ implemented under `src/uni20/async/`.
 
 - `cuda_error.hpp`: structured CUDA runtime failures and checked-call helpers.
 - `cuda_error_presentation.hpp`: presentation-layer rendering for CUDA failures.
+- `initialization.hpp`: stream-ordered exact scalar-representation filling used
+  by `CudaStorage` for diagnostic signaling NaNs.
 - `device.hpp`: validated device identities and process-wide immutable hardware
   capability caching.
 - `buffer.hpp`: typed move-only logical device buffers and scoped read/write

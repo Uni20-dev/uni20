@@ -5,7 +5,8 @@ add_test_module(tensor
     test_tensor.cpp
     test_tensor_conjugate.cpp
     test_tensor_output.cpp
-  LIBS uni20_common uni20_core
+    test_tensor_initialization.cpp
+  LIBS uni20_common uni20_core uni20_linalg
 )
 
 add_test_module(tensor_async

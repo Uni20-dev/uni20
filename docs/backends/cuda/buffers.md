@@ -47,6 +47,9 @@ The allocation uses CUDA's stream-ordered memory pool when the device supports
 it, with `cudaMalloc` as the fallback. `CudaBuffer<T>` is move-only. Direct
 construction from an explicit `DeviceResources&` selects another enrolled
 device or an isolated resource set used by tests.
+Raw `CudaBuffer` construction allocates storage without numerical
+initialization. Tensor initialization is selected by `CudaStorage` above this
+allocation primitive.
 
 Each device resource set also owns a dedicated allocation-reclamation stream.
 Destroying a buffer transfers its outstanding completion events to the shared
@@ -88,7 +91,37 @@ children.
 #include <uni20/tensor/tensor.hpp>
 
 uni20::CudaTensor<float, 2> matrix(32, 48);
+uni20::CudaTensor<float, 2> output(uni20::uninitialized, 32, 48);
 ```
+
+Ordinary shape construction initializes every element to numerical zero.
+For nonempty allocations, CUDA zero initialization accepts native arithmetic
+types, the configured `uni20::float128` when present, and their `uni20::complex` counterparts, whose
+zero representations are known to contain only zero bytes. Other element
+types are rejected with `std::invalid_argument`; CUDA storage does not execute
+arbitrary host default constructors. Host tensors can value-initialize
+nonnumeric elements with `T{}`. Such elements can still use explicitly
+uninitialized CUDA storage or raw `CudaBuffer` allocation, with their contents
+supplied by an appropriate device operation or transfer.
+The `uninitialized` form requires a value to be written before it is read.
+When `UNI20_FILL_UNINITIALIZED_SNAN` is enabled, uninitialized `float`, `double`,
+and their complex counterparts receive signaling NaNs for diagnostics. Both
+complex components receive the exact signaling-NaN representation through a
+device byte-pattern kernel, without a floating-point conversion or host
+staging allocation. Other scalar types do not receive a diagnostic NaN fill.
+
+Initialization is submitted through a synchronized write guard on an acquired
+stream. Its completion is published to the same buffer ledger used by later
+operations, including operations on other streams. Initialization does not
+perform a device-wide synchronization; acquiring a stream may wait for an
+available pool slot. Packed tensor initialization publishes the completion to
+each child buffer, and alignment padding remains zero even for uninitialized
+payloads.
+
+Host MSan and Memcheck do not track initialization through GPU execution.
+For device initialization checking, run NVIDIA Compute Sanitizer's `initcheck`
+with `UNI20_FILL_UNINITIALIZED_SNAN=OFF`: filling with diagnostic values would
+otherwise define those bytes to the device checker.
 
 The Tensor owns a `CudaBuffer<float>` and preserves ordinary extents and layout
 metadata. Its unresolved mdspec contains a non-owning

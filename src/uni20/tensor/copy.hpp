@@ -33,7 +33,7 @@ template <class RequestedLayout = void, class BackendSelector, MdspanLike InputM
   using result_type =
       Tensor<std::remove_cv_t<typename input_type::element_type>, input_type::rank(), HostStorage, layout_type>;
 
-  result_type result(convert_tensor_extents<typename result_type::extents_type>(input.extents()));
+  result_type result(uninitialized, convert_tensor_extents<typename result_type::extents_type>(input.extents()));
   auto output_span = result.mdspan();
   copy(std::forward<BackendSelector>(selector), output_span, std::forward<InputMdspan>(input));
   return result;
@@ -67,7 +67,7 @@ template <TensorView InputTensor>
   using layout_type = typename input_mdspan::layout_type;
   using result_type = Tensor<tensor_element_t<InputTensor>, input_mdspan::rank(), HostStorage, layout_type>;
 
-  result_type result(convert_tensor_extents<typename result_type::extents_type>(input.extents()));
+  result_type result(uninitialized, convert_tensor_extents<typename result_type::extents_type>(input.extents()));
   copy(result, input);
   return result;
 }
@@ -84,7 +84,8 @@ template <TensorView InputTensor>
   using layout_type = typename input_mdspan::layout_type;
   using result_type = Tensor<tensor_element_t<InputTensor>, input_mdspan::rank(), CudaStorage, layout_type>;
 
-  result_type result(resources, convert_tensor_extents<typename result_type::extents_type>(input.extents()));
+  result_type result(uninitialized, resources,
+                     convert_tensor_extents<typename result_type::extents_type>(input.extents()));
   copy(result, input);
   return result;
 }

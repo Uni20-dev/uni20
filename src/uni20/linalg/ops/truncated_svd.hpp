@@ -235,9 +235,9 @@ template <class ExactResult>
   auto const rows = exact.left_singular_vectors.extent(0);
   auto const cols = exact.right_singular_vectors_adjoint.extent(1);
 
-  uni20::Tensor<scalar_type, 2> left_singular_vectors(rows, retained_rank);
-  uni20::Tensor<real_type, 1> singular_values(retained_rank);
-  uni20::Tensor<scalar_type, 2> right_singular_vectors_adjoint(retained_rank, cols);
+  uni20::Tensor<scalar_type, 2> left_singular_vectors(uni20::uninitialized, rows, retained_rank);
+  uni20::Tensor<real_type, 1> singular_values(uni20::uninitialized, retained_rank);
+  uni20::Tensor<scalar_type, 2> right_singular_vectors_adjoint(uni20::uninitialized, retained_rank, cols);
 
   for (uni20::index_type column = 0; column < retained_rank; ++column)
   {

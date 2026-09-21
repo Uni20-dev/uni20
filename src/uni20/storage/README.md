@@ -6,8 +6,8 @@ backend tags without owning tensor mathematics.
 
 ## Contents
 
-- `host_storage.hpp`: aligned pageable-host storage with uninitialized scalar
-  allocation and the default CPU backend list.
+- `host_storage.hpp`: aligned pageable-host storage with explicit numerical initialization
+  at allocation and the default CPU backend list.
 - `generated_storage.hpp`: compact backend-neutral policy for read-only values
   calculated by an accessor instead of stored element-by-element.
 - `cuda_accessor.hpp`: CUDA-device-callable pointer accessors, complex
@@ -17,10 +17,20 @@ backend tags without owning tensor mathematics.
 
 ## Notes
 
+- Owning tensor constructors request `StorageInitialization::Zero` by default;
+  tag-first `uninitialized` constructors request `Uninitialized`. Storage
+  implementations perform the requested initialization in their memory domain.
+  Raw allocation itself remains separate from numerical initialization.
+- Host uninitialized allocation optionally fills supported scalar values with
+  signalling NaNs, then marks the payload undefined to enabled memory tools.
+  Nontrivial objects retain their construction/destruction requirements.
+- Packed alignment padding remains zero and defined, even when block payloads
+  are explicitly uninitialized.
+
 - New storage policies should make immediate-handle or deferred-descriptor
   creation, layout defaults, and default backend selection explicit.
 - Context-capable policies provide `context_type`, `make_storage(context,
-  size)`, and `make_storage_like(storage, size)`. `CudaStorage` ordinarily
+  size, initialization)`, and `make_storage_like(storage, size, initialization)`. `CudaStorage` ordinarily
   resolves the installed runtime's default `DeviceResources`; an explicit
   resource set selects another enrolled device or an isolated test setup.
   Shape replacement preserves the original resources.

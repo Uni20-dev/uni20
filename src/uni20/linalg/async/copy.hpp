@@ -57,14 +57,17 @@ template <AsyncTensorOutput OutputTensor, TensorView InputTensor>
   auto const extents = convert_tensor_extents<extents_type>(input.extents());
   if constexpr (std::constructible_from<OutputTensor, extents_type const&>)
   {
-    return storage.emplace(extents);
+    if constexpr (std::constructible_from<OutputTensor, uninitialized_t, extents_type const&>)
+      return storage.emplace(uninitialized, extents);
+    else
+      return storage.emplace(extents);
   }
 #if UNI20_BACKEND_CUDA
   else if constexpr (std::same_as<tensor_storage_policy_t<OutputTensor>, CudaStorage> &&
                      cuda::BufferMdspec<tensor_mdspec_t<InputTensor>>)
   {
     auto input_descriptor = mdspec_of(input);
-    return storage.emplace(cuda_copy_resources(input_descriptor), extents);
+    return storage.emplace(uninitialized, cuda_copy_resources(input_descriptor), extents);
   }
 #endif
   else

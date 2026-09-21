@@ -1190,13 +1190,14 @@ auto make_left_singular_vectors(Decomposition const& decomposition, BlockSvdSele
 
   auto result = [&] {
     if constexpr (requires {
-                    output_type(decomposition.symmetry(), Domain{plan.bond_space}, decomposition.codomain(), keys,
-                                decomposition.allocation_context());
+                    output_type(uninitialized, decomposition.symmetry(), Domain{plan.bond_space},
+                                decomposition.codomain(), keys, decomposition.allocation_context());
                   })
-      return output_type(decomposition.symmetry(), Domain{plan.bond_space}, decomposition.codomain(), std::move(keys),
-                         decomposition.allocation_context());
+      return output_type(uninitialized, decomposition.symmetry(), Domain{plan.bond_space}, decomposition.codomain(),
+                         std::move(keys), decomposition.allocation_context());
     else
-      return output_type(decomposition.symmetry(), Domain{plan.bond_space}, decomposition.codomain(), std::move(keys));
+      return output_type(uninitialized, decomposition.symmetry(), Domain{plan.bond_space}, decomposition.codomain(),
+                         std::move(keys));
   }();
   for (std::size_t sector = 0; sector < decomposition.sectors().size(); ++sector)
   {
@@ -1289,13 +1290,14 @@ auto make_right_singular_vectors_adjoint(Decomposition const& decomposition,
 
   auto result = [&] {
     if constexpr (requires {
-                    output_type(decomposition.symmetry(), decomposition.domain(), Codomain{plan.bond_space}, keys,
-                                decomposition.allocation_context());
+                    output_type(uninitialized, decomposition.symmetry(), decomposition.domain(),
+                                Codomain{plan.bond_space}, keys, decomposition.allocation_context());
                   })
-      return output_type(decomposition.symmetry(), decomposition.domain(), Codomain{plan.bond_space}, std::move(keys),
-                         decomposition.allocation_context());
+      return output_type(uninitialized, decomposition.symmetry(), decomposition.domain(), Codomain{plan.bond_space},
+                         std::move(keys), decomposition.allocation_context());
     else
-      return output_type(decomposition.symmetry(), decomposition.domain(), Codomain{plan.bond_space}, std::move(keys));
+      return output_type(uninitialized, decomposition.symmetry(), decomposition.domain(), Codomain{plan.bond_space},
+                         std::move(keys));
   }();
   for (std::size_t sector = 0; sector < decomposition.sectors().size(); ++sector)
   {
@@ -1377,7 +1379,8 @@ auto make_block_singular_values(Decomposition const& decomposition, BlockSvdSele
     keys.emplace_back(std::array<std::size_t, 2>{*plan.bond_coordinates[sector], *plan.bond_coordinates[sector]});
   }
 
-  output_type result(decomposition.symmetry(), Domain{plan.bond_space}, Codomain{plan.bond_space}, std::move(keys));
+  output_type result(uninitialized, decomposition.symmetry(), Domain{plan.bond_space}, Codomain{plan.bond_space},
+                     std::move(keys));
   for (std::size_t sector = 0; sector < decomposition.sectors().size(); ++sector)
   {
     if (!plan.bond_coordinates[sector]) continue;
