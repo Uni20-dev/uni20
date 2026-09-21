@@ -4,6 +4,7 @@ This directory contains repository process, build metadata, test, review, and
 documentation tooling guides.
 
 - [Testing](testing.md)
+- [Using Uni20 from another CMake project](cmake_consumers.md)
 - [Reviewing Changes](code_review.md)
 - [Agent-Assisted Development](agent_assisted_development.md)
 - [Doxygen](doxygen.md)

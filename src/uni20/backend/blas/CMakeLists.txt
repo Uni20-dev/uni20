@@ -1,10 +1,8 @@
 
 message(STATUS "Using BLA_VENDOR = ${BLA_VENDOR} (from UNI20_BLAS_VENDOR)")
 
-find_package(BLAS REQUIRED)
-
-if(NOT BLAS_FOUND)
-  message(FATAL_ERROR "BLAS not found.")
+if(NOT TARGET BLAS::BLAS)
+  find_package(BLAS REQUIRED)
 endif()
 
 include(DetectBlasVendor)
@@ -16,11 +14,9 @@ if(TARGET BLAS::BLAS)
   target_link_libraries(uni20_interface_blas INTERFACE BLAS::BLAS)
 else()
   target_link_libraries(uni20_interface_blas INTERFACE ${BLAS_LIBRARIES})
-endif()
-
-# If FindBLAS sets BLAS_LINKER_FLAGS, attach them to link options:
-if(BLAS_LINKER_FLAGS)
-  target_link_options(uni20_interface_blas INTERFACE ${BLAS_LINKER_FLAGS})
+  if(BLAS_LINKER_FLAGS)
+    target_link_options(uni20_interface_blas INTERFACE ${BLAS_LINKER_FLAGS})
+  endif()
 endif()
 
 add_library(uni20_backend_blas STATIC

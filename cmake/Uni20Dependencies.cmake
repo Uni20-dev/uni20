@@ -8,13 +8,15 @@
 #                        REPO <git-url>
 #                        TAG <git-tag>
 #                        [COMPONENTS <comp1;comp2>]
-#                        [SETTINGS <key1=value1;key2=value2>])
+#                        [SETTINGS <key1=value1;key2=value2>]
+#                        [DEFAULTS <key1=value1;key2=value2>])
 #
 # Behavior:
 #   1. UNI20_USE_SYSTEM_<NAME>=AUTO (default): try system package, then fetch.
 #   2. UNI20_USE_SYSTEM_<NAME>=ON: require a system package (fail if missing).
 #   3. UNI20_USE_SYSTEM_<NAME>=OFF: skip system package lookup and fetch.
-#   4. Apply optional SETTINGS before FetchContent_MakeAvailable().
+#   4. Apply DEFAULTS only for undefined variables, then required SETTINGS,
+#      before FetchContent_MakeAvailable(). Both are scoped to the dependency.
 #   5. Exports two cache variables:
 #        UNI20_<NAME>_SOURCE  ("system" | "fetched")
 #        UNI20_<NAME>_TARGET  (<imported target name>)
@@ -42,10 +44,9 @@ function(_uni20_is_internal_path input_path output_var)
   if(input_path)
     file(TO_CMAKE_PATH "${input_path}" _candidate_path)
     foreach(_root IN ITEMS
-            "${FETCHCONTENT_BASE_DIR}"
+            "${UNI20_FETCHCONTENT_BASE_DIR}"
             "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}"
-            "${CMAKE_BINARY_DIR}"
-            "${CMAKE_SOURCE_DIR}/.cmake/third_party")
+            "${PROJECT_SOURCE_DIR}/.cmake/third_party")
       if(NOT _root)
         continue()
       endif()
@@ -59,12 +60,6 @@ function(_uni20_is_internal_path input_path output_var)
         endif()
       endif()
     endforeach()
-
-    if(NOT _is_internal)
-      if(_candidate_path MATCHES "/(_deps|\\.cmake/third_party)/")
-        set(_is_internal TRUE)
-      endif()
-    endif()
   endif()
 
   set(${output_var} "${_is_internal}" PARENT_SCOPE)
@@ -147,7 +142,7 @@ function(uni20_dependency_option option_var dependency_label default_value)
 endfunction()
 
 function(uni20_add_dependency)
-  cmake_parse_arguments(DEP "" "NAME;VERSION;TARGET;REPO;TAG" "COMPONENTS;SETTINGS" ${ARGN})
+  cmake_parse_arguments(DEP "" "NAME;VERSION;TARGET;REPO;TAG" "COMPONENTS;SETTINGS;DEFAULTS" ${ARGN})
 
   if(NOT DEP_NAME)
     message(FATAL_ERROR "uni20_add_dependency() requires NAME parameter")
@@ -344,6 +339,16 @@ function(uni20_add_dependency)
       endif()
     endif()
 
+    # Optional dependency features belong to the parent when explicitly set.
+    foreach(setting IN LISTS DEP_DEFAULTS)
+      if(NOT setting MATCHES "^([^:=]+)(:([^=]+))?=(.*)$")
+        message(FATAL_ERROR "Invalid DEFAULTS entry '${setting}' for ${DEP_NAME}; expected VAR=VALUE or VAR:TYPE=VALUE")
+      endif()
+      if(NOT DEFINED ${CMAKE_MATCH_1})
+        set(${CMAKE_MATCH_1} "${CMAKE_MATCH_4}")
+      endif()
+    endforeach()
+
     if(DEP_SETTINGS)
       foreach(setting IN LISTS DEP_SETTINGS)
         if(NOT setting MATCHES "^([^:=]+)(:([^=]+))?=(.*)$")
@@ -351,20 +356,12 @@ function(uni20_add_dependency)
         endif()
 
         set(var "${CMAKE_MATCH_1}")
-        set(type "${CMAKE_MATCH_3}")
         set(value "${CMAKE_MATCH_4}")
 
-        if(NOT type)
-          string(TOUPPER "${value}" value_upper)
-          if(value_upper STREQUAL "ON" OR value_upper STREQUAL "OFF"
-             OR value_upper STREQUAL "TRUE" OR value_upper STREQUAL "FALSE")
-            set(type BOOL)
-          else()
-            set(type STRING)
-          endif()
-        endif()
-
-        set(${var} "${value}" CACHE ${type} "Auto-configured by uni20_add_dependency(${DEP_NAME})" FORCE)
+        # Apply Uni20's dependency settings only inside this function and its
+        # fetched subdirectory; the parent may use the same package elsewhere.
+        # Optional :TYPE annotations remain accepted but no cache is written.
+        set(${var} "${value}")
       endforeach()
     endif()
 

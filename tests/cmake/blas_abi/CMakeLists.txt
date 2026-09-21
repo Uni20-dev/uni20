@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.24)
+project(blas_abi_contract LANGUAGES NONE)
+include("${UNI20_SOURCE_DIR}/cmake/Uni20BlasAbi.cmake")
+add_library(${provider}::${provider} INTERFACE IMPORTED)
+if(NOT declaration STREQUAL "missing")
+  set(BLA_SIZEOF_INTEGER "${declaration}")
+endif()
+uni20_validate_parent_blas_abi(${required_bytes})

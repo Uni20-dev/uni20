@@ -19,6 +19,7 @@ Current test modules include:
 - `tests/async`
 - `tests/backend`
 - `tests/common`
+- `tests/cmake` (downstream configure, build, and execution regressions)
 - `tests/core`
 - `tests/kernel`
 - `tests/krylov`
@@ -34,6 +35,9 @@ probes when `UNI20_ENABLE_MPLAPACK=ON`.
 ## Configuration Options
 
 Primary CMake options:
+
+The `ON` defaults below apply to standalone builds. Tests, combined tests, and
+Python bindings default to `OFF` when Uni20 is embedded in another project.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -110,6 +114,43 @@ uni20 supports both modes:
 When both modes are enabled, CTest registers the per-module executables discovered via `gtest_discover_tests(...)`. The combined `uni20_tests` binary is built for manual runs, but it is not registered with CTest by default.
 
 ## Adding New Tests
+
+### CMake integration tests
+
+Run `ctest --test-dir build --output-on-failure -R '^CMakeSubproject\.'` to
+configure, build, and execute small parent projects using `add_subdirectory`
+and FetchContent. The consumers deliberately request C++17, own common helper
+target names, and check that Uni20 preserves their settings. Their linked
+Uni20 targets must supply C++23, generated headers, and transitive libraries.
+Additional checks cover parent-owned package hints and shared dependency
+options. ABI contract checks accept matching 4/8-byte declarations and reject
+missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
+LAPACK targets. An embedded consumer reuses real parent LP64 targets, calls BLAS
+and LAPACK, and verifies that the provider targets remain unchanged; another
+checks ABI rejection before Uni20 changes its local discovery hints.
+Synthetic imported targets additionally check reuse with package discovery
+disabled, both with and without the BLAS backend. They deliberately supply
+unrelated package variables to detect accidental reuse of stale link flags or
+vendor metadata. A dependency export containing multiple include directories
+inside a generator expression checks that warning handling preserves valid
+install exports, as required by fetched MPLAPACK.
+On Unix with a Python interpreter, recording stand-ins execute the
+documentation and formatting target commands and validate their arguments
+without rewriting the source checkout. When Python bindings are enabled in the
+outer build, an embedded consumer builds the extension and runs its Python
+tests from the parent build root, also checking fetched GoogleMock population.
+When the outer build uses an
+installed MPLAPACK package, the consumers also compile and execute binary128
+arithmetic and a BLAS call. Fetched MPLAPACK builds use ordinary precision in
+these nested checks to avoid repeatedly compiling the full provider;
+the main test suite covers their binary128 operations.
+
+These tests reuse the outer build's dependency source locations or package
+paths and generator platform, toolset, and instance settings, with separate
+build directories under `tests/cmake`. They register
+directly with CTest because they test CMake integration rather than C++ units.
+
+### C++ unit tests
 
 1. Add the source file in the appropriate `tests/<module>/` directory.
 2. Add it to that module’s `tests/<module>/CMakeLists.txt` via `add_test_module(...)`.

@@ -1,5 +1,19 @@
 # src/uni20/CMakeLists.txt
 
+# Validate existing provider targets before replacing the parent's discovery
+# hint. LAPACK also consumes BLAS, even with UNI20_BACKEND_BLAS disabled.
+if(UNI20_ILP64)
+  set(_uni20_blas_integer_bytes 8)
+else()
+  set(_uni20_blas_integer_bytes 4)
+endif()
+include(Uni20BlasAbi)
+if(NOT UNI20_DOCS_WEB)
+  uni20_validate_parent_blas_abi(${_uni20_blas_integer_bytes})
+endif()
+# Keep discovery and generated headers consistent in Uni20's directory scope.
+set(BLA_SIZEOF_INTEGER ${_uni20_blas_integer_bytes})
+
 # Build the definitions string for submodule tracing for the config.hpp file
 set(TRACE_MODULE_DEFINITIONS "")
 foreach(module IN LISTS SUBMODULES)
@@ -48,14 +62,6 @@ if(NOT UNI20_BACKEND_BLAS OR NOT DEFINED UNI20_DETECTED_BLAS_VENDOR_MACRO OR
    UNI20_DETECTED_BLAS_VENDOR_MACRO STREQUAL "")
   set(UNI20_DETECTED_BLAS_VENDOR_MACRO "UNI20_BLAS_VENDOR_NONE")
 endif()
-if(NOT UNI20_BACKEND_BLAS OR NOT DEFINED BLA_SIZEOF_INTEGER OR BLA_SIZEOF_INTEGER STREQUAL "")
-  if(UNI20_ILP64)
-    set(BLA_SIZEOF_INTEGER 8)
-  else()
-    set(BLA_SIZEOF_INTEGER 4)
-  endif()
-endif()
-
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src/uni20")
 configure_file(
   config.hpp.in

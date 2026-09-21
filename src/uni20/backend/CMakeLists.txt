@@ -7,16 +7,10 @@ if(UNI20_DOCS_WEB)
   return()
 endif()
 
-if(UNI20_ILP64)
-  set(BLA_SIZEOF_INTEGER 8 CACHE INTERNAL "BLAS integer size (8 bytes for ILP64)")
-else()
-  set(BLA_SIZEOF_INTEGER 4 CACHE INTERNAL "BLAS integer size (4 bytes for LP64)")
-endif()
-
 if(UNI20_BLAS_VENDOR STREQUAL "")
   set(UNI20_BLAS_VENDOR "All" CACHE STRING "BLAS vendor hint passed to FindBLAS as BLA_VENDOR" FORCE)
 endif()
-set(BLA_VENDOR "${UNI20_BLAS_VENDOR}" CACHE STRING "BLAS vendor hint used by FindBLAS" FORCE)
+set(BLA_VENDOR "${UNI20_BLAS_VENDOR}")
 
 message(STATUS "UNI20_ILP64 is set to: ${UNI20_ILP64}")
 message(STATUS "Using BLA_SIZEOF_INTEGER = ${BLA_SIZEOF_INTEGER}")

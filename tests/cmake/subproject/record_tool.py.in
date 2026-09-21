@@ -1,0 +1,23 @@
+#!@Python3_EXECUTABLE@
+"""Validate generated developer commands without mutating source files."""
+from pathlib import Path
+import sys
+import shlex
+
+root = Path("@UNI20_SOURCE_DIR@").resolve()
+build = Path("@CMAKE_CURRENT_BINARY_DIR@").resolve()
+args = sys.argv[1:]
+if args and args[0] == "-i":
+    paths = [Path(arg).resolve() for arg in args[1:]]
+    assert paths and root / "src/uni20/uni20.cpp" in paths
+    assert all(path.is_file() and path.is_relative_to(root) for path in paths)
+    (build / "formatter-invoked").write_text("ok")
+else:
+    assert len(args) == 1
+    doxyfile = Path(args[0]).resolve()
+    assert doxyfile.is_file() and doxyfile.is_relative_to(build)
+    mainpage = next(line.split("=", 1)[1] for line in doxyfile.read_text().splitlines()
+                    if line.startswith("USE_MDFILE_AS_MAINPAGE"))
+    assert Path(shlex.split(mainpage)[0]).resolve() == root / "docs/mainpage.md"
+    assert Path.cwd() == doxyfile.parent.parent
+    (build / "doxygen-invoked").write_text("ok")
