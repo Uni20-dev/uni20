@@ -2,7 +2,7 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(FetchContent)
 set(UNI20_SUBPROJECT_TEST_ARGS "")
-foreach(dependency IN ITEMS fmt mdspan TBB)
+foreach(dependency IN ITEMS fmt mdspan TBB GTest nanobind)
   unset(dependency_source)
   FetchContent_GetProperties(${dependency} SOURCE_DIR dependency_source)
   if(dependency_source)
@@ -30,6 +30,11 @@ else()
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)
+add_test(NAME CMakeSubproject.dependency_ownership
+  COMMAND "${CMAKE_COMMAND}" --fresh
+    -S "${CMAKE_CURRENT_SOURCE_DIR}/dependency_ownership"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/dependency_ownership"
+    "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}")
 foreach(mode IN ITEMS subdirectory fetchcontent)
   add_test(NAME CMakeSubproject.${mode}
     COMMAND "${CMAKE_COMMAND}" "-Dmode=${mode}" "-Dconfig=$<CONFIG>"
@@ -37,11 +42,16 @@ foreach(mode IN ITEMS subdirectory fetchcontent)
   set_tests_properties(CMakeSubproject.${mode} PROPERTIES LABELS cmake TIMEOUT 300)
 endforeach()
 
-find_package(Doxygen QUIET)
-find_program(UNI20_TEST_CLANG_FORMAT clang-format)
-if(DOXYGEN_FOUND AND UNI20_TEST_CLANG_FORMAT)
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(UNIX AND Python3_Interpreter_FOUND)
   add_test(NAME CMakeSubproject.developer_targets
     COMMAND "${CMAKE_COMMAND}" -Dmode=subdirectory -Ddeveloper_targets=ON
       "-Dconfig=$<CONFIG>" -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")
   set_tests_properties(CMakeSubproject.developer_targets PROPERTIES LABELS cmake TIMEOUT 300)
+endif()
+if(UNI20_BUILD_PYTHON)
+  add_test(NAME CMakeSubproject.python
+    COMMAND "${CMAKE_COMMAND}" -Dmode=subdirectory -Dpython_tests=ON
+      "-Dconfig=$<CONFIG>" -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")
+  set_tests_properties(CMakeSubproject.python PROPERTIES LABELS cmake TIMEOUT 600)
 endif()

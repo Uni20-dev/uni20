@@ -230,13 +230,12 @@ endif()
 
 if(NOT UNI20_BUILD_EXTERNAL_TESTS)
   # Directory-scoped settings must not overwrite a consuming project's cache.
-  set(FMT_TEST OFF)
-  set(BENCHMARK_ENABLE_TESTING OFF)
-  set(TBB_TEST OFF)
-  set(TBB_BUILD_TESTS OFF)
-  set(BUILD_GMOCK OFF)
-  set(BUILD_GTEST OFF)
-  set(INSTALL_GTEST OFF)
+  foreach(_uni20_dependency_option IN ITEMS FMT_TEST BENCHMARK_ENABLE_TESTING
+      TBB_TEST TBB_BUILD_TESTS BUILD_GMOCK BUILD_GTEST INSTALL_GTEST)
+    if(NOT DEFINED ${_uni20_dependency_option})
+      set(${_uni20_dependency_option} OFF)
+    endif()
+  endforeach()
 endif()
 
 if(UNI20_ENABLE_WARNINGS)
@@ -457,13 +456,14 @@ if(NOT UNI20_DOCS_WEB)
       SETTINGS
         "MPLAPACK_CXX_STANDARD=23"
         "MPLAPACK_CXX_EXTENSIONS=ON"
+        "MPLAPACK_ENABLE_BINARY128=ON"
+      DEFAULTS
         "MPLAPACK_ENABLE_DOUBLE=OFF"
         "MPLAPACK_ENABLE_MPFR=OFF"
         "MPLAPACK_ENABLE_GMP=OFF"
         "MPLAPACK_ENABLE_QD=OFF"
         "MPLAPACK_ENABLE_DD=OFF"
         "MPLAPACK_ENABLE_BINARY80=OFF"
-        "MPLAPACK_ENABLE_BINARY128=ON"
         "MPLAPACK_ENABLE_OPT=OFF"
         "MPLAPACK_ENABLE_CUDA=OFF"
         "MPLAPACK_ENABLE_OPENCL=OFF"
@@ -586,7 +586,7 @@ if(NOT UNI20_DOCS_WEB)
     REPO https://github.com/uxlfoundation/oneTBB
     TAG v2022.3.0
     COMPONENTS tbb
-    SETTINGS
+    DEFAULTS
       "TBB_TEST=OFF"
       "TBB_BUILD_TESTS=OFF"
   )
@@ -635,10 +635,11 @@ if(NOT UNI20_DOCS_WEB)
       TARGET benchmark::benchmark
       REPO https://github.com/google/benchmark.git
       TAG v1.9.0
-      SETTINGS
+      DEFAULTS
         "BENCHMARK_ENABLE_TESTING=OFF"
         "BENCHMARK_ENABLE_GTEST_TESTS=OFF"
         "BENCHMARK_ENABLE_INSTALL=OFF"
+      SETTINGS
         "BENCHMARK_ENABLE_EXCEPTIONS=ON"
     )
   endif()

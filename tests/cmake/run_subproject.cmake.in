@@ -4,6 +4,11 @@ if(developer_targets)
 else()
   set(developer_targets OFF)
 endif()
+if(python_tests)
+  string(APPEND build_dir "-python")
+else()
+  set(python_tests OFF)
+endif()
 
 function(run_checked)
   cmake_parse_arguments(PARSE_ARGV 0 step "" "" "COMMAND")
@@ -21,10 +26,25 @@ run_checked(COMMAND "@CMAKE_COMMAND@" --fresh
   "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@"
   "-DUNI20_INTEGRATION_MODE=${mode}"
   "-DUNI20_TEST_DEVELOPER_TARGETS=${developer_targets}"
+  "-DUNI20_TEST_PYTHON=${python_tests}"
   "-DCMAKE_BUILD_TYPE=${config}"
 @UNI20_SUBPROJECT_TEST_ARGS@
 )
 run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}"
   --target uni20_consumer --parallel 2)
+if(developer_targets)
+  file(REMOVE "${build_dir}/formatter-invoked" "${build_dir}/doxygen-invoked")
+  run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}"
+    --target uni20_doc uni20_clang_format)
+  if(NOT EXISTS "${build_dir}/formatter-invoked" OR NOT EXISTS "${build_dir}/doxygen-invoked")
+    message(FATAL_ERROR "Developer commands did not invoke the recording tools")
+  endif()
+endif()
+if(python_tests)
+  run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}"
+    --target uni20_python --parallel 2)
+  run_checked(COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}"
+    --output-on-failure --no-tests=error -R "^python[.]bindings[.]")
+endif()
 run_checked(COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}"
-  --output-on-failure)
+  --output-on-failure --no-tests=error -R "^consumer_runs$")

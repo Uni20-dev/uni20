@@ -6,6 +6,7 @@ if(NOT UNI20_SOURCE_DIR)
 endif()
 set(UNI20_INTEGRATION_MODE "subdirectory" CACHE STRING "subdirectory or fetchcontent")
 option(UNI20_TEST_DEVELOPER_TARGETS "Opt into embedded documentation and formatting" OFF)
+option(UNI20_TEST_PYTHON "Build and run embedded Python tests" OFF)
 
 # A consumer may use an older language standard for its unrelated targets.
 # Uni20 must advertise its own requirement through the linked library.
@@ -36,6 +37,22 @@ add_custom_target(coverage)
 if(UNI20_TEST_DEVELOPER_TARGETS)
   set(UNI20_BUILD_DOCS ON CACHE BOOL "" FORCE)
   set(UNI20_BUILD_FORMAT_TARGET ON CACHE BOOL "" FORCE)
+  # Record the generated commands without formatting the real source checkout
+  # or generating the full API documentation during a CMake regression.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  configure_file(record_tool.py.in record_tool.py @ONLY)
+  file(CHMOD "${CMAKE_CURRENT_BINARY_DIR}/record_tool.py"
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+  set(CLANG_FORMAT_EXE "${CMAKE_CURRENT_BINARY_DIR}/record_tool.py" CACHE FILEPATH "Test recorder" FORCE)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/modules")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/modules/FindDoxygen.cmake"
+    "set(DOXYGEN_FOUND TRUE)\nset(DOXYGEN_EXECUTABLE \"${CMAKE_CURRENT_BINARY_DIR}/record_tool.py\")\n")
+  list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_BINARY_DIR}/modules")
+endif()
+if(UNI20_TEST_PYTHON)
+  set(UNI20_BUILD_TESTS ON CACHE BOOL "" FORCE)
+  set(UNI20_BUILD_PYTHON ON CACHE BOOL "" FORCE)
+  set(UNI20_USE_SYSTEM_GTEST OFF CACHE STRING "Exercise parent-requested gmock population" FORCE)
 endif()
 
 if(UNI20_INTEGRATION_MODE STREQUAL "fetchcontent")
@@ -62,12 +79,22 @@ endforeach()
 
 foreach(option IN ITEMS UNI20_BUILD_TESTS UNI20_BUILD_COMBINED_TESTS
     UNI20_BUILD_BENCH UNI20_BUILD_EXAMPLES UNI20_BUILD_PYTHON UNI20_BUILD_ASM)
+  if(UNI20_TEST_PYTHON AND (option STREQUAL "UNI20_BUILD_TESTS" OR option STREQUAL "UNI20_BUILD_PYTHON"))
+    continue()
+  endif()
   if(${option})
     message(FATAL_ERROR "${option} must default to OFF when embedded")
   endif()
 endforeach()
 if(NOT UNI20_TEST_DEVELOPER_TARGETS AND (UNI20_BUILD_DOCS OR UNI20_BUILD_FORMAT_TARGET))
   message(FATAL_ERROR "Developer targets must default to OFF when embedded")
+endif()
+
+if(UNI20_TEST_PYTHON AND NOT TARGET GTest::gmock)
+  message(FATAL_ERROR "Parent BUILD_GMOCK=ON must create the requested component")
+endif()
+if(UNI20_TBB_SOURCE STREQUAL "fetched" AND NOT TARGET test_tick_count)
+  message(FATAL_ERROR "Parent TBB_TEST=ON must create oneTBB test targets")
 endif()
 if(UNI20_FETCHCONTENT_SOURCE)
   message(FATAL_ERROR "Embedded dependency sources should default to build-local storage")

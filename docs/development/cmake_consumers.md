@@ -67,9 +67,20 @@ to `OFF`. Each can be enabled explicitly. Standalone defaults remain `ON`.
 These are initial cache defaults: changing how a checkout is consumed does not
 reset an existing build cache. Use a separate build directory for each setup.
 
+When enabling `UNI20_BUILD_TESTS`, the parent must call `enable_testing()` (or
+include `CTest`) at its source root for `ctest --test-dir <parent-build>` to
+discover the embedded tests. Enabling tests only in Uni20's subdirectory does
+not enable root-level discovery.
+
 Uni20 leaves the parent's build type, configuration list, compiler flags, and
 BLAS selection hints intact. Uni20-specific dependency configuration stays in
-its directory scope. It defaults to storing dependency sources and builds under
+its directory scope. Optional dependency settings, such as `BUILD_GMOCK` and
+`TBB_TEST`, use Uni20 defaults only when the parent has not set them. Required
+provider settings still apply when Uni20 populates that provider. FetchContent
+populates a shared dependency once, so parents should declare their dependency
+choices before adding Uni20.
+
+Uni20 defaults to storing dependency sources and builds under
 its own binary directory when embedded; standalone builds retain the shared
 source-cache default. `UNI20_FETCHCONTENT_BASE_DIR`,
 `UNI20_FETCHCONTENT_SOURCE`, and `UNI20_FETCHCONTENT_SOURCE_BASE_DIR` remain

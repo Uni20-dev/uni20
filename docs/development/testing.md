@@ -122,11 +122,16 @@ configure, build, and execute small parent projects using `add_subdirectory`
 and FetchContent. The consumers deliberately request C++17, own common helper
 target names, and check that Uni20 preserves their settings. Their linked
 Uni20 targets must supply C++23, generated headers, and transitive libraries.
-An additional check exercises explicitly enabled documentation and formatting
-when Doxygen and clang-format are available. When the outer build uses an
+Additional checks cover parent-owned package hints and shared dependency
+options. On Unix with a Python interpreter, recording stand-ins execute the
+documentation and formatting target commands and validate their arguments
+without rewriting the source checkout. When Python bindings are enabled in the
+outer build, an embedded consumer builds the extension and runs its Python
+tests from the parent build root, also checking fetched GoogleMock population.
+When the outer build uses an
 installed MPLAPACK package, the consumers also compile and execute binary128
 arithmetic and a BLAS call. Fetched MPLAPACK builds use ordinary precision in
-these nested checks to avoid compiling the full provider three extra times;
+these nested checks to avoid repeatedly compiling the full provider;
 the main test suite covers their binary128 operations.
 
 These tests reuse the outer build's dependency source locations or package
