@@ -74,6 +74,7 @@ Thumbs.db
 *.fls
 *.log
 *.synctex.gz
+*.toc
 
 # Local Codex machine overrides
 .codex/instructions.local.md
