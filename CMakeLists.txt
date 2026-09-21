@@ -295,10 +295,12 @@ function(relax_warnings target)
     endif()
   endif()
 
-  # mark includes as system
+  # Preserve generator expressions containing lists, and do not add the
+  # include paths again through target_include_directories' path processing.
   get_target_property(_includes ${real_target} INTERFACE_INCLUDE_DIRECTORIES)
   if(_includes)
-    target_include_directories(${real_target} SYSTEM INTERFACE ${_includes})
+    set_property(TARGET ${real_target} APPEND PROPERTY
+      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_includes}")
   endif()
 endfunction()
 

@@ -90,6 +90,15 @@ This requirement also applies with `UNI20_BACKEND_BLAS=OFF`, since LAPACK still
 uses BLAS. When neither target exists, Uni20 selects its own providers using
 `UNI20_ILP64` and leaves the parent's hints unchanged.
 
+Supplied targets carry their own libraries and link options; Uni20 does not
+add legacy `BLAS_LINKER_FLAGS` or `LAPACK_LINKER_FLAGS` to them. Supplying both
+targets avoids BLAS/LAPACK package discovery entirely, without requiring
+`BLAS_FOUND`, `LAPACK_FOUND`, or a separately discoverable installation. Missing
+providers still require discovery, including their transitive dependencies.
+BLAS vendor detection uses the supplied target's direct link information.
+Opaque targets default to generic BLAS unless `UNI20_BLAS_VENDOR` explicitly
+identifies the provider for vendor extensions.
+
 Uni20 defaults to storing dependency sources and builds under
 its own binary directory when embedded; standalone builds retain the shared
 source-cache default. `UNI20_FETCHCONTENT_BASE_DIR`,

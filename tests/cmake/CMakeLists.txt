@@ -13,6 +13,7 @@ foreach(dependency IN ITEMS fmt mdspan TBB GTest nanobind)
 endforeach()
 
 foreach(variable IN ITEMS CMAKE_CXX_COMPILER CMAKE_C_COMPILER CMAKE_TOOLCHAIN_FILE
+    CMAKE_GENERATOR_PLATFORM CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
     CMAKE_MAKE_PROGRAM CMAKE_PREFIX_PATH fmt_DIR TBB_DIR mplapack_DIR
     UNI20_ENABLE_STACKTRACE)
   if(DEFINED ${variable} AND NOT "${${variable}}" MATCHES "-NOTFOUND$")
@@ -34,7 +35,7 @@ add_test(NAME CMakeSubproject.blas_abi_contract
   COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/blas_abi_contract"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_blas_abi.cmake")
-foreach(abi_case IN ITEMS matching conflicting)
+foreach(abi_case IN ITEMS matching conflicting imported imported_no_blas)
   add_test(NAME CMakeSubproject.parent_blas_${abi_case}
     COMMAND "${CMAKE_COMMAND}" -Dmode=subdirectory "-Dabi_case=${abi_case}"
       "-Dconfig=$<CONFIG>" -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")

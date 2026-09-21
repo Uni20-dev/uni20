@@ -128,6 +128,12 @@ missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
 LAPACK targets. An embedded consumer reuses real parent LP64 targets, calls BLAS
 and LAPACK, and verifies that the provider targets remain unchanged; another
 checks ABI rejection before Uni20 changes its local discovery hints.
+Synthetic imported targets additionally check reuse with package discovery
+disabled, both with and without the BLAS backend. They deliberately supply
+unrelated package variables to detect accidental reuse of stale link flags or
+vendor metadata. A dependency export containing multiple include directories
+inside a generator expression checks that warning handling preserves valid
+install exports, as required by fetched MPLAPACK.
 On Unix with a Python interpreter, recording stand-ins execute the
 documentation and formatting target commands and validate their arguments
 without rewriting the source checkout. When Python bindings are enabled in the
@@ -140,7 +146,8 @@ these nested checks to avoid repeatedly compiling the full provider;
 the main test suite covers their binary128 operations.
 
 These tests reuse the outer build's dependency source locations or package
-paths, with separate build directories under `tests/cmake`. They register
+paths and generator platform, toolset, and instance settings, with separate
+build directories under `tests/cmake`. They register
 directly with CTest because they test CMake integration rather than C++ units.
 
 ### C++ unit tests

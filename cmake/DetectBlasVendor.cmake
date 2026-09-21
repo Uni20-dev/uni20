@@ -1,5 +1,5 @@
 #[[
-Detect and normalize the BLAS vendor after `find_package(BLAS)`.
+Detect and normalize the BLAS vendor from its target or package variables.
 
 Output cache variables:
   - UNI20_DETECTED_BLAS_VENDOR
@@ -86,7 +86,7 @@ function(detect_blas_vendor)
   unset(UNI20_REQUESTED_BLAS_VENDOR CACHE)
   unset(UNI20_DETECTED_BLAS_REQUESTED_VENDOR CACHE)
 
-  if(NOT BLAS_FOUND)
+  if(NOT TARGET BLAS::BLAS AND NOT BLAS_FOUND)
     set(UNI20_DETECTED_BLAS_VENDOR "None" CACHE INTERNAL "Detected BLAS vendor" FORCE)
     _uni20_vendor_macro_name("None" _none_vendor_macro)
     set(UNI20_DETECTED_BLAS_VENDOR_MACRO "${_none_vendor_macro}" CACHE INTERNAL "Vendor-specific macro for BLAS" FORCE)
@@ -95,9 +95,23 @@ function(detect_blas_vendor)
     return()
   endif()
 
-  # Prefer detection from the actual library list selected by FindBLAS.
+  # A supplied target owns its link requirements. Package variables may be
+  # absent or describe an unrelated provider previously found by the parent.
+  if(TARGET BLAS::BLAS)
+    get_target_property(_blas_libraries BLAS::BLAS INTERFACE_LINK_LIBRARIES)
+    if(NOT _blas_libraries)
+      set(_blas_libraries "")
+    endif()
+    get_target_property(_blas_location BLAS::BLAS IMPORTED_LOCATION)
+    if(_blas_location)
+      list(APPEND _blas_libraries "${_blas_location}")
+    endif()
+  else()
+    set(_blas_libraries "${BLAS_LIBRARIES}")
+  endif()
+
   set(_detected_vendor "")
-  foreach(_blas_lib IN LISTS BLAS_LIBRARIES)
+  foreach(_blas_lib IN LISTS _blas_libraries)
     _uni20_map_blas_vendor_name("${_blas_lib}" _mapped_vendor)
     if(NOT _mapped_vendor STREQUAL "")
       set(_detected_vendor "${_mapped_vendor}")
@@ -105,7 +119,7 @@ function(detect_blas_vendor)
     endif()
   endforeach()
 
-  # Fall back to user-requested vendor when BLAS_LIBRARIES has no recognizable hints.
+  # Opaque targets need an explicit vendor hint to enable vendor extensions.
   if(_detected_vendor STREQUAL "")
     if(DEFINED BLA_VENDOR AND NOT BLA_VENDOR STREQUAL "" AND NOT BLA_VENDOR STREQUAL "All")
       _uni20_map_blas_vendor_name("${BLA_VENDOR}" _mapped_requested_vendor)
@@ -123,7 +137,7 @@ function(detect_blas_vendor)
 
   set(UNI20_DETECTED_BLAS_VENDOR "${_detected_vendor}" CACHE INTERNAL "Detected BLAS vendor" FORCE)
   set(UNI20_DETECTED_BLAS_VENDOR_MACRO "${_vendor_macro}" CACHE INTERNAL "Vendor-specific macro for BLAS" FORCE)
-  set(UNI20_DETECTED_BLAS_LIBRARIES "${BLAS_LIBRARIES}" CACHE INTERNAL "Detected BLAS libraries" FORCE)
+  set(UNI20_DETECTED_BLAS_LIBRARIES "${_blas_libraries}" CACHE INTERNAL "Detected BLAS libraries" FORCE)
 
   message(STATUS "Detected UNI20_DETECTED_BLAS_VENDOR: ${UNI20_DETECTED_BLAS_VENDOR}")
 endfunction()

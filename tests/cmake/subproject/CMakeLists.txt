@@ -31,6 +31,20 @@ elseif(UNI20_TEST_PARENT_BLAS STREQUAL "conflicting")
   # The ABI guard must reject this before discovery or linking. No ILP64
   # installation is necessary to exercise the configuration boundary.
   add_library(BLAS::BLAS INTERFACE IMPORTED)
+elseif(UNI20_TEST_PARENT_BLAS MATCHES "^imported")
+  # No find_package-created targets or package state: even a machine with
+  # installed providers must reject any attempt to rediscover these targets.
+  set(BLA_SIZEOF_INTEGER 4 CACHE STRING "Parent BLAS integer width" FORCE)
+  add_library(BLAS::BLAS INTERFACE IMPORTED)
+  add_library(LAPACK::LAPACK INTERFACE IMPORTED)
+  set(CMAKE_DISABLE_FIND_PACKAGE_BLAS TRUE)
+  set(CMAKE_DISABLE_FIND_PACKAGE_LAPACK TRUE)
+  set(BLAS_LIBRARIES "/unrelated/libmkl_rt.so")
+  set(BLAS_LINKER_FLAGS "-stale-blas-link-option")
+  set(LAPACK_LINKER_FLAGS "-stale-lapack-link-option")
+  if(UNI20_TEST_PARENT_BLAS STREQUAL "imported_no_blas")
+    set(UNI20_BACKEND_BLAS OFF CACHE BOOL "Exercise LAPACK without the BLAS backend" FORCE)
+  endif()
 endif()
 
 foreach(variable IN ITEMS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES
@@ -77,6 +91,34 @@ elseif(UNI20_INTEGRATION_MODE STREQUAL "subdirectory")
   add_subdirectory("${UNI20_SOURCE_DIR}" "${embedded_binary_dir}")
 else()
   message(FATAL_ERROR "Unknown integration mode: ${UNI20_INTEGRATION_MODE}")
+endif()
+
+# A dependency may publish several build includes inside one generator
+# expression (as MPLAPACK does). Warning policy must preserve its exports.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/export-probe")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/export-probe/CMakeLists.txt" [=[
+add_library(consumer_export_probe INTERFACE)
+target_include_directories(consumer_export_probe INTERFACE
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include-one;${CMAKE_CURRENT_BINARY_DIR}/include-two>"
+  "$<INSTALL_INTERFACE:include>")
+relax_warnings(consumer_export_probe)
+install(TARGETS consumer_export_probe EXPORT consumer_export_probe)
+install(EXPORT consumer_export_probe DESTINATION lib/cmake/consumer_export_probe)
+]=])
+add_subdirectory("${CMAKE_CURRENT_BINARY_DIR}/export-probe"
+  "${CMAKE_CURRENT_BINARY_DIR}/export-probe-build")
+
+if(UNI20_TEST_PARENT_BLAS MATCHES "^imported")
+  get_target_property(lapack_options uni20_backend_lapack INTERFACE_LINK_OPTIONS)
+  if(lapack_options)
+    message(FATAL_ERROR "Target-owned LAPACK inherited stale package link options")
+  endif()
+  if(UNI20_BACKEND_BLAS)
+    get_target_property(blas_options uni20_interface_blas INTERFACE_LINK_OPTIONS)
+    if(blas_options OR NOT UNI20_DETECTED_BLAS_VENDOR STREQUAL "Generic")
+      message(FATAL_ERROR "Target-owned BLAS inherited unrelated package state")
+    endif()
+  endif()
 endif()
 
 foreach(variable IN ITEMS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES
