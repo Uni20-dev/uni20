@@ -2,6 +2,7 @@
 
 enable_testing()
 include(GoogleTest)
+add_subdirectory(cmake)
 
 # Add subdirectories that contribute source files
 add_subdirectory(core)

@@ -19,6 +19,7 @@ Current test modules include:
 - `tests/async`
 - `tests/backend`
 - `tests/common`
+- `tests/cmake` (downstream configure, build, and execution regressions)
 - `tests/core`
 - `tests/kernel`
 - `tests/krylov`
@@ -34,6 +35,9 @@ probes when `UNI20_ENABLE_MPLAPACK=ON`.
 ## Configuration Options
 
 Primary CMake options:
+
+The `ON` defaults below apply to standalone builds. Tests, combined tests, and
+Python bindings default to `OFF` when Uni20 is embedded in another project.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -110,6 +114,26 @@ uni20 supports both modes:
 When both modes are enabled, CTest registers the per-module executables discovered via `gtest_discover_tests(...)`. The combined `uni20_tests` binary is built for manual runs, but it is not registered with CTest by default.
 
 ## Adding New Tests
+
+### CMake integration tests
+
+Run `ctest --test-dir build --output-on-failure -R '^CMakeSubproject\.'` to
+configure, build, and execute small parent projects using `add_subdirectory`
+and FetchContent. The consumers deliberately request C++17, own common helper
+target names, and check that Uni20 preserves their settings. Their linked
+Uni20 targets must supply C++23, generated headers, and transitive libraries.
+An additional check exercises explicitly enabled documentation and formatting
+when Doxygen and clang-format are available. When the outer build uses an
+installed MPLAPACK package, the consumers also compile and execute binary128
+arithmetic and a BLAS call. Fetched MPLAPACK builds use ordinary precision in
+these nested checks to avoid compiling the full provider three extra times;
+the main test suite covers their binary128 operations.
+
+These tests reuse the outer build's dependency source locations or package
+paths, with separate build directories under `tests/cmake`. They register
+directly with CTest because they test CMake integration rather than C++ units.
+
+### C++ unit tests
 
 1. Add the source file in the appropriate `tests/<module>/` directory.
 2. Add it to that module’s `tests/<module>/CMakeLists.txt` via `add_test_module(...)`.

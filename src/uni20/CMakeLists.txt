@@ -1,5 +1,13 @@
 # src/uni20/CMakeLists.txt
 
+# Keep provider detection and the generated scalar ABI in the same scope,
+# independently of any BLA_SIZEOF_INTEGER inherited from the parent project.
+if(UNI20_ILP64)
+  set(BLA_SIZEOF_INTEGER 8)
+else()
+  set(BLA_SIZEOF_INTEGER 4)
+endif()
+
 # Build the definitions string for submodule tracing for the config.hpp file
 set(TRACE_MODULE_DEFINITIONS "")
 foreach(module IN LISTS SUBMODULES)
@@ -48,14 +56,6 @@ if(NOT UNI20_BACKEND_BLAS OR NOT DEFINED UNI20_DETECTED_BLAS_VENDOR_MACRO OR
    UNI20_DETECTED_BLAS_VENDOR_MACRO STREQUAL "")
   set(UNI20_DETECTED_BLAS_VENDOR_MACRO "UNI20_BLAS_VENDOR_NONE")
 endif()
-if(NOT UNI20_BACKEND_BLAS OR NOT DEFINED BLA_SIZEOF_INTEGER OR BLA_SIZEOF_INTEGER STREQUAL "")
-  if(UNI20_ILP64)
-    set(BLA_SIZEOF_INTEGER 8)
-  else()
-    set(BLA_SIZEOF_INTEGER 4)
-  endif()
-endif()
-
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src/uni20")
 configure_file(
   config.hpp.in

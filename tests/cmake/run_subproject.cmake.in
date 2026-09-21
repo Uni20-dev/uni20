@@ -1,0 +1,30 @@
+set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/${mode}")
+if(developer_targets)
+  string(APPEND build_dir "-tools")
+else()
+  set(developer_targets OFF)
+endif()
+
+function(run_checked)
+  cmake_parse_arguments(PARSE_ARGV 0 step "" "" "COMMAND")
+  execute_process(COMMAND ${step_COMMAND} RESULT_VARIABLE result
+    OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Command failed (${result}): ${step_COMMAND}\n${output}\n${error}")
+  endif()
+endfunction()
+
+file(MAKE_DIRECTORY "${build_dir}")
+run_checked(COMMAND "@CMAKE_COMMAND@" --fresh
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/subproject" -B "${build_dir}"
+  -G "@CMAKE_GENERATOR@"
+  "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@"
+  "-DUNI20_INTEGRATION_MODE=${mode}"
+  "-DUNI20_TEST_DEVELOPER_TARGETS=${developer_targets}"
+  "-DCMAKE_BUILD_TYPE=${config}"
+@UNI20_SUBPROJECT_TEST_ARGS@
+)
+run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}"
+  --target uni20_consumer --parallel 2)
+run_checked(COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}"
+  --output-on-failure)

@@ -45,7 +45,7 @@ function(_uni20_is_internal_path input_path output_var)
             "${FETCHCONTENT_BASE_DIR}"
             "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}"
             "${CMAKE_BINARY_DIR}"
-            "${CMAKE_SOURCE_DIR}/.cmake/third_party")
+            "${PROJECT_SOURCE_DIR}/.cmake/third_party")
       if(NOT _root)
         continue()
       endif()
@@ -351,20 +351,12 @@ function(uni20_add_dependency)
         endif()
 
         set(var "${CMAKE_MATCH_1}")
-        set(type "${CMAKE_MATCH_3}")
         set(value "${CMAKE_MATCH_4}")
 
-        if(NOT type)
-          string(TOUPPER "${value}" value_upper)
-          if(value_upper STREQUAL "ON" OR value_upper STREQUAL "OFF"
-             OR value_upper STREQUAL "TRUE" OR value_upper STREQUAL "FALSE")
-            set(type BOOL)
-          else()
-            set(type STRING)
-          endif()
-        endif()
-
-        set(${var} "${value}" CACHE ${type} "Auto-configured by uni20_add_dependency(${DEP_NAME})" FORCE)
+        # Apply Uni20's dependency settings only inside this function and its
+        # fetched subdirectory; the parent may use the same package elsewhere.
+        # Optional :TYPE annotations remain accepted but no cache is written.
+        set(${var} "${value}")
       endforeach()
     endif()
 

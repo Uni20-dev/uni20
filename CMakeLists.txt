@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0135 NEW)
 project(uni20 VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 23)
+if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
+  set(CMAKE_CXX_STANDARD 23)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -14,7 +16,7 @@ endif()
 
 # Build-type support
 # For single-config generators (Makefile, Ninja), default to Release if none given.
-if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release"
       CACHE STRING
       "Choose the type of build (Debug, DebugOpt, Release, RelWithDebInfo, MinSizeRel)"
@@ -22,20 +24,23 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Define valid configs for multi-config generators (VS, Xcode).
-set(CMAKE_CONFIGURATION_TYPES
-    Debug
-    DebugOpt
-    Release
-    RelWithDebInfo
-    MinSizeRel
-    CACHE STRING "Configs" FORCE)
+if(PROJECT_IS_TOP_LEVEL)
+  # A subproject must leave the parent's configurations and compiler flags alone.
+  set(CMAKE_CONFIGURATION_TYPES
+      Debug
+      DebugOpt
+      Release
+      RelWithDebInfo
+      MinSizeRel
+      CACHE STRING "Configs" FORCE)
 
-# Tweak per-config flags
-set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g")
-set(CMAKE_CXX_FLAGS_DEBUGOPT       "-O2 -g")
-set(CMAKE_CXX_FLAGS_RELEASE        "-DNDEBUG -O2")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-DNDEBUG -O2 -g")
-set(CMAKE_CXX_FLAGS_MINSIZEREL     "-DNDEBUG -Os")
+  # Tweak per-config flags for standalone development.
+  set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g")
+  set(CMAKE_CXX_FLAGS_DEBUGOPT       "-O2 -g")
+  set(CMAKE_CXX_FLAGS_RELEASE        "-DNDEBUG -O2")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-DNDEBUG -O2 -g")
+  set(CMAKE_CXX_FLAGS_MINSIZEREL     "-DNDEBUG -Os")
+endif()
 
 # silence CMP0115 “source file extensions must be explicit”
 if(POLICY CMP0115)
@@ -44,7 +49,6 @@ endif()
 
 # Include extra CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(ClangFormat)
 include(DetectStacktrace)
 include(Uni20TestHelpers)
 include(Uni20Dependencies)
@@ -56,19 +60,19 @@ include(Uni20Dependencies)
 set(UNI20_FETCHCONTENT_BASE_DIR ""
     CACHE PATH
     "Override FetchContent base directory for build/stamp directories. Empty uses <binary_dir>/.cmake/third_party")
-set(UNI20_FETCHCONTENT_SOURCE ON
+set(UNI20_FETCHCONTENT_SOURCE ${PROJECT_IS_TOP_LEVEL}
     CACHE BOOL
     "Store FetchContent source trees in a shared source cache directory. OFF keeps sources under FETCHCONTENT_BASE_DIR")
 set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR ""
     CACHE PATH
     "When UNI20_FETCHCONTENT_SOURCE=ON, override shared FetchContent source directory. Empty uses <source_dir>/.cmake/third_party")
 if(NOT UNI20_FETCHCONTENT_BASE_DIR)
-  set(UNI20_FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/.cmake/third_party")
+  set(UNI20_FETCHCONTENT_BASE_DIR "${PROJECT_BINARY_DIR}/.cmake/third_party")
 endif()
 
 if(UNI20_FETCHCONTENT_SOURCE)
   if(NOT UNI20_FETCHCONTENT_SOURCE_BASE_DIR)
-    set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR "${CMAKE_SOURCE_DIR}/.cmake/third_party")
+    set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR "${PROJECT_SOURCE_DIR}/.cmake/third_party")
   endif()
 else()
   set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR "${UNI20_FETCHCONTENT_BASE_DIR}")
@@ -103,8 +107,10 @@ uni20_dependency_option(UNI20_USE_SYSTEM_GTEST "Google Test library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_NANOBIND "nanobind library" AUTO)
 option(UNI20_BUILD_EXTERNAL_TESTS "Build tests for external dependencies" OFF)
 option(UNI20_ILP64                "Enable ILP64 integer type for BLAS (64-bit integers)" OFF)
-option(UNI20_BUILD_PYTHON         "Build the Python bindings" ON)
-option(UNI20_BUILD_EXAMPLES       "Build the example programs" ON)
+option(UNI20_BUILD_PYTHON         "Build the Python bindings" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_EXAMPLES       "Build the example programs" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_DOCS           "Add the Doxygen documentation target" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_FORMAT_TARGET  "Add the clang-format target" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_ENABLE_CUDA          "Enable CUDA backend support" OFF)
 option(UNI20_ENABLE_MPI           "Enable MPI support" OFF)
 option(UNI20_ENABLE_MPLAPACK      "Enable the optional MPLAPACK binary128 backend" OFF)
@@ -124,12 +130,12 @@ if(NOT UNI20_ENABLE_MPLAPACK)
     unset(${_uni20_disabled_mplapack_cache_var} CACHE)
   endforeach()
 endif()
-option(UNI20_BUILD_TESTS          "Build unit tests" ON)
-option(UNI20_BUILD_COMBINED_TESTS "Build combined test executable (in addition to per-module tests)" ON)
-option(UNI20_BUILD_BENCH          "Build benchmarks" ON)
+option(UNI20_BUILD_TESTS          "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_COMBINED_TESTS "Build combined test executable (in addition to per-module tests)" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_BENCH          "Build benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_ENABLE_WARNINGS      "Enable compiler warnings" ON)
 option(UNI20_ENABLE_LTO           "Enable LTO/IPO for optimized builds" ON)
-option(UNI20_BUILD_ASM            "Build stand-alone assembly dumps for snippets in asm/" ON)
+option(UNI20_BUILD_ASM            "Build stand-alone assembly dumps for snippets in asm/" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_DEBUG_DAG            "Enable DAG debug info (for Async buffer tracking and visualization)" ${_uni20_debug_default})
 uni20_detect_stacktrace()
 option(UNI20_ENABLE_STACKTRACE    "Enable C++23 <stacktrace> support when available" ${UNI20_STACKTRACE_AVAILABLE})
@@ -157,6 +163,7 @@ endif()
 
 if(UNI20_DOCS_WEB)
   message(STATUS "UNI20_DOCS_WEB=ON: configuring docs-only mode")
+  set(UNI20_BUILD_DOCS ON CACHE BOOL "Add the Doxygen documentation target" FORCE)
   set(UNI20_BUILD_TESTS OFF CACHE BOOL "Build unit tests" FORCE)
   set(UNI20_BUILD_COMBINED_TESTS OFF CACHE BOOL "Build combined test executable (in addition to per-module tests)" FORCE)
   set(UNI20_BUILD_EXAMPLES OFF CACHE BOOL "Build the example programs" FORCE)
@@ -165,6 +172,10 @@ if(UNI20_DOCS_WEB)
   set(UNI20_BUILD_ASM OFF CACHE BOOL "Build stand-alone assembly dumps for snippets in asm/" FORCE)
   set(UNI20_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA backend support" FORCE)
   set(UNI20_ENABLE_MPLAPACK OFF CACHE BOOL "Enable the optional MPLAPACK binary128 backend" FORCE)
+endif()
+
+if(UNI20_BUILD_FORMAT_TARGET)
+  include(ClangFormat)
 endif()
 
 # The nanobind extension links Uni20's static libraries into a shared module.
@@ -184,20 +195,24 @@ if(UNI20_ENABLE_COVERAGE)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     add_compile_options(--coverage -O0 -g)
     add_link_options(--coverage)
-    add_custom_target(coverage
+    set(_uni20_coverage_target uni20_coverage)
+    if(PROJECT_IS_TOP_LEVEL)
+      set(_uni20_coverage_target coverage)
+    endif()
+    add_custom_target(${_uni20_coverage_target}
       COMMAND ${CMAKE_COMMAND} -E env
-              GCOVR_SRCDIR=${CMAKE_SOURCE_DIR}
-              GCOVR_BUILDDIR=${CMAKE_BINARY_DIR}
+              GCOVR_SRCDIR=${PROJECT_SOURCE_DIR}
+              GCOVR_BUILDDIR=${PROJECT_BINARY_DIR}
               gcovr
-                --root ${CMAKE_SOURCE_DIR}
-                --object-directory ${CMAKE_BINARY_DIR}
+                --root ${PROJECT_SOURCE_DIR}
+                --object-directory ${PROJECT_BINARY_DIR}
                 --exclude '.*third_party.*'
                 --exclude '.*tests/.*'
                 --exclude '.*examples/.*'
                 --exclude '.*benchmarks/.*'
                 --gcov-ignore-parse-errors=negative_hits.warn_once_per_file
                 --html --html-details -o coverage.html
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
       COMMENT "Generating coverage report"
     )
   else()
@@ -214,13 +229,14 @@ if(NOT DEFINED UNI20_ASYNC_DEBUG)
 endif()
 
 if(NOT UNI20_BUILD_EXTERNAL_TESTS)
-  set(FMT_TEST OFF CACHE BOOL "" FORCE)
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-  set(TBB_TEST OFF CACHE BOOL "" FORCE)
-  set(TBB_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
-  set(BUILD_GTEST OFF CACHE BOOL "" FORCE)
-  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  # Directory-scoped settings must not overwrite a consuming project's cache.
+  set(FMT_TEST OFF)
+  set(BENCHMARK_ENABLE_TESTING OFF)
+  set(TBB_TEST OFF)
+  set(TBB_BUILD_TESTS OFF)
+  set(BUILD_GMOCK OFF)
+  set(BUILD_GTEST OFF)
+  set(INSTALL_GTEST OFF)
 endif()
 
 if(UNI20_ENABLE_WARNINGS)
@@ -688,6 +704,7 @@ if(NOT UNI20_DOCS_WEB)
 
   # Create an interface library for common dependencies
   add_library(uni20_deps INTERFACE)
+  target_compile_features(uni20_deps INTERFACE cxx_std_23)
   target_link_libraries(uni20_deps INTERFACE fmt::fmt)
   if(UNI20_ENABLE_MPLAPACK)
     target_link_libraries(uni20_deps INTERFACE mplapack::mplapack_binary128)
@@ -718,46 +735,51 @@ if(NOT UNI20_DOCS_WEB)
   endif()
 endif()
 
-# Doxygen documentation target
-find_package(Doxygen QUIET)
+# Doxygen documentation target. Embedded builds opt in explicitly.
+if(UNI20_BUILD_DOCS)
+  find_package(Doxygen QUIET)
 
-if(DOXYGEN_FOUND)
-  # Where to look for our sources and markdown files
-  set(DOXYGEN_INPUT
-      "${CMAKE_SOURCE_DIR}/README.md"
-      "${CMAKE_SOURCE_DIR}/AGENTS.md"
-      "${CMAKE_SOURCE_DIR}/src"
-      "${CMAKE_SOURCE_DIR}/examples"
-      "${CMAKE_SOURCE_DIR}/docs"
-  )
-  list(JOIN DOXYGEN_INPUT " " DOXYGEN_INPUT)
+  if(DOXYGEN_FOUND)
+    # Where to look for our sources and markdown files
+    set(DOXYGEN_INPUT
+        "${PROJECT_SOURCE_DIR}/README.md"
+        "${PROJECT_SOURCE_DIR}/AGENTS.md"
+        "${PROJECT_SOURCE_DIR}/src"
+        "${PROJECT_SOURCE_DIR}/examples"
+        "${PROJECT_SOURCE_DIR}/docs"
+    )
+    list(JOIN DOXYGEN_INPUT " " DOXYGEN_INPUT)
 
-  # FILE_PATTERNS already excludes LaTeX sources and rendered PDFs. Keep the
-  # Markdown index under docs/latex in the generated documentation.
-  set(DOXYGEN_EXCLUDE "")
+    # FILE_PATTERNS already excludes LaTeX sources and rendered PDFs. Keep the
+    # Markdown index under docs/latex in the generated documentation.
+    set(DOXYGEN_EXCLUDE "")
 
-  set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/docs")
-  if(UNI20_DOCS_WEB)
-    set(DOXYGEN_HTML_EXTRA_STYLESHEET "${CMAKE_SOURCE_DIR}/docs/doxygen-custom.css")
+    set(DOXYGEN_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/docs")
+    if(UNI20_DOCS_WEB)
+      set(DOXYGEN_HTML_EXTRA_STYLESHEET "${PROJECT_SOURCE_DIR}/docs/doxygen-custom.css")
+    else()
+      set(DOXYGEN_HTML_EXTRA_STYLESHEET "")
+    endif()
+
+    # Configure the Doxyfile from a template
+    set(DOXYFILE_IN   "${PROJECT_SOURCE_DIR}/docs/Doxyfile.in")
+    set(DOXYFILE_OUT  "${PROJECT_BINARY_DIR}/docs/Doxyfile")
+
+    configure_file(${DOXYFILE_IN} ${DOXYFILE_OUT} @ONLY)
+
+    set(_uni20_doc_target uni20_doc)
+    if(PROJECT_IS_TOP_LEVEL)
+      set(_uni20_doc_target doc)
+    endif()
+    add_custom_target(${_uni20_doc_target}
+      COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYFILE_OUT}
+      WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+      COMMENT "Generating API and Markdown documentation with Doxygen"
+      VERBATIM
+    )
   else()
-    set(DOXYGEN_HTML_EXTRA_STYLESHEET "")
+    message(WARNING "Doxygen not found; Uni20 documentation target will be unavailable.")
   endif()
-
-  # Configure the Doxyfile from a template
-  set(DOXYFILE_IN   "${CMAKE_SOURCE_DIR}/docs/Doxyfile.in")
-  set(DOXYFILE_OUT  "${CMAKE_BINARY_DIR}/docs/Doxyfile")
-
-  configure_file(${DOXYFILE_IN} ${DOXYFILE_OUT} @ONLY)
-
-  # Add a "doc" target
-  add_custom_target(doc
-    COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYFILE_OUT}
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Generating API and Markdown documentation with Doxygen"
-    VERBATIM
-  )
-else()
-  message(WARNING "Doxygen not found; 'doc' target will be unavailable.")
 endif()
 
 # ------------------------------
