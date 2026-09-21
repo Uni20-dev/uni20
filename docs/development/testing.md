@@ -131,6 +131,11 @@ targets and preserves the parent's setting.
 Embedded LTO defaults to off, so the parent can link Uni20 without enabling IPO
 on its own targets. The optimized Ninja Multi-Config consumer checks this with
 the outer build's compiler, including Clang's bitcode-sensitive archive linkage.
+Small IPO fixtures build and run a static library and its executable with
+automatic IPO enabled, disabled, unsupported, or inherited from a parent. They
+check that Debug skips the probe, that directory defaults do not alter earlier
+dependencies or parent targets, and that all four optimized configurations work
+with Ninja Multi-Config.
 Additional checks cover parent-owned package hints and shared dependency
 options. ABI contract checks accept matching 4/8-byte declarations and reject
 missing, ambiguous, invalid, and conflicting declarations for existing BLAS and

@@ -75,6 +75,23 @@ otherwise, for example, Clang's bitcode archives can fail to link. The parent ca
 instead configure IPO for the whole build using CMake's
 `CMAKE_INTERPROCEDURAL_OPTIMIZATION[_<CONFIG>]` variables before creating targets.
 
+Uni20's automatic policy enables IPO for `Release`, `RelWithDebInfo`,
+`MinSizeRel`, and `DebugOpt` after checking C++ support and, when enabled, CUDA
+support. It uses per-configuration target defaults for both single- and
+multi-configuration generators. The check is skipped when automatic LTO is off
+or no optimized configuration is selected. These defaults are set after the
+fetched dependencies have created their targets and do not change those targets.
+The CUDA support check does not turn on separate compilation. CMake applies
+device LTO to targets with `CUDA_SEPARABLE_COMPILATION` enabled and a configured
+CUDA architecture; Uni20's existing whole-program CUDA compilation remains
+unchanged.
+
+`UNI20_ENABLE_LTO=OFF` disables only Uni20's automatic policy; it does not clear
+IPO requested by a parent or toolchain. With the option `ON`, Uni20 enables the
+optimized configurations when supported, overriding inherited defaults for
+those configurations. Debug and custom configurations retain inherited IPO
+settings. Parents managing IPO themselves should leave `UNI20_ENABLE_LTO=OFF`.
+
 Uni20 disables C++ module scanning in its own directory scope because its
 targets use headers rather than named modules. The parent's
 `CMAKE_CXX_SCAN_FOR_MODULES` setting is preserved.

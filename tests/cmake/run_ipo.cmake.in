@@ -1,0 +1,36 @@
+set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/ipo-${ipo_case}")
+if(generator)
+  string(APPEND build_dir "-multiconfig")
+else()
+  set(generator "@CMAKE_GENERATOR@")
+endif()
+file(MAKE_DIRECTORY "${build_dir}")
+
+function(run_checked)
+  cmake_parse_arguments(PARSE_ARGV 0 step "" "" "COMMAND")
+  execute_process(COMMAND ${step_COMMAND} RESULT_VARIABLE result
+    OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Command failed (${result}): ${step_COMMAND}\n${output}\n${error}")
+  endif()
+endfunction()
+
+if(ipo_case STREQUAL "debug")
+  set(configs Debug)
+elseif(generator STREQUAL "Ninja Multi-Config")
+  set(configs Debug Release RelWithDebInfo MinSizeRel DebugOpt)
+else()
+  set(configs Release)
+endif()
+list(GET configs 0 configure_config)
+run_checked(COMMAND "@CMAKE_COMMAND@" --fresh
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/ipo" -B "${build_dir}" -G "${generator}"
+  "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@" "-Dipo_case=${ipo_case}"
+  "-DCMAKE_BUILD_TYPE=${configure_config}"
+@UNI20_SUBPROJECT_TEST_ARGS@
+)
+foreach(config IN LISTS configs)
+  run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}" --parallel 2)
+  run_checked(COMMAND "@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}"
+    --output-on-failure --no-tests=error)
+endforeach()

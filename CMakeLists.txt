@@ -134,7 +134,7 @@ option(UNI20_BUILD_BENCH          "Build benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_ENABLE_WARNINGS      "Enable compiler warnings" ON)
 # IPO is not a transitive usage requirement. Embedded builds leave the parent
 # responsible for enabling it on both the libraries and their final link targets.
-option(UNI20_ENABLE_LTO           "Enable LTO/IPO for optimized builds" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_ENABLE_LTO           "Automatically enable LTO/IPO for optimized Uni20 builds" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_ASM            "Build stand-alone assembly dumps for snippets in asm/" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_DEBUG_DAG            "Enable DAG debug info (for Async buffer tracking and visualization)" ${_uni20_debug_default})
 uni20_detect_stacktrace()
@@ -351,19 +351,6 @@ if(NOT UNI20_DOCS_WEB AND UNI20_ENABLE_CUDA)
   add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
   set(UNI20_BACKEND_CUDA_DEFAULT ON)
 endif()
-
-function(enable_ipo_if_supported target)
-  if(_uni20_enable_ipo_for_targets)
-    if(_uni20_is_multi_config)
-      set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-      set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
-      set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
-      set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_DEBUGOPT TRUE)
-    else()
-      set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif()
-  endif()
-endfunction()
 
 # Backends
 option(UNI20_BACKEND_BLAS     "Enable the BLAS backend" ON)
@@ -620,64 +607,8 @@ if(NOT UNI20_DOCS_WEB)
     )
   endif()
 
-  # Enable link-time optimizations
-  include(CheckIPOSupported)
-  check_ipo_supported(
-    RESULT ipo_supported
-    OUTPUT ipo_error    # optional: captures the reason if it fails
-    LANGUAGES CXX
-  )
-
-  set(_uni20_lto_allowed FALSE)
-  get_property(_uni20_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-
-  if(_uni20_is_multi_config)
-    set(_uni20_lto_allowed TRUE)
-  else()
-    string(TOUPPER "${CMAKE_BUILD_TYPE}" _uni20_build_type_upper)
-    if(_uni20_build_type_upper STREQUAL "RELEASE"
-       OR _uni20_build_type_upper STREQUAL "RELWITHDEBINFO"
-       OR _uni20_build_type_upper STREQUAL "MINSIZEREL"
-       OR _uni20_build_type_upper STREQUAL "DEBUGOPT")
-      set(_uni20_lto_allowed TRUE)
-    endif()
-  endif()
-
-  set(_uni20_enable_ipo_for_targets FALSE)
-  if(UNI20_ENABLE_LTO AND ipo_supported AND _uni20_lto_allowed)
-    set(_uni20_enable_ipo_for_targets TRUE)
-  endif()
-
-  if(_uni20_enable_ipo_for_targets)
-    if(_uni20_is_multi_config)
-      message(STATUS "LTO/IPO enabled for configs: Release, RelWithDebInfo, MinSizeRel, DebugOpt")
-    else()
-      message(STATUS "LTO/IPO enabled for build type: ${CMAKE_BUILD_TYPE}")
-    endif()
-  elseif(NOT UNI20_ENABLE_LTO)
-    message(STATUS "LTO/IPO disabled: UNI20_ENABLE_LTO=OFF")
-  elseif(NOT ipo_supported)
-    message(STATUS "LTO/IPO disabled: toolchain does not support IPO (${ipo_error})")
-  else()
-    if(CMAKE_BUILD_TYPE)
-      message(STATUS
-        "LTO/IPO disabled for build type '${CMAKE_BUILD_TYPE}' "
-        "(enabled for Release, RelWithDebInfo, MinSizeRel, DebugOpt)")
-    else()
-      message(STATUS "LTO/IPO disabled: no build type selected")
-    endif()
-  endif()
-
-  if(_uni20_enable_ipo_for_targets)
-    if(_uni20_is_multi_config)
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_DEBUGOPT TRUE)
-    else()
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif()
-  endif()
+  # Set IPO defaults after fetched dependencies, before Uni20's own targets.
+  include(Uni20IPO)
 
   # Create an interface library for common dependencies
   add_library(uni20_deps INTERFACE)
