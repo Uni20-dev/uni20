@@ -30,6 +30,16 @@ else()
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)
+add_test(NAME CMakeSubproject.blas_abi_contract
+  COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/blas_abi_contract"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_blas_abi.cmake")
+foreach(abi_case IN ITEMS matching conflicting)
+  add_test(NAME CMakeSubproject.parent_blas_${abi_case}
+    COMMAND "${CMAKE_COMMAND}" -Dmode=subdirectory "-Dabi_case=${abi_case}"
+      "-Dconfig=$<CONFIG>" -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")
+  set_tests_properties(CMakeSubproject.parent_blas_${abi_case} PROPERTIES LABELS cmake TIMEOUT 300)
+endforeach()
 add_test(NAME CMakeSubproject.dependency_ownership
   COMMAND "${CMAKE_COMMAND}" --fresh
     -S "${CMAKE_CURRENT_SOURCE_DIR}/dependency_ownership"

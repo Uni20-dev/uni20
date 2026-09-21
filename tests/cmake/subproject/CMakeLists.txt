@@ -21,6 +21,17 @@ set(BUILD_GMOCK ON CACHE BOOL "Parent gmock setting" FORCE)
 set(BLA_VENDOR "Generic" CACHE STRING "Parent BLAS setting" FORCE)
 set(BLA_SIZEOF_INTEGER 8 CACHE STRING "Parent BLAS integer width" FORCE)
 set(TBB_TEST ON CACHE BOOL "Parent oneTBB setting" FORCE)
+if(UNI20_TEST_PARENT_BLAS STREQUAL "matching")
+  set(BLA_SIZEOF_INTEGER 4 CACHE STRING "Parent BLAS integer width" FORCE)
+  find_package(BLAS REQUIRED)
+  find_package(LAPACK REQUIRED)
+  get_target_property(parent_blas_libraries BLAS::BLAS INTERFACE_LINK_LIBRARIES)
+  get_target_property(parent_lapack_libraries LAPACK::LAPACK INTERFACE_LINK_LIBRARIES)
+elseif(UNI20_TEST_PARENT_BLAS STREQUAL "conflicting")
+  # The ABI guard must reject this before discovery or linking. No ILP64
+  # installation is necessary to exercise the configuration boundary.
+  add_library(BLAS::BLAS INTERFACE IMPORTED)
+endif()
 
 foreach(variable IN ITEMS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES
     CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_STANDARD
@@ -116,5 +127,15 @@ endif()
 
 add_executable(uni20_consumer main.cpp)
 target_link_libraries(uni20_consumer PRIVATE uni20_core uni20_common)
+if(UNI20_TEST_PARENT_BLAS STREQUAL "matching")
+  get_target_property(current_blas_libraries BLAS::BLAS INTERFACE_LINK_LIBRARIES)
+  get_target_property(current_lapack_libraries LAPACK::LAPACK INTERFACE_LINK_LIBRARIES)
+  if(NOT current_blas_libraries STREQUAL parent_blas_libraries OR
+      NOT current_lapack_libraries STREQUAL parent_lapack_libraries)
+    message(FATAL_ERROR "Uni20 changed the parent's numerical provider targets")
+  endif()
+  target_link_libraries(uni20_consumer PRIVATE uni20_backend_blas_reference uni20_backend_lapack)
+  target_compile_definitions(uni20_consumer PRIVATE UNI20_TEST_PARENT_BLAS=1)
+endif()
 enable_testing()
 add_test(NAME consumer_runs COMMAND uni20_consumer)

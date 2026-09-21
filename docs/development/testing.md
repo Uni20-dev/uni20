@@ -123,7 +123,12 @@ and FetchContent. The consumers deliberately request C++17, own common helper
 target names, and check that Uni20 preserves their settings. Their linked
 Uni20 targets must supply C++23, generated headers, and transitive libraries.
 Additional checks cover parent-owned package hints and shared dependency
-options. On Unix with a Python interpreter, recording stand-ins execute the
+options. ABI contract checks accept matching 4/8-byte declarations and reject
+missing, ambiguous, invalid, and conflicting declarations for existing BLAS and
+LAPACK targets. An embedded consumer reuses real parent LP64 targets, calls BLAS
+and LAPACK, and verifies that the provider targets remain unchanged; another
+checks ABI rejection before Uni20 changes its local discovery hints.
+On Unix with a Python interpreter, recording stand-ins execute the
 documentation and formatting target commands and validate their arguments
 without rewriting the source checkout. When Python bindings are enabled in the
 outer build, an embedded consumer builds the extension and runs its Python

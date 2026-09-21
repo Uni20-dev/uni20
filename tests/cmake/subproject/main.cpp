@@ -1,5 +1,9 @@
 #include <uni20/common/terminal.hpp>
 #include <uni20/core/math.hpp>
+#if UNI20_TEST_PARENT_BLAS
+#include <uni20/backend/blas/reference/reference_blas.hpp>
+#include <uni20/backend/lapack/reference/general.hpp>
+#endif
 #if UNI20_HAS_FLOAT128
 #include <mpblas_binary128.h>
 #endif
@@ -13,6 +17,20 @@ int main()
   // Exercise an out-of-line common-library function, not just its headers.
   if (terminal::is_a_terminal(nullptr))
     return 1;
+
+#if UNI20_TEST_PARENT_BLAS
+  double const matrix[] = {1, 2, 3, 4};
+  double const identity[] = {1, 0, 0, 1};
+  double product[4] = {};
+  uni20::blas::gemm('N', 'N', 2, 2, 2, 1.0, matrix, 2, identity, 2, 0.0, product, 2);
+  for (int i = 0; i != 4; ++i)
+    if (product[i] != matrix[i])
+      return 4;
+  double diagonal[] = {4, 0, 0, 3};
+  uni20::blas_int pivots[2] = {};
+  if (uni20::lapack::unchecked::getrf(2, 2, diagonal, 2, pivots) != 0 || pivots[0] != 1 || pivots[1] != 2)
+    return 5;
+#endif
 
 #if UNI20_HAS_FLOAT128
   static_assert(uni20::numeric_limits<uni20::float128>::digits == 113);

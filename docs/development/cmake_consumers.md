@@ -80,6 +80,16 @@ provider settings still apply when Uni20 populates that provider. FetchContent
 populates a shared dependency once, so parents should declare their dependency
 choices before adding Uni20.
 
+If the parent has already created `BLAS::BLAS` or `LAPACK::LAPACK`, it must set
+`BLA_SIZEOF_INTEGER` to the actual integer ABI of those targets before adding
+Uni20: `4` with `UNI20_ILP64=OFF`, or `8` with `UNI20_ILP64=ON`. The declaration
+must describe all supplied BLAS/LAPACK targets. Uni20 rejects missing, `ANY`,
+or conflicting declarations; CMake targets have no standard ABI metadata, so
+Uni20 trusts the parent's explicit declaration rather than probing the binary.
+This requirement also applies with `UNI20_BACKEND_BLAS=OFF`, since LAPACK still
+uses BLAS. When neither target exists, Uni20 selects its own providers using
+`UNI20_ILP64` and leaves the parent's hints unchanged.
+
 Uni20 defaults to storing dependency sources and builds under
 its own binary directory when embedded; standalone builds retain the shared
 source-cache default. `UNI20_FETCHCONTENT_BASE_DIR`,

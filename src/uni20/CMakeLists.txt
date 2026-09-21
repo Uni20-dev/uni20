@@ -1,12 +1,18 @@
 # src/uni20/CMakeLists.txt
 
-# Keep provider detection and the generated scalar ABI in the same scope,
-# independently of any BLA_SIZEOF_INTEGER inherited from the parent project.
+# Validate existing provider targets before replacing the parent's discovery
+# hint. LAPACK also consumes BLAS, even with UNI20_BACKEND_BLAS disabled.
 if(UNI20_ILP64)
-  set(BLA_SIZEOF_INTEGER 8)
+  set(_uni20_blas_integer_bytes 8)
 else()
-  set(BLA_SIZEOF_INTEGER 4)
+  set(_uni20_blas_integer_bytes 4)
 endif()
+include(Uni20BlasAbi)
+if(NOT UNI20_DOCS_WEB)
+  uni20_validate_parent_blas_abi(${_uni20_blas_integer_bytes})
+endif()
+# Keep discovery and generated headers consistent in Uni20's directory scope.
+set(BLA_SIZEOF_INTEGER ${_uni20_blas_integer_bytes})
 
 # Build the definitions string for submodule tracing for the config.hpp file
 set(TRACE_MODULE_DEFINITIONS "")

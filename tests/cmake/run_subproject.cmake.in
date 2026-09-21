@@ -1,4 +1,7 @@
 set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/${mode}")
+if(abi_case)
+  string(APPEND build_dir "-blas-${abi_case}")
+endif()
 if(developer_targets)
   string(APPEND build_dir "-tools")
 else()
@@ -20,16 +23,26 @@ function(run_checked)
 endfunction()
 
 file(MAKE_DIRECTORY "${build_dir}")
-run_checked(COMMAND "@CMAKE_COMMAND@" --fresh
+execute_process(COMMAND "@CMAKE_COMMAND@" --fresh
   -S "@CMAKE_CURRENT_SOURCE_DIR@/subproject" -B "${build_dir}"
   -G "@CMAKE_GENERATOR@"
   "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@"
   "-DUNI20_INTEGRATION_MODE=${mode}"
   "-DUNI20_TEST_DEVELOPER_TARGETS=${developer_targets}"
   "-DUNI20_TEST_PYTHON=${python_tests}"
+  "-DUNI20_TEST_PARENT_BLAS=${abi_case}"
   "-DCMAKE_BUILD_TYPE=${config}"
 @UNI20_SUBPROJECT_TEST_ARGS@
+  RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error
 )
+if(abi_case STREQUAL "conflicting")
+  if(result EQUAL 0 OR NOT error MATCHES "Existing BLAS::BLAS requires an explicit")
+    message(FATAL_ERROR "Expected parent ABI rejection: ${output}\n${error}")
+  endif()
+  return()
+elseif(NOT result EQUAL 0)
+  message(FATAL_ERROR "Consumer configuration failed: ${output}\n${error}")
+endif()
 run_checked(COMMAND "@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}"
   --target uni20_consumer --parallel 2)
 if(developer_targets)
