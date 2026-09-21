@@ -12,6 +12,14 @@ else()
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)
+configure_file(run_dependency_build.cmake.in run_dependency_build.cmake @ONLY)
+foreach(external_tests IN ITEMS OFF ON)
+  add_test(NAME CMakeSubproject.dependency_build_${external_tests}
+    COMMAND "${CMAKE_COMMAND}" "-Dexternal_tests=${external_tests}" "-Dconfig=$<CONFIG>"
+      -P "${CMAKE_CURRENT_BINARY_DIR}/run_dependency_build.cmake")
+  set_tests_properties(CMakeSubproject.dependency_build_${external_tests}
+    PROPERTIES LABELS cmake TIMEOUT 120)
+endforeach()
 foreach(fixture IN ITEMS blas_vendor package_hints)
   add_test(NAME CMakeSubproject.${fixture}
     COMMAND "${CMAKE_COMMAND}" --fresh

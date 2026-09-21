@@ -366,6 +366,10 @@ function(uni20_add_dependency)
     endif()
 
     include(FetchContent)
+    set(_uni20_dependency_build_options)
+    if(NOT UNI20_BUILD_EXTERNAL_TESTS)
+      list(APPEND _uni20_dependency_build_options EXCLUDE_FROM_ALL)
+    endif()
     set(_uni20_fetchcontent_paths
       SOURCE_DIR "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}/${NAME_LOWER}-src"
       BINARY_DIR "${UNI20_FETCHCONTENT_BASE_DIR}/${NAME_LOWER}-build")
@@ -374,6 +378,8 @@ function(uni20_add_dependency)
       ${DEP_NAME}
       GIT_REPOSITORY ${DEP_REPO}
       GIT_TAG ${DEP_TAG}
+      SYSTEM
+      ${_uni20_dependency_build_options}
       ${_uni20_fetchcontent_paths}
     )
 
@@ -412,22 +418,7 @@ function(uni20_add_dependency)
 
     FetchContent_MakeAvailable(${DEP_NAME})
     if(COMMAND relax_warnings)
-      set(_uni20_relaxed_dependency_targets)
-      foreach(_uni20_relax_candidate IN ITEMS ${DEP_TARGET} ${DEP_NAME} ${NAME_LOWER})
-        if(TARGET ${_uni20_relax_candidate})
-          get_target_property(_uni20_relax_alias ${_uni20_relax_candidate} ALIASED_TARGET)
-          if(_uni20_relax_alias)
-            set(_uni20_relax_real_target ${_uni20_relax_alias})
-          else()
-            set(_uni20_relax_real_target ${_uni20_relax_candidate})
-          endif()
-
-          if(NOT _uni20_relax_real_target IN_LIST _uni20_relaxed_dependency_targets)
-            relax_warnings(${_uni20_relax_candidate})
-            list(APPEND _uni20_relaxed_dependency_targets ${_uni20_relax_real_target})
-          endif()
-        endif()
-      endforeach()
+      relax_warnings(${DEP_TARGET})
     endif()
 
     set(help_text "Cloned from ${repo_info}")

@@ -3,11 +3,12 @@
 Uni20 can be consumed directly from source using `add_subdirectory` or CMake
 FetchContent. It currently does not provide an installed CMake package or
 exported targets for `find_package(uni20)`.
+Source integration requires CMake 3.28 or newer, including for CUDA builds.
 
 ## Local checkout
 
 ```cmake
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(my_solver LANGUAGES CXX)
 
 set(UNI20_SOURCE_DIR "" CACHE PATH "Path to a Uni20 source checkout")
@@ -74,6 +75,10 @@ otherwise, for example, Clang's bitcode archives can fail to link. The parent ca
 instead configure IPO for the whole build using CMake's
 `CMAKE_INTERPROCEDURAL_OPTIMIZATION[_<CONFIG>]` variables before creating targets.
 
+Uni20 disables C++ module scanning in its own directory scope because its
+targets use headers rather than named modules. The parent's
+`CMAKE_CXX_SCAN_FOR_MODULES` setting is preserved.
+
 When enabling `UNI20_BUILD_TESTS`, the parent must call `enable_testing()` (or
 include `CTest`) at its source root for `ctest --test-dir <parent-build>` to
 discover the embedded tests. Enabling tests only in Uni20's subdirectory does
@@ -86,6 +91,15 @@ its directory scope. Optional dependency settings, such as `BUILD_GMOCK` and
 provider settings still apply when Uni20 populates that provider. FetchContent
 populates a shared dependency once, so parents should declare their dependency
 choices before adding Uni20.
+
+Uni20's FetchContent declarations mark dependency headers as `SYSTEM` and use
+`EXCLUDE_FROM_ALL` unless `UNI20_BUILD_EXTERNAL_TESTS=ON`. Linked dependency
+targets still build when needed; unrelated dependency targets and install rules
+are excluded from the enclosing project's default build/install. Explicitly
+requested dependency components remain available as named targets. A parent's
+earlier FetchContent declaration takes precedence over these declaration defaults.
+Warning options for compiling dependency sources are controlled separately by
+`UNI20_EXTERNAL_NO_WARN` and `UNI20_EXTERNAL_NO_WERROR`.
 
 If the parent has already created `BLAS::BLAS` or `LAPACK::LAPACK`, it must set
 `BLA_SIZEOF_INTEGER` to the actual integer ABI of those targets before adding

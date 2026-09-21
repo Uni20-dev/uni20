@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(uni20_consumer LANGUAGES CXX)
 
 if(NOT UNI20_SOURCE_DIR)
@@ -13,6 +13,7 @@ option(UNI20_TEST_PYTHON "Build and run embedded Python tests" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(consumer_configurations Debug Release RelWithDebInfo MinSizeRel DebugOpt ConsumerSpecial)
 if(CMAKE_BUILD_TYPE)
   list(APPEND consumer_configurations "${CMAKE_BUILD_TYPE}")
@@ -54,7 +55,7 @@ endif()
 
 foreach(variable IN ITEMS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES
     CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_STANDARD
-    CMAKE_POSITION_INDEPENDENT_CODE BUILD_GMOCK BLA_VENDOR BLA_SIZEOF_INTEGER
+    CMAKE_POSITION_INDEPENDENT_CODE CMAKE_CXX_SCAN_FOR_MODULES BUILD_GMOCK BLA_VENDOR BLA_SIZEOF_INTEGER
     TBB_TEST FETCHCONTENT_BASE_DIR)
   set("saved_${variable}" "${${variable}}")
 endforeach()
@@ -127,12 +128,17 @@ endif()
 
 foreach(variable IN ITEMS CMAKE_BUILD_TYPE CMAKE_CONFIGURATION_TYPES
     CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_STANDARD
-    CMAKE_POSITION_INDEPENDENT_CODE BUILD_GMOCK BLA_VENDOR BLA_SIZEOF_INTEGER
+    CMAKE_POSITION_INDEPENDENT_CODE CMAKE_CXX_SCAN_FOR_MODULES BUILD_GMOCK BLA_VENDOR BLA_SIZEOF_INTEGER
     TBB_TEST FETCHCONTENT_BASE_DIR)
   if(NOT "${${variable}}" STREQUAL "${saved_${variable}}")
     message(FATAL_ERROR "Uni20 changed parent setting ${variable}")
   endif()
 endforeach()
+
+get_target_property(uni20_scans_modules uni20_common CXX_SCAN_FOR_MODULES)
+if(uni20_scans_modules)
+  message(FATAL_ERROR "Uni20's header-based targets must not scan for C++ modules")
+endif()
 
 foreach(option IN ITEMS UNI20_BUILD_TESTS UNI20_BUILD_COMBINED_TESTS
     UNI20_BUILD_BENCH UNI20_BUILD_EXAMPLES UNI20_BUILD_PYTHON UNI20_BUILD_ASM UNI20_ENABLE_LTO)
@@ -172,6 +178,9 @@ if(UNI20_TEST_DEVELOPER_TARGETS)
 endif()
 
 add_executable(uni20_consumer main.cpp)
+# This particular parent target also uses headers, even though the parent has
+# enabled scanning for any other targets it creates.
+set_property(TARGET uni20_consumer PROPERTY CXX_SCAN_FOR_MODULES OFF)
 target_link_libraries(uni20_consumer PRIVATE uni20_core uni20_common)
 if(UNI20_TEST_PARENT_BLAS STREQUAL "matching")
   get_target_property(current_blas_libraries BLAS::BLAS INTERFACE_LINK_LIBRARIES)

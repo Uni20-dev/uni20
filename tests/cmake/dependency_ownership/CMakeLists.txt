@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(dependency_ownership LANGUAGES NONE)
 include("${UNI20_SOURCE_DIR}/cmake/Uni20Dependencies.cmake")
 
@@ -30,7 +30,7 @@ endif()
 set(fixture "${CMAKE_CURRENT_BINARY_DIR}/dependency-source")
 file(MAKE_DIRECTORY "${fixture}")
 file(WRITE "${fixture}/CMakeLists.txt" [=[
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(ParentFeature LANGUAGES NONE)
 option(PARENT_FEATURE "Parent requested component" OFF)
 option(DEFAULT_FEATURE "Optional component" ON)

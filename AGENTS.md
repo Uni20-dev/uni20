@@ -19,6 +19,8 @@ sudo apt-get install -y \
 
 * Do **not** modify `CMakeLists.txt` to bypass dependency detection.
 * If BLAS/LAPACK detection fails, re-run the install step above.
+* Uni20 requires CMake 3.28 or newer. Ubuntu 24.04's CMake 3.28.3 meets
+  this minimum, including the CUDA C++20 configuration requirements.
 * Uni20 requires oneTBB 2022.3 or newer. CMake fetches the pinned oneTBB
   source when no compatible system installation is available. Ubuntu 24.04's
   `libtbb-dev` 2021.11 package is below the supported minimum.

@@ -42,7 +42,7 @@ uni20/                         # Project root
 
 Before building the project, ensure you have the following installed:
 
-- **CMake 3.24+**.
+- **CMake 3.28+**.
 - A supported C++23 compiler: GCC 13 or newer, or upstream Clang 19 or newer.
   Clang 18 is not supported because its alias-template class template argument
   deduction implementation is incomplete for Uni20's tensor aliases.

@@ -1,6 +1,9 @@
-cmake_minimum_required(VERSION 3.24)
-cmake_policy(SET CMP0135 NEW)
+cmake_minimum_required(VERSION 3.28)
 project(uni20 VERSION 0.1.0 LANGUAGES CXX)
+
+# Uni20 uses headers, not C++ named modules. Keep this directory-local so an
+# embedding project can independently enable scanning for its own targets.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
   set(CMAKE_CXX_STANDARD 23)
@@ -40,11 +43,6 @@ if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_CXX_FLAGS_RELEASE        "-DNDEBUG -O2")
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-DNDEBUG -O2 -g")
   set(CMAKE_CXX_FLAGS_MINSIZEREL     "-DNDEBUG -Os")
-endif()
-
-# silence CMP0115 “source file extensions must be explicit”
-if(POLICY CMP0115)
-  cmake_policy(SET CMP0115 NEW)
 endif()
 
 # Include extra CMake modules.
@@ -297,13 +295,8 @@ function(relax_warnings target)
     endif()
   endif()
 
-  # Preserve generator expressions containing lists, and do not add the
-  # include paths again through target_include_directories' path processing.
-  get_target_property(_includes ${real_target} INTERFACE_INCLUDE_DIRECTORIES)
-  if(_includes)
-    set_property(TARGET ${real_target} APPEND PROPERTY
-      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_includes}")
-  endif()
+  # Let CMake interpret the original include paths and generator expressions.
+  set_property(TARGET ${real_target} PROPERTY SYSTEM TRUE)
 endfunction()
 
 foreach(_uni20_warning_flag IN LISTS UNI20_WARN_FLAGS_INTERNAL)
@@ -438,14 +431,6 @@ if(UNI20_BACKEND_CUSOLVER)
   set(UNI20_BACKEND_CUDA ON CACHE BOOL "Enable the CUDA backend (required by cuSOLVER)" FORCE)
 endif()
 
-#if(ipo_supported)
-#  message(STATUS "Enabling full Link-Time Optimization (LTO)")
-#  # Globally turn on IPO for *all* targets and all configs
-#  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-#else()
-#  message(WARNING "IPO/LTO not supported: ${ipo_error}")
-#endif()
-
 if(NOT UNI20_DOCS_WEB)
   include(FetchContent)
 
@@ -483,64 +468,51 @@ if(NOT UNI20_DOCS_WEB)
     endif()
 
     include(CheckCXXSourceCompiles)
-    set(_uni20_saved_try_compile_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
-    set(_uni20_saved_required_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(_uni20_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
-    set(_uni20_saved_required_libraries "${CMAKE_REQUIRED_LIBRARIES}")
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-    if(UNI20_MPLAPACK_SOURCE STREQUAL "fetched")
-      get_target_property(_uni20_mplapack_binary128_target mplapack::mplapack_binary128 ALIASED_TARGET)
-      get_target_property(_uni20_mplapack_source_dir ${_uni20_mplapack_binary128_target} SOURCE_DIR)
-      get_target_property(_uni20_mplapack_binary_dir ${_uni20_mplapack_binary128_target} BINARY_DIR)
-      set(CMAKE_REQUIRED_DEFINITIONS -DMPLAPACK_BUILD_WITH_BINARY128)
-      set(CMAKE_REQUIRED_INCLUDES
-          "${_uni20_mplapack_binary_dir}/include"
-          "${_uni20_mplapack_source_dir}/include")
-    else()
-      set(CMAKE_REQUIRED_LIBRARIES mplapack::mplapack_binary128)
-    endif()
-    unset(UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE CACHE)
-    check_cxx_source_compiles(
-      [[
-        #include <complex>
-        #include <cmath>
-        #include <cstdlib>
-        #include <mpblas_binary128.h>
-        #include <mplapack_binary128.h>
+    block(SCOPE_FOR VARIABLES)
+      set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+      if(UNI20_MPLAPACK_SOURCE STREQUAL "fetched")
+        get_target_property(_uni20_mplapack_binary128_target mplapack::mplapack_binary128 ALIASED_TARGET)
+        get_target_property(_uni20_mplapack_source_dir ${_uni20_mplapack_binary128_target} SOURCE_DIR)
+        get_target_property(_uni20_mplapack_binary_dir ${_uni20_mplapack_binary128_target} BINARY_DIR)
+        set(CMAKE_REQUIRED_DEFINITIONS -DMPLAPACK_BUILD_WITH_BINARY128)
+        set(CMAKE_REQUIRED_INCLUDES
+            "${_uni20_mplapack_binary_dir}/include"
+            "${_uni20_mplapack_source_dir}/include")
+      else()
+        set(CMAKE_REQUIRED_LIBRARIES mplapack::mplapack_binary128)
+      endif()
+      unset(UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE CACHE)
+      check_cxx_source_compiles(
+        [[
+          #include <complex>
+          #include <cmath>
+          #include <cstdlib>
+          #include <mpblas_binary128.h>
+          #include <mplapack_binary128.h>
 
-        #ifndef MPLAPACK_BINARY128_MODE
-        #error "MPLAPACK_BINARY128_MODE is not defined"
-        #endif
+          #ifndef MPLAPACK_BINARY128_MODE
+          #error "MPLAPACK_BINARY128_MODE is not defined"
+          #endif
 
-        #if MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_LDBL
-        #error "MPLAPACK binary128 aliases long double"
-        #endif
+          #if MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_LDBL
+          #error "MPLAPACK binary128 aliases long double"
+          #endif
 
-        int main()
-        {
-          mplapack_binary128_t x = static_cast<mplapack_binary128_t>(1);
-          auto y = abs(x);
-          std::complex<mplapack_binary128_t> z{x, x};
-          auto a = abs(z);
-          auto b = sqrt(z);
-          (void)y;
-          (void)a;
-          (void)b;
-          return 0;
-        }
-      ]]
-      UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE)
-    set(CMAKE_REQUIRED_DEFINITIONS "${_uni20_saved_required_definitions}")
-    set(CMAKE_REQUIRED_INCLUDES "${_uni20_saved_required_includes}")
-    set(CMAKE_REQUIRED_LIBRARIES "${_uni20_saved_required_libraries}")
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_uni20_saved_try_compile_target_type}")
-    unset(_uni20_saved_required_definitions)
-    unset(_uni20_saved_required_includes)
-    unset(_uni20_saved_required_libraries)
-    unset(_uni20_saved_try_compile_target_type)
-    unset(_uni20_mplapack_binary128_target)
-    unset(_uni20_mplapack_binary_dir)
-    unset(_uni20_mplapack_source_dir)
+          int main()
+          {
+            mplapack_binary128_t x = static_cast<mplapack_binary128_t>(1);
+            auto y = abs(x);
+            std::complex<mplapack_binary128_t> z{x, x};
+            auto a = abs(z);
+            auto b = sqrt(z);
+            (void)y;
+            (void)a;
+            (void)b;
+            return 0;
+          }
+        ]]
+        UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE)
+    endblock()
     if(NOT UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE)
       message(FATAL_ERROR
         "The resolved MPLAPACK package is not compatible with Uni20's C++23 binary128 build.\n"
@@ -559,9 +531,6 @@ if(NOT UNI20_DOCS_WEB)
     REPO https://github.com/fmtlib/fmt.git
     TAG 11.1.4
   )
-  if(TARGET fmt)
-    relax_warnings(fmt)
-  endif()
 
   # mdspan reference implementation, put it into stdex namespace to prevent possible conflict with standard library version
   # and set up the uni20_mdspan_base interface target for configured consumers
@@ -569,18 +538,21 @@ if(NOT UNI20_DOCS_WEB)
     SOURCE_DIR "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}/mdspan-src"
     BINARY_DIR "${UNI20_FETCHCONTENT_BASE_DIR}/mdspan-build")
 
+  set(_uni20_dependency_build_options)
+  if(NOT UNI20_BUILD_EXTERNAL_TESTS)
+    list(APPEND _uni20_dependency_build_options EXCLUDE_FROM_ALL)
+  endif()
   FetchContent_Declare(
     mdspan
     GIT_REPOSITORY https://github.com/kokkos/mdspan.git
     GIT_TAG stable
+    SYSTEM
+    ${_uni20_dependency_build_options}
     ${_uni20_mdspan_fetchcontent_paths}
   )
   FetchContent_MakeAvailable(mdspan)
   target_compile_definitions(mdspan INTERFACE MDSPAN_IMPL_STANDARD_NAMESPACE=stdex)
   relax_warnings(mdspan)
-
-  # Use the square bracket operator for multidimensional arrays, not needed for c++23
-  # add_compile_definitions(MDSPAN_USE_BRACKET_OPERATOR=1)
 
   # oneTBB
   uni20_add_dependency(
