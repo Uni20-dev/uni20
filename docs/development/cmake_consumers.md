@@ -95,7 +95,13 @@ add legacy `BLAS_LINKER_FLAGS` or `LAPACK_LINKER_FLAGS` to them. Supplying both
 targets avoids BLAS/LAPACK package discovery entirely, without requiring
 `BLAS_FOUND`, `LAPACK_FOUND`, or a separately discoverable installation. Missing
 providers still require discovery, including their transitive dependencies.
-BLAS vendor detection uses the supplied target's direct link information.
+BLAS vendor detection uses the supplied target's direct link information and
+imported library locations, including import libraries. Configuration-specific
+locations follow the active build configurations, `MAP_IMPORTED_CONFIG_<CONFIG>`,
+and the fallback order in `IMPORTED_CONFIGURATIONS`; unused configurations do
+not override the selected provider. Conflicting identified vendors report
+generic BLAS, since vendor macros and extension availability apply to every
+build configuration.
 Opaque targets default to generic BLAS unless `UNI20_BLAS_VENDOR` explicitly
 identifies the provider for vendor extensions.
 

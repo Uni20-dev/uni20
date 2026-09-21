@@ -134,11 +134,17 @@ unrelated package variables to detect accidental reuse of stale link flags or
 vendor metadata. A dependency export containing multiple include directories
 inside a generator expression checks that warning handling preserves valid
 install exports, as required by fetched MPLAPACK.
+Vendor-detection checks cover imported configuration mappings, fallback
+locations, and import libraries, using CMake's resolved locations as an
+independent oracle. A separate package-hint check resolves private packages in
+a fresh child configure through the same arguments used by the consumers.
 On Unix with a Python interpreter, recording stand-ins execute the
 documentation and formatting target commands and validate their arguments
 without rewriting the source checkout. When Python bindings are enabled in the
 outer build, an embedded consumer builds the extension and runs its Python
-tests from the parent build root, also checking fetched GoogleMock population.
+tests from the parent build root. It reuses installed GoogleTest and nanobind
+packages or fetched sources according to the outer build's dependency policy;
+when GoogleTest is fetched, it also checks requested GoogleMock population.
 When the outer build uses an
 installed MPLAPACK package, the consumers also compile and execute binary128
 arithmetic and a BLAS call. Fetched MPLAPACK builds use ordinary precision in
@@ -147,7 +153,12 @@ the main test suite covers their binary128 operations.
 
 These tests reuse the outer build's dependency source locations or package
 paths and generator platform, toolset, and instance settings, with separate
-build directories under `tests/cmake`. They register
+build directories under `tests/cmake`. The consumer retains `ConsumerSpecial`
+and generates the standard configurations, `DebugOpt`, and any requested custom
+configuration. Ninja builds additionally exercise a real Ninja Multi-Config
+consumer in `RelWithDebInfo`. The Python package hints and disconnected-fetch
+policy are forwarded so an offline outer build does not silently require
+downloads in its nested consumers. These tests register
 directly with CTest because they test CMake integration rather than C++ units.
 
 ### C++ unit tests

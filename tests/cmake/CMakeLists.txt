@@ -1,25 +1,6 @@
 # Configure real parent projects, then compile and run their consumers. These
 # tests exercise CMake usage requirements outside Uni20's directory scope.
-include(FetchContent)
-set(UNI20_SUBPROJECT_TEST_ARGS "")
-foreach(dependency IN ITEMS fmt mdspan TBB GTest nanobind)
-  unset(dependency_source)
-  FetchContent_GetProperties(${dependency} SOURCE_DIR dependency_source)
-  if(dependency_source)
-    string(TOUPPER "${dependency}" dependency_upper)
-    string(APPEND UNI20_SUBPROJECT_TEST_ARGS
-      "  [==[-DFETCHCONTENT_SOURCE_DIR_${dependency_upper}=${dependency_source}]==]\n")
-  endif()
-endforeach()
-
-foreach(variable IN ITEMS CMAKE_CXX_COMPILER CMAKE_C_COMPILER CMAKE_TOOLCHAIN_FILE
-    CMAKE_GENERATOR_PLATFORM CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE
-    CMAKE_MAKE_PROGRAM CMAKE_PREFIX_PATH fmt_DIR TBB_DIR mplapack_DIR
-    UNI20_ENABLE_STACKTRACE)
-  if(DEFINED ${variable} AND NOT "${${variable}}" MATCHES "-NOTFOUND$")
-    string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  [==[-D${variable}=${${variable}}]==]\n")
-  endif()
-endforeach()
+include(subproject_args.cmake)
 
 # Do not compile the entire MPLAPACK provider three more times in nested builds.
 # Main-suite tests cover the fetched provider; an installed package also gives
@@ -31,6 +12,13 @@ else()
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)
+foreach(fixture IN ITEMS blas_vendor package_hints)
+  add_test(NAME CMakeSubproject.${fixture}
+    COMMAND "${CMAKE_COMMAND}" --fresh
+      -S "${CMAKE_CURRENT_SOURCE_DIR}/${fixture}"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/${fixture}"
+      "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}")
+endforeach()
 add_test(NAME CMakeSubproject.blas_abi_contract
   COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/blas_abi_contract"
@@ -52,6 +40,18 @@ foreach(mode IN ITEMS subdirectory fetchcontent)
       -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")
   set_tests_properties(CMakeSubproject.${mode} PROPERTIES LABELS cmake TIMEOUT 300)
 endforeach()
+if(CMAKE_GENERATOR MATCHES "^Ninja")
+  add_test(NAME CMakeSubproject.blas_vendor_multiconfig
+    COMMAND "${CMAKE_COMMAND}" --fresh -G "Ninja Multi-Config"
+      -S "${CMAKE_CURRENT_SOURCE_DIR}/blas_vendor/multiconfig"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/blas_vendor_multiconfig"
+      "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+      "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}")
+  add_test(NAME CMakeSubproject.multiconfig
+    COMMAND "${CMAKE_COMMAND}" -Dmode=subdirectory "-Dgenerator=Ninja Multi-Config"
+      -Dconfig=RelWithDebInfo -P "${CMAKE_CURRENT_BINARY_DIR}/run_subproject.cmake")
+  set_tests_properties(CMakeSubproject.multiconfig PROPERTIES LABELS cmake TIMEOUT 300)
+endif()
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(UNIX AND Python3_Interpreter_FOUND)

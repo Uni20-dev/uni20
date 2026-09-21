@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.24)
+project(package_hint_child LANGUAGES NONE)
+include("${UNI20_SOURCE_DIR}/cmake/Uni20Dependencies.cmake")
+set(UNI20_FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps")
+set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR "${UNI20_FETCHCONTENT_BASE_DIR}")
+if(NOT UNI20_USE_SYSTEM_GTEST STREQUAL "ON" OR
+    NOT UNI20_USE_SYSTEM_NANOBIND STREQUAL "ON" OR
+    NOT FETCHCONTENT_FULLY_DISCONNECTED)
+  message(FATAL_ERROR "Lost the outer dependency resolution policy")
+endif()
+foreach(package IN ITEMS GTest nanobind)
+  uni20_add_dependency(NAME ${package} TARGET ${package}::fixture)
+  if(NOT TARGET ${package}::fixture)
+    message(FATAL_ERROR "Did not resolve the supplied ${package} package")
+  endif()
+endforeach()
