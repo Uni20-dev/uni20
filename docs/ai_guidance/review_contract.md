@@ -41,6 +41,9 @@ AI guidance never overrides the named repository snapshot.
 
 - Uni20 uses C++23. The supported compiler floors are GCC 13 and upstream
   Clang 19.
+- Follow the [platform scope in AGENTS.md](../../AGENTS.md#23-platform-scope):
+  Linux is primary, macOS CPU portability is in scope, and Windows users use
+  WSL. Native Windows-only findings are out of scope unless explicitly requested.
 - Uni20 is in active design. Prefer the clearest correct API over compatibility
   shims for unfinished in-tree interfaces unless compatibility is explicitly
   requested.

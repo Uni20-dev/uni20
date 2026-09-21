@@ -103,6 +103,20 @@ pre-populate the CMake FetchContent sources instead.
   `docs/development/code_review.md` for the current workflow and review
   guidance.
 
+### 2.3 Platform Scope
+
+* Linux is the primary platform. Windows users should use the Linux build
+  through WSL.
+* macOS CPU portability is an intended target and is in scope for reviews,
+  subject to Uni20's C++23 and compiler/library requirements. Distinguish
+  intended portability from configurations actually verified by tests.
+* Native Windows support is out of scope. Unless explicitly requested, do not
+  raise findings or add work solely for MSVC, the Windows CRT, Win32 APIs, or
+  native Windows build tooling. Issues that also affect Linux or macOS remain
+  actionable.
+* Existing Windows-specific branches, upstream dependency support, or synthetic
+  Windows test fixtures do not imply a native Windows support commitment.
+
 ---
 
 ## 3. Core Development Rules
