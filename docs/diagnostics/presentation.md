@@ -152,6 +152,11 @@ See `examples/presentation/` for runnable demonstrations of semantic Unicode/emo
 
 ## Report Tables
 
+The current report model stores formatted text, including styled cells and
+spanning layout. The [Typed Data Tables API](data_tables.md) retains original
+numerical values and supplies `to_report_table` snapshots plus CSV/TSV export.
+Use it when the same calculation results need display formatting and data files.
+
 `report_builder` and `report_table` provide a small higher-level API for command-line examples and diagnostics:
 
 ```cpp

@@ -15,6 +15,8 @@ or symmetry layers.
 - `presentation*`, `display*`, `terminal*`: user-facing formatting and terminal
   helpers, including mdspan previews and policy-aware stacktrace presentation
   when available.
+- `data_table.hpp`: owning typed result tables, checked insertion, deferred
+  display formatting, report snapshots and CSV/TSV export.
 - `aligned_buffer.hpp`, `static_vector.hpp`: small storage utilities.
 - `nifty_counter.hpp`: ordered one-time initialization and finalization shared
   by namespace-scope users across translation units.
@@ -33,4 +35,5 @@ or symmetry layers.
 - [Source tree map](../)
 - [Diagnostics and presentation](../../../docs/diagnostics/)
 - [Presentation formatting](../../../docs/diagnostics/presentation.md)
+- [Typed data tables](../../../docs/diagnostics/data_tables.md)
 - [Trace macros and failure policy](../../../docs/diagnostics/trace_macros.md)

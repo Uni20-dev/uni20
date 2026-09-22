@@ -154,6 +154,7 @@ uni20_add_example(presentation_text_art_example presentation/text_art_example.cp
 uni20_add_example(presentation_diagnostic_region_example presentation/diagnostic_region_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fmt::fmt mdspan uni20_common)
 uni20_add_example(display_example presentation/display_example.cpp fmt::fmt uni20_common)
+uni20_add_example(presentation_data_table_example presentation/data_table_example.cpp fmt::fmt uni20_common)
 
 uni20_add_example(async_example async/async_example.cpp fmt::fmt uni20_common uni20_async)
 uni20_add_example(async_example2 async/async_example2.cpp fmt::fmt uni20_common uni20_async)
