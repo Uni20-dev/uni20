@@ -117,6 +117,19 @@ if(UNI20_ENABLE_MPLAPACK)
 endif()
 set(UNI20_HAS_FLOAT128 OFF)
 set(UNI20_FLOAT128_PROVIDER_MPLAPACK OFF)
+# Native x87 extended precision is a scalar capability, not a BLAS/LAPACK
+# provider. Probe numerical properties rather than padded object size, and do
+# not run a target executable (this also works in cross builds).
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles([=[
+  #include <limits>
+  using Limits = std::numeric_limits<long double>;
+  static_assert(Limits::is_iec559 && Limits::radix == 2 && Limits::digits == 64);
+  static_assert(Limits::min_exponent == -16381 && Limits::max_exponent == 16384);
+  static_assert(Limits::denorm_min() > 0 && Limits::denorm_min() < Limits::min());
+  int main() {}
+]=] UNI20_NATIVE_FLOAT80)
+set(UNI20_HAS_FLOAT80 ${UNI20_NATIVE_FLOAT80})
 if(NOT UNI20_ENABLE_MPLAPACK)
   foreach(_uni20_disabled_mplapack_cache_var IN ITEMS
       UNI20_MPLAPACK_DIR

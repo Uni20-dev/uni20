@@ -40,6 +40,7 @@
 #cmakedefine01 UNI20_ILP64
 
 // Optional scalar precision configuration.
+#cmakedefine01 UNI20_HAS_FLOAT80
 #cmakedefine01 UNI20_HAS_FLOAT128
 #cmakedefine01 UNI20_FLOAT128_PROVIDER_MPLAPACK
 

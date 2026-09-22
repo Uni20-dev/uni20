@@ -569,23 +569,30 @@ int main(int argc, char** argv)
 #endif
   }
 
-  return uni20::visit_scalar_precision(options.precision, [&]<uni20::Real Real>() {
-    auto run = [&]<class MpsStorage>() {
-      if (options.complex_scalar) return run_example<uni20::complex<Real>, MpsStorage>(options);
-      return run_example<Real, MpsStorage>(options);
-    };
-
-    switch (options.mps_storage)
+  return uni20::visit_scalar_precision(options.precision, [&]<uni20::Real Real>() -> int {
+    if constexpr (!uni20::LapackReal<Real>)
     {
-      case MpsStorageMode::packed:
-        return run.template operator()<uni20::PackedSparseBlockStorage<>>();
-      case MpsStorageMode::parallel_packed:
-        return run.template operator()<uni20::ParallelPackedSparseBlockStorage<>>();
-      case MpsStorageMode::parallel_aligned_packed:
-        return run.template operator()<uni20::ParallelPackedSparseBlockStorage<uni20::HostStorage, 64>>();
-      case MpsStorageMode::parallel_separate:
-        return run.template operator()<uni20::ParallelSeparateSparseBlockStorage<>>();
+      throw std::invalid_argument("CPU DMRG requires a precision with LAPACK support; fp80 has no provider");
     }
-    std::unreachable();
+    else
+    {
+      auto run = [&]<class MpsStorage>() {
+        if (options.complex_scalar) return run_example<uni20::complex<Real>, MpsStorage>(options);
+        return run_example<Real, MpsStorage>(options);
+      };
+
+      switch (options.mps_storage)
+      {
+        case MpsStorageMode::packed:
+          return run.template operator()<uni20::PackedSparseBlockStorage<>>();
+        case MpsStorageMode::parallel_packed:
+          return run.template operator()<uni20::ParallelPackedSparseBlockStorage<>>();
+        case MpsStorageMode::parallel_aligned_packed:
+          return run.template operator()<uni20::ParallelPackedSparseBlockStorage<uni20::HostStorage, 64>>();
+        case MpsStorageMode::parallel_separate:
+          return run.template operator()<uni20::ParallelSeparateSparseBlockStorage<>>();
+      }
+      std::unreachable();
+    }
   });
 }

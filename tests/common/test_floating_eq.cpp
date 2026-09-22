@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <cmath>
-#include <complex>
 #include <cstdint>
 #include <limits>
 
@@ -172,4 +171,130 @@ TEST(Float128FloatingEqDeathTest, CheckRejectsClearlyDifferentRealAndComplexValu
   EXPECT_DEATH({ CHECK_FLOATING_EQ(expected, actual); }, "CHECK_FLOATING_EQ");
 }
 
+#endif
+
+#if UNI20_HAS_FLOAT80
+namespace
+{
+using Real80 = uni20::float80;
+using Limits80 = uni20::numeric_limits<Real80>;
+using Ulp80 = uni20::check::FloatingULP<Real80>;
+using uni20::check::float_abs_distance;
+using uni20::check::float_distance;
+static_assert(!uni20::check::IeeeBinaryReal<Real80>);
+static_assert(uni20::check::UlpOrderedReal<Real80>);
+static_assert(uni20::check::UlpComparable<Real80>);
+static_assert(uni20::check::UlpComparable<uni20::complex<Real80>>);
+} // namespace
+
+TEST(Float80FloatingEq, AdjacentValuesAcrossEveryBinade)
+{
+  // Includes every subnormal power of two, the normal/subnormal boundary,
+  // and the change in spacing on either side of every normal power of two.
+  for (int exponent = Limits80::min_exponent - Limits80::digits; exponent < Limits80::max_exponent; ++exponent)
+  {
+    SCOPED_TRACE(exponent);
+    Real80 const value = std::ldexp(Real80{1}, exponent);
+    Real80 const previous = std::nextafter(value, Real80{0});
+    Real80 const next = std::nextafter(value, Limits80::infinity());
+    EXPECT_EQ(float_distance(previous, value), 1);
+    EXPECT_EQ(float_distance(value, next), 1);
+    EXPECT_EQ(float_distance(previous, next), 2);
+    EXPECT_EQ(float_distance(next, previous), -2);
+    EXPECT_EQ(float_distance(-next, -value), 1);
+    EXPECT_EQ(float_distance(-value, -previous), 1);
+    EXPECT_TRUE(Ulp80::eq(previous, next, 2));
+    EXPECT_FALSE(Ulp80::eq(previous, next, 1));
+  }
+}
+
+TEST(Float80FloatingEq, InteriorValuesAndToleranceBoundaries)
+{
+  for (int exponent : {-16000, -20, 0, 20, 16000})
+    for (Real80 sign : {Real80{-1}, Real80{1}})
+    {
+      SCOPED_TRACE(exponent);
+      SCOPED_TRACE(uni20::format_real(sign));
+      Real80 const value = sign * std::ldexp(Real80{1.5L}, exponent);
+      Real80 next = value;
+      for (int steps = 1; steps <= 16; ++steps)
+      {
+        next = std::nextafter(next, Limits80::infinity());
+        EXPECT_EQ(float_distance(value, next), steps);
+        EXPECT_EQ(float_abs_distance(next, value), steps);
+        EXPECT_TRUE(Ulp80::eq(value, next, steps));
+        EXPECT_FALSE(Ulp80::eq(value, next, steps - 1));
+      }
+    }
+}
+
+TEST(Float80FloatingEq, SignedZeroAndSubnormals)
+{
+  Real80 const tiny = Limits80::denorm_min();
+  EXPECT_EQ(float_distance(Real80{-0.0L}, Real80{0}), 0);
+  EXPECT_EQ(float_distance(-tiny, tiny), 2);
+  EXPECT_EQ(float_distance(tiny, -tiny), -2);
+  EXPECT_EQ(float_distance(-tiny, Real80{0}), 1);
+  EXPECT_TRUE(Ulp80::eq(Real80{-0.0L}, Real80{0}, 0));
+  EXPECT_TRUE(Ulp80::eq(-tiny, tiny, 2));
+  EXPECT_FALSE(Ulp80::eq(-tiny, tiny, 1));
+}
+
+TEST(Float80FloatingEq, LargeDistancesSaturateOnlyTheDiagnostic)
+{
+  constexpr auto limit = std::numeric_limits<long long>::max();
+  Real80 const one = 1, two = 2;
+  // The [1,2) binade has 2^63 representable fp80 values.
+  EXPECT_EQ(float_distance(one, two), limit);
+  EXPECT_EQ(float_distance(two, one), -limit);
+  EXPECT_EQ(float_abs_distance(two, one), limit);
+  EXPECT_FALSE(Ulp80::eq(one, two, limit));
+  EXPECT_TRUE(Ulp80::eq(one, std::nextafter(two, one), limit));
+  EXPECT_FALSE(Ulp80::eq(-one, one, limit));
+  EXPECT_FALSE(Ulp80::eq(-Limits80::max(), Limits80::max(), limit));
+  EXPECT_EQ(float_distance(-Limits80::max(), Limits80::max()), limit);
+}
+
+TEST(Float80FloatingEq, NaNInfinityAndInvalidTolerance)
+{
+  Real80 const infinity = Limits80::infinity(), nan = Limits80::quiet_NaN(), one = 1;
+  constexpr auto limit = std::numeric_limits<long long>::max();
+  EXPECT_FALSE(Ulp80::eq(nan, nan));
+  EXPECT_FALSE(Ulp80::eq(one, nan));
+  EXPECT_FALSE(Ulp80::eq(nan, one));
+  EXPECT_TRUE(Ulp80::eq(infinity, infinity, 0));
+  EXPECT_TRUE(Ulp80::eq(-infinity, -infinity, 0));
+  EXPECT_FALSE(Ulp80::eq(infinity, -infinity, limit));
+  EXPECT_FALSE(Ulp80::eq(Limits80::max(), infinity, limit));
+  EXPECT_FALSE(Ulp80::eq(one, one, -1));
+  EXPECT_EQ(float_distance(nan, one), limit);
+  EXPECT_EQ(float_distance(one, infinity), limit);
+  EXPECT_EQ(float_distance(infinity, infinity), 0);
+}
+
+TEST(Float80FloatingEq, RealAndComplexAssertionIntegration)
+{
+  Real80 const one = 1, next = std::nextafter(one, Real80{2});
+  EXPECT_FLOATING_EQ(one, next, 1);
+  ASSERT_FLOATING_EQ(one, next, 1);
+  CHECK_FLOATING_EQ(one, next, 1);
+  PRECONDITION_FLOATING_EQ(one, next, 1);
+  EXPECT_NONFATAL_FAILURE(EXPECT_FLOATING_EQ(one, next, 0), "actual distance: 1");
+  EXPECT_NONFATAL_FAILURE(EXPECT_FLOATING_EQ(one, next, -1), "non-negative ULP tolerance");
+  static Real80 const fixed_one = 1, fixed_next = std::nextafter(fixed_one, Real80{2});
+  EXPECT_FATAL_FAILURE(ASSERT_FLOATING_EQ(fixed_one, fixed_next, 0), "actual distance: 1");
+  uni20::complex<Real80> const a{one, -next}, b{next, -one};
+  EXPECT_FLOATING_EQ(a, b, 1);
+  ASSERT_FLOATING_EQ(a, b, 1);
+  CHECK_FLOATING_EQ(a, b, 1);
+  EXPECT_EQ(float_abs_distance(a, b), 1);
+  EXPECT_NONFATAL_FAILURE(EXPECT_FLOATING_EQ(a, b, 0), "actual distance: 1");
+}
+
+TEST(Float80FloatingEqDeathTest, CheckRejectsDifferentValues)
+{
+  GTEST_FLAG_SET(death_test_style, "fast");
+  EXPECT_DEATH({ CHECK_FLOATING_EQ(Real80{1}, Real80{2}); }, "CHECK_FLOATING_EQ");
+  EXPECT_DEATH({ PRECONDITION_FLOATING_EQ(Real80{1}, Real80{2}); }, "PRECONDITION_FLOATING_EQ");
+}
 #endif

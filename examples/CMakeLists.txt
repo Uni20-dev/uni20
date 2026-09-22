@@ -65,6 +65,10 @@ add_test(NAME KernelDispatchExample.TensorGemmFp32
     COMMAND gemm_dispatch_example --precision=fp32 --diagnostics=on)
 add_test(NAME KernelDispatchExample.TensorGemmFp64
     COMMAND gemm_dispatch_example --precision=fp64 --diagnostics=on)
+if(UNI20_HAS_FLOAT80)
+  add_test(NAME KernelDispatchExample.TensorGemmFp80
+      COMMAND gemm_dispatch_example --precision=fp80 --diagnostics=on)
+endif()
 if(UNI20_HAS_FLOAT128)
   add_test(NAME KernelDispatchExample.TensorGemmFp128
       COMMAND gemm_dispatch_example --precision=fp128 --diagnostics=on)
@@ -167,6 +171,11 @@ uni20_add_example(async_tbb_matrix_product_batch_example async/async_tbb_matrix_
 add_test(NAME AsyncTbbMatrixProductBatchExample
     COMMAND async_tbb_matrix_product_batch_example
         --size=16 --products=6 --threads=3 --backend=cpu --precision=fp64)
+if(UNI20_HAS_FLOAT80)
+  add_test(NAME AsyncTbbMatrixProductBatchExample.Float80
+      COMMAND async_tbb_matrix_product_batch_example
+          --size=12 --products=4 --threads=3 --backend=auto --precision=fp80)
+endif()
 if(UNI20_HAS_FLOAT128)
   add_test(NAME AsyncTbbMatrixProductBatchExample.Float128
       COMMAND async_tbb_matrix_product_batch_example

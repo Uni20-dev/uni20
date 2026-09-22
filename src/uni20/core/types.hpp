@@ -6,6 +6,7 @@
 #endif
 #include <complex>
 #include <concepts>
+#include <limits>
 
 namespace uni20
 {
@@ -20,6 +21,20 @@ using index_type = std::ptrdiff_t;
 // Type aliases for explicit precision and complex values
 using float32 = float;
 using float64 = double;
+
+#if UNI20_HAS_FLOAT80
+/// \brief Native x87 extended-precision real scalar, with 64 significand bits.
+/// \details Available only when long double has the fp80 numerical format. Storage may contain padding;
+///          this alias does not promise a ten-byte object or a BLAS/LAPACK backend.
+/// \ingroup core_math
+using float80 = long double;
+static_assert(std::numeric_limits<float80>::is_iec559 && std::numeric_limits<float80>::radix == 2 &&
+                  std::numeric_limits<float80>::digits == 64 && std::numeric_limits<float80>::min_exponent == -16381 &&
+                  std::numeric_limits<float80>::max_exponent == 16384 &&
+                  std::numeric_limits<float80>::denorm_min() > 0 &&
+                  std::numeric_limits<float80>::denorm_min() < std::numeric_limits<float80>::min(),
+              "Uni20's configured fp80 format must match the consuming compiler's long double");
+#endif
 
 /// \brief Project-level complex scalar spelling.
 /// \details This is intentionally an alias to `std::complex`, not a wrapper. Code in Uni20 should spell complex
