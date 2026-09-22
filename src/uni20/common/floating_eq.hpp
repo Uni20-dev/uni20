@@ -28,8 +28,7 @@ inline constexpr bool has_ieee_binary_interchange_layout_v =
 
 /// \brief Real scalar stored in an IEEE binary32, binary64, or binary128 interchange representation.
 /// \details This excludes padded extended-precision representations such as
-///          x87 80-bit `long double`, whose object representation contains
-///          non-value bits that cannot participate in a portable ULP ordering.
+///          x87 80-bit `long double`, which uses a value-based ordering instead.
 /// \tparam T Real scalar type to inspect.
 template <typename T>
 concept IeeeBinaryReal =
@@ -37,25 +36,58 @@ concept IeeeBinaryReal =
     uni20::numeric_limits<std::remove_cvref_t<T>>::radix == 2 && std::is_trivially_copyable_v<std::remove_cvref_t<T>> &&
     detail::has_ieee_binary_interchange_layout_v<std::remove_cvref_t<T>>;
 
+/// \brief Real scalar with an implemented ordering of adjacent representable values.
+/// \details Supports IEEE binary interchange formats and configured native fp80.
+///          Unlike IeeeBinaryReal, this does not require a padding-free object representation.
+template <typename T>
+concept UlpOrderedReal = IeeeBinaryReal<T>
+#if UNI20_HAS_FLOAT80
+                         || std::same_as<std::remove_cvref_t<T>, uni20::float80>
+#endif
+    ;
+
 namespace detail
 {
 
-template <IeeeBinaryReal T>
+template <UlpOrderedReal T>
 using ulp_uint_t =
     std::conditional_t<sizeof(T) == 4, std::uint32_t, std::conditional_t<sizeof(T) == 8, std::uint64_t, __uint128_t>>;
 
-template <IeeeBinaryReal T> constexpr ulp_uint_t<T> ordered_ulp_key(T value)
+template <UlpOrderedReal T> constexpr ulp_uint_t<T> ordered_ulp_key(T value)
 {
   using UInt = ulp_uint_t<T>;
-  constexpr UInt SignBit = UInt{1} << (sizeof(UInt) * 8 - 1);
-  UInt const bits = std::bit_cast<UInt>(value);
+  if constexpr (IeeeBinaryReal<T>)
+  {
+    constexpr UInt SignBit = UInt{1} << (sizeof(UInt) * 8 - 1);
+    UInt const bits = std::bit_cast<UInt>(value);
 
-  // Collapse the two signed-zero encodings and order negative values before
-  // positive values while preserving adjacency between finite values.
-  return (bits & SignBit) != 0 ? ~bits + UInt{1} : bits | SignBit;
+    // Collapse the two signed-zero encodings and order negative values before
+    // positive values while preserving adjacency between finite values.
+    return (bits & SignBit) != 0 ? ~bits + UInt{1} : bits | SignBit;
+  }
+  else
+  {
+    // Finite fp80 values only: callers handle infinities and NaNs first.
+    // frexp/ldexp recover the integer significand exactly, without touching
+    // padding or depending on byte order or the explicit integer-bit encoding.
+    // Each normal binade contains 2^63 values; the subnormal binade uses the
+    // same spacing as the first normal one.
+    constexpr UInt SignBit = UInt{1} << 78;
+    if (value == T{0}) return SignBit;
+    int exponent;
+    T const fraction = std::frexp(std::abs(value), &exponent);
+    UInt significand = static_cast<UInt>(std::ldexp(fraction, 64));
+    constexpr int MinExponent = uni20::numeric_limits<T>::min_exponent;
+    UInt magnitude;
+    if (exponent < MinExponent)
+      magnitude = significand >> (MinExponent - exponent);
+    else
+      magnitude = (UInt(exponent - MinExponent) << 63) + significand;
+    return std::signbit(value) ? SignBit - magnitude : SignBit + magnitude;
+  }
 }
 
-template <IeeeBinaryReal T> constexpr ulp_uint_t<T> ulp_distance_magnitude(T a, T b)
+template <UlpOrderedReal T> constexpr ulp_uint_t<T> ulp_distance_magnitude(T a, T b)
 {
   auto const ai = ordered_ulp_key(a);
   auto const bi = ordered_ulp_key(b);
@@ -64,14 +96,14 @@ template <IeeeBinaryReal T> constexpr ulp_uint_t<T> ulp_distance_magnitude(T a, 
 
 } // namespace detail
 
-/// \brief Return the signed distance in ULPs between two IEEE-754 values.
+/// \brief Return the signed distance in ULPs between two supported real scalars.
 /// \details
 ///  * Positive if `b > a`, negative if `a > b`.
 ///  * Returns 0 if `a == b` (including +0 vs -0).
 ///  * Returns `max<long long>` if either value is NaN or if infinities differ.
 ///  * Saturates when the finite distance exceeds the signed diagnostic range.
-/// \tparam T IEEE binary interchange scalar type.
-template <IeeeBinaryReal T> inline long long float_distance(T a, T b)
+/// \tparam T IEEE binary interchange or configured native fp80 scalar type.
+template <UlpOrderedReal T> inline long long float_distance(T a, T b)
 {
   if (std::isnan(a) || std::isnan(b))
   {
@@ -103,7 +135,7 @@ template <IeeeBinaryReal T> inline long long float_distance(T a, T b)
 /// \brief Compare floating point or complex values within a given ULP tolerance.
 ///
 /// \details
-/// This template is specialized for IEEE binary32, binary64, and binary128
+/// This template is specialized for IEEE binary32, binary64, binary128, native fp80,
 /// Uni20 real scalars and their `uni20::complex<T>` counterparts. It can be
 /// extended by specializing `FloatingULP<T>` for other scalar-like types.
 ///
@@ -115,7 +147,7 @@ template <IeeeBinaryReal T> inline long long float_distance(T a, T b)
 template <typename T> struct FloatingULP;
 
 template <typename T>
-  requires IeeeBinaryReal<T>
+  requires UlpOrderedReal<T>
 struct FloatingULP<T>
 {
     static bool eq(T a, T b, std::int64_t max_ulps = 4)
@@ -140,7 +172,7 @@ struct FloatingULP<T>
 
 /// \brief ULP comparator for complex numbers over floating point.
 template <typename T>
-  requires uni20::Complex<T> && IeeeBinaryReal<uni20::make_real_t<T>>
+  requires uni20::Complex<T> && UlpOrderedReal<uni20::make_real_t<T>>
 struct FloatingULP<T>
 {
     static bool eq(T const& a, T const& b, std::int64_t max_ulps = 4)
@@ -157,14 +189,14 @@ concept UlpComparable = requires(T a, T b) {
 };
 
 /// \brief Return the absolute diagnostic ULP distance between two real scalars.
-template <IeeeBinaryReal T> inline long long float_abs_distance(T a, T b)
+template <UlpOrderedReal T> inline long long float_abs_distance(T a, T b)
 {
   auto dist = float_distance(a, b);
   return (dist == std::numeric_limits<long long>::max()) ? std::numeric_limits<long long>::max() : std::llabs(dist);
 }
 
 template <uni20::Complex T>
-  requires IeeeBinaryReal<uni20::make_real_t<T>>
+  requires UlpOrderedReal<uni20::make_real_t<T>>
 inline long long float_abs_distance(T a, T b)
 {
   auto dr = float_abs_distance(a.real(), b.real());

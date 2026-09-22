@@ -7,7 +7,7 @@
 /// for use inside GoogleTest unit tests. They extend the standard GTest
 /// floating-point comparison macros (`EXPECT_FLOAT_EQ`, `EXPECT_DOUBLE_EQ`) to:
 ///
-/// - Work with IEEE binary32, binary64, and configured binary128 real scalars.
+/// - Work with IEEE binary32, binary64, configured native fp80, and binary128 real scalars.
 /// - Work with `uni20::complex<T>` over those real scalar types.
 /// - Allow explicit specification of ULP tolerance.
 /// - Default to a tolerance of 4 ULPs if none is provided, matching GoogleTest.

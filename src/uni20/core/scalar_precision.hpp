@@ -25,8 +25,12 @@ enum class ScalarPrecision
 {
   fp32,
   fp64,
+  fp80,
   fp128
 };
+
+/// \brief Whether this build provides native x87 extended precision as uni20::float80.
+inline constexpr bool has_float80 = UNI20_HAS_FLOAT80 != 0;
 
 /// \brief Whether this build provides a concrete `uni20::float128` type.
 inline constexpr bool has_float128 = UNI20_HAS_FLOAT128 != 0;
@@ -42,6 +46,8 @@ inline constexpr bool has_float128 = UNI20_HAS_FLOAT128 != 0;
       return "fp32";
     case ScalarPrecision::fp64:
       return "fp64";
+    case ScalarPrecision::fp80:
+      return "fp80";
     case ScalarPrecision::fp128:
       return "fp128";
   }
@@ -55,6 +61,7 @@ inline constexpr bool has_float128 = UNI20_HAS_FLOAT128 != 0;
 {
   if (name == "fp32") return ScalarPrecision::fp32;
   if (name == "fp64") return ScalarPrecision::fp64;
+  if (name == "fp80") return ScalarPrecision::fp80;
   if (name == "fp128") return ScalarPrecision::fp128;
   return std::nullopt;
 }
@@ -69,6 +76,8 @@ inline constexpr bool has_float128 = UNI20_HAS_FLOAT128 != 0;
     case ScalarPrecision::fp32:
     case ScalarPrecision::fp64:
       return true;
+    case ScalarPrecision::fp80:
+      return has_float80;
     case ScalarPrecision::fp128:
       return has_float128;
   }
@@ -77,12 +86,16 @@ inline constexpr bool has_float128 = UNI20_HAS_FLOAT128 != 0;
 
 namespace detail
 {
-#if UNI20_HAS_FLOAT128
-inline constexpr std::array configured_scalar_precisions{ScalarPrecision::fp32, ScalarPrecision::fp64,
-                                                         ScalarPrecision::fp128};
-#else
-inline constexpr std::array configured_scalar_precisions{ScalarPrecision::fp32, ScalarPrecision::fp64};
+inline constexpr std::array configured_scalar_precisions{
+    ScalarPrecision::fp32,
+    ScalarPrecision::fp64,
+#if UNI20_HAS_FLOAT80
+    ScalarPrecision::fp80,
 #endif
+#if UNI20_HAS_FLOAT128
+    ScalarPrecision::fp128,
+#endif
+};
 } // namespace detail
 
 /// \brief Return the real scalar precisions configured in this build.
@@ -96,17 +109,20 @@ inline constexpr std::array configured_scalar_precisions{ScalarPrecision::fp32, 
 /// \return Pipe-separated configured precision names.
 [[nodiscard]] constexpr std::string_view configured_scalar_precision_choices()
 {
-#if UNI20_HAS_FLOAT128
-  return "fp32|fp64|fp128";
-#else
-  return "fp32|fp64";
+  return "fp32|fp64"
+#if UNI20_HAS_FLOAT80
+         "|fp80"
 #endif
+#if UNI20_HAS_FLOAT128
+         "|fp128"
+#endif
+      ;
 }
 
 /// \brief Invoke a templated callable with the concrete real scalar for a runtime precision.
 /// \details The callable must provide `operator()<Scalar>()` with a common return type for every configured
 ///          precision. Requesting a known but unavailable precision throws `std::invalid_argument`. The conditional
-///          `uni20::float128` type is confined to this configuration boundary, so callers do not need preprocessor
+///          fp80 and fp128 types are confined to this configuration boundary, so callers do not need preprocessor
 ///          guards.
 /// \tparam Function Templated callable type.
 /// \param precision Runtime precision selection.
@@ -120,6 +136,12 @@ template <class Function> decltype(auto) visit_scalar_precision(ScalarPrecision 
       return std::forward<Function>(function).template operator()<float32>();
     case ScalarPrecision::fp64:
       return std::forward<Function>(function).template operator()<float64>();
+    case ScalarPrecision::fp80:
+#if UNI20_HAS_FLOAT80
+      return std::forward<Function>(function).template operator()<float80>();
+#else
+      throw std::invalid_argument("fp80 is not available in this Uni20 build");
+#endif
     case ScalarPrecision::fp128:
 #if UNI20_HAS_FLOAT128
       return std::forward<Function>(function).template operator()<float128>();

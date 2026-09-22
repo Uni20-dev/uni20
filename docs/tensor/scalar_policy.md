@@ -15,7 +15,17 @@ The canonical real aliases are:
 | --- | --- | --- |
 | `uni20::float32` | `float` | always |
 | `uni20::float64` | `double` | always |
+| `uni20::float80` | native x87 extended precision, alias of `long double` | only when `UNI20_HAS_FLOAT80=1` |
 | `uni20::float128` | configured binary128 real scalar | only when `UNI20_HAS_FLOAT128=1` |
+
+`uni20::float80` has 64 significand bits (about 19 decimal digits) and the x87
+extended exponent range. CMake automatically detects the native `long double`
+format from its numerical limits; it does not infer precision from `sizeof`.
+An fp80 object can occupy 12 or 16 bytes because of padding. No provider,
+software emulation, or silent substitution is added: on platforms where
+`long double` is binary64 or binary128, `UNI20_HAS_FLOAT80=0` and the alias is
+absent. Ordinary `long double` remains a valid Uni20 real scalar on all those
+platforms. Guard direct references to `uni20::float80` with `UNI20_HAS_FLOAT80`.
 
 `uni20::float128` is a configuration-dependent type. In the current MPLAPACK
 configuration it aliases `mplapack_binary128_t`, whose concrete spelling is
@@ -25,14 +35,14 @@ selected by the resolved MPLAPACK package. Code that is not gated by
 Runtime-facing code should use `uni20::ScalarPrecision` and
 `uni20::visit_scalar_precision` from `uni20/core/scalar_precision.hpp` instead
 of repeating configuration guards. The precision enum always recognizes
-`fp32`, `fp64`, and `fp128`; the visitor throws when a recognized precision is
+`fp32`, `fp64`, `fp80`, and `fp128`; the visitor throws when a recognized precision is
 not configured. The visitor is the central preprocessor boundary that maps a
 runtime precision to `uni20::float32`, `uni20::float64`, or the conditional
-`uni20::float128` type. `uni20::configured_scalar_precisions()` and
+`uni20::float80` and `uni20::float128` types. `uni20::configured_scalar_precisions()` and
 `uni20::configured_scalar_precision_choices()` expose the available set for
 help text, diagnostics, examples, and future language bindings.
 
-To enable this path, configure with `UNI20_ENABLE_MPLAPACK=ON`. CMake prefers a
+To enable fp128, configure with `UNI20_ENABLE_MPLAPACK=ON`. CMake prefers a
 compatible installed MPLAPACK 3.0.0 or newer package and otherwise fetches the
 pinned 3.0.0 release with only its binary128 backend enabled. See [MPLAPACK
 Binary128 Setup](../linalg/mplapack_binary128.md) for dependency selection,
@@ -118,6 +128,15 @@ must itself be the scalar value.
 matters for extension scalar types: a type can be a valid Uni20 real scalar
 without having BLAS or LAPACK coverage in the current build.
 
+In particular, `float80` and `complex<float80>` do **not** acquire BLAS, LAPACK,
+or GPU provider coverage. They reuse the existing native `long double` scalar
+and generic CPU paths where the operation supports them. Runtime precision
+visitors instantiate every configured scalar: clients requiring LAPACK must
+guard those instantiations with the relevant capability concept and reject
+unsupported requests, rather than silently narrowing. Native fp80 availability
+does not extend the supported precisions of the projected LAPACK-based Krylov
+solvers or DMRG.
+
 Reference sums and inner products use compensated accumulation in the input
 scalar field. Norms use scaled sum-of-squares arithmetic in the associated real
 field. Algorithms must choose their numerical accumulation method explicitly;
@@ -188,6 +207,29 @@ widened `double`. Uni20 does not currently duplicate `std::numbers`. If a future
 scalar provider cannot supply suitable typed standard constants, introduce a
 project customization point when integrating that provider.
 
+## Floating-Point Comparisons
+
+`uni20/common/floating_eq.hpp` provides ULP comparisons for binary32,
+binary64, configured binary128, and native fp80, including their
+`uni20::complex<T>` counterparts. `IeeeBinaryReal` still denotes only the
+supported IEEE interchange layouts; `UlpOrderedReal` also admits native fp80.
+The fp80 ordering uses exact exponent/significand decomposition, not object
+bytes, so storage padding and byte order do not affect the distance.
+
+`uni20/common/gtest.hpp` exposes this through `EXPECT_FLOATING_EQ` and
+`ASSERT_FLOATING_EQ`. The optional third argument is a nonnegative ULP bound
+(default four). Signed zeros compare equal; NaNs never do; infinities match
+only when equal. The comparison uses the full distance even when the signed
+diagnostic distance saturates at `std::numeric_limits<long long>::max()`.
+The tracing `CHECK_FLOATING_EQ` and `PRECONDITION_FLOATING_EQ` assertions
+share the same comparison implementation.
+
+Use ULP bounds for contracts expressed in representable-value steps.
+Algorithmic residuals, truncation errors, and reference data with limited
+accuracy generally need explicit absolute/relative tolerances in the native
+scalar type instead. Do not narrow fp80 or fp128 through GoogleTest's
+double-based `EXPECT_NEAR`.
+
 ## Scalar Formatting
 
 Scalar-generic diagnostics and presentation code should use
@@ -195,6 +237,9 @@ Scalar-generic diagnostics and presentation code should use
 assuming standard stream or formatter support. Trace formatting recognizes all
 types satisfying Uni20's `Real` and `Complex` concepts, including
 `uni20::float128` and `uni20::complex<uni20::float128>` when configured.
+
+Native `float80` uses the existing `long double` parsing, formatting, and
+presentation precision policy; no conversion through `double` is involved.
 
 Trace precision is independently configurable for float32, float64, and
 float128 values. The global environment variables are

@@ -681,12 +681,8 @@ TEST(TaskRegistryDebugTest, FormatsEveryConfiguredRealScalar)
     EXPECT_EQ(uni20::async::detail::scalar_debug_info(Scalar{5} / Scalar{4}), "1.25");
   };
 
-  uni20::visit_scalar_precision(uni20::ScalarPrecision::fp32, check);
-  uni20::visit_scalar_precision(uni20::ScalarPrecision::fp64, check);
-  if (uni20::has_float128)
-  {
-    uni20::visit_scalar_precision(uni20::ScalarPrecision::fp128, check);
-  }
+  for (auto precision : uni20::configured_scalar_precisions())
+    uni20::visit_scalar_precision(precision, check);
 }
 
 TEST(TaskRegistryDebugTest, GraphvizDotDiagnosesMissingWriter)
