@@ -31,7 +31,8 @@ using float80 = long double;
 static_assert(std::numeric_limits<float80>::is_iec559 && std::numeric_limits<float80>::radix == 2 &&
                   std::numeric_limits<float80>::digits == 64 && std::numeric_limits<float80>::min_exponent == -16381 &&
                   std::numeric_limits<float80>::max_exponent == 16384 &&
-                  std::numeric_limits<float80>::has_denorm == std::denorm_present,
+                  std::numeric_limits<float80>::denorm_min() > 0 &&
+                  std::numeric_limits<float80>::denorm_min() < std::numeric_limits<float80>::min(),
               "Uni20's configured fp80 format must match the consuming compiler's long double");
 #endif
 

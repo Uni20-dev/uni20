@@ -126,7 +126,7 @@ check_cxx_source_compiles([=[
   using Limits = std::numeric_limits<long double>;
   static_assert(Limits::is_iec559 && Limits::radix == 2 && Limits::digits == 64);
   static_assert(Limits::min_exponent == -16381 && Limits::max_exponent == 16384);
-  static_assert(Limits::has_denorm == std::denorm_present);
+  static_assert(Limits::denorm_min() > 0 && Limits::denorm_min() < Limits::min());
   int main() {}
 ]=] UNI20_NATIVE_FLOAT80)
 set(UNI20_HAS_FLOAT80 ${UNI20_NATIVE_FLOAT80})
