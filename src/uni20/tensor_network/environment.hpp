@@ -79,7 +79,7 @@ template <class Result> void initialize_identity_environment(Result& result)
   for (std::size_t ordinal = 0; ordinal < result.stored_block_count(); ++ordinal)
   {
     auto block = result.block_by_ordinal(ordinal);
-    ColumnMajorTensor<value_type, 2> identity(block.extent(0), block.extent(1));
+    ColumnMajorTensor<value_type, 2> identity(uninitialized, block.extent(0), block.extent(1));
     auto identity_span = identity.mdspan();
     for (index_type column = 0; column < identity.extent(1); ++column)
     {
@@ -350,7 +350,7 @@ template <typename Value, SparseBlockStorage Storage = SeparateSparseBlockStorag
 
   using result_type = MpoEnvironment<Value, BlockSpace, LocalSpace, BlockSpace, Storage>;
   auto keys = detail::make_identity_environment_keys<result_type>(bond, auxiliary_index);
-  result_type result(bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys));
+  result_type result(uninitialized, bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys));
   detail::initialize_identity_environment(result);
   return result;
 }
@@ -372,7 +372,7 @@ template <typename Value, SparseBlockStorage Storage = SeparateSparseBlockStorag
                        keys,
                    Context& context) {
                  MpoEnvironment<Value, BlockSpace, LocalSpace, BlockSpace, Storage>(
-                     bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys), context);
+                     uninitialized, bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys), context);
                }
 [[nodiscard]] auto
 make_identity_mpo_environment(BlockSpace const& bond, LocalSpace const& auxiliary, std::size_t auxiliary_index,
@@ -387,7 +387,7 @@ make_identity_mpo_environment(BlockSpace const& bond, LocalSpace const& auxiliar
 
   using result_type = MpoEnvironment<Value, BlockSpace, LocalSpace, BlockSpace, Storage>;
   auto keys = detail::make_identity_environment_keys<result_type>(bond, auxiliary_index);
-  result_type result(bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys), context);
+  result_type result(uninitialized, bond.symmetry(), Domain{bond, auxiliary}, Codomain{bond}, std::move(keys), context);
   detail::initialize_identity_environment(result);
   return result;
 }

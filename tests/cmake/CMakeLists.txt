@@ -2,6 +2,18 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
+configure_file(run_initialization.cmake.in run_initialization.cmake @ONLY)
+set(_uni20_initialization_cases debug debugopt release on off)
+if(CMAKE_GENERATOR MATCHES "^Ninja")
+  list(APPEND _uni20_initialization_cases multiconfig)
+endif()
+foreach(case IN LISTS _uni20_initialization_cases)
+  add_test(NAME CMakeSubproject.initialization_${case}
+    COMMAND "${CMAKE_COMMAND}" "-Dcase=${case}"
+      -P "${CMAKE_CURRENT_BINARY_DIR}/run_initialization.cmake")
+  set_tests_properties(CMakeSubproject.initialization_${case} PROPERTIES LABELS cmake TIMEOUT 60)
+endforeach()
+
 add_test(NAME CMakeSubproject.dependency_arguments
   COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/dependency_arguments"

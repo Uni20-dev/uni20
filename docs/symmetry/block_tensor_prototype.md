@@ -349,8 +349,9 @@ The implemented slice provides six sparse host policies and two packed-complete
 host policies. All use:
 
 - canonical block-key ordering;
-- unspecified numerical values after allocation; every operation must overwrite
-  or explicitly initialize a block before reading it;
+- numerical zero in every stored block after ordinary construction;
+- explicit `uninitialized` construction for outputs and scratch space, whose
+  numerical elements must each be written before being read;
 - stable block bindings after construction.
 
 `SeparateSparseBlockStorage` owns one column-major dense `Tensor` for each
@@ -409,7 +410,8 @@ Krylov vectors; sparse MPO and environment storage remains independent.
 Aligned packed storage records both block-start offsets and the exclusive end
 of each numerical payload. Elements between a payload end and the next block
 start are storage padding. Construction initializes that padding to numerical
-zero while leaving block payloads unspecified. Allocation-wide zeroing,
+zero for both ordinary and explicitly uninitialized construction. The latter
+leaves only the numerical payload unspecified. Allocation-wide zeroing,
 scaling, copying between identical layouts, AXPY, inner products, and norms may
 therefore process the complete physical allocation: each operation preserves
 zero padding. A nonzero fill is different and must skip the gaps or restore
@@ -491,7 +493,32 @@ pattern construct or replace a tensor rather than inserting blocks into a live
 layout.
 
 For the implemented slice, the sparse constructor accepts the complete stored
-key list directly and performs the same validation before allocating.
+key list directly and performs the same validation before allocating:
+
+```cpp
+using Matrix = BlockTensor<double, Domain<BlockSpace>, Codomain<BlockSpace>,
+                           PackedSparseBlockStorage<>>;
+Matrix zero(symmetry, Domain{rows}, Codomain{columns}, keys);
+Matrix output(uninitialized, symmetry, Domain{rows}, Codomain{columns}, keys);
+auto another_zero = zero.allocate_like();
+auto scratch = zero.allocate_like(uninitialized);
+```
+
+The tag is first for all sparse and complete constructor forms, including
+constructors with an explicit leaf allocation context. It does not change the
+stored keys, selection rule, placement, or tensor type. `allocate_like` is
+available for packed dense storage and preserves its validated layout and leaf
+allocation context; its ordinary form creates zeros and its tagged form leaves
+payload values unspecified. Copies and numerical result operations request
+uninitialized allocation internally and supply their own values.
+
+The optional sNaN fill and initialization-tool annotations follow the same
+[configuration and element policy as dense tensors](../tensor/scalar_policy.md).
+Diagnostic filling never poisons structural zeros or packed alignment padding.
+Compressed diagonal storage initializes only its physical diagonal components;
+its off-diagonal zeros remain accessor semantics. Async separate storage
+constructs each block value with the selected policy, and CUDA initialization
+publishes completion through the existing buffer access tracking.
 
 This rule keeps block descriptors stable and avoids structural mutation while
 async work may still retain buffer access.
@@ -614,9 +641,12 @@ Tensor wrappers are `inner_product` and `norm`.
 `krylov::BlockTensorVectorOps<Tensor>` uses this surface to define a Krylov
 vector space from one owning prototype. Membership requires the exact frozen
 symmetry, boundary values, and stored-key pattern. Consequently,
-`allocate_like` preserves block metadata: sparse policies reproduce the frozen
-key set, while complete policies rederive the same canonical legal-key set from
-the frozen boundaries. A matrix-free `matvec` cannot silently widen the vector
+the adapter's `allocate_like` explicitly requests uninitialized values while
+preserving block metadata. Packed dense policies preserve the validated layout;
+other sparse policies reproduce the frozen key set, while other complete
+policies rederive the same canonical legal-key set from the frozen boundaries.
+Krylov algorithms must overwrite this output through copy, matvec, or
+`set_zero` before reading it. A matrix-free `matvec` cannot silently widen the vector
 space or flatten it into a dense tensor.
 `krylov::BlockTensorMatrixFreeOps<Tensor, Operator>` adds an owned output-first
 operation callable. It validates input and output membership before every

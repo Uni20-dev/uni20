@@ -8,6 +8,7 @@
 
 #include <uni20/async/async.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <uni20/common/initialization.hpp>
 #include <uni20/linalg/async/concepts.hpp>
 
 #include <concepts>
@@ -73,12 +74,14 @@ template <AsyncTensorOutput Tensor, class Awaited>
   }
 }
 
-/// \brief Return an existing scalar output or default-construct its owner.
+/// \brief Return an existing scalar output or construct its owner for overwrite.
 template <AsyncTensorOutput Tensor>
 [[nodiscard]] Tensor& prepare_async_scalar_output(async::shared_storage<Tensor>& storage)
 {
   if (storage.constructed()) return *storage;
-  if constexpr (std::default_initializable<Tensor>)
+  if constexpr (std::constructible_from<Tensor, uninitialized_t>)
+    return storage.emplace(uninitialized);
+  else if constexpr (std::default_initializable<Tensor>)
     return storage.emplace();
   else
     throw async::buffer_write_uninitialized{};

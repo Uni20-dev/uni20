@@ -16,6 +16,8 @@
  * \note All returned unique_ptr instances are aligned to `align` bytes (default 64).
  */
 
+#include "initialization.hpp"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -106,27 +108,6 @@ template <typename T> using aligned_buf_with_dtor_t = std::unique_ptr<T[], align
 
 } // namespace detail
 
-/// \brief Opt a type into allocation without construction or destruction.
-/// \details The default accepts types that the standard library reports as
-///          trivially copyable and trivially destructible. The standard complex
-///          specializations are explicitly accepted as a practical extension:
-///          Uni20 relies on their scalar-array representation and trivial
-///          lifetime behavior even on standard libraries whose type traits do
-///          not yet report them as trivially copyable.
-/// \tparam T Candidate element type.
-/// \ingroup common_utilities
-template <typename T>
-inline constexpr bool enable_uninitialized_storage =
-    std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
-
-template <typename Real>
-inline constexpr bool enable_uninitialized_storage<std::complex<Real>> =
-    std::is_trivially_destructible_v<std::complex<Real>>;
-
-/// \brief Whether raw allocation may establish storage for `T` without construction.
-template <typename T>
-concept uninitialized_ok = enable_uninitialized_storage<std::remove_cv_t<T>>;
-
 /// \brief Allocate raw, aligned storage for `T[N]` without running constructors or destructors.
 /// \details When `T` is not trivially copyable you must placement-new each element before use
 ///          and invoke `std::destroy_n` prior to releasing the buffer.
@@ -139,8 +120,13 @@ concept uninitialized_ok = enable_uninitialized_storage<std::remove_cv_t<T>>;
 template <typename T> detail::aligned_buf_t<T> allocate_uninitialized_buffer(std::size_t N, std::size_t align = 64)
 {
   if (N == 0) return detail::aligned_buf_t<T>{nullptr, detail::aligned_deleter<T>{}};
-  void* raw = detail::allocate_raw(sizeof(T) * N, align);
-  return detail::aligned_buf_t<T>(static_cast<T*>(raw), detail::aligned_deleter<T>{});
+  auto result = detail::aligned_buf_t<T>(static_cast<T*>(detail::allocate_raw(sizeof(T) * N, align)),
+                                        detail::aligned_deleter<T>{});
+  if constexpr (uninitialized_ok<T>)
+  {
+    detail::initialize_host_elements(result.get(), N, StorageInitialization::Uninitialized);
+  }
+  return result;
 }
 
 /// \brief Allocate a temporary buffer of `T[N]` aligned to `align`.

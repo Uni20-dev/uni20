@@ -7,13 +7,18 @@
  */
 
 #include <uni20/backend/cuda/buffer.hpp>
+#include <uni20/backend/cuda/initialization.hpp>
+#include <uni20/common/initialization.hpp>
 #include <uni20/linalg/backend_selector.hpp>
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
 
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -85,6 +90,19 @@ namespace uni20::cuda
 
 namespace detail
 {
+
+// These representations have a numerical zero consisting entirely of zero
+// bytes. Do not infer that property from a user-specialized scalar trait.
+template <class T>
+inline constexpr bool has_zero_object_representation_v = [] {
+#if UNI20_HAS_FLOAT128
+  if constexpr (std::same_as<T, uni20::float128>) return true;
+#endif
+  return std::is_arithmetic_v<T>;
+}();
+
+template <class Real>
+inline constexpr bool has_zero_object_representation_v<uni20::complex<Real>> = has_zero_object_representation_v<Real>;
 
 template <class Descriptor> struct IsCudaBufferView : std::false_type
 {};
@@ -161,34 +179,59 @@ struct CudaStorage
     template <class ElementType> using packed_storage_t = cuda::PartitionedCudaBuffer<ElementType>;
 
     template <class ElementType>
-    [[nodiscard]] static auto make_storage(context_type& context, std::size_t size) -> storage_t<ElementType>
+    [[nodiscard]] static auto
+    make_storage(std::size_t size,
+                 StorageInitialization initialization = StorageInitialization::Uninitialized) -> storage_t<ElementType>
     {
-      return storage_t<ElementType>{context, size};
+      return make_storage<ElementType>(cuda::device_resources(), size, initialization);
     }
 
     template <class ElementType>
-    [[nodiscard]] static auto make_storage(cuda::Device device, std::size_t size) -> storage_t<ElementType>
+    [[nodiscard]] static auto
+    make_storage(context_type& context, std::size_t size,
+                 StorageInitialization initialization = StorageInitialization::Uninitialized) -> storage_t<ElementType>
     {
-      return storage_t<ElementType>{cuda::device_resources(device.ordinal()), size};
+      storage_t<ElementType> result{context, size};
+      initialize_storage(result, initialization);
+      return result;
     }
 
     template <class ElementType>
-    [[nodiscard]] static auto make_storage_like(storage_t<ElementType> const& storage,
-                                                std::size_t size) -> storage_t<ElementType>
+    [[nodiscard]] static auto
+    make_storage(cuda::Device device, std::size_t size,
+                 StorageInitialization initialization = StorageInitialization::Uninitialized) -> storage_t<ElementType>
     {
-      return storage_t<ElementType>{storage.resources(), size};
+      return make_storage<ElementType>(cuda::device_resources(device.ordinal()), size, initialization);
     }
 
     template <class ElementType>
-    [[nodiscard]] static auto make_packed_storage(std::size_t size,
-                                                  std::span<std::size_t const> offsets) -> packed_storage_t<ElementType>
+    [[nodiscard]] static auto make_storage_like(
+        storage_t<ElementType> const& storage, std::size_t size,
+        StorageInitialization initialization = StorageInitialization::Uninitialized) -> storage_t<ElementType>
     {
-      return make_packed_storage<ElementType>(cuda::device_resources(), size, offsets);
+      return make_storage<ElementType>(storage.resources(), size, initialization);
     }
 
     template <class ElementType>
-    [[nodiscard]] static auto make_packed_storage(context_type& context, std::size_t size,
-                                                  std::span<std::size_t const> offsets) -> packed_storage_t<ElementType>
+    [[nodiscard]] static auto make_packed_storage(
+        std::size_t size, std::span<std::size_t const> offsets,
+        StorageInitialization initialization = StorageInitialization::Uninitialized) -> packed_storage_t<ElementType>
+    {
+      return make_packed_storage<ElementType>(cuda::device_resources(), size, offsets, initialization);
+    }
+
+    template <class ElementType>
+    [[nodiscard]] static auto make_packed_storage(
+        cuda::Device device, std::size_t size, std::span<std::size_t const> offsets,
+        StorageInitialization initialization = StorageInitialization::Uninitialized) -> packed_storage_t<ElementType>
+    {
+      return make_packed_storage<ElementType>(cuda::device_resources(device.ordinal()), size, offsets, initialization);
+    }
+
+    template <class ElementType>
+    [[nodiscard]] static auto make_packed_storage(
+        context_type& context, std::size_t size, std::span<std::size_t const> offsets,
+        StorageInitialization initialization = StorageInitialization::Uninitialized) -> packed_storage_t<ElementType>
     {
       std::vector<cuda::CudaBufferRange> ranges;
       if (!offsets.empty())
@@ -199,15 +242,17 @@ struct CudaStorage
           ranges.push_back(
               cuda::CudaBufferRange{.offset = offsets[ordinal], .size = offsets[ordinal + 1] - offsets[ordinal]});
       }
-      return packed_storage_t<ElementType>{context, size, ranges};
+      packed_storage_t<ElementType> result{context, size, ranges};
+      initialize_storage(result, initialization);
+      return result;
     }
 
     template <class ElementType>
-    [[nodiscard]] static auto
-    make_packed_storage_like(packed_storage_t<ElementType> const& storage, std::size_t size,
-                             std::span<std::size_t const> offsets) -> packed_storage_t<ElementType>
+    [[nodiscard]] static auto make_packed_storage_like(
+        packed_storage_t<ElementType> const& storage, std::size_t size, std::span<std::size_t const> offsets,
+        StorageInitialization initialization = StorageInitialization::Uninitialized) -> packed_storage_t<ElementType>
     {
-      return make_packed_storage<ElementType>(storage.resources(), size, offsets);
+      return make_packed_storage<ElementType>(storage.resources(), size, offsets, initialization);
     }
 
     /// \brief Return the allocation context retained by a packed CUDA buffer.
@@ -293,6 +338,49 @@ struct CudaStorage
       return backend_selector_type{linalg::CublasBackend{}, linalg::CudaReferenceBackend{}};
 #else
       return backend_selector_type{linalg::CudaReferenceBackend{}};
+#endif
+    }
+
+  private:
+    template <class Buffer> static void initialize_storage(Buffer& storage, StorageInitialization initialization)
+    {
+      using element_type = typename Buffer::element_type;
+      if (storage.size() == 0) return;
+
+      if (initialization == StorageInitialization::Zero)
+      {
+        if constexpr (cuda::detail::has_zero_object_representation_v<element_type>)
+        {
+          auto stream = storage.resources().streams().acquire();
+          auto access = storage.write_synchronized_with(stream);
+          cuda::ScopedDevice guard(storage.device().ordinal());
+          cuda::check(cudaMemsetAsync(access.data(), 0, storage.size() * sizeof(element_type), stream.native_handle()),
+                      "zero CUDA tensor storage", stream.device());
+        }
+        else
+        {
+          throw std::invalid_argument("CUDA zero initialization requires a supported numerical scalar representation");
+        }
+        return;
+      }
+
+#if UNI20_FILL_UNINITIALIZED_SNAN
+      if constexpr (RealOrComplex<element_type>)
+      {
+        using real_type = make_real_t<element_type>;
+        // These are the real precisions supported by the CUDA numerical
+        // backends. Repeat the representation for both complex components.
+        if constexpr (std::same_as<real_type, float> || std::same_as<real_type, double>)
+        {
+          using word_type = std::conditional_t<sizeof(real_type) == 4, std::uint32_t, std::uint64_t>;
+          auto const pattern = std::bit_cast<word_type>(detail::signaling_nan_value<real_type>());
+          auto stream = storage.resources().streams().acquire();
+          auto access = storage.write_synchronized_with(stream);
+          cuda::ScopedDevice guard(storage.device().ordinal());
+          cuda::detail::enqueue_initialization_pattern(access.data(), storage.size() * sizeof(element_type), pattern,
+                                                       sizeof(real_type), stream.native_handle(), stream.device());
+        }
+      }
 #endif
     }
 };

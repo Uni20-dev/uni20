@@ -260,18 +260,20 @@ auto make_pairwise_contraction_result(Prototype const& prototype, Symmetry symme
 {
   if constexpr (CompleteBlockStorage<typename Result::storage_policy>)
   {
-    if constexpr (requires { Result(symmetry, domain, codomain, prototype.allocation_context()); })
-      return Result(symmetry, std::move(domain), std::move(codomain), prototype.allocation_context());
+    if constexpr (requires { Result(uninitialized, symmetry, domain, codomain, prototype.allocation_context()); })
+      return Result(uninitialized, symmetry, std::move(domain), std::move(codomain), prototype.allocation_context());
     else
-      return Result(symmetry, std::move(domain), std::move(codomain));
+      return Result(uninitialized, symmetry, std::move(domain), std::move(codomain));
   }
   else
   {
-    if constexpr (requires { Result(symmetry, domain, codomain, result_keys, prototype.allocation_context()); })
-      return Result(symmetry, std::move(domain), std::move(codomain), std::move(result_keys),
+    if constexpr (requires {
+                    Result(uninitialized, symmetry, domain, codomain, result_keys, prototype.allocation_context());
+                  })
+      return Result(uninitialized, symmetry, std::move(domain), std::move(codomain), std::move(result_keys),
                     prototype.allocation_context());
     else
-      return Result(symmetry, std::move(domain), std::move(codomain), std::move(result_keys));
+      return Result(uninitialized, symmetry, std::move(domain), std::move(codomain), std::move(result_keys));
   }
 }
 
@@ -753,7 +755,8 @@ auto contract(LeftTensor const& left, RightTensor const& right)
   auto result_codomain = detail::make_pairwise_contraction_codomain(left, right);
   using result_type =
       BlockTensor<value_type, typename traits::domain_type, typename traits::codomain_type, selected_output_storage>;
-  result_type result(left.symmetry(), std::move(result_domain), std::move(result_codomain), std::move(result_keys));
+  result_type result(uninitialized, left.symmetry(), std::move(result_domain), std::move(result_codomain),
+                     std::move(result_keys));
   auto const bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, result, worklist);
 
   for (auto const& binding : bindings)

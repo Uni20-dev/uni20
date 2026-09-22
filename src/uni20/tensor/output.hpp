@@ -7,6 +7,7 @@
  */
 
 #include <uni20/async/shared_storage.hpp>
+#include <uni20/common/initialization.hpp>
 #include <uni20/common/trace.hpp>
 #include <uni20/tensor/concepts.hpp>
 
@@ -89,7 +90,8 @@ void require_output(Output const& output, RequiredExtents const& required)
 
 /// \brief Prepare a mutable tensor output with the specified shape.
 /// \details Resizable outputs retain their current storage and values when the
-///          shape already matches, and call `reset_shape` otherwise. Fixed
+///          shape already matches, and allocate explicitly uninitialized replacement
+///          storage when supported. Otherwise they call ordinary `reset_shape`. Fixed
 ///          outputs validate through `require_output` and never rebind storage.
 /// \warning This operation may construct, resize, or replace the output.
 ///          For operations whose contract declares the output replaceable, a
@@ -107,7 +109,10 @@ Output& prepare_output(Output& output, RequiredExtents const& required)
   if constexpr (ResizableTensorOutput<Output>)
   {
     auto const converted = convert_tensor_extents<tensor_extents_t<Output>>(required);
-    output.reset_shape(converted);
+    if constexpr (requires { output.reset_shape(uninitialized, converted); })
+      output.reset_shape(uninitialized, converted);
+    else
+      output.reset_shape(converted);
     CHECK(tensor_extents_equal(output.extents(), required));
   }
   else
@@ -141,9 +146,19 @@ Output& prepare_output(Output& output, RequiredExtents const& required, Placemen
 
   auto const converted = convert_tensor_extents<tensor_extents_t<Output>>(required);
   if (output.storage_is_compatible(placement))
-    output.reset_shape(converted);
+  {
+    if constexpr (requires { output.reset_shape(uninitialized, converted); })
+      output.reset_shape(uninitialized, converted);
+    else
+      output.reset_shape(converted);
+  }
   else
-    output.replace(converted, placement);
+  {
+    if constexpr (requires { output.replace(uninitialized, converted, placement); })
+      output.replace(uninitialized, converted, placement);
+    else
+      output.replace(converted, placement);
+  }
 
   CHECK(tensor_extents_equal(output.extents(), required));
   CHECK(output.storage_is_compatible(placement));
@@ -169,7 +184,10 @@ Output& prepare_output(async::shared_storage<Output>& storage, RequiredExtents c
   if constexpr (std::constructible_from<Output, tensor_extents_t<Output> const&>)
   {
     auto const converted = convert_tensor_extents<tensor_extents_t<Output>>(required);
-    return storage.emplace(converted);
+    if constexpr (std::constructible_from<Output, uninitialized_t, tensor_extents_t<Output> const&>)
+      return storage.emplace(uninitialized, converted);
+    else
+      return storage.emplace(converted);
   }
   else
   {
@@ -196,7 +214,10 @@ Output& prepare_output(async::shared_storage<Output>& storage, RequiredExtents c
   if (storage.constructed()) return prepare_output(*storage, required, placement);
 
   auto const converted = convert_tensor_extents<tensor_extents_t<Output>>(required);
-  return storage.emplace(placement, converted);
+  if constexpr (std::constructible_from<Output, uninitialized_t, Placement const&, tensor_extents_t<Output> const&>)
+    return storage.emplace(uninitialized, placement, converted);
+  else
+    return storage.emplace(placement, converted);
 }
 
 } // namespace uni20

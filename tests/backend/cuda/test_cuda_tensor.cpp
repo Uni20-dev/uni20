@@ -6,9 +6,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -239,6 +243,169 @@ class CudaTensorTest : public ::testing::Test {
       }
     }
 };
+
+template <class Scalar> void check_cuda_initialization(bool uninitialized)
+{
+  using real_type = uni20::make_real_t<Scalar>;
+  using word_type = std::conditional_t<sizeof(real_type) == 4, std::uint32_t, std::uint64_t>;
+  constexpr std::size_t components = uni20::Complex<Scalar> ? 2 : 1;
+  constexpr std::size_t word_count = 6 * components;
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 2});
+  // Allocate the pinned destination before submitting initialization so host
+  // allocation cannot add an implicit synchronization between the two streams.
+  void* host_memory = nullptr;
+  ASSERT_EQ(cudaMallocHost(&host_memory, word_count * sizeof(word_type)), cudaSuccess);
+  std::unique_ptr<word_type, decltype(&cudaFreeHost)> output(static_cast<word_type*>(host_memory), cudaFreeHost);
+  std::fill_n(output.get(), word_count, ~word_type{0});
+  // Keep this stream checked out so allocation and initialization necessarily
+  // use another stream. Reading relies only on the buffer's published writer.
+  auto consumer = resources.streams().acquire();
+  using tensor = uni20::CudaTensor<Scalar, 2>;
+  tensor value = uninitialized ? tensor(uni20::uninitialized, resources, 2, 3) : tensor(resources, 2, 3);
+  {
+    auto read = value.storage().read_synchronized_with(consumer);
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpyAsync(output.get(), read.data(), word_count * sizeof(word_type),
+                                       cudaMemcpyDeviceToHost, consumer.native_handle()),
+                       "read initialized CUDA tensor", resources.device().ordinal());
+    consumer.synchronize();
+    read.release_after_synchronization();
+  }
+  word_type const expected =
+      uninitialized ? std::bit_cast<word_type>(uni20::numeric_limits<real_type>::signaling_NaN()) : word_type{0};
+  for (std::size_t i = 0; i < word_count; ++i)
+    EXPECT_EQ(output.get()[i], expected);
+}
+
+TEST_F(CudaTensorTest, ShapeConstructionZerosRealAndComplexOnAnotherStream)
+{
+  check_cuda_initialization<float>(false);
+  check_cuda_initialization<double>(false);
+  check_cuda_initialization<uni20::complex<float>>(false);
+  check_cuda_initialization<uni20::complex<double>>(false);
+}
+
+TEST_F(CudaTensorTest, ExplicitUninitializedPreservesSignalingNanBitsOnAnotherStream)
+{
+#if UNI20_FILL_UNINITIALIZED_SNAN
+  check_cuda_initialization<float>(true);
+  check_cuda_initialization<double>(true);
+  check_cuda_initialization<uni20::complex<float>>(true);
+  check_cuda_initialization<uni20::complex<double>>(true);
+#else
+  GTEST_SKIP() << "diagnostic signaling-NaN filling is disabled";
+#endif
+}
+
+TEST_F(CudaTensorTest, ShapeResetInitializesNewStorageToZero)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  tensor_type value(uni20::uninitialized, resources, 2, 3);
+  value.reset_shape(tensor_type::extents_type{3, 2});
+  std::array<double, 6> output;
+  {
+    auto lease = uni20::acquire_cuda_read_access_sync(value);
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpy(output.data(), lease.mdspan().data_handle(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "read reset CUDA tensor", resources.device().ordinal());
+  }
+  for (double element : output)
+    EXPECT_EQ(element, 0.0);
+}
+
+TEST_F(CudaTensorTest, ExplicitUninitializedStorageCanBeCompletelyOverwritten)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  tensor_type value(uni20::uninitialized, resources, 2, 3);
+  {
+    auto stream = resources.streams().acquire();
+    auto write = value.mdspec().data_descriptor().buffer().write_synchronized_with(stream);
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemsetAsync(write.data(), 0, write.size_bytes(), stream.native_handle()),
+                       "overwrite uninitialized CUDA tensor", stream.device());
+  }
+  std::array<double, 6> output;
+  {
+    auto lease = uni20::acquire_cuda_read_access_sync(value);
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpy(output.data(), lease.mdspan().data_handle(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "read overwritten CUDA tensor", resources.device().ordinal());
+  }
+  for (double element : output)
+    EXPECT_EQ(element, 0.0);
+}
+
+TEST_F(CudaTensorTest, EmptyAndRankZeroInitialization)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  tensor_type empty(resources, 0, 3);
+  tensor_type empty_uninitialized(uni20::uninitialized, resources, 0, 3);
+  EXPECT_EQ(empty.storage().size(), 0U);
+  EXPECT_EQ(empty_uninitialized.storage().size(), 0U);
+
+  using scalar_tensor = uni20::CudaTensor<double, 0>;
+  scalar_tensor scalar(resources, scalar_tensor::extents_type{});
+  double output = 1.0;
+  {
+    auto lease = uni20::acquire_cuda_read_access_sync(scalar);
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpy(&output, lease.mdspan().data_handle(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "read rank-zero CUDA tensor", resources.device().ordinal());
+  }
+  EXPECT_EQ(output, 0.0);
+}
+
+TEST_F(CudaTensorTest, NonnumericElementsRequireExplicitUninitializedConstruction)
+{
+  struct Element
+  {
+      int value = 7;
+  };
+  static_assert(std::is_trivially_copyable_v<Element>);
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  using tensor = uni20::CudaTensor<Element, 1>;
+  EXPECT_THROW((tensor(resources, 2)), std::invalid_argument);
+
+  tensor value(uni20::uninitialized, resources, 2);
+  EXPECT_EQ(value.storage().size(), 2U);
+  uni20::cuda::CudaBuffer<Element> raw(resources, 2);
+  EXPECT_EQ(raw.size(), 2U);
+}
+
+TEST_F(CudaTensorTest, PackedInitializationPublishesToChildrenAndPreservesZeroPadding)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 2});
+  std::array<std::size_t, 3> const offsets{0, 8, 16};
+  auto storage = uni20::CudaStorage::make_packed_storage<double>(resources, offsets.back(), offsets,
+                                                                 uni20::StorageInitialization::Zero);
+  {
+    auto read = storage.buffer(1).blocking_read_access();
+    std::array<std::uint64_t, 8> output;
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpy(output.data(), read.data(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "read zero-initialized CUDA child buffer", resources.device().ordinal());
+    for (auto bits : output)
+      EXPECT_EQ(bits, 0U);
+  }
+
+#if UNI20_FILL_UNINITIALIZED_SNAN
+  std::array<std::size_t, 2> const block_ends{6, 12};
+  auto undefined = uni20::CudaStorage::make_packed_storage<double>(resources, offsets.back(), offsets,
+                                                                   uni20::StorageInitialization::Uninitialized);
+  uni20::CudaStorage::initialize_packed_padding(undefined, offsets, block_ends);
+  auto const expected_nan = std::bit_cast<std::uint64_t>(uni20::numeric_limits<double>::signaling_NaN());
+  for (std::size_t ordinal = 0; ordinal < block_ends.size(); ++ordinal)
+  {
+    auto read = undefined.buffer(ordinal).blocking_read_access();
+    std::array<std::uint64_t, 8> output;
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaMemcpy(output.data(), read.data(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "read diagnostic CUDA child buffer", resources.device().ordinal());
+    for (std::size_t i = 0; i < output.size(); ++i)
+      EXPECT_EQ(output[i], i < block_ends[ordinal] - offsets[ordinal] ? expected_nan : 0U);
+  }
+#endif
+}
 
 TEST_F(CudaTensorTest, ExplicitResourcesConstructionOwnsDeviceBufferAndDescriptor)
 {

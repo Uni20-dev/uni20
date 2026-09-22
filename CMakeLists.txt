@@ -158,7 +158,10 @@ if(UNI20_ENABLE_STACKTRACE AND NOT UNI20_STACKTRACE_AVAILABLE)
     "std::stacktrace. Configure with -DUNI20_ENABLE_STACKTRACE=OFF for degraded diagnostics or use a "
     "toolchain with stacktrace support.")
 endif()
-option(UNI20_SANITIZE             "Enable sanitizers (comma-separated list: address,undefined,thread,memory,leak)" "")
+set(UNI20_SANITIZE "" CACHE STRING
+    "Enable sanitizers (comma-separated list: address,undefined,thread,memory,leak)")
+set_property(CACHE UNI20_SANITIZE PROPERTY TYPE STRING)
+include(Uni20Initialization)
 option(UNI20_EXTERNAL_NO_WERROR   "Disable -Werror for external libraries" ON)
 option(UNI20_EXTERNAL_NO_WARN     "Disable all warnings for external libraries" OFF)
 option(UNI20_ENABLE_COVERAGE      "Enable code coverage instrumentation" OFF)
@@ -325,6 +328,9 @@ if(UNI20_SANITIZE)
   string(REPLACE "," ";" UNI20_SANITIZE_LIST "${UNI20_SANITIZE}")
 
   foreach(san ${UNI20_SANITIZE_LIST})
+    if(san STREQUAL "memory" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      message(FATAL_ERROR "UNI20_SANITIZE=memory requires Clang MemorySanitizer; GCC builds can use Valgrind Memcheck.")
+    endif()
     list(APPEND SAN_FLAGS "-fsanitize=${san}")
   endforeach()
 
@@ -625,6 +631,7 @@ if(NOT UNI20_DOCS_WEB)
 
   # Create an interface library for common dependencies
   add_library(uni20_deps INTERFACE)
+  uni20_apply_initialization_configuration(uni20_deps)
   target_compile_features(uni20_deps INTERFACE cxx_std_23)
   target_link_libraries(uni20_deps INTERFACE fmt::fmt)
   if(UNI20_ENABLE_MPLAPACK)

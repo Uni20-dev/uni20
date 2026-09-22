@@ -240,6 +240,11 @@ auto eigensystem = uni20::linalg::eigh(std::move(matrix));
 Existing synchronous views into transferred storage are invalidated under
 ordinary C++ moved-from owner rules. Uni20 does not track them dynamically.
 
+Owning shape constructors initialize numerical elements to zero. The tag-first
+`uni20::uninitialized` form supplies overwrite destinations without that fill;
+copy/materialization and computed-output paths use it internally. See
+[construction and initialization](creation_and_reshape.md#owning-tensor-initialization).
+
 ### Operand Roles and Aliasing
 
 An operation assigns each tensor operand one semantic role:

@@ -79,17 +79,17 @@ template <class Tensor> class BlockTensorVectorOps {
     [[nodiscard]] auto allocate_like(tensor_type const& vector) const -> tensor_type
     {
       this->require_member(vector);
-      if constexpr (requires { vector.allocate_like(); })
+      if constexpr (requires { vector.allocate_like(uninitialized); })
       {
-        return vector.allocate_like();
+        return vector.allocate_like(uninitialized);
       }
       else if constexpr (CompleteBlockStorage<typename tensor_type::storage_policy>)
       {
-        return tensor_type(symmetry_, domain_, codomain_);
+        return tensor_type(uninitialized, symmetry_, domain_, codomain_);
       }
       else
       {
-        return tensor_type(symmetry_, domain_, codomain_, stored_keys_);
+        return tensor_type(uninitialized, symmetry_, domain_, codomain_, stored_keys_);
       }
     }
 

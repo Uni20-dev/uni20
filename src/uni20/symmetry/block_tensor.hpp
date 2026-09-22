@@ -184,7 +184,7 @@ class BlockTensor {
     using const_block_type = typename storage_type::const_block_type;
     using backend_selector_type = typename storage_policy::backend_selector_type;
 
-    /// \brief Construct a sparse tensor from an explicit stored-key list.
+    /// \brief Construct zero-initialized sparse blocks from an explicit stored-key list.
     /// \param symmetry Explicit tensor symmetry context.
     /// \param domain Ordered domain spaces.
     /// \param codomain Ordered codomain spaces.
@@ -203,7 +203,7 @@ class BlockTensor {
                    std::constructible_from<
                        storage_type,
                        std::vector<detail::BlockSpec<static_key_coordinate_count, static_dense_block_order>> const&,
-                       Context&>
+                       Context&, StorageInitialization>
         : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
           storage_(this->make_storage(std::move(stored_keys), context))
     {}
@@ -219,7 +219,7 @@ class BlockTensor {
         : BlockTensor(symmetry, std::move(domain), std::move(codomain), std::vector<key_type>(stored_keys))
     {}
 
-    /// \brief Construct a complete tensor containing every symmetry-legal block.
+    /// \brief Construct zero-initialized blocks for every symmetry-legal key.
     /// \param symmetry Explicit tensor symmetry context.
     /// \param domain Ordered domain spaces.
     /// \param codomain Ordered codomain spaces.
@@ -236,9 +236,68 @@ class BlockTensor {
                    std::constructible_from<
                        storage_type,
                        std::vector<detail::BlockSpec<static_key_coordinate_count, static_dense_block_order>> const&,
-                       Context&>
+                       Context&, StorageInitialization>
         : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
           storage_(this->make_complete_storage(context))
+    {}
+
+    /// \brief Allocate uninitialized sparse blocks from an explicit stored-key list.
+    /// \param symmetry Explicit tensor symmetry context.
+    /// \param domain Ordered domain spaces.
+    /// \param codomain Ordered codomain spaces.
+    /// \param stored_keys Legal keys to allocate; order is canonicalized.
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::vector<key_type> stored_keys)
+      requires SparseBlockStorage<storage_policy>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_storage(std::move(stored_keys), StorageInitialization::Uninitialized))
+    {}
+
+    /// \brief Allocate uninitialized sparse blocks in an explicit leaf allocation context.
+    template <class Context>
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::vector<key_type> stored_keys, Context& context)
+      requires SparseBlockStorage<storage_policy> &&
+                   std::constructible_from<
+                       storage_type,
+                       std::vector<detail::BlockSpec<static_key_coordinate_count, static_dense_block_order>> const&,
+                       Context&, StorageInitialization>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_storage(std::move(stored_keys), context, StorageInitialization::Uninitialized))
+    {}
+
+    /// \brief Allocate uninitialized sparse blocks from an initializer list of stored keys.
+    /// \param symmetry Explicit tensor symmetry context.
+    /// \param domain Ordered domain spaces.
+    /// \param codomain Ordered codomain spaces.
+    /// \param stored_keys Legal keys to allocate; order is canonicalized.
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::initializer_list<key_type> stored_keys)
+      requires SparseBlockStorage<storage_policy>
+        : BlockTensor(uninitialized, symmetry, std::move(domain), std::move(codomain),
+                      std::vector<key_type>(stored_keys))
+    {}
+
+    /// \brief Allocate every symmetry-legal block without numerical initialization.
+    /// \param symmetry Explicit tensor symmetry context.
+    /// \param domain Ordered domain spaces.
+    /// \param codomain Ordered codomain spaces.
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain)
+      requires CompleteBlockStorage<storage_policy>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_complete_storage(StorageInitialization::Uninitialized))
+    {}
+
+    /// \brief Allocate uninitialized complete blocks in an explicit leaf allocation context.
+    template <class Context>
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain, Context& context)
+      requires CompleteBlockStorage<storage_policy> &&
+                   std::constructible_from<
+                       storage_type,
+                       std::vector<detail::BlockSpec<static_key_coordinate_count, static_dense_block_order>> const&,
+                       Context&, StorageInitialization>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_complete_storage(context, StorageInitialization::Uninitialized))
     {}
 
     /// \brief Return the explicit symmetry context.
@@ -475,15 +534,27 @@ class BlockTensor {
     /// \brief Allocate a tensor with identical validated structure.
     /// \details This operation is available when the storage implementation can
     ///          reproduce its block placement without rebuilding it from the
-    ///          tensor boundaries. Numerical values are unspecified until an
-    ///          operation writes them.
+    ///          tensor boundaries. Stored numerical values are initialized to zero.
     /// \return Independent tensor with the same symmetry, boundaries, keys, and placement.
     [[nodiscard]] auto allocate_like() const -> BlockTensor
       requires requires(storage_type const& storage) {
-        { storage.allocate_like() } -> std::same_as<storage_type>;
+        { storage.allocate_like(StorageInitialization::Zero) } -> std::same_as<storage_type>;
       }
     {
-      return BlockTensor(symmetry_, domain_, codomain_, storage_.allocate_like(), ValidatedStorageTag{});
+      return BlockTensor(symmetry_, domain_, codomain_, storage_.allocate_like(StorageInitialization::Zero),
+                         ValidatedStorageTag{});
+    }
+
+    /// \brief Allocate uninitialized blocks with identical validated structure.
+    /// \details Each numerical element must be written before it is read. Alignment
+    ///          padding remains zero, and the source tensor is unchanged.
+    [[nodiscard]] auto allocate_like(uninitialized_t) const -> BlockTensor
+      requires requires(storage_type const& storage) {
+        { storage.allocate_like(StorageInitialization::Uninitialized) } -> std::same_as<storage_type>;
+      }
+    {
+      return BlockTensor(symmetry_, domain_, codomain_, storage_.allocate_like(StorageInitialization::Uninitialized),
+                         ValidatedStorageTag{});
     }
 
   private:
@@ -495,27 +566,32 @@ class BlockTensor {
         : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)), storage_(std::move(storage))
     {}
 
-    auto make_storage(std::vector<key_type> stored_keys) -> storage_type
+    auto make_storage(std::vector<key_type> stored_keys,
+                      StorageInitialization initialization = StorageInitialization::Zero) -> storage_type
     {
       this->validate_boundaries();
-      return this->make_storage_from_validated_keys(std::move(stored_keys));
-    }
-
-    template <class Context> auto make_storage(std::vector<key_type> stored_keys, Context& context) -> storage_type
-    {
-      this->validate_boundaries();
-      return this->make_storage_from_validated_keys(std::move(stored_keys), context);
-    }
-
-    auto make_storage_from_validated_keys(std::vector<key_type> stored_keys) -> storage_type
-    {
-      return storage_type(this->make_block_specs(std::move(stored_keys)));
+      return this->make_storage_from_validated_keys(std::move(stored_keys), initialization);
     }
 
     template <class Context>
-    auto make_storage_from_validated_keys(std::vector<key_type> stored_keys, Context& context) -> storage_type
+    auto make_storage(std::vector<key_type> stored_keys, Context& context,
+                      StorageInitialization initialization = StorageInitialization::Zero) -> storage_type
     {
-      return storage_type(this->make_block_specs(std::move(stored_keys)), context);
+      this->validate_boundaries();
+      return this->make_storage_from_validated_keys(std::move(stored_keys), context, initialization);
+    }
+
+    auto make_storage_from_validated_keys(std::vector<key_type> stored_keys,
+                                          StorageInitialization initialization) -> storage_type
+    {
+      return storage_type(this->make_block_specs(std::move(stored_keys)), initialization);
+    }
+
+    template <class Context>
+    auto make_storage_from_validated_keys(std::vector<key_type> stored_keys, Context& context,
+                                          StorageInitialization initialization) -> storage_type
+    {
+      return storage_type(this->make_block_specs(std::move(stored_keys)), context, initialization);
     }
 
     auto make_block_specs(std::vector<key_type> stored_keys)
@@ -539,24 +615,26 @@ class BlockTensor {
       return specs;
     }
 
-    auto make_complete_storage() -> storage_type
+    auto make_complete_storage(StorageInitialization initialization = StorageInitialization::Zero) -> storage_type
     {
       this->validate_boundaries();
       std::vector<key_type> stored_keys;
       this->for_each_possible_key([&](key_type const& key) {
         if (this->is_legal(key)) stored_keys.push_back(key);
       });
-      return this->make_storage_from_validated_keys(std::move(stored_keys));
+      return this->make_storage_from_validated_keys(std::move(stored_keys), initialization);
     }
 
-    template <class Context> auto make_complete_storage(Context& context) -> storage_type
+    template <class Context>
+    auto make_complete_storage(Context& context,
+                               StorageInitialization initialization = StorageInitialization::Zero) -> storage_type
     {
       this->validate_boundaries();
       std::vector<key_type> stored_keys;
       this->for_each_possible_key([&](key_type const& key) {
         if (this->is_legal(key)) stored_keys.push_back(key);
       });
-      return this->make_storage_from_validated_keys(std::move(stored_keys), context);
+      return this->make_storage_from_validated_keys(std::move(stored_keys), context, initialization);
     }
 
     void validate_boundaries() const

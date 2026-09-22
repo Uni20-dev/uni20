@@ -53,19 +53,33 @@ replacement class. This keeps standard-library ABI, layout expectations, and
 interop behavior unchanged while giving Uni20 a single project-level spelling
 for complex scalars.
 
-`HostStorage` separates allocation from numerical initialization. Its real
-and complex scalar buffers are allocated without constructing or clearing their
-elements; values remain unspecified until an operation writes them. The public
-`uni20::enable_uninitialized_storage<T>` variable template is the corresponding
-value-type customization point. Its conservative default accepts trivially
-copyable and trivially destructible types. Uni20 explicitly opts
-`uni20::complex<Real>` into this behavior because the project relies on the
-standard complex scalar-array representation and the trivial lifetime behavior
-provided by supported standard libraries, including implementations whose type
-traits do not yet report complex as trivially copyable. Extension tensor value
-types may specialize the variable template only when allocating, copying object
-representations, and releasing storage without constructors or destructors is a
-valid lifetime model for that type.
+Owning Tensor shape construction initializes stored numerical elements to zero.
+`uni20::uninitialized` explicitly requests storage whose values must be supplied
+before use. Copies and materializations initialize from their source, and
+internal overwrite outputs request uninitialized allocation to avoid an extra
+zero-fill. The low-level `HostBuffer(size)` retains its allocation-only numerical
+contract; initialization-aware storage factories receive a `StorageInitialization`
+choice from the tensor layer.
+
+The public `uni20::enable_uninitialized_storage<T>` variable template in
+`common/initialization.hpp` governs allocation and lifetime mechanics, not the
+Tensor default. Its conservative default accepts trivially copyable and
+trivially destructible types. Uni20 explicitly opts `uni20::complex<Real>` into
+this behavior because the project relies on its scalar-array representation and
+trivial lifetime behavior on supported standard libraries. Extension value
+types may specialize this trait only when allocation, copying object
+representations, and release without constructors/destructors form a valid
+lifetime model. Other types retain required object construction and destruction.
+Zero construction requires a numerical zero or a valid `T{}` value; requesting
+it for a type without either value is rejected. Raw uninitialized allocation
+remains available for lifetime-safe types without a default constructor.
+
+Optional diagnostic filling uses `uni20::numeric_limits<Real>::signaling_NaN()`
+when `has_signaling_NaN` is true, including both components of complex values.
+Unsupported scalar types are not given an invented sentinel. MemorySanitizer
+and Memcheck annotations can still track lifetime-safe uninitialized storage
+without a NaN representation. Diagnostic filling and initialization tracking
+are independent of `NDEBUG`; see [testing](../development/testing.md#initialization-diagnostics).
 
 The canonical complex aliases are:
 

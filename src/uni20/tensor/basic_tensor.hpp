@@ -9,6 +9,7 @@
 #include "concepts.hpp"
 #include "layout.hpp"
 
+#include <uni20/common/initialization.hpp>
 #include <uni20/common/trace.hpp>
 #include <uni20/mdspan/mdspan.hpp>
 #include <uni20/mdspan/mdspec.hpp>
@@ -18,6 +19,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <ranges>
 #include <type_traits>
 #include <utility>
 
@@ -157,10 +159,16 @@ class Tensor {
       requires(Rank > 0)
     = default;
 
-    /// \brief Default-construct a rank-zero tensor with its one logical element.
+    /// \brief Default-construct a rank-zero tensor with its one logical element set to zero.
     Tensor()
       requires(Rank == 0 && detail::DefaultTensorStorage<storage_type>)
         : Tensor(extents_type{})
+    {}
+
+    /// \brief Allocate the single rank-zero element without numerical initialization.
+    explicit Tensor(uninitialized_t)
+      requires(Rank == 0 && detail::DefaultTensorStorage<storage_type>)
+        : Tensor(uninitialized, extents_type{})
     {}
 
     /// \brief Copy-construct a tensor with independent owned storage.
@@ -197,17 +205,26 @@ class Tensor {
     template <TensorView InputTensor>
       requires(tensor_mdspec_t<InputTensor>::rank() == extents_type::rank() &&
                std::default_initializable<accessor_factory_type> && detail::DefaultTensorStorage<storage_type>)
-    explicit Tensor(InputTensor const& input) : Tensor(convert_tensor_extents<extents_type>(input.extents()))
+    explicit Tensor(InputTensor const& input)
+        : Tensor(uninitialized, convert_tensor_extents<extents_type>(input.extents()))
     {
       copy(*this, input);
     }
 
-    /// \brief Construct a tensor with default layout and accessor factory.
+    /// \brief Construct a zero-initialized tensor with default layout and accessor factory.
     /// \param exts Extents that describe the tensor shape.
     /// \param accessor_factory Factory used to create the accessor for the storage handle.
     explicit Tensor(extents_type const& exts, accessor_factory_type accessor_factory = accessor_factory_type{})
       requires detail::DefaultTensorStorage<storage_type>
         : Tensor(internal_tag{}, make_payload(make_default_mapping(exts), std::move(accessor_factory)))
+    {}
+
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    explicit Tensor(uninitialized_t, extents_type const& exts,
+                    accessor_factory_type accessor_factory = accessor_factory_type{})
+      requires detail::DefaultTensorStorage<storage_type>
+        : Tensor(internal_tag{}, make_payload(make_default_mapping(exts), std::move(accessor_factory),
+                                              StorageInitialization::Uninitialized))
     {}
 
     /// \brief Construct a tensor in an explicit storage context.
@@ -219,11 +236,26 @@ class Tensor {
     /// \param accessor_factory Factory used to create the accessor for the storage handle.
     template <class Policy = storage_policy>
       requires requires(typename Policy::context_type& context, std::size_t count) {
-        { Policy::template make_storage<element_type>(context, count) } -> std::same_as<storage_type>;
+        {
+          Policy::template make_storage<element_type>(context, count, StorageInitialization::Uninitialized)
+        } -> std::same_as<storage_type>;
       }
     explicit Tensor(typename Policy::context_type& context, extents_type const& exts,
                     accessor_factory_type accessor_factory = accessor_factory_type{})
         : Tensor(internal_tag{}, make_payload(context, make_default_mapping(exts), std::move(accessor_factory)))
+    {}
+
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    template <class Policy = storage_policy>
+      requires requires(typename Policy::context_type& context, std::size_t count) {
+        {
+          Policy::template make_storage<element_type>(context, count, StorageInitialization::Uninitialized)
+        } -> std::same_as<storage_type>;
+      }
+    explicit Tensor(uninitialized_t, typename Policy::context_type& context, extents_type const& exts,
+                    accessor_factory_type accessor_factory = accessor_factory_type{})
+        : Tensor(internal_tag{}, make_payload(context, make_default_mapping(exts), std::move(accessor_factory),
+                                              StorageInitialization::Uninitialized))
     {}
 
     /// \brief Construct a tensor with storage satisfying a placement value.
@@ -235,11 +267,26 @@ class Tensor {
     /// \param accessor_factory Factory used to create the accessor for the storage handle.
     template <class Placement>
       requires requires(Placement const& placement, std::size_t count) {
-        { storage_policy::template make_storage<element_type>(placement, count) } -> std::same_as<storage_type>;
+        {
+          storage_policy::template make_storage<element_type>(placement, count, StorageInitialization::Uninitialized)
+        } -> std::same_as<storage_type>;
       }
     explicit Tensor(Placement const& placement, extents_type const& exts,
                     accessor_factory_type accessor_factory = accessor_factory_type{})
         : Tensor(internal_tag{}, make_payload(placement, make_default_mapping(exts), std::move(accessor_factory)))
+    {}
+
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    template <class Placement>
+      requires requires(Placement const& placement, std::size_t count) {
+        {
+          storage_policy::template make_storage<element_type>(placement, count, StorageInitialization::Uninitialized)
+        } -> std::same_as<storage_type>;
+      }
+    explicit Tensor(uninitialized_t, Placement const& placement, extents_type const& exts,
+                    accessor_factory_type accessor_factory = accessor_factory_type{})
+        : Tensor(internal_tag{}, make_payload(placement, make_default_mapping(exts), std::move(accessor_factory),
+                                              StorageInitialization::Uninitialized))
     {}
 
     /// \brief Construct a fully dynamic tensor from one extent per axis.
@@ -255,6 +302,14 @@ class Tensor {
         : Tensor(extents_type{static_cast<index_type>(dynamic_extents)...})
     {}
 
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    template <std::integral... DynamicExtents>
+      requires(extents_type::rank() > 0 && extents_type::rank_dynamic() == extents_type::rank() &&
+               sizeof...(DynamicExtents) == extents_type::rank() && detail::DefaultTensorStorage<storage_type>)
+    explicit Tensor(uninitialized_t, DynamicExtents... dynamic_extents)
+        : Tensor(uninitialized, extents_type{static_cast<index_type>(dynamic_extents)...})
+    {}
+
     /// \brief Construct a fully dynamic tensor in an explicit storage context.
     /// \tparam Policy Context-bound storage policy; defaults to this Tensor's policy.
     /// \tparam DynamicExtents Integral extent arguments, one per tensor axis.
@@ -264,10 +319,25 @@ class Tensor {
       requires(extents_type::rank() > 0 && extents_type::rank_dynamic() == extents_type::rank() &&
                sizeof...(DynamicExtents) == extents_type::rank() &&
                requires(typename Policy::context_type& context, std::size_t count) {
-                 { Policy::template make_storage<element_type>(context, count) } -> std::same_as<storage_type>;
+                 {
+                   Policy::template make_storage<element_type>(context, count, StorageInitialization::Uninitialized)
+                 } -> std::same_as<storage_type>;
                })
     explicit Tensor(typename Policy::context_type& context, DynamicExtents... dynamic_extents)
         : Tensor(context, extents_type{static_cast<index_type>(dynamic_extents)...})
+    {}
+
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    template <class Policy = storage_policy, std::integral... DynamicExtents>
+      requires(extents_type::rank() > 0 && extents_type::rank_dynamic() == extents_type::rank() &&
+               sizeof...(DynamicExtents) == extents_type::rank() &&
+               requires(typename Policy::context_type& context, std::size_t count) {
+                 {
+                   Policy::template make_storage<element_type>(context, count, StorageInitialization::Uninitialized)
+                 } -> std::same_as<storage_type>;
+               })
+    explicit Tensor(uninitialized_t, typename Policy::context_type& context, DynamicExtents... dynamic_extents)
+        : Tensor(uninitialized, context, extents_type{static_cast<index_type>(dynamic_extents)...})
     {}
 
     /// \brief Construct a tensor using a custom mapping builder.
@@ -285,6 +355,17 @@ class Tensor {
                  make_payload(std::forward<MappingBuilder>(mapping_builder)(exts), std::move(accessor_factory)))
     {}
 
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    template <typename MappingBuilder>
+      requires(layout::mapping_builder_for<MappingBuilder, layout_policy, extents_type> &&
+               (!std::same_as<std::remove_cvref_t<MappingBuilder>, accessor_factory_type>) &&
+               detail::DefaultTensorStorage<storage_type>)
+    explicit Tensor(uninitialized_t, extents_type const& exts, MappingBuilder&& mapping_builder,
+                    accessor_factory_type accessor_factory = accessor_factory_type{})
+        : Tensor(internal_tag{}, make_payload(std::forward<MappingBuilder>(mapping_builder)(exts),
+                                              std::move(accessor_factory), StorageInitialization::Uninitialized))
+    {}
+
     /// \brief Construct a tensor from explicit extents and strides.
     /// \param exts Extents that describe the tensor shape.
     /// \param strides Stride specification per dimension for the layout mapping.
@@ -297,7 +378,18 @@ class Tensor {
         : Tensor(internal_tag{}, make_payload(mapping_type{exts, strides}, std::move(accessor_factory)))
     {}
 
-    /// \brief Replace the tensor shape and discard its current values.
+    /// \brief Allocate the requested tensor shape without numerical initialization.
+    explicit Tensor(uninitialized_t, extents_type const& exts,
+                    std::array<index_type, extents_type::rank()> const& strides,
+                    accessor_factory_type accessor_factory = accessor_factory_type{})
+      requires(std::constructible_from<mapping_type, extents_type const&,
+                                       std::array<index_type, extents_type::rank()> const&> &&
+               detail::DefaultTensorStorage<storage_type>)
+        : Tensor(internal_tag{}, make_payload(mapping_type{exts, strides}, std::move(accessor_factory),
+                                              StorageInitialization::Uninitialized))
+    {}
+
+    /// \brief Replace the tensor shape and initialize its new elements to zero.
     /// \details The replacement uses the storage policy's default mapping for
     ///          the new extents and preserves accessor-factory state. The
     ///          replacement is constructed before the current tensor changes;
@@ -310,6 +402,17 @@ class Tensor {
     {
       auto mapping = make_default_mapping(exts);
       Tensor replacement(internal_tag{}, make_payload_like(data_, std::move(mapping), accessor_factory_));
+      this->swap_state(replacement);
+    }
+
+    /// \brief Replace the shape with explicitly uninitialized storage.
+    void reset_shape(uninitialized_t, extents_type const& exts)
+      requires(std::copy_constructible<accessor_factory_type> && std::is_nothrow_swappable_v<mapping_type> &&
+               std::is_nothrow_swappable_v<storage_type> && std::is_nothrow_swappable_v<accessor_factory_type>)
+    {
+      auto mapping = make_default_mapping(exts);
+      Tensor replacement(internal_tag{}, make_payload_like(data_, std::move(mapping), accessor_factory_,
+                                                           StorageInitialization::Uninitialized));
       this->swap_state(replacement);
     }
 
@@ -338,13 +441,32 @@ class Tensor {
                std::is_nothrow_swappable_v<storage_type> && std::is_nothrow_swappable_v<accessor_factory_type> &&
                requires(Placement const& required_placement, std::size_t count) {
                  {
-                   storage_policy::template make_storage<element_type>(required_placement, count)
+                   storage_policy::template make_storage<element_type>(required_placement, count,
+                                                                       StorageInitialization::Uninitialized)
                  } -> std::same_as<storage_type>;
                })
     void replace(extents_type const& exts, Placement const& placement)
     {
       auto mapping = make_default_mapping(exts);
       Tensor replacement(internal_tag{}, make_payload(placement, std::move(mapping), accessor_factory_));
+      this->swap_state(replacement);
+    }
+
+    /// \brief Replace shape and placement with explicitly uninitialized storage.
+    template <class Placement>
+      requires(std::copy_constructible<accessor_factory_type> && std::is_nothrow_swappable_v<mapping_type> &&
+               std::is_nothrow_swappable_v<storage_type> && std::is_nothrow_swappable_v<accessor_factory_type> &&
+               requires(Placement const& required_placement, std::size_t count) {
+                 {
+                   storage_policy::template make_storage<element_type>(required_placement, count,
+                                                                       StorageInitialization::Uninitialized)
+                 } -> std::same_as<storage_type>;
+               })
+    void replace(uninitialized_t, extents_type const& exts, Placement const& placement)
+    {
+      auto mapping = make_default_mapping(exts);
+      Tensor replacement(internal_tag{}, make_payload(placement, std::move(mapping), accessor_factory_,
+                                                      StorageInitialization::Uninitialized));
       this->swap_state(replacement);
     }
 
@@ -646,84 +768,88 @@ class Tensor {
           accessor_factory_(std::move(payload.accessor_factory))
     {}
 
-    static ctor_payload make_payload(mapping_type mapping, accessor_factory_type accessor_factory)
+    static ctor_payload make_payload(mapping_type mapping, accessor_factory_type accessor_factory,
+                                     StorageInitialization initialization = StorageInitialization::Zero)
     {
-      auto storage = make_storage(mapping);
+      auto storage = create_storage(static_cast<std::size_t>(mapping.required_span_size()), initialization);
       return ctor_payload{std::move(mapping), std::move(storage), std::move(accessor_factory)};
     }
 
     template <class Policy = storage_policy>
     static ctor_payload make_payload(typename Policy::context_type& context, mapping_type mapping,
-                                     accessor_factory_type accessor_factory)
+                                     accessor_factory_type accessor_factory,
+                                     StorageInitialization initialization = StorageInitialization::Zero)
       requires requires(typename Policy::context_type& storage_context, std::size_t count) {
-        { Policy::template make_storage<element_type>(storage_context, count) } -> std::same_as<storage_type>;
+        {
+          Policy::template make_storage<element_type>(storage_context, count, initialization)
+        } -> std::same_as<storage_type>;
       }
     {
       auto const count = static_cast<std::size_t>(mapping.required_span_size());
-      auto storage = Policy::template make_storage<element_type>(context, count);
+      auto storage = Policy::template make_storage<element_type>(context, count, initialization);
       return ctor_payload{std::move(mapping), std::move(storage), std::move(accessor_factory)};
     }
 
     template <class Placement>
     static ctor_payload make_payload(Placement const& placement, mapping_type mapping,
-                                     accessor_factory_type accessor_factory)
+                                     accessor_factory_type accessor_factory,
+                                     StorageInitialization initialization = StorageInitialization::Zero)
       requires requires(Placement const& required_placement, std::size_t count) {
         {
-          storage_policy::template make_storage<element_type>(required_placement, count)
+          storage_policy::template make_storage<element_type>(required_placement, count, initialization)
         } -> std::same_as<storage_type>;
       }
     {
       auto const count = static_cast<std::size_t>(mapping.required_span_size());
-      auto storage = storage_policy::template make_storage<element_type>(placement, count);
+      auto storage = storage_policy::template make_storage<element_type>(placement, count, initialization);
       return ctor_payload{std::move(mapping), std::move(storage), std::move(accessor_factory)};
     }
 
     static ctor_payload make_payload_like(storage_type const& source, mapping_type mapping,
-                                          accessor_factory_type accessor_factory)
+                                          accessor_factory_type accessor_factory,
+                                          StorageInitialization initialization = StorageInitialization::Zero)
     {
       auto const count = static_cast<std::size_t>(mapping.required_span_size());
-      if constexpr (requires { storage_policy::template make_storage_like<element_type>(source, count); })
+      if constexpr (requires {
+                      storage_policy::template make_storage_like<element_type>(source, count, initialization);
+                    })
       {
-        auto storage = storage_policy::template make_storage_like<element_type>(source, count);
+        auto storage = storage_policy::template make_storage_like<element_type>(source, count, initialization);
         return ctor_payload{std::move(mapping), std::move(storage), std::move(accessor_factory)};
       }
       else
       {
-        auto storage = create_storage(static_cast<size_type>(count));
+        auto storage = create_storage(count, initialization);
         return ctor_payload{std::move(mapping), std::move(storage), std::move(accessor_factory)};
       }
     }
 
-    static storage_type make_storage(mapping_type const& mapping)
+    static storage_type create_storage(std::size_t count, StorageInitialization initialization)
     {
-      auto const span_size = static_cast<size_type>(mapping.required_span_size());
-      return create_storage(span_size);
-    }
-
-    static storage_type create_storage(size_type span_size)
-    {
-      auto const count = static_cast<std::size_t>(span_size);
-      if constexpr (requires(storage_type& s) { s.resize(std::size_t{}); })
+      if constexpr (requires { storage_policy::template make_storage<element_type>(count, initialization); })
       {
-        storage_type storage{};
-        storage.resize(count);
+        return storage_policy::template make_storage<element_type>(count, initialization);
+      }
+      else
+      {
+        // Ordinary contiguous host containers can implement the policy directly.
+        // Opaque/device storage must provide its own initialization-aware factory.
+        static_assert(std::ranges::contiguous_range<storage_type>,
+                      "Non-contiguous storage requires an initialization-aware make_storage factory");
+        auto storage = [count] {
+          if constexpr (requires(storage_type& value) { value.resize(count); })
+          {
+            storage_type result{};
+            result.resize(count);
+            return result;
+          }
+          else
+          {
+            return storage_type(count);
+          }
+        }();
+        detail::initialize_host_elements(std::ranges::data(storage), count, initialization);
         return storage;
-      }
-      else if constexpr (std::is_constructible_v<storage_type, std::size_t>)
-      {
-        return storage_type{count};
-      }
-      else if constexpr (std::is_constructible_v<storage_type, size_type>)
-      {
-        return storage_type{span_size};
-      }
-      else
-      {
-        static_assert(
-            requires(storage_type& s) { s.resize(std::size_t{}); } ||
-                std::is_constructible_v<storage_type, std::size_t> || std::is_constructible_v<storage_type, size_type>,
-            "StoragePolicy::storage_t must be constructible from a size or provide resize().");
-        return storage_type{};
       }
     }
 

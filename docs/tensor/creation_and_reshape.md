@@ -1,7 +1,57 @@
-# Generated Tensors and Reshape
+# Tensor Construction, Generated Values, and Reshape
 
 For the wider operation taxonomy and current Async support, see
 [Tensor Operations, Semantics, and Async Support](operations.md).
+
+## Owning Tensor Initialization
+
+Shape construction initializes owned numerical elements to zero on both host and
+CUDA storage. Other host element types are value-initialized; CUDA zero
+initialization requires a supported numerical representation. A custom accessor
+still interprets stored values according to its own semantics.
+
+```cpp
+uni20::DenseMatrix<double> diagonal(2, 2);
+diagonal[0, 0] = 3.0;
+diagonal[1, 1] = 2.0;  // off-diagonal elements are zero
+
+uni20::DenseMatrix<double> scratch(uni20::uninitialized, 2, 2);
+uni20::linalg::assign_product(scratch, lhs, rhs);  // supplies every output value
+```
+
+The `uni20::uninitialized` tag is the first constructor argument. It is also
+available with explicit extents, mapping builders, strides, storage contexts,
+and placement. Each element must receive a value before that value is consumed.
+The tag does not bypass required construction or destruction of nontrivial
+objects. It does not change the Tensor type or add runtime initialization state.
+
+Positive-rank default construction remains empty and allocation-free. Default
+rank-zero construction allocates its one element and initializes it to zero;
+`ScalarTensor<double>(uni20::uninitialized)` requests an overwrite destination.
+
+`reset_shape(extents)` and `replace(extents, placement)` discard the old values
+and zero-initialize replacement storage. Their tag-first overloads request
+uninitialized replacement storage. `prepare_output` chooses these overloads
+when an overwrite operation needs new storage; it retains existing storage and
+values when shape and placement already match. Generic output types without an
+uninitialized overload still use their ordinary construction/reset capability.
+Copy construction, view materialization, and storage adoption preserve source
+values; materialization and computed outputs avoid a preliminary zero-fill.
+
+BlockTensor construction follows the same policy for its stored legal blocks.
+The tag changes payload initialization without changing symmetry metadata,
+stored keys, or placement. Packed alignment padding remains defined zero in
+both modes. See [block tensor storage](../symmetry/block_tensor_prototype.md).
+
+CUDA initialization is ordered through the existing buffer completion ledger.
+A subsequent consumer on another stream waits for initialization through normal
+access acquisition; construction does not introduce a device-wide barrier.
+
+Explicitly uninitialized storage may contain signalling NaNs for diagnostics.
+`UNI20_FILL_UNINITIALIZED_SNAN=AUTO` enables this in Debug and DebugOpt;
+`ON` and `OFF` override it independently of `NDEBUG` and sanitizer selection.
+NaN filling does not provide a usable initial numerical value or guarantee a
+floating-point trap. See [initialization diagnostics](../development/testing.md#initialization-diagnostics).
 
 ## Generated Values
 

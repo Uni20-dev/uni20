@@ -21,6 +21,11 @@
 @TRACE_MODULE_DEFINITIONS@
 
 // Debugging options
+// CMake resolves AUTO per configuration through the uni20_deps usage requirement.
+#ifndef UNI20_FILL_UNINITIALIZED_SNAN
+#define UNI20_FILL_UNINITIALIZED_SNAN 0
+#endif
+#cmakedefine01 UNI20_ENABLE_VALGRIND
 #cmakedefine01 UNI20_DEBUG_DAG
 #cmakedefine01 UNI20_DEBUG_ASYNC_TASKS
 #cmakedefine01 UNI20_ASYNC_DEBUG

@@ -1,0 +1,28 @@
+# Numerical diagnostics are independent of NDEBUG and compiler sanitizers.
+set(UNI20_FILL_UNINITIALIZED_SNAN AUTO CACHE STRING
+    "Fill explicitly uninitialized floating-point storage with signaling NaNs: AUTO, ON, OFF")
+set_property(CACHE UNI20_FILL_UNINITIALIZED_SNAN PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${UNI20_FILL_UNINITIALIZED_SNAN}" _uni20_snan_mode)
+if(NOT _uni20_snan_mode MATCHES "^(AUTO|ON|OFF)$")
+  message(FATAL_ERROR "UNI20_FILL_UNINITIALIZED_SNAN must be AUTO, ON, or OFF")
+endif()
+
+option(UNI20_ENABLE_VALGRIND "Enable Valgrind Memcheck initialization annotations" OFF)
+if(UNI20_ENABLE_VALGRIND)
+  find_path(UNI20_VALGRIND_INCLUDE_DIR valgrind/memcheck.h REQUIRED)
+  mark_as_advanced(UNI20_VALGRIND_INCLUDE_DIR)
+endif()
+
+function(uni20_apply_initialization_configuration target)
+  if(_uni20_snan_mode STREQUAL "AUTO")
+    set(fill "$<IF:$<CONFIG:Debug,DebugOpt>,1,0>")
+  elseif(_uni20_snan_mode STREQUAL "ON")
+    set(fill 1)
+  else()
+    set(fill 0)
+  endif()
+  target_compile_definitions(${target} INTERFACE "UNI20_FILL_UNINITIALIZED_SNAN=${fill}")
+  if(UNI20_ENABLE_VALGRIND)
+    target_include_directories(${target} SYSTEM INTERFACE "${UNI20_VALGRIND_INCLUDE_DIR}")
+  endif()
+endfunction()

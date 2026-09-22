@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.28)
+project(uni20_initialization_configuration LANGUAGES CXX)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+include("${UNI20_SOURCE_DIR}/cmake/Uni20Initialization.cmake")
+add_library(initialization_options INTERFACE)
+uni20_apply_initialization_configuration(initialization_options)
+add_executable(consumer consumer.cpp)
+target_link_libraries(consumer PRIVATE initialization_options)
+target_compile_definitions(consumer PRIVATE "EXPECTED_SNAN=${expected}")
+# Deliberately invert the usual assertion policy: diagnostics must follow the
+# selected configuration/override even when NDEBUG disagrees with it.
+if(config STREQUAL "Debug" OR config STREQUAL "DebugOpt")
+  target_compile_definitions(consumer PRIVATE NDEBUG)
+else()
+  target_compile_options(consumer PRIVATE -UNDEBUG)
+endif()

@@ -247,11 +247,13 @@ template <BlockTensorStorage OutputStorage, bool StoreAllLegalBlocks, BlockTenso
     if constexpr (CompleteBlockStorage<OutputStorage>)
     {
       if constexpr (requires {
-                      output_type(input.symmetry(), input.domain(), input.codomain(), input.allocation_context());
+                      output_type(uninitialized, input.symmetry(), input.domain(), input.codomain(),
+                                  input.allocation_context());
                     })
-        return output_type(input.symmetry(), input.domain(), input.codomain(), input.allocation_context());
+        return output_type(uninitialized, input.symmetry(), input.domain(), input.codomain(),
+                           input.allocation_context());
       else
-        return output_type(input.symmetry(), input.domain(), input.codomain());
+        return output_type(uninitialized, input.symmetry(), input.domain(), input.codomain());
     }
     else
     {
@@ -263,12 +265,13 @@ template <BlockTensorStorage OutputStorage, bool StoreAllLegalBlocks, BlockTenso
           return std::vector<key_type>(input.stored_keys().begin(), input.stored_keys().end());
       }();
       if constexpr (requires {
-                      output_type(input.symmetry(), input.domain(), input.codomain(), keys, input.allocation_context());
+                      output_type(uninitialized, input.symmetry(), input.domain(), input.codomain(), keys,
+                                  input.allocation_context());
                     })
-        return output_type(input.symmetry(), input.domain(), input.codomain(), std::move(keys),
+        return output_type(uninitialized, input.symmetry(), input.domain(), input.codomain(), std::move(keys),
                            input.allocation_context());
       else
-        return output_type(input.symmetry(), input.domain(), input.codomain(), std::move(keys));
+        return output_type(uninitialized, input.symmetry(), input.domain(), input.codomain(), std::move(keys));
     }
   }();
   using value_type = block_tensor_value_t<Input>;

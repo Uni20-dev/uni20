@@ -113,6 +113,74 @@ uni20 supports both modes:
 
 When both modes are enabled, CTest registers the per-module executables discovered via `gtest_discover_tests(...)`. The combined `uni20_tests` binary is built for manual runs, but it is not registered with CTest by default.
 
+## Initialization diagnostics
+
+Owning tensors initialize stored numerical values to zero by default.
+The explicit `uni20::uninitialized` tag requests values that must be written
+before use; see [tensor construction](../tensor/creation_and_reshape.md#owning-tensor-initialization).
+Diagnostic filling and memory-tool annotations apply to fresh uninitialized
+allocations, including internal scratch buffers. Acquiring mutable access to an
+existing tensor does not change its initialization state.
+
+| Setting or tool | Behavior |
+| --- | --- |
+| `UNI20_FILL_UNINITIALIZED_SNAN=AUTO` (default) | Fill supported floating-point values, including both complex components, with signaling NaNs in `Debug` and `DebugOpt` |
+| `UNI20_FILL_UNINITIALIZED_SNAN=ON` / `OFF` | Enable or disable that fill in every configuration, independently of `NDEBUG` |
+| Clang `UNI20_SANITIZE=memory` | Track undefined host values with MemorySanitizer; annotations follow the active translation unit's instrumentation |
+| `UNI20_ENABLE_VALGRIND=ON` (default `OFF`) | Compile Memcheck annotations; requires `valgrind/memcheck.h`, and works with GCC or Clang |
+| GCC/Clang address, undefined-behavior, or thread sanitizers | Complement these checks; they do not track general uninitialized numerical values |
+
+Signaling NaNs help numerical failures become visible but do not guarantee a
+trap. Uni20 does not change the process's floating-point exception settings.
+Unsupported scalar types receive no invented NaN representation. Nontrivial
+objects retain their required construction and destruction; diagnostic poisoning
+does not invalidate their bookkeeping.
+
+Host memory-tool annotations mark fresh values undefined **after** the optional
+sNaN fill. Consequently, writing a diagnostic bit pattern does not conceal a
+missing write from MSan or Memcheck. Instrumented assignments define the bytes
+they write, and copies preserve the source's definedness. These tools detect
+use of undefined values, not redundant zero initialization before a complete
+overwrite.
+
+For a GCC or Clang Memcheck build, for example:
+
+```bash
+cmake -S . -B build_codex/memcheck -DCMAKE_BUILD_TYPE=Debug \
+  -DUNI20_ENABLE_VALGRIND=ON
+cmake --build build_codex/memcheck --target uni20_common_tests uni20_initialization_diagnostic_probe
+ctest --test-dir build_codex/memcheck --output-on-failure -R '^InitializationDiagnostic\.'
+valgrind --error-exitcode=97 build_codex/memcheck/tests/common/uni20_common_tests \
+  --gtest_filter='Initialization.*'
+```
+
+The subprocess tests distinguish complete initialization, a missing write, and
+copying an undefined value. The latter two succeed as tests only when the tool
+reports the expected error. They register automatically when the corresponding
+tool configuration is enabled; Memcheck tests also require the `valgrind`
+executable. Run MSan and Memcheck configurations separately.
+
+For Clang MSan, set `UNI20_SANITIZE=memory` in a separate build. Origin tracking
+can be enabled with `-fsanitize-memory-track-origins=2`. MSan requires compatible
+instrumentation of dependencies or precise annotations at external boundaries;
+an ordinary uninstrumented BLAS/LAPACK or C++ library is not a fully supported
+MSan execution environment. This initial integration verifies the allocation
+and copy hooks with small subprocess tests. It does not yet annotate all
+BLAS/LAPACK or device-transfer boundaries. See the
+[MSan requirements](https://clang.llvm.org/docs/MemorySanitizer.html#handling-external-code)
+and [Memcheck client requests](https://valgrind.org/docs/manual/mc-manual.html#mc-manual.clientreqs).
+
+For CUDA, run Compute Sanitizer's `initcheck` on a build configured with
+`UNI20_FILL_UNINITIALIZED_SNAN=OFF`. A GPU diagnostic fill is itself a write,
+so leaving it enabled would hide missing initialization from `initcheck`.
+Host MSan and Memcheck annotations do not track GPU loads and stores. See
+[CUDA buffer initialization](../backends/cuda/buffers.md) and the
+[initcheck documentation](https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html#initcheck-tool).
+
+The `CMakeSubproject.initialization_*` tests check configuration propagation, including
+Ninja Multi-Config, explicit overrides, and deliberate disagreement with
+`NDEBUG`.
+
 ## Adding New Tests
 
 ### CMake integration tests
