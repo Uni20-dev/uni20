@@ -42,6 +42,26 @@ template <std::signed_integral T> class basic_half_int {
     /// \brief Construct the value zero.
     constexpr basic_half_int() = default;
 
+    /// \brief Convert another half-integer without changing its value.
+    /// \details Conversion is implicit and non-throwing when T can represent every
+    ///          doubled value of U. Narrowing requires explicit construction and
+    ///          checks the doubled representation before converting it.
+    /// \throws std::overflow_error If the doubled value does not fit in T.
+    template <std::signed_integral U>
+    explicit(std::numeric_limits<T>::digits < std::numeric_limits<U>::digits) constexpr basic_half_int(
+        basic_half_int<U> other) noexcept(std::numeric_limits<T>::digits >= std::numeric_limits<U>::digits)
+    {
+      if constexpr (std::numeric_limits<T>::digits < std::numeric_limits<U>::digits)
+      {
+        if (other.twice() < static_cast<U>(std::numeric_limits<T>::min()) ||
+            other.twice() > static_cast<U>(std::numeric_limits<T>::max()))
+        {
+          throw std::overflow_error("basic_half_int conversion overflow");
+        }
+      }
+      twice_ = static_cast<T>(other.twice());
+    }
+
     /// \brief Construct from an integral value.
     /// \param value Integral value to represent exactly.
     template <std::integral U> constexpr basic_half_int(U value) : twice_(checked_double(static_cast<T>(value))) {}

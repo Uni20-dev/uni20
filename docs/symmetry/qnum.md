@@ -91,6 +91,26 @@ Implemented operations:
 U(1) values are stored as `half_int`, so both integer and half-integer charges
 are supported.
 
+`half_int` is `basic_half_int<std::int64_t>`; `from_twice(n)` deduces its signed
+storage type from `n`. Conversions between `basic_half_int` storage types
+preserve the exact doubled value. Widening (including equal-range storage types)
+is implicit, `constexpr`, and non-throwing:
+
+```cpp
+half_int spin = from_twice(1);  // basic_half_int<int> -> half_int, value 1/2
+```
+
+Narrowing is explicit and `constexpr` for representable values. It throws
+`std::overflow_error` when the doubled value is outside the destination's range,
+rather than truncating or rounding:
+
+```cpp
+basic_half_int<std::int16_t> small{spin};
+```
+
+These constructors do not introduce mixed-storage binary arithmetic overloads;
+convert operands to a common storage type before using such operations.
+
 ### QNum
 
 `QNum` is the packed irrep label used by the tensor code:
