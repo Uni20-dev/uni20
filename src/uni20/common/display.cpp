@@ -1,4 +1,5 @@
 #include "display.hpp"
+#include <ios>
 
 #include "terminal.hpp"
 
@@ -36,9 +37,9 @@ void default_sink(event const& item)
   auto rendered = std::visit([&](auto const& content) { return presentation::render_terminal(content, policy, file); },
                              item.content);
 
-  std::fputs(rendered.c_str(), file);
-  if (item.newline) std::fputc('\n', file);
-  std::fflush(file);
+  if (std::fputs(rendered.c_str(), file) == EOF || (item.newline && std::fputc('\n', file) == EOF) ||
+      std::fflush(file) == EOF)
+    throw std::ios_base::failure("display output failed");
 }
 
 std::mutex& sink_mutex()
@@ -249,7 +250,7 @@ struct wrapped_cell_line
   return lines;
 }
 
-[[nodiscard]] std::vector<wrapped_cell_line> wrap_streaming_cell(detail::streaming_cell const& cell, std::size_t width,
+[[nodiscard]] std::vector<wrapped_cell_line> wrap_streaming_cell(formatted_cell const& cell, std::size_t width,
                                                                  presentation::output_policy const& policy)
 {
   auto const raw_lines = wrap_cell(cell.text, width, policy);
@@ -432,9 +433,14 @@ streaming_table& streaming_table::header_separator(bool enabled)
   return *this;
 }
 
+void streaming_table::row(std::vector<formatted_cell> cells, std::source_location where)
+{
+  this->emit_rows(cells, where);
+}
+
 void streaming_table::row(std::vector<presentation::styled_text> cells, std::source_location where)
 {
-  std::vector<detail::streaming_cell> formatted_cells;
+  std::vector<formatted_cell> formatted_cells;
   formatted_cells.reserve(cells.size());
   for (std::size_t i = 0; i != cells.size(); ++i)
   {
@@ -446,7 +452,7 @@ void streaming_table::row(std::vector<presentation::styled_text> cells, std::sou
 
 void streaming_table::row(std::vector<std::string> cells, std::source_location where)
 {
-  std::vector<detail::streaming_cell> formatted_cells;
+  std::vector<formatted_cell> formatted_cells;
   formatted_cells.reserve(cells.size());
   for (std::size_t i = 0; i != cells.size(); ++i)
   {
@@ -543,7 +549,7 @@ void streaming_table::resolve_widths()
   if (last_share != columns_.size()) widths_[last_share] += remaining - distributed;
 }
 
-void streaming_table::expand_fit_columns(std::vector<detail::streaming_cell> const& cells)
+void streaming_table::expand_fit_columns(std::vector<formatted_cell> const& cells)
 {
   if (vertical_fallback_) return;
 
@@ -615,7 +621,7 @@ void streaming_table::expand_fit_columns(std::vector<detail::streaming_cell> con
   }
 }
 
-void streaming_table::emit_rows(std::vector<detail::streaming_cell> const& cells, std::source_location where)
+void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::source_location where)
 {
   if (cells.size() != columns_.size())
   {
@@ -632,8 +638,8 @@ void streaming_table::emit_rows(std::vector<detail::streaming_cell> const& cells
     {
       presentation::styled_text title;
       title.append(title_, terminal::TerminalStyle(std::string_view("Cyan;Bold")));
-      for (auto const& line : wrap_streaming_cell(detail::streaming_cell{.text = std::move(title)},
-                                                  effective_wrap_width(policy_), policy_))
+      for (auto const& line :
+           wrap_streaming_cell(formatted_cell{.text = std::move(title)}, effective_wrap_width(policy_), policy_))
       {
         text.append(line.text).append("\n");
       }

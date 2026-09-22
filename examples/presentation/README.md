@@ -12,9 +12,11 @@
 - `display_example.cpp` demonstrates semantic status messages, report builders,
   and streaming tables.
 - `data_table_example.cpp` stores typed results, including exact half-integers
-  and missing values, then renders a report or writes CSV/TSV. Run
-  `presentation_data_table_example [pretty|csv|tsv]`; machine output contains
-  only the rectangular table.
+  and missing values, then renders a report or writes CSV/TSV/JSON. Run
+  `presentation_data_table_example [pretty|csv|tsv|json|stream|stream-no-retention]`.
+  Streaming modes send selected display columns to stderr and full-precision TSV
+  to stdout. `stream` demonstrates late attachment/replay; `stream-no-retention`
+  attaches before the first row and keeps no history.
 - `presentation_example_common.hpp` contains shared example-only policy and
   styling helpers; it is not an executable target.
 

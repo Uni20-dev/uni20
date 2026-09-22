@@ -1,11 +1,13 @@
 # Typed Data Tables and Output Adapters
 
-**Status:** the first owning-table slice is implemented in
-`<uni20/common/data_table.hpp>`: checked typed insertion, native half-integers,
-column display settings, report-table snapshots and CSV/TSV export. Link against
-`uni20_common`. JSON and optional streaming sinks with replay remain follow-on
-work within the same table API. Sections below distinguish current behavior
-from the agreed extension direction.
+**Status:** implemented: typed rows with checked insertion, native half-integers,
+optional retention, report snapshots, CSV/TSV and typed JSON export, and
+synchronous terminal/CSV/TSV/JSON sinks with replay. Include
+`<uni20/common/data_table.hpp>` for tables and delimited snapshots,
+`<uni20/common/data_table_json.hpp>` for JSON, or
+`<uni20/common/data_table_sinks.hpp>` for streaming adapters. Link against
+`uni20_common`. Document/notebook adapters and asynchronous output remain future
+extensions.
 
 ## Current API
 
@@ -27,10 +29,13 @@ p::write_tsv(output_stream, results,
              {.precision = p::data_export_precision::display}); // Deliberate real rounding.
 ```
 
-The table owns its schema and rows. `columns()` returns the immutable schema;
+The table owns its schema and retained rows. It is move-only, so subscriptions
+cannot be duplicated by copying. Sink IDs follow a moved table; use moved-from
+tables only for destruction. Do not move a table during a sink callback. `columns()` returns the immutable schema;
 `rows()` returns a read-only span of typed tuples. Spans/references to rows can
 be invalidated by a subsequent append. `title()` and `size()` provide metadata
-and retained row count. `data_table<Ts...>::make_row(...)` performs the same
+and accepted row count. `retained_size()` reports stored rows; the counts differ
+with retention disabled. `data_table<Ts...>::make_row(...)` performs the same
 checked conversion as `append` without requiring retained history.
 
 Supported columns are the standard signed/unsigned integer storage types,
@@ -103,9 +108,9 @@ factory can infer the table's template arguments. This keeps scalar formatting
 and export dispatch templated on the actual value type; it does not prescribe
 the physical container layout permanently.
 
-The current table retains all rows. With streaming, retention will become a
-construction-time policy of this same API: retain all rows by default, or select
-`retention::none` for large/long-running output. Changing
+Retention is a construction-time policy of this API: retain all rows by default,
+or select `data_table_options{.retain = retention::none}` for large/long-running
+output. Changing
 retention mid-run and bounded partial histories are deferred. Separate schema
 and checked row construction from history storage now, so adding streaming does
 not require a second user-facing table type.
@@ -166,9 +171,12 @@ work; neither justifies narrowing the initial C++ value model.
 
 ## Formatting and Writer Policies
 
-Display configuration is attached to columns at construction time. Per-render
-overrides are future work; their precedence will be per-render override, column
-setting, then library default, without mutating the table. Reuse the scalar I/O customization boundary
+Display configuration is attached to columns at construction time. A
+`table_projection` selects columns in an independent order and overrides whole
+`data_column_display` values by identifier. Empty selection means all columns.
+The projection applies to report snapshots and each terminal/delimited sink,
+without mutating the table. Unknown/duplicate selected columns and overrides
+for unselected columns are rejected before output begins. Reuse the scalar I/O customization boundary
 where it is correct, rather than introducing another scalar formatting system.
 
 State digit semantics explicitly: general notation uses significant digits;
@@ -201,13 +209,13 @@ rounded and must not be described as lossless.
 |---|---|---|
 | Terminal/plain display | Implemented | Format typed cells and build an existing `report_table`; reuse glyph, width, style and border handling |
 | CSV/TSV | Implemented | Write one rectangular table, stable column identifiers and machine scalar values; ignore display layout |
-| JSON | Planned | Write schema, useful metadata and typed value encodings; optionally group named tables in an application result |
+| JSON | Implemented | Write schema, useful metadata and typed value encodings; optionally group named tables in an application result |
 | Markdown | Planned | Apply display settings and emit a table with target-specific escaping and limited emphasis |
 | LaTeX | Planned | Apply display settings, escape ordinary text and support explicitly declared mathematical labels |
 | HTML/notebook | Planned | Emit semantic table markup with headings, values and styles; do not translate terminal whitespace or ANSI |
 
 Writers consume the typed table directly. Only the terminal adapter needs the
-intermediate `report_table` for a snapshot; planned live display will use the existing
+intermediate `report_table` for a snapshot; live display uses the existing
 `display::streaming_table`. There is no reverse conversion from rich report
 cells to numerical data. A rich report containing spans or commentary is not
 automatically a CSV dataset; the application selects the data table to export.
@@ -287,8 +295,18 @@ and `encoding: "twice_decimal_string"`. A value of `3/2` is encoded as `"3"`;
 an optional missing value remains `null`. This follows the existing JSON
 schema/rows structure while retaining exact quantum numbers.
 
-The ordered schema, row arrays and precision-preserving decimal strings in the
-worked example are agreed design choices, not an implemented Uni20 file format.
+The ordered schema, row arrays and precision-preserving decimal strings are
+implemented by `write_json` and `json_sink`. Integer columns whose type has
+more than 53 value bits always use decimal strings, independent of the current
+cell value; smaller types use JSON numbers. Text must be valid UTF-8, and
+control bytes are escaped. Invalid UTF-8 throws `std::invalid_argument`.
+Initial `metadata` and final `summary` are string-to-string application maps.
+Applications should use `format_real` when storing precise numeric metadata.
+An unfinished snapshot omits `summary`; a finished empty summary is `{}`.
+`first_row` records the zero-based index where an output begins: zero for
+snapshots/full replay, or the current accepted count for future-only attachment.
+A streaming JSON document is complete only after explicit finalization; it is
+not a checkpoint or interrupted-run recovery format.
 Extended mappings for complex/rational values remain future work.
 JSON forbids bare NaN/infinity tokens and
 does not guarantee that consumers retain extended numeric precision; see
@@ -311,72 +329,131 @@ Python column access should expose typed values independently of any rendered
 representation. Plot choices such as axes, connected series, error bars and
 branch grouping remain explicit application choices.
 
-### Streaming to Multiple Sinks (Follow-on)
+### Streaming to Multiple Sinks
 
-The same table can later attach one or more sinks: for example, pretty terminal
-output and a full-precision TSV file. Split implementation responsibilities into
-schema/checked row construction, optional retained history, and output adapters.
-Numerical fan-out occurs before the terminal adapter converts values to
-presentation cells. A collector is internal history storage, not another table
-API that users must choose instead of streaming.
-
-Start synchronously. Convert and validate each entire row once; retain it when
-enabled, then deliver a read-only typed row to sinks in attachment order. Each
-sink independently chooses columns, display formatting and export precision.
-An invalid row is neither retained nor delivered. Sinks cannot change the
-canonical row or each other's selections. Threads and queues are unnecessary
-for this facility.
-
-**Attachment is allowed after rows exist.** With default retention, attaching a
-sink begins its output, replays all retained rows in order and then subscribes
-it to future appends. Synchronous attachment finishes replay before another
-append can begin, so successful delivery neither omits nor duplicates a row.
-With `retention::none`, a late sink can receive future rows but cannot recover
-discarded history. Report that limitation at attachment; a request for complete
-replay must fail rather than silently become future-only output. The schema
-remains fixed after the first row or output begins; sink membership does not.
-
-Provisional lifecycle sketch:
+A table accepts synchronous sinks at any time. Default attachment begins output,
+replays all retained rows, then receives future appends in order. A one-shot
+write remains an independent snapshot. Each adapter receives the original typed
+row before any display formatting. There are no worker threads or queues.
 
 ```cpp
-auto table = make_data_table(/* typed columns; retain rows by default */);
-table.append(/* first completed result */);
-auto screen = table.attach(terminal_sink(/* selected columns */));
-auto file = table.attach(tsv_sink(output_stream)); // Both replay the first row.
-table.append(/* next result: retained and delivered to both */);
-write_json(snapshot_stream, table);              // Independent current snapshot.
-table.finish(/* final summary */);
+#include <uni20/common/data_table_sinks.hpp>
+namespace p = uni20::presentation;
+auto table = p::make_data_table(
+    "Dispersion", {.metadata = {{"model", "Hubbard"}, {"U", "4"}}},
+    p::data_column<unsigned>("branch"),
+    p::data_column<long double>("energy").fixed(6));
+table.append(1, -6.25L);
+// Both sinks first replay the row already present.
+auto screen = table.attach(p::terminal_sink({
+    .projection = {.columns = {"energy"}},
+    .destination = uni20::display::stream::err}));
+auto file = table.attach(p::tsv_sink(output_stream));
+table.append(2, -6.125L);
+p::write_json(snapshot_stream, table); // No final summary yet.
+table.finish({{"status", "complete"}, {"cpu_seconds", "1.125"}});
 ```
 
-Give each sink a `begin(schema, initial_metadata) -> rows -> finish(summary)`
-lifecycle. Bethe can supply U, density and conventions at the beginning, while
-CPU time and overall success arrive at the end. Generic CSV/TSV stays
-rectangular: summaries belong in separate metadata output or an explicitly
-documented application format. JSON can include a final summary after its row
-array; an in-progress snapshot must not claim a final success status.
+The table owns attached adapters; streams are borrowed and must outlive their
+attachment. A `data_attachment` contains a table-local `id` and a failure
+`report`. IDs remain meaningful after the table is moved, but must not be used
+with other tables. `finish_sink(id, summary)` finalizes one sink and stops its
+subscription without ending the table. `finish(summary)` ends appends,
+finalizes every remaining sink, and preserves both rows and summary. A late
+attachment to a finished table replays history and receives the summary without
+subscribing. Repeated finish with no new summary (or the same summary) writes
+nothing; an attempt to replace a finalized summary throws `std::logic_error`.
+Repeated table finish re-reports any failure from its first finalization.
 
-Closing/finalizing one sink does not discard retained rows or prevent other
-sinks from following the calculation. Table-level finish supplies the final
-summary and finalizes active outputs; retained data remains inspectable and
-exportable. Define finished-table attachment to replay the retained data and
-deliver the recorded summary without subscribing to new rows. Exact ownership
-of attachment handles and the behavior of repeated finish calls belong in the
-streaming API implementation contract.
+Explicit finalization is required to discover flush errors. Destruction releases
+adapters without calling their output methods or inventing a final summary.
+CSV/TSV/JSON adapters flush their borrowed stream at finish, but do not close it;
+the owner must check close errors. The terminal adapter uses
+`display::streaming_table` with incremental fit widths. The default display
+router flushes each emission and reports stdio failures; custom display routers
+must report their own failures. Terminal metadata/summary display can be
+disabled with `.show_metadata = false`; generic CSV/TSV always omits them to keep
+the output rectangular. JSON records them separately from rows.
 
-Output failures must be visible. A required data-file failure propagates to the
-caller; an explicitly optional display sink may be disabled with a reported
-failure while calculation continues. Delivery is not atomic across sinks, and
-output failure does not roll back a retained row. Do not automatically retry a
-partly delivered append or replay: doing so can duplicate data. Explicit
-finalization must report flush/close failures; destruction cannot be the only
-way to discover them. Settle the precise failure result and whether later sinks
-are attempted after a required failure before implementing streaming.
+#### Delivery and failure contract
 
-Reuse `display::streaming_table` for live human output. Its width policy cannot
-depend on unseen rows; use declared widths or explicit incremental layout.
-Asynchronous delivery, backpressure, partial histories and concurrent appends
-are deferred. These extensions do not require different retained/streaming
-table APIs or block the first owning-table implementation.
+`append` converts and validates the whole row once. Invalid input is neither
+retained nor delivered. Once accepted, the row is retained when enabled and the
+accepted count increases, then active sinks run in attachment order. Mutation
+from inside a callback is rejected; concurrent access and moving a table during
+callbacks are not supported.
+
+A sink exception disables that sink. Other active sinks still receive the row.
+After all attempts, any required failure throws `data_delivery_error`, whose
+`report()` contains **all failures from that operation**, including optional
+ones. Each `data_sink_failure` records the attachment ID, required flag,
+`begin`/`row`/`finish` phase, and original `exception_ptr`.
+
+If only optional sinks fail, `append`, `finish_sink` and `finish` return a
+`data_delivery_report`. `attach` puts it in the `data_attachment`. Callers using
+optional sinks **must inspect these reports**; required-only calculations can
+rely on exceptions. To make a display optional:
+
+```cpp
+auto screen = table.attach(p::terminal_sink(), {.required = false});
+report_optional_failures(screen.report); // Application reporting policy.
+auto delivery = table.append(3, -6.0L);
+report_optional_failures(delivery);
+```
+
+Required sinks are the default. A failed begin or replay disables only the new
+attachment and reports the exact phase; it does not touch existing sinks or
+retained rows. A failed finish still allows other sinks to finalize. Failures
+from prior append/attachment operations are not emitted again by later
+operations; `sink_state(id)` remains `failed`. Reports are not a success status
+for the calculation: the application decides how to respond to already reported
+failures and what final summary to supply.
+
+Delivery is not atomic across outputs. Output failure does not roll back a row,
+and **no append, replay or finalization is retried automatically**. A caller
+must not retry the same append after `data_delivery_error`, since the row has
+already been accepted. File output may be partial after a failure.
+
+#### Disabling retention
+
+```cpp
+auto table = p::make_data_table("Long run", {.retain = p::retention::none},
+                                p::data_column<double>("energy"));
+table.attach(p::tsv_sink(output_stream)); // Before the first row: full history is available.
+table.append(-6.25);
+// Explicitly acknowledge that earlier rows cannot be replayed.
+table.attach(p::terminal_sink(), {.replay = p::sink_replay::future_only});
+table.append(-6.125);
+table.finish();
+```
+
+With `retention::none`, row storage stays empty; each accepted row lives only
+through synchronous delivery. `rows()` and all full-history snapshot/render
+functions throw before writing anything, even for an empty no-retention table.
+A late full-replay request fails before sink output begins. Explicit
+`future_only` attachment is available in either retention mode; JSON marks the
+starting row index. CSV/TSV remain rectangular, so applications must record any
+partial-history provenance separately when saving such output.
+
+#### Custom adapters
+
+A sink object supplies these methods (which may be templated on schema/row):
+
+```cpp
+void begin(std::string const& title, Schema const& schema,
+           p::table_metadata const& metadata, p::data_sink_start start);
+void row(Schema const& schema, Row const& row);
+void finish(p::table_metadata const& summary);
+```
+
+Schema, metadata and row arguments are borrowed for the duration of the callback;
+a sink must copy anything it retains. A sink can be move-only. The table owns it
+until successful finish, failure or destruction. Custom sinks must propagate
+output errors and must not rely on their destructor to perform fallible output.
+The table keeps no row history on their behalf.
+
+Asynchronous delivery, backpressure, bounded partial histories and concurrent
+appends remain deferred. They do not require another user-facing table API.
 
 ## Worked Bethe Table
 
@@ -427,11 +504,15 @@ level	spin	momentum	energy	gap	converged
 2	-1.5	0.5	-6.125		false
 ```
 
-Agreed precision-preserving JSON shape for the same `double` table:
+Precision-preserving JSON shape for the same `double` table (optional metadata
+fields such as empty units/descriptions and false nullability omitted here for
+brevity):
 
 ```json
 {
   "title": "Excitation levels",
+  "metadata": {},
+  "first_row": 0,
   "columns": [
     {"id": "level", "label": "Level", "type": "uint32", "encoding": "number"},
     {"id": "spin", "label": "Spin", "type": "half_int", "storage_bits": 64,
@@ -461,9 +542,8 @@ consumer decision, not an export-time loss of precision.
 
 Bethe's `apps/bethe-hubbard-dispersion.cpp` currently collects its points, formats
 them into string cells, and selects report or CSV/TSV output. Its solver loops
-already produce points in the desired output order. After the owning-table
-slice is available, migrate that frontend to append typed results without
-changing the solver; add optional live sink attachment when streaming lands.
+already produce points in the desired output order. With the table API available, migrate that frontend to append typed results without
+changing the solver; use optional live sink attachment where useful.
 
 This exercises native `Real` precision, exact spin labels, missing energies,
 infinite endpoint rapidities, diagnostic columns and final CPU timing. The
@@ -485,9 +565,9 @@ CSV writer's contract.
 3. **Implemented:** the Bethe-shaped example and focused tests. Integrate an
    actual Bethe result table in a separate consumer change, retaining its
    selected arithmetic precision and scientific status information.
-4. **Next:** add JSON using the agreed schema and synchronous sink attachment/
-   replay with the same table API. Expose construction-time `retention::none`
-   with streaming; it is not available in the initial snapshot-only slice.
+4. **Implemented:** typed JSON, synchronous sink attachment/replay, per-output
+   column projection/display overrides, initial metadata and final summaries,
+   and construction-time `retention::none` in the same table API.
 5. Markdown, LaTeX, notebook HTML, conditional emphasis and borrowed/dynamic
    adapters are subsequent output/access extensions.
 
@@ -503,10 +583,9 @@ values, storage conversions, integer-to-half range checks and doubled values
 beyond binary64's exact integer precision. Check exact decimal/fraction output
 and JSON doubled-integer reconstruction without a floating intermediate.
 Test zero rows, invalid/duplicate identifiers, stream failures and independence
-from terminal/color settings. Validate JSON with an independent parser when its
-writer is added. Reader defaults that narrow values are not exporter tests.
+from terminal/color settings. Validate JSON with an independent parser. Reader defaults that narrow values are not exporter tests.
 
-When streaming is added, test attachment before/after rows, replay order, column
+Streaming tests cover attachment before/after rows, replay order, column
 projections, independent sink finalization, summary delivery, failed replay and
 required/optional sink failures. Demonstrate that no-retention mode has bounded
 row memory and refuses unavailable full-history export, and that late future-only
@@ -526,5 +605,5 @@ silently read device memory or wait on unresolved calculations.
   must explicitly choose and perform those conversions before insertion.
 - Floating-to-half-integer insertion is rejected; exact integer and half-integer
   inputs are checked for representability before storing the row.
-- JSON and streaming API sketches are provisional; no compatibility aliases are
-  needed when implementing those extensions.
+- Streaming is synchronous and non-atomic across sinks. Attempt all sinks, disable
+  failures, then throw for required failures or return optional failures explicitly.

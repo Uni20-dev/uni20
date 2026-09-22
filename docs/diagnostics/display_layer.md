@@ -212,6 +212,18 @@ final reports, and compact diagnostics.
 
 ## Streaming Tables
 
+For numerical results shared with CSV/TSV/JSON outputs, use the
+[typed data table](data_tables.md) and its terminal adapter. It supplies
+`display::formatted_cell` values through the preformatted `streaming_table::row`
+overload, preserving finite-number decimal alignment and missing/nonfinite
+alignment after scalar formatting. The ordinary string-cell interface continues
+to treat strings as text.
+
+The default C++ display router checks write and flush errors and throws
+`std::ios_base::failure`. Custom routers must expose their own output failures;
+this allows typed table subscriptions to apply required/optional sink policies.
+
+
 Per-step output often does not know future rows. For example, DMRG sweeps,
 iterative eigensolvers, benchmark progress, and async task progress are
 streaming. A streaming table should be schema-first rather than data-first:

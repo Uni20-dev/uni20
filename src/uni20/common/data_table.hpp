@@ -7,9 +7,13 @@
 #include "half_int.hpp"
 #include "presentation.hpp"
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstdint>
+#include <exception>
+#include <map>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <span>
@@ -259,8 +263,104 @@ template <DataTableValue T> class data_column {
     data_column_display display_;
 };
 
-/// \brief Owning heterogeneous result table with a fixed schema and checked whole-row insertion.
-/// \details All mutation and output is synchronous. Const rows preserve the column's original scalar type.
+/// \brief Ordered output columns and independent display overrides. Empty columns selects the full schema.
+struct table_projection
+{
+    std::vector<std::string> columns = {};
+    std::map<std::string, data_column_display> display = {};
+};
+
+/// \brief Application metadata is owned text, independent of numerical rows.
+using table_metadata = std::map<std::string, std::string>;
+
+/// \brief Whether accepted rows remain available for snapshots and replay.
+enum class retention
+{
+  all,
+  none
+};
+
+/// \brief Construction-time table policy and initial application metadata.
+struct data_table_options
+{
+    retention retain = retention::all;
+    table_metadata metadata = {};
+};
+
+/// \brief Full replay is the default. Future-only attachment explicitly opts out of history.
+enum class sink_replay
+{
+  all,
+  future_only
+};
+struct data_sink_options
+{
+    bool required = true;
+    sink_replay replay = sink_replay::all;
+};
+
+/// \brief The index of the first row this attachment can emit (zero for full replay).
+struct data_sink_start
+{
+    std::size_t first_row = 0;
+};
+
+/// \brief A table-local attachment identifier, stable when its table is moved.
+struct data_sink_id
+{
+    std::size_t value;
+    bool operator==(data_sink_id const&) const = default;
+};
+enum class data_sink_state
+{
+  active,
+  closed,
+  failed
+};
+enum class data_sink_operation
+{
+  begin,
+  row,
+  finish
+};
+
+/// \brief Original exception and attachment identity for one disabled sink.
+struct data_sink_failure
+{
+    data_sink_id sink;
+    bool required;
+    data_sink_operation operation;
+    std::exception_ptr exception;
+};
+
+/// \brief Newly encountered failures. Callers using optional sinks must inspect this result.
+struct data_delivery_report
+{
+    std::vector<data_sink_failure> failures = {};
+};
+
+/// \brief Required output failed after all eligible sinks were attempted; retained rows are not rolled back.
+class data_delivery_error : public std::runtime_error {
+  public:
+    explicit data_delivery_error(data_delivery_report report)
+        : std::runtime_error("required data table output failed"), report_(std::move(report))
+    {}
+    [[nodiscard]] data_delivery_report const& report() const noexcept { return report_; }
+
+  private:
+    data_delivery_report report_;
+};
+
+/// \brief Attachment identity and any optional begin/replay/finalization failure.
+struct data_attachment
+{
+    data_sink_id id;
+    data_delivery_report report;
+};
+
+/// \brief Typed result table with synchronous sinks and optional retained history.
+/// \details Move-only: copying live outputs would duplicate delivery. Call finish explicitly to observe flush errors.
+///          Mutation is single-caller and non-reentrant; sink callbacks receive borrowed const schema/rows.
 template <DataTableValue... Ts> class data_table {
   public:
     static_assert(sizeof...(Ts) > 0, "data tables require at least one column");
@@ -268,7 +368,10 @@ template <DataTableValue... Ts> class data_table {
     using schema_type = std::tuple<data_column<Ts>...>;
 
     data_table(std::string title, data_column<Ts>... columns)
-        : title_(std::move(title)), columns_(std::move(columns)...)
+        : data_table(std::move(title), data_table_options{}, std::move(columns)...)
+    {}
+    data_table(std::string title, data_table_options options, data_column<Ts>... columns)
+        : title_(std::move(title)), columns_(std::move(columns)...), options_(std::move(options))
     {
       std::apply(
           [](auto const&... column) {
@@ -279,17 +382,31 @@ template <DataTableValue... Ts> class data_table {
           },
           columns_);
     }
+    data_table(data_table const&) = delete;
+    data_table& operator=(data_table const&) = delete;
+    data_table(data_table&&) = default;
+    data_table& operator=(data_table&&) = delete;
 
-    /// \brief Convert an entire row before storing it; failure leaves existing rows unchanged.
-    /// \throws std::overflow_error An integer or half-integer value is out of range.
+    /// \brief Validate once, retain when enabled, then deliver to every active sink in attachment order.
+    /// \details Conversion failure leaves the table unchanged. Output failure occurs after row acceptance;
+    ///          inspect optional failures in the returned report and never retry a failed delivery automatically.
     template <typename... Us>
       requires(sizeof...(Ts) == sizeof...(Us) && (data_table_detail::accepts<Ts, Us>() && ...))
-    void append(Us&&... values)
+    data_delivery_report append(Us&&... values)
     {
-      rows_.push_back(this->make_row(std::forward<Us>(values)...));
+      mutation_guard guard(busy_);
+      if (finished_) throw std::logic_error("cannot append to a finished data table");
+      auto row = this->make_row(std::forward<Us>(values)...);
+      auto report = this->new_report();
+      if (options_.retain == retention::all) rows_.push_back(std::move(row));
+      ++size_;
+      auto const& accepted = options_.retain == retention::all ? rows_.back() : row;
+      for (auto& sink : sinks_)
+        this->attempt(sink, data_sink_operation::row, report, [&] { sink.output->row(columns_, accepted); });
+      return this->checked_report(std::move(report));
     }
 
-    /// \brief Construct a validated, owning typed row independently of retained history.
+    /// \brief Construct a checked, owning row independently of storage or output.
     template <typename... Us>
       requires(sizeof...(Ts) == sizeof...(Us) && (data_table_detail::accepts<Ts, Us>() && ...))
     [[nodiscard]] static row_type make_row(Us&&... values)
@@ -297,21 +414,181 @@ template <DataTableValue... Ts> class data_table {
       return row_type{data_table_detail::convert<Ts>(std::forward<Us>(values))...};
     }
 
+    /// \brief Own a sink, begin its output and replay history before subscribing to future rows.
+    /// \details Sink must provide begin(title, schema, metadata, start), row(schema, row), and finish(summary).
+    ///          Streams/resources borrowed by a sink must outlive its attachment. Failed sinks are disabled.
+    template <typename Sink> data_attachment attach(Sink&& output, data_sink_options options = {})
+    {
+      mutation_guard guard(busy_);
+      if (options.replay == sink_replay::all && options_.retain == retention::none && size_ != 0)
+        throw std::logic_error("data table history unavailable; request future_only attachment explicitly");
+      auto owned = std::make_unique<sink_model<std::remove_cvref_t<Sink>>>(std::forward<Sink>(output));
+      data_delivery_report report;
+      report.failures.reserve(1);
+      data_sink_id id{sinks_.size()};
+      sinks_.push_back({id, options.required, data_sink_state::active, std::move(owned)});
+      auto& sink = sinks_.back();
+      this->attempt(sink, data_sink_operation::begin, report, [&] {
+        sink.output->begin(title_, columns_, options_.metadata, {options.replay == sink_replay::all ? 0 : size_});
+      });
+      if (options.replay == sink_replay::all)
+        for (auto const& row : rows_)
+        {
+          if (sink.state != data_sink_state::active) break;
+          this->attempt(sink, data_sink_operation::row, report, [&] { sink.output->row(columns_, row); });
+        }
+      if (finished_) this->close(sink, *summary_, report);
+      return {id, this->checked_report(std::move(report))};
+    }
+
+    /// \brief Finalize and unsubscribe one sink without ending the table or discarding rows.
+    data_delivery_report finish_sink(data_sink_id id, table_metadata const& summary = {})
+    {
+      mutation_guard guard(busy_);
+      auto report = this->new_report();
+      this->close(this->find_sink(id), summary, report);
+      return this->checked_report(std::move(report));
+    }
+
+    /// \brief End row insertion and finalize all active outputs, retaining the summary for later replay.
+    /// \details Repeated finish with no new summary (or the same summary) does not write again.
+    ///          Destruction never substitutes for explicit finalization; snapshots remain available afterwards.
+    data_delivery_report finish(table_metadata summary = {})
+    {
+      mutation_guard guard(busy_);
+      if (finished_)
+      {
+        if (!summary.empty() && summary != *summary_) throw std::logic_error("data table summary already finalized");
+        return this->checked_report(final_report_);
+      }
+      auto report = this->new_report();
+      summary_ = std::move(summary);
+      finished_ = true;
+      for (auto& sink : sinks_)
+        this->close(sink, *summary_, report);
+      final_report_ = std::move(report);
+      return this->checked_report(final_report_);
+    }
+
     [[nodiscard]] std::string const& title() const noexcept { return title_; }
     [[nodiscard]] schema_type const& columns() const noexcept { return columns_; }
-    [[nodiscard]] std::span<row_type const> rows() const noexcept { return rows_; }
-    [[nodiscard]] std::size_t size() const noexcept { return rows_.size(); }
+    [[nodiscard]] table_metadata const& metadata() const noexcept { return options_.metadata; }
+    [[nodiscard]] std::optional<table_metadata> const& summary() const noexcept { return summary_; }
+    [[nodiscard]] bool finished() const noexcept { return finished_; }
+    [[nodiscard]] retention retention_policy() const noexcept { return options_.retain; }
+    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] std::size_t retained_size() const noexcept { return rows_.size(); }
+    /// \brief Require complete retained history before inspecting or exporting rows.
+    [[nodiscard]] std::span<row_type const> rows() const
+    {
+      if (options_.retain == retention::none) throw std::logic_error("data table does not retain history");
+      return rows_;
+    }
+    [[nodiscard]] data_sink_state sink_state(data_sink_id id) const { return this->find_sink(id).state; }
 
   private:
+    struct mutation_guard
+    {
+        bool& busy;
+        explicit mutation_guard(bool& flag) : busy(flag)
+        {
+          if (busy) throw std::logic_error("data table mutation is not reentrant");
+          busy = true;
+        }
+        ~mutation_guard() { busy = false; }
+    };
+    struct sink_interface
+    {
+        virtual ~sink_interface() = default;
+        virtual void begin(std::string const&, schema_type const&, table_metadata const&, data_sink_start) = 0;
+        virtual void row(schema_type const&, row_type const&) = 0;
+        virtual void finish(table_metadata const&) = 0;
+    };
+    template <typename Sink> struct sink_model final : sink_interface
+    {
+        Sink output;
+        explicit sink_model(Sink value) : output(std::move(value)) {}
+        void begin(std::string const& title, schema_type const& schema, table_metadata const& metadata,
+                   data_sink_start start) override
+        {
+          output.begin(title, schema, metadata, start);
+        }
+        void row(schema_type const& schema, row_type const& row) override { output.row(schema, row); }
+        void finish(table_metadata const& summary) override { output.finish(summary); }
+    };
+    struct sink_record
+    {
+        data_sink_id id;
+        bool required;
+        data_sink_state state;
+        std::unique_ptr<sink_interface> output;
+    };
+    data_delivery_report new_report() const
+    {
+      data_delivery_report report;
+      report.failures.reserve(sinks_.size());
+      return report;
+    }
+    static data_delivery_report checked_report(data_delivery_report report)
+    {
+      if (std::any_of(report.failures.begin(), report.failures.end(), [](auto const& f) { return f.required; }))
+        throw data_delivery_error(std::move(report));
+      return report;
+    }
+    template <typename Function>
+    void attempt(sink_record& sink, data_sink_operation operation, data_delivery_report& report, Function&& function)
+    {
+      if (sink.state != data_sink_state::active) return;
+      try
+      {
+        function();
+      }
+      catch (...)
+      {
+        sink.state = data_sink_state::failed;
+        report.failures.push_back({sink.id, sink.required, operation, std::current_exception()});
+        sink.output.reset();
+      }
+    }
+    void close(sink_record& sink, table_metadata const& summary, data_delivery_report& report)
+    {
+      this->attempt(sink, data_sink_operation::finish, report, [&] { sink.output->finish(summary); });
+      if (sink.state == data_sink_state::active)
+      {
+        sink.state = data_sink_state::closed;
+        sink.output.reset();
+      }
+    }
+    sink_record const& find_sink(data_sink_id id) const
+    {
+      if (id.value >= sinks_.size()) throw std::invalid_argument("unknown data table sink");
+      return sinks_[id.value];
+    }
+    sink_record& find_sink(data_sink_id id) { return const_cast<sink_record&>(std::as_const(*this).find_sink(id)); }
+
     std::string title_;
     schema_type columns_;
+    data_table_options options_;
     std::vector<row_type> rows_;
+    std::vector<sink_record> sinks_;
+    std::size_t size_ = 0;
+    bool busy_ = false;
+    bool finished_ = false;
+    std::optional<table_metadata> summary_;
+    data_delivery_report final_report_;
 };
 
-/// \brief Deduce an owning table's value types from its column declarations.
+/// \brief Deduce column types with default retained history.
 template <DataTableValue... Ts> [[nodiscard]] auto make_data_table(std::string title, data_column<Ts>... columns)
 {
   return data_table<Ts...>(std::move(title), std::move(columns)...);
+}
+
+/// \brief Deduce column types with an explicit retention policy and initial metadata.
+template <DataTableValue... Ts>
+[[nodiscard]] auto make_data_table(std::string title, data_table_options options, data_column<Ts>... columns)
+{
+  return data_table<Ts...>(std::move(title), std::move(options), std::move(columns)...);
 }
 
 namespace data_table_detail
@@ -346,21 +623,82 @@ void visit_cells(Schema const& schema, Row const& row, Function&& function)
     (function(std::get<I>(schema), std::get<I>(row)), ...);
   }(std::make_index_sequence<std::tuple_size_v<Schema>>{});
 }
+struct resolved_projection
+{
+    std::vector<std::size_t> indices;
+    std::vector<data_column_display> display;
+};
+
+template <typename Schema, typename Function>
+void visit_column(Schema const& schema, std::size_t index, Function&& function)
+{
+  [&]<std::size_t... I>(std::index_sequence<I...>) {
+    ((I == index ? (void)function(std::get<I>(schema)) : (void)0), ...);
+  }(std::make_index_sequence<std::tuple_size_v<Schema>>{});
+}
+
+template <typename Schema> resolved_projection resolve_projection(Schema const& schema, table_projection const& options)
+{
+  resolved_projection result;
+  std::vector<std::string> names;
+  std::apply([&](auto const&... column) { (names.push_back(column.identifier()), ...); }, schema);
+  auto add = [&](std::string const& name) {
+    auto found = std::find(names.begin(), names.end(), name);
+    if (found == names.end()) throw std::invalid_argument("unknown data table output column: " + name);
+    auto index = static_cast<std::size_t>(found - names.begin());
+    if (std::find(result.indices.begin(), result.indices.end(), index) != result.indices.end())
+      throw std::invalid_argument("duplicate data table output column: " + name);
+    result.indices.push_back(index);
+    visit_column(schema, index, [&](auto const& c) { result.display.push_back(c.display()); });
+    if (auto override = options.display.find(name); override != options.display.end())
+      result.display.back() = override->second;
+  };
+  for (auto const& name : options.columns.empty() ? names : options.columns)
+    add(name);
+  for (auto const& [name, format] : options.display)
+  {
+    auto found = std::find(names.begin(), names.end(), name);
+    if (found == names.end() ||
+        std::find(result.indices.begin(), result.indices.end(), found - names.begin()) == result.indices.end())
+      throw std::invalid_argument("display override requires a selected data table column: " + name);
+    auto const& numeric = format.numeric;
+    if (numeric.precision < -1 || (numeric.notation == real_format_notation::general && numeric.precision == 0))
+      throw std::invalid_argument("invalid data table output precision");
+  }
+  return result;
+}
+
+template <typename Schema, typename Row, typename Function>
+void visit_selected(Schema const& schema, Row const& row, resolved_projection const& selection, Function&& function)
+{
+  for (std::size_t p = 0; p < selection.indices.size(); ++p)
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+      ((I == selection.indices[p] ? (void)function(std::get<I>(schema), std::get<I>(row), selection.display[p])
+                                  : (void)0),
+       ...);
+    }(std::make_index_sequence<std::tuple_size_v<Schema>>{});
+}
 } // namespace data_table_detail
 
 /// \brief Format a snapshot using column display settings and the existing rich table model.
-template <DataTableValue... Ts> [[nodiscard]] report_table to_report_table(data_table<Ts...> const& table)
+template <DataTableValue... Ts>
+[[nodiscard]] report_table to_report_table(data_table<Ts...> const& table, table_projection const& projection = {})
 {
+  auto rows = table.rows();
   report_table result(table.title());
-  std::apply([&](auto const&... column) { (result.column(column.label(), column.display().alignment), ...); },
-             table.columns());
-  for (auto const& row : table.rows())
+  auto selection = data_table_detail::resolve_projection(table.columns(), projection);
+  for (std::size_t p = 0; p < selection.indices.size(); ++p)
+    data_table_detail::visit_column(table.columns(), selection.indices[p], [&](auto const& column) {
+      result.column(column.label(), selection.display[p].alignment);
+    });
+  for (auto const& row : rows)
   {
     std::vector<std::string> cells;
     cells.reserve(sizeof...(Ts));
-    data_table_detail::visit_cells(table.columns(), row, [&](auto const& column, auto const& value) {
-      cells.push_back(data_table_detail::cell_text(value, column.display(), false));
-    });
+    data_table_detail::visit_selected(table.columns(), row, selection,
+                                      [&](auto const&, auto const& value, auto const& display) {
+                                        cells.push_back(data_table_detail::cell_text(value, display, false));
+                                      });
     result.row(std::move(cells));
   }
   return result;
@@ -377,12 +715,13 @@ enum class data_export_precision
 struct delimited_options
 {
     data_export_precision precision = data_export_precision::round_trip;
+    table_projection projection = {};
 };
 
 namespace data_table_detail
 {
 template <typename T>
-std::string export_text(T const& value, data_column_display const& display, delimited_options options)
+std::string export_text(T const& value, data_column_display const& display, delimited_options const& options)
 {
   if constexpr (optional_traits<T>::optional)
   {
@@ -393,35 +732,45 @@ std::string export_text(T const& value, data_column_display const& display, deli
     return cell_text(value, display, !Real<T> || options.precision == data_export_precision::round_trip);
 }
 
-template <DataTableValue... Ts>
-void write_delimited(std::ostream& out, data_table<Ts...> const& table, char delimiter, delimited_options options)
+template <typename Schema>
+void write_delimited_header(std::ostream& out, Schema const& schema, resolved_projection const& selection,
+                            char delimiter)
 {
   check_output(out);
   bool first = true;
-  std::apply(
-      [&](auto const&... column) {
-        auto heading = [&](auto const& c) {
-          if (!std::exchange(first, false)) out.put(delimiter);
-          write_field(out, c.identifier(), delimiter);
-        };
-        (heading(column), ...);
-      },
-      table.columns());
-  out.put('\n');
-  for (auto const& row : table.rows())
-  {
-    first = true;
-    visit_cells(table.columns(), row, [&](auto const& column, auto const& value) {
+  for (auto index : selection.indices)
+    visit_column(schema, index, [&](auto const& column) {
       if (!std::exchange(first, false)) out.put(delimiter);
-      using T = std::remove_cvref_t<decltype(value)>;
-      auto text = export_text(value, column.display(), options);
-      // A single empty field needs quotes so readers do not skip it as a blank record.
-      write_field(out, text, delimiter, std::same_as<T, std::string> || sizeof...(Ts) == 1);
+      write_field(out, column.identifier(), delimiter);
     });
-    out.put('\n');
-    check_output(out);
-  }
+  out.put('\n');
   check_output(out);
+}
+
+template <typename Schema, typename Row>
+void write_delimited_row(std::ostream& out, Schema const& schema, Row const& row, resolved_projection const& selection,
+                         char delimiter, delimited_options const& options)
+{
+  bool first = true;
+  visit_selected(schema, row, selection, [&](auto const&, auto const& value, auto const& display) {
+    if (!std::exchange(first, false)) out.put(delimiter);
+    using T = std::remove_cvref_t<decltype(value)>;
+    auto text = export_text(value, display, options);
+    write_field(out, text, delimiter, std::same_as<T, std::string> || selection.indices.size() == 1);
+  });
+  out.put('\n');
+  check_output(out);
+}
+
+template <DataTableValue... Ts>
+void write_delimited(std::ostream& out, data_table<Ts...> const& table, char delimiter,
+                     delimited_options const& options)
+{
+  auto rows = table.rows();
+  auto selection = resolve_projection(table.columns(), options.projection);
+  write_delimited_header(out, table.columns(), selection, delimiter);
+  for (auto const& row : rows)
+    write_delimited_row(out, table.columns(), row, selection, delimiter, options);
 }
 } // namespace data_table_detail
 
