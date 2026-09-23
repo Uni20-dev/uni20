@@ -33,6 +33,25 @@ template <typename T> class HalfIntConversion : public ::testing::Test {};
 using NarrowStorage = ::testing::Types<std::int8_t, std::int16_t, std::int32_t>;
 TYPED_TEST_SUITE(HalfIntConversion, NarrowStorage);
 
+template <typename T> class HalfIntParsing : public ::testing::Test {};
+using ParserStorage = ::testing::Types<std::int8_t, std::int64_t>;
+TYPED_TEST_SUITE(HalfIntParsing, ParserStorage);
+
+TYPED_TEST(HalfIntParsing, DecimalBoundariesPreserveEndpointsAndRejectUnderflow)
+{
+  using T = TypeParam;
+  using Half = uni20::basic_half_int<T>;
+  auto const minimum = std::numeric_limits<T>::min();
+  auto const maximum = std::numeric_limits<T>::max();
+  auto const lower = std::to_string(minimum / 2);
+  auto const upper = std::to_string(maximum / 2);
+  EXPECT_EQ(Half::parse(lower).twice(), minimum);
+  EXPECT_EQ(Half::parse(lower + ".0").twice(), minimum);
+  EXPECT_EQ(Half::parse(upper + ".5").twice(), maximum);
+  EXPECT_EQ(Half::parse(std::to_string(minimum / 2 + 1) + ".5").twice(), minimum + 1);
+  EXPECT_THROW(static_cast<void>(Half::parse(lower + ".5")), std::overflow_error);
+}
+
 TYPED_TEST(HalfIntConversion, WideningAndCheckedNarrowingPreserveDoubledValues)
 {
   using T = TypeParam;

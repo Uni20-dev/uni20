@@ -137,9 +137,10 @@ It checks the entire decimal token and rejects negative, overflowing and partly
 parsed values. Zero is permitted unless an application adds a positivity
 validator. `add_half_int_option` binds `basic_half_int<T>` directly, accepting
 the exact forms supported by its parser, including `-3/2` and `-1.5`.
-Non-half-integral input is rejected rather than rounded. Both return a native
-`CLI::Option*`, and the bound destination must outlive parsing and help requests
-which evaluate defaults.
+Non-half-integral input and values outside the doubled storage range are
+rejected rather than rounded or wrapped. Both return a native `CLI::Option*`,
+and the bound destination must outlive parsing and help requests which evaluate
+defaults.
 
 ### Defaults from initialized variables
 

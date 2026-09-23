@@ -141,7 +141,7 @@ TEST(CliConversions, HalfIntegersAreExactAndRespectBoundStorageRange)
     EXPECT_EQ(parse(app, {"--spin", token}).requested, c::action::run);
     EXPECT_EQ(spin, uni20::from_twice(-3));
   }
-  for (auto const* token : {"0.25", "1/3", "128", "99999999999999999999999999"})
+  for (auto const* token : {"0.25", "1/3", "128", "-64.5", "99999999999999999999999999"})
   {
     SCOPED_TRACE(token);
     CLI::App app;
@@ -150,6 +150,19 @@ TEST(CliConversions, HalfIntegersAreExactAndRespectBoundStorageRange)
     EXPECT_EQ(parse(app, {"--spin", token}).requested, c::action::error);
     EXPECT_EQ(spin, uni20::basic_half_int<signed char>(1));
   }
+}
+
+TEST(CliConversions, HalfIntegerLowerBoundaryReportsValidationErrorWithoutAssignment)
+{
+  CLI::App app;
+  uni20::half_int spin(1);
+  c::add_half_int_option(app, "--spin", spin);
+  auto const result = parse(app, {"--spin=-4611686018427387904.5"});
+  EXPECT_EQ(result.requested, c::action::error);
+  EXPECT_EQ(result.destination, uni20::display::stream::err);
+  EXPECT_NE(result.message.find("--spin"), std::string::npos);
+  EXPECT_NE(result.message.find("overflow"), std::string::npos);
+  EXPECT_EQ(spin, uni20::half_int(1));
 }
 
 TEST(CliDefaults, ExplicitDefaultsAssignBoundValuesAndAllowCommandLineOverrides)
@@ -193,7 +206,7 @@ TEST(CliDefaults, HalfIntegerDefaultsUseExactConversionAndRegisteredValidators)
   CLI::App app;
   uni20::half_int spin(1);
   auto* option = c::add_half_int_option(app, "--spin", spin)->capture_default_str();
-  for (auto const* invalid : {"0.25", "1/3", "99999999999999999999999999"})
+  for (auto const* invalid : {"0.25", "1/3", "-4611686018427387904.5", "99999999999999999999999999"})
   {
     SCOPED_TRACE(invalid);
     EXPECT_THROW(option->default_val(invalid), CLI::ValidationError);
