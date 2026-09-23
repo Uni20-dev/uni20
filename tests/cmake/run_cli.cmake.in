@@ -1,0 +1,15 @@
+set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/cli_${cli_case}")
+function(run_checked)
+  execute_process(COMMAND ${ARGV} RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(NOT result EQUAL 0)
+    message(FATAL_ERROR "CLI consumer failed: ${ARGV}\n${output}\n${error}")
+  endif()
+endfunction()
+run_checked("@CMAKE_COMMAND@" --fresh
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/cli" -B "${build_dir}" -G "@CMAKE_GENERATOR@"
+  "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@" "-Dcli_case=${cli_case}"
+  "-DCLI_INCLUDE_FILE=@CMAKE_CURRENT_BINARY_DIR@/cli_include_dirs.cmake" "-DCMAKE_BUILD_TYPE=${config}"
+@UNI20_SUBPROJECT_TEST_ARGS@
+)
+run_checked("@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}" --target consumer --parallel 2)
+run_checked("@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}" --output-on-failure)

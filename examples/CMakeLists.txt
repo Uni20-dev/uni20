@@ -148,6 +148,17 @@ if(UNI20_HAS_FLOAT128)
 endif()
 
 uni20_add_example(presentation_example presentation/table_layout_example.cpp fmt::fmt uni20_common)
+if(UNI20_BUILD_CLI)
+  uni20_add_example(presentation_cli_example presentation/cli_example.cpp uni20_cli)
+  add_test(NAME CliExample.Help COMMAND presentation_cli_example --help --precision=unavailable)
+  add_test(NAME CliExample.Tsv COMMAND presentation_cli_example --U=4 --spin=-3/2 --format=tsv)
+  add_test(NAME CliExample.LongDouble COMMAND presentation_cli_example
+    --U=4.000000000000000001 --precision=long-double --format=json)
+  if(UNI20_HAS_FLOAT128)
+    add_test(NAME CliExample.Float128 COMMAND presentation_cli_example
+      --U=4.000000000000000000000000000001 --precision=fp128 --format=json)
+  endif()
+endif()
 uni20_add_example(presentation_table_layout_example presentation/table_layout_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_glyph_policy_example presentation/glyph_policy_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_text_art_example presentation/text_art_example.cpp fmt::fmt uni20_common)

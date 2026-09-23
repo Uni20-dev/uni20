@@ -2,6 +2,21 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
+if(UNI20_BUILD_CLI)
+  # Exercise the public target from an embedding application and verify that
+  # opting out leaves both the numerical targets and common documents CLI-free.
+  get_target_property(UNI20_TEST_CLI_INCLUDE_DIRS CLI11::CLI11 INTERFACE_INCLUDE_DIRECTORIES)
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cli_include_dirs.cmake"
+    "set(CLI_INCLUDE_DIRS [==[${UNI20_TEST_CLI_INCLUDE_DIRS}]==])\n")
+  configure_file(run_cli.cmake.in run_cli.cmake @ONLY)
+  foreach(cli_case IN ITEMS disabled parent)
+    add_test(NAME CMakeSubproject.cli_${cli_case}
+      COMMAND "${CMAKE_COMMAND}" "-Dcli_case=${cli_case}" "-Dconfig=$<CONFIG>"
+        -P "${CMAKE_CURRENT_BINARY_DIR}/run_cli.cmake")
+    set_tests_properties(CMakeSubproject.cli_${cli_case} PROPERTIES LABELS cmake TIMEOUT 180)
+  endforeach()
+endif()
+
 configure_file(run_initialization.cmake.in run_initialization.cmake @ONLY)
 set(_uni20_initialization_cases debug debugopt release on off)
 if(CMAKE_GENERATOR MATCHES "^Ninja")

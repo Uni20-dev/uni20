@@ -19,6 +19,8 @@ or symmetry layers.
   display formatting, report snapshots, CSV/TSV export and optional row retention.
 - `data_table_json.hpp`, `data_table_sinks.hpp`: typed JSON export and synchronous
   terminal/file adapters with replay, projection and explicit finalization.
+- `program.hpp`: parser-independent application identity, banners and help documents.
+  CLI11 integration lives in the optional [`../cli/`](../cli/) module.
 - `aligned_buffer.hpp`, `static_vector.hpp`: small storage utilities.
 - `nifty_counter.hpp`: ordered one-time initialization and finalization shared
   by namespace-scope users across translation units.

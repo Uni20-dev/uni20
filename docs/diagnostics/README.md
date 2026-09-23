@@ -5,6 +5,8 @@ diagnostics, and Graphviz output.
 
 ## Current Guides
 
+- [Command-line Applications](command_line.md) covers optional CLI11 parsing,
+  semantic help, application identity and precision-aware argument handling.
 - [Presentation Formatting](presentation.md) defines styled text, semantic
   glyphs, width-aware layout, reports, tables, and Tensor previews.
 - [Typed Data Tables](data_tables.md) documents owning typed results, checked
