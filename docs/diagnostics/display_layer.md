@@ -212,6 +212,19 @@ final reports, and compact diagnostics.
 
 ## Streaming Tables
 
+For numerical results shared with CSV/TSV/JSON outputs, use the
+[typed data table](data_tables.md) and its terminal adapter. It supplies
+`display::formatted_cell` values through the preformatted `streaming_table::row`
+overload, preserving finite-number decimal alignment and missing/nonfinite
+alignment after scalar formatting. Numeric cells set `keep_together` so their
+formatted values, including half-integer fractions, cannot be split across
+lines. The ordinary string-cell interface continues to treat strings as text.
+
+The default C++ display router checks write and flush errors and throws
+`std::ios_base::failure`. Custom routers must expose their own output failures;
+this allows typed table subscriptions to apply required/optional sink policies.
+
+
 Per-step output often does not know future rows. For example, DMRG sweeps,
 iterative eigensolvers, benchmark progress, and async task progress are
 streaming. A streaming table should be schema-first rather than data-first:
@@ -254,7 +267,7 @@ Recommended behavior:
    dropping data.
 6. Keep the chosen widths stable for later rows.
 
-Long row values should wrap inside that row only. They should not permanently
+Long text values should wrap inside that row only. They should not permanently
 expand the column, and they should not force future rows to wrap merely to
 preserve alignment with an outlier row.
 
@@ -276,8 +289,18 @@ column.
 
 Streaming tables should not rely on terminal auto-wrap. The formatter should
 emit physical lines that fit the selected terminal width; if the configured
-schema cannot fit, it should switch to a vertical key/value fallback instead of
-letting a wide row spill into the next terminal line.
+schema cannot fit, it switches to a vertical key/value fallback. Typed numeric
+cells are kept intact: if a value cannot fit its column after fit-width growth,
+the table switches to vertical output for that row and subsequent rows. This
+also applies when the first wide value arrives after compact rows have already
+been emitted. A numeric token wider than the vertical value area is emitted
+intact, even if the resulting line exceeds the selected width. Uni20 inserts
+no line breaks inside the token; a physical terminal may still visually wrap
+an overlong line.
+
+Streaming-table events set `event::preserve_layout`. The default sink disables
+additional wrapping for these events, and custom sinks must likewise preserve
+their line breaks. Ordinary display messages retain the sink's wrapping policy.
 
 Streaming columns can declare default value formatting as part of the schema.
 For example, a solver progress table can use fixed-point formatting for an
@@ -468,6 +491,7 @@ namespace uni20::display
       bool newline = true;
       std::string context;
       std::source_location where;
+      bool preserve_layout = false;
   };
 
   using sink = std::function<void(event const&)>;
@@ -493,7 +517,8 @@ The default sink should:
 
 1. select `stdout` or `stderr` from `event::destination`;
 2. build a terminal output policy for that stream;
-3. render the event text with the presentation layer;
+3. disable further wrapping when `event::preserve_layout` is set, then render
+   the event text with the presentation layer;
 4. write and flush conservatively for interactive output.
 
 Tests can install a vector sink:

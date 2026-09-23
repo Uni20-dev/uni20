@@ -7,6 +7,8 @@ diagnostics, and Graphviz output.
 
 - [Presentation Formatting](presentation.md) defines styled text, semantic
   glyphs, width-aware layout, reports, tables, and Tensor previews.
+- [Typed Data Tables](data_tables.md) documents owning typed results, checked
+  insertion, deferred display formatting, CSV/TSV/JSON export, and streaming sinks.
 - [Trace Macros](trace_macros.md) documents `CHECK`, `PANIC`, `ERROR`, tracing,
   stacktraces, and presentation-layer rendering.
 - [Graphviz Basics](graphviz.md) is the developer reference used by async DAG

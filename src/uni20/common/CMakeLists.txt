@@ -15,6 +15,7 @@ endif()
 
 
 add_library(uni20_common STATIC
+    data_table.cpp
     display.cpp
     presentation.cpp
     terminal.cpp

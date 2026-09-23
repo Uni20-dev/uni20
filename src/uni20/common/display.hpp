@@ -96,15 +96,16 @@ namespace format
 [[nodiscard]] column_format general(int precision, terminal::TerminalStyle style = {});
 } // namespace format
 
-namespace detail
-{
-struct streaming_cell
+/// \brief Already formatted display text with numeric alignment semantics retained by its producer.
+/// \details Finite decimal text is a candidate; missing/nonfinite numeric values are exceptions.
+///          Numeric tokens stay intact independently of their alignment or fractional notation.
+struct formatted_cell
 {
     presentation::styled_text text;
     bool decimal_candidate = false;
     bool decimal_exception = false;
+    bool keep_together = false;
 };
-} // namespace detail
 
 /// \brief Presentation payload carried to a display sink before final rendering.
 using event_content = std::variant<presentation::styled_text, presentation::report_builder>;
@@ -117,6 +118,8 @@ struct event
     bool newline = true;
     std::string context;
     std::source_location where;
+    /// \brief Sinks must retain the supplied line breaks without applying additional wrapping.
+    bool preserve_layout = false;
 };
 
 /// \brief Callable that receives display events for final routing and rendering.
@@ -162,6 +165,8 @@ class scoped_sink {
 };
 
 /// \brief Schema-first table for progress output where rows are emitted immediately.
+/// \details Switches to vertical key/value output when a cell marked keep_together cannot fit its column.
+///          Such cells are never split, even when one value exceeds the available terminal width.
 class streaming_table {
   public:
     explicit streaming_table(std::string title = {}, stream destination = stream::out);
@@ -182,6 +187,9 @@ class streaming_table {
     streaming_table& column(std::string heading, presentation::table_alignment alignment, column_format format);
     streaming_table& wrap_width(std::size_t width);
     streaming_table& header_separator(bool enabled = true);
+
+    /// \brief Emit preformatted cells without discarding their numeric alignment semantics.
+    void row(std::vector<formatted_cell> cells, std::source_location where = std::source_location::current());
 
     void row(std::vector<presentation::styled_text> cells,
              std::source_location where = std::source_location::current());
@@ -212,8 +220,8 @@ class streaming_table {
 
     void ensure_can_change_schema() const;
     void resolve_widths();
-    void expand_fit_columns(std::vector<detail::streaming_cell> const& cells);
-    void emit_rows(std::vector<detail::streaming_cell> const& cells, std::source_location where);
+    void expand_fit_columns(std::vector<formatted_cell> const& cells);
+    void emit_rows(std::vector<formatted_cell> const& cells, std::source_location where);
 };
 
 /// \brief Create a schema-first streaming display table.
@@ -275,18 +283,18 @@ inline constexpr bool display_numeric_value =
   return format.kind == column_value_kind::number;
 }
 
-[[nodiscard]] inline streaming_cell make_text_cell(presentation::styled_text value, column_format const& format = {})
+[[nodiscard]] inline formatted_cell make_text_cell(presentation::styled_text value, column_format const& format = {})
 {
   auto const exception = expects_number(format);
-  return streaming_cell{.text = std::move(value), .decimal_candidate = false, .decimal_exception = exception};
+  return formatted_cell{.text = std::move(value), .decimal_candidate = false, .decimal_exception = exception};
 }
 
-[[nodiscard]] inline streaming_cell format_cell_value(column_format const& format, presentation::styled_text value)
+[[nodiscard]] inline formatted_cell format_cell_value(column_format const& format, presentation::styled_text value)
 {
   return make_text_cell(std::move(value), format);
 }
 
-[[nodiscard]] inline streaming_cell format_cell_value(column_format const& format,
+[[nodiscard]] inline formatted_cell format_cell_value(column_format const& format,
                                                       presentation::table_cell const& value)
 {
   return make_text_cell(value.content, format);
@@ -300,16 +308,16 @@ inline constexpr bool display_numeric_value =
   return text;
 }
 
-[[nodiscard]] inline streaming_cell format_cell_value(column_format const& format, char const* value)
+[[nodiscard]] inline formatted_cell format_cell_value(column_format const& format, char const* value)
 {
   auto const exception = expects_number(format);
-  return streaming_cell{.text = make_plain_cell(value != nullptr ? std::string_view(value) : std::string_view{},
+  return formatted_cell{.text = make_plain_cell(value != nullptr ? std::string_view(value) : std::string_view{},
                                                 exception ? format.exception_style : format.style),
                         .decimal_candidate = false,
                         .decimal_exception = exception};
 }
 
-template <typename T> [[nodiscard]] streaming_cell format_cell_value(column_format const& format, T&& value)
+template <typename T> [[nodiscard]] formatted_cell format_cell_value(column_format const& format, T&& value)
 {
   using value_type = std::remove_cvref_t<T>;
   if constexpr (display_numeric_value<T>)
@@ -319,13 +327,15 @@ template <typename T> [[nodiscard]] streaming_cell format_cell_value(column_form
     auto text = make_plain_cell(numeric ? fmt::format(fmt::runtime(format.pattern), std::forward<T>(value))
                                         : fmt::format("{}", std::forward<T>(value)),
                                 finite ? format.style : format.exception_style);
-    return streaming_cell{
-        .text = std::move(text), .decimal_candidate = numeric && finite, .decimal_exception = numeric && !finite};
+    return formatted_cell{.text = std::move(text),
+                          .decimal_candidate = numeric && finite,
+                          .decimal_exception = numeric && !finite,
+                          .keep_together = true};
   }
   else if constexpr (std::is_same_v<value_type, std::string>)
   {
     auto const exception = expects_number(format);
-    return streaming_cell{
+    return formatted_cell{
         .text = make_plain_cell(std::forward<T>(value), exception ? format.exception_style : format.style),
         .decimal_candidate = false,
         .decimal_exception = exception};
@@ -333,14 +343,14 @@ template <typename T> [[nodiscard]] streaming_cell format_cell_value(column_form
   else if constexpr (std::is_same_v<value_type, std::string_view>)
   {
     auto const exception = expects_number(format);
-    return streaming_cell{.text = make_plain_cell(value, exception ? format.exception_style : format.style),
+    return formatted_cell{.text = make_plain_cell(value, exception ? format.exception_style : format.style),
                           .decimal_candidate = false,
                           .decimal_exception = exception};
   }
   else if constexpr (std::is_array_v<value_type>)
   {
     auto const exception = expects_number(format);
-    return streaming_cell{
+    return formatted_cell{
         .text = make_plain_cell(std::string_view(value), exception ? format.exception_style : format.style),
         .decimal_candidate = false,
         .decimal_exception = exception};
@@ -352,7 +362,7 @@ template <typename T> [[nodiscard]] streaming_cell format_cell_value(column_form
   else
   {
     auto const exception = expects_number(format);
-    return streaming_cell{.text = make_plain_cell(fmt::format("{}", std::forward<T>(value)),
+    return formatted_cell{.text = make_plain_cell(fmt::format("{}", std::forward<T>(value)),
                                                   exception ? format.exception_style : format.style),
                           .decimal_candidate = false,
                           .decimal_exception = exception};
@@ -418,7 +428,7 @@ template <typename... Args> void skipped(checked_format_string<Args...> format, 
 
 template <typename... Values> void streaming_table::row(Values&&... values)
 {
-  std::vector<detail::streaming_cell> cells;
+  std::vector<formatted_cell> cells;
   cells.reserve(sizeof...(Values));
   std::size_t column = 0;
   ((cells.push_back(detail::format_cell_value(column < columns_.size() ? columns_[column].format : column_format{},

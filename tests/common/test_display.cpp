@@ -1,6 +1,8 @@
 #include <uni20/common/display.hpp>
 #include <uni20/common/presentation.hpp>
 
+#include "env_var_guard.hpp"
+
 #include <gtest/gtest.h>
 
 #include <stdexcept>
@@ -229,6 +231,29 @@ TEST(DisplayStreamingTable, VeryNarrowWidthUsesVerticalFallback)
   EXPECT_NE(rendered.find("status:"), std::string::npos);
   EXPECT_NE(rendered.find("bond"), std::string::npos);
   EXPECT_NE(rendered.find("->"), std::string::npos);
+}
+
+TEST(DisplayStreamingTable, AutomaticNumericValuesStayIntactInNarrowColumns)
+{
+  std::vector<display::event> events;
+  display::scoped_sink capture([&](display::event const& event) { events.push_back(event); });
+  auto table = display::table();
+  table.wrap_width(16).column("n", display::width::fixed(3));
+  table.row(123456);
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_NE(render_ascii(events[0]).find("n: 123456"), std::string::npos);
+}
+
+TEST(DisplayStreamingTable, DefaultSinkDoesNotWrapAlreadyLaidOutNumericValues)
+{
+  uni20::test::EnvVarGuard columns("COLUMNS", "16");
+  display::scoped_sink use_default(display::sink{});
+  ::testing::internal::CaptureStdout();
+  auto table = display::table();
+  table.wrap_width(16).column("x", display::format::fixed(100));
+  table.row(1.25);
+  auto const rendered = ::testing::internal::GetCapturedStdout();
+  EXPECT_NE(rendered.find("1.25" + std::string(98, '0')), std::string::npos) << rendered;
 }
 
 TEST(DisplayStreamingTable, WideSchemaUsesVerticalFallbackInsteadOfTerminalWrap)
