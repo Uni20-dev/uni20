@@ -147,7 +147,7 @@ presentation::report_builder build_info_report(presentation::program_info const&
 {
   auto report = presentation::program_report(program);
   auto const info = build_info::current();
-  auto& build = report.table("Uni20 build");
+  auto& build = report.table("Uni20 build").preserve_tokens();
   build.column("Setting", presentation::table_alignment::left).column("Value", presentation::table_alignment::left);
   build.row("Compiler", std::string(info.cxx_compiler_id) + " " + std::string(info.cxx_compiler_version));
   build.row("Compiler path", info.cxx_compiler_path);
@@ -158,7 +158,7 @@ presentation::report_builder build_info_report(presentation::program_info const&
   for (auto const& [heading, entries] :
        {std::pair{"Build options", info.build_options}, std::pair{"Detected dependencies", info.detected_environment}})
   {
-    auto& table = report.table(heading);
+    auto& table = report.table(heading).preserve_tokens();
     table.column("Setting", presentation::table_alignment::left).column("Value", presentation::table_alignment::left);
     for (auto const& entry : entries)
       table.row(entry.key, entry.value);

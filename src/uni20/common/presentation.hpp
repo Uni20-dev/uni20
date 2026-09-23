@@ -553,6 +553,10 @@ class report_table {
     /// \return Reference to this table for chaining.
     report_table& grid(table_rule_style style);
 
+    /// \brief Wrap only at whitespace, allowing the table to exceed the requested width to preserve tokens.
+    /// \details Disabled by default. Applies to headings and cells, including cells spanning multiple columns.
+    report_table& preserve_tokens(bool enabled = true);
+
     /// \brief Add a row by formatting each value with `fmt`.
     /// \tparam Values Cell value types.
     /// \param values Values to format into cell text.
@@ -582,12 +586,16 @@ class report_table {
     /// \return Border and rule controls.
     [[nodiscard]] table_border_options const& border_options() const noexcept;
 
+    /// \brief Whether column fitting must keep whitespace-delimited tokens intact.
+    [[nodiscard]] bool preserves_tokens() const noexcept;
+
   private:
     std::string title_;
     std::vector<table_column> columns_;
     std::vector<table_entry> entries_;
     std::vector<table_rule_style> top_separators_;
     table_border_options border_options_;
+    bool preserve_tokens_ = false;
 };
 
 /// \brief Builder for simple terminal reports with headings, status lines, fields, and tables.

@@ -79,7 +79,7 @@ namespace detail
 template <typename T, typename Converter>
 CLI::Option* converted_option(CLI::App& app, std::string names, T& target, std::string description, Converter converter)
 {
-  return app.add_option_function<std::string>(
+  auto* option = app.add_option_function<std::string>(
       names,
       [&target, converter, names](std::string const& token) {
         try
@@ -100,11 +100,13 @@ CLI::Option* converted_option(CLI::App& app, std::string names, T& target, std::
         }
       },
       std::move(description));
+  return option->run_callback_for_default();
 }
 } // namespace detail
 
 /// \brief Bind an unsigned decimal count with complete-token, negative and overflow checks.
-/// \details Bound storage must outlive parsing. The returned option supports ordinary CLI11 modifiers.
+/// \details Bound storage must outlive parsing. Use capture_default_str() to display an initialized value;
+///          default_val() instead validates and assigns a new value, as with CLI11's variable bindings.
 template <std::unsigned_integral T>
   requires(!std::same_as<T, bool>)
 CLI::Option* add_count_option(CLI::App& app, std::string names, T& value, std::string description = {})
@@ -122,6 +124,7 @@ CLI::Option* add_count_option(CLI::App& app, std::string names, T& value, std::s
 
 /// \brief Bind an exact half-integer, accepting integer, .0/.5 decimal and denominator-two fractional forms.
 /// \details Bound storage must outlive parsing. Non-half-integral values are rejected, never rounded.
+///          Use capture_default_str() to display an initialized value, or default_val() to validate and assign one.
 template <std::signed_integral T>
 CLI::Option* add_half_int_option(CLI::App& app, std::string names, basic_half_int<T>& value,
                                  std::string description = {})

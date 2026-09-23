@@ -152,6 +152,83 @@ TEST(CliConversions, HalfIntegersAreExactAndRespectBoundStorageRange)
   }
 }
 
+TEST(CliDefaults, ExplicitDefaultsAssignBoundValuesAndAllowCommandLineOverrides)
+{
+  CLI::App app;
+  unsigned count = 1;
+  uni20::half_int spin(1);
+  auto* count_option = c::add_count_option(app, "--count", count)->default_val(12);
+  auto* spin_option = c::add_half_int_option(app, "--spin", spin)->default_val("1.5");
+  EXPECT_EQ(count, 12u); // Native variable bindings apply default_val during registration.
+  EXPECT_EQ(spin, uni20::from_twice(3));
+  EXPECT_EQ(parse(app, {}, {.empty = c::no_arguments::run}).requested, c::action::run);
+  EXPECT_EQ(count, 12u);
+  EXPECT_EQ(spin, uni20::from_twice(3));
+  EXPECT_EQ(count_option->get_default_str(), "12");
+  EXPECT_EQ(spin_option->get_default_str(), "1.5");
+  EXPECT_EQ(parse(app, {"--count=7", "--spin=-3/2"}).requested, c::action::run);
+  EXPECT_EQ(count, 7u);
+  EXPECT_EQ(spin, uni20::from_twice(-3));
+}
+
+TEST(CliDefaults, CountDefaultsUseCheckedConversionAndRegisteredValidators)
+{
+  CLI::App app;
+  unsigned count = 1;
+  auto* option = c::add_count_option(app, "--count", count)->capture_default_str();
+  for (auto const* invalid : {"-1", "18446744073709551616", "12x"})
+  {
+    SCOPED_TRACE(invalid);
+    EXPECT_THROW(option->default_val(invalid), CLI::ValidationError);
+    EXPECT_EQ(count, 1u);
+    EXPECT_EQ(option->get_default_str(), "1");
+  }
+  option->check(CLI::PositiveNumber);
+  EXPECT_THROW(option->default_val(0), CLI::ValidationError);
+  EXPECT_EQ(count, 1u);
+}
+
+TEST(CliDefaults, HalfIntegerDefaultsUseExactConversionAndRegisteredValidators)
+{
+  CLI::App app;
+  uni20::half_int spin(1);
+  auto* option = c::add_half_int_option(app, "--spin", spin)->capture_default_str();
+  for (auto const* invalid : {"0.25", "1/3", "99999999999999999999999999"})
+  {
+    SCOPED_TRACE(invalid);
+    EXPECT_THROW(option->default_val(invalid), CLI::ValidationError);
+    EXPECT_EQ(spin, uni20::half_int(1));
+    EXPECT_EQ(option->get_default_str(), "1");
+  }
+  option->check(CLI::IsMember({"1", "1.5"}));
+  EXPECT_THROW(option->default_val("2.5"), CLI::ValidationError);
+  EXPECT_EQ(spin, uni20::half_int(1));
+}
+
+TEST(CliDefaults, InitializedVariablesAreTheSingleSourceForCapturedDefaults)
+{
+  CLI::App app;
+  c::configure(app, program());
+  unsigned count = 12;
+  uni20::half_int spin = uni20::from_twice(3);
+  auto* count_option = c::add_count_option(app, "--count", count)->capture_default_str();
+  auto* spin_option = c::add_half_int_option(app, "--spin", spin)->capture_default_str();
+  EXPECT_EQ(parse(app, {}, {.empty = c::no_arguments::run}).requested, c::action::run);
+  EXPECT_EQ(count, 12u);
+  EXPECT_EQ(spin, uni20::from_twice(3));
+  EXPECT_EQ(count_option->get_default_str(), "12");
+  EXPECT_EQ(spin_option->get_default_str(), "1.5");
+  auto const text = render(c::help_report(app, program()));
+  EXPECT_NE(text.find("default: 12"), std::string::npos);
+  EXPECT_NE(text.find("default: 1.5"), std::string::npos);
+  EXPECT_EQ(parse(app, {"--count=5", "--spin=7/2"}).requested, c::action::run);
+  EXPECT_EQ(count, 5u);
+  EXPECT_EQ(spin, uni20::from_twice(7));
+  // The displayed defaults describe registration, not the most recent arguments.
+  EXPECT_EQ(count_option->get_default_str(), "12");
+  EXPECT_EQ(spin_option->get_default_str(), "1.5");
+}
+
 TEST(CliOptions, NativeDeclarationsEnforceRepetitionAndRelationships)
 {
   CLI::App app;

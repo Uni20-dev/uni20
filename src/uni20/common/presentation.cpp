@@ -1430,6 +1430,14 @@ report_table& report_table::grid(bool enabled)
 
 report_table& report_table::grid(table_rule_style style) { return this->grid(true).border_style(style); }
 
+report_table& report_table::preserve_tokens(bool enabled)
+{
+  preserve_tokens_ = enabled;
+  return *this;
+}
+
+bool report_table::preserves_tokens() const noexcept { return preserve_tokens_; }
+
 std::string const& report_table::title() const noexcept { return title_; }
 
 std::vector<table_column> const& report_table::columns() const noexcept { return columns_; }
@@ -1837,11 +1845,35 @@ void fit_spanned_table_widths(std::vector<std::size_t>& widths, report_table con
   if (!policy.wrap_width.has_value() || widths.empty()) return widths;
 
   auto const fixed_width = table_fixed_width(widths.size(), table);
-  std::size_t const content_budget =
-      *policy.wrap_width > fixed_width ? *policy.wrap_width - fixed_width : widths.size();
+  std::size_t content_budget = *policy.wrap_width > fixed_width ? *policy.wrap_width - fixed_width : widths.size();
+  auto unbreakable_widths = table_unbreakable_widths(table, policy);
+  if (table.preserves_tokens())
+  {
+    // Single-column cells already establish floors. Also reserve enough combined
+    // width for tokens in spanning cells before deciding how far to shrink.
+    for (auto const& entry : table.entries())
+    {
+      auto const* row = std::get_if<std::vector<table_cell>>(&entry);
+      if (row == nullptr) continue;
+      std::size_t column = 0;
+      for (auto const& cell : *row)
+      {
+        if (column >= widths.size()) break;
+        auto const span = std::min(std::max<std::size_t>(cell.span, 1), widths.size() - column);
+        if (span > 1)
+          grow_spanned_widths(unbreakable_widths, column, span,
+                              longest_unbreakable_width(render_plain_unwrapped(cell.content, policy), policy),
+                              table.border_options(), has_table_rules(table));
+        column += span;
+      }
+    }
+    for (std::size_t i = 0; i < widths.size(); ++i)
+      widths[i] = std::max(widths[i], unbreakable_widths[i]);
+    content_budget =
+        std::max(content_budget, std::accumulate(unbreakable_widths.begin(), unbreakable_widths.end(), std::size_t{0}));
+  }
   if (content_budget >= widths.size())
   {
-    auto const unbreakable_widths = table_unbreakable_widths(table, policy);
     while (true)
     {
       auto const total = std::accumulate(widths.begin(), widths.end(), std::size_t{0});

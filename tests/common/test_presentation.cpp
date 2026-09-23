@@ -11,6 +11,7 @@
 #include <array>
 #include <complex>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -1067,4 +1068,44 @@ TEST(PresentationReportBuilder, PrefersWhitespaceWrapsWhenFittingColumns)
                                                         "  | abcdefghijklmno | alpha beta |\n"
                                                         "  |                 | gamma      |\n"
                                                         "  +-----------------+------------+\n");
+}
+
+TEST(PresentationReportBuilder, PreservesTokensInHeadingsStyledCellsAndSpans)
+{
+  for (bool ruled : {false, true})
+  {
+    for (std::size_t width : {22u, 1u})
+    {
+      SCOPED_TRACE(ruled);
+      SCOPED_TRACE(width);
+      auto policy = presentation::strict_ascii_policy();
+      policy.wrap_width = width;
+      presentation::report_builder report;
+      auto& table = report.table("").preserve_tokens().grid(ruled);
+      table.column("parameter_identifier", presentation::table_alignment::left)
+          .column("Value", presentation::table_alignment::left)
+          .row("x", presentation::style("Cyan")("1.23456789012345678901234567890"))
+          .row({presentation::cell(
+              "first very_long_spanning_token_abcdefghijklmnopqrstuvwxyz_01234567890123456789 last", 2)});
+      auto const text = presentation::render_plain(report, policy);
+      for (auto const* token : {"parameter_identifier", "1.23456789012345678901234567890",
+                                "very_long_spanning_token_abcdefghijklmnopqrstuvwxyz_01234567890123456789"})
+        EXPECT_NE(text.find(token), std::string::npos) << text;
+      // Borders/padding must still align when the minimum widths exceed the budget.
+      if (ruled)
+      {
+        std::istringstream lines(text);
+        std::string line;
+        std::getline(lines, line);
+        auto const expected_width = presentation::display_width(line, policy);
+        while (std::getline(lines, line))
+        {
+          if (!line.empty())
+          {
+            EXPECT_EQ(presentation::display_width(line, policy), expected_width) << line;
+          }
+        }
+      }
+    }
+  }
 }

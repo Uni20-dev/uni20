@@ -28,7 +28,7 @@ report_builder help_report(program_info const& program, std::string_view usage, 
   for (auto const& group : groups)
   {
     if (group.options.empty()) continue;
-    auto& table = report.table(group.heading);
+    auto& table = report.table(group.heading).preserve_tokens();
     table.column("Option", table_alignment::left).column("Description", table_alignment::left);
     if (!group.description.empty()) table.row({table_cell(group.description, 2)});
     for (auto const& option : group.options)
@@ -45,14 +45,14 @@ report_builder help_report(program_info const& program, std::string_view usage, 
   }
   if (!program.examples.empty())
   {
-    auto& table = report.table("Examples");
+    auto& table = report.table("Examples").preserve_tokens();
     table.column("Invocation", table_alignment::left).column("Purpose", table_alignment::left);
     for (auto const& example : program.examples)
       table.row(example.command, example.description);
   }
   if (!program.notes.empty())
   {
-    auto& table = report.table("Conventions and limitations");
+    auto& table = report.table("Conventions and limitations").preserve_tokens();
     table.column("Notes", table_alignment::left);
     for (auto const& note : program.notes)
       table.row(note);
@@ -62,7 +62,7 @@ report_builder help_report(program_info const& program, std::string_view usage, 
     auto references = program.references();
     if (!references.empty())
     {
-      auto& table = report.table("References");
+      auto& table = report.table("References").preserve_tokens();
       table.column("Key", table_alignment::left).column("Reference", table_alignment::left);
       for (auto const& reference : references)
       {

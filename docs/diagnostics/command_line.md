@@ -121,8 +121,10 @@ applications; the semantic document model is independent of it.
 `report_builder` documents. `display::emit` applies existing color, glyph,
 character-set and terminal-width policy. Applications can also render the same
 document with `render_plain`, `render_terminal` or their own display sink.
-There is no second ANSI formatter. Long indivisible tokens may exceed the
-requested width rather than being corrupted by wrapping.
+There is no second ANSI formatter. Help and build-information tables enable
+`report_table::preserve_tokens()`: wrapping occurs at whitespace, while long
+executable names, option values, numbers and links remain intact. The table may
+exceed the requested width when those tokens cannot fit side by side.
 
 Build information comes from the existing
 [configured Uni20 snapshot](../development/build_information.md). This stage
@@ -138,6 +140,35 @@ the exact forms supported by its parser, including `-3/2` and `-1.5`.
 Non-half-integral input is rejected rather than rounded. Both return a native
 `CLI::Option*`, and the bound destination must outlive parsing and help requests
 which evaluate defaults.
+
+### Defaults from initialized variables
+
+Prefer initializing the variable once and using CLI11's `capture_default_str()`
+to display that value:
+
+```cpp
+unsigned count = 12;
+uni20::half_int spin = uni20::from_twice(3);
+c::add_count_option(app, "--count", count)->capture_default_str();
+c::add_half_int_option(app, "--spin", spin)->capture_default_str();
+```
+
+Omitted options leave these initialized values unchanged, and help advertises
+`12` and `1.5`. A supplied argument replaces the value. The captured default is
+a snapshot taken at registration, so help continues to show the original default
+after parsing. This works for ordinary `app.add_option(...)` bindings too.
+Capturing is display-only: it neither reassigns the variable nor runs validators.
+Application validation of the resolved configuration belongs after parsing.
+
+If an explicit default is useful, `->default_val(12)` or
+`->default_val("1.5")` instead converts, validates and assigns the value during
+option registration, just like CLI11's ordinary variable-binding overload.
+Invalid or overflowing counts and non-half-integral defaults throw
+`CLI::ValidationError`; the bound value stays unchanged. Attach any additional
+`.check(...)` validators before calling `default_val(...)` so they also check
+that default. These are registration errors, not errors returned by `parse`.
+
+### Deferred real conversion
 
 Real-valued model parameters should be bound to **strings**, not to `double` or
 CLI11 floating-point validators. After parsing the precision choice, call
