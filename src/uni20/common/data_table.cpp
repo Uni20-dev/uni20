@@ -6,6 +6,13 @@
 
 namespace uni20::presentation::data_table_detail
 {
+void validate_numeric_precision(real_format_notation notation, int digits)
+{
+  if (digits < -1) throw std::invalid_argument("data table precision must be -1 or nonnegative");
+  if (notation == real_format_notation::general && digits == 0)
+    throw std::invalid_argument("general display precision must be positive or -1");
+}
+
 void validate_identifier(std::string_view identifier)
 {
   auto start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };

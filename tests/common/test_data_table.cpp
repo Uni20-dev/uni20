@@ -82,7 +82,7 @@ TEST(DataTable, ValidatesSchemaAndOwnsMetadata)
   EXPECT_THROW(p::data_column<int>("energy\tgap"), std::invalid_argument);
   EXPECT_THROW((void)p::make_data_table("bad", p::data_column<int>("same"), p::data_column<int>("same")),
                std::invalid_argument);
-  EXPECT_THROW(p::data_column<double>("value").fixed(-1), std::invalid_argument);
+  EXPECT_THROW(p::data_column<double>("value").fixed(-2), std::invalid_argument);
   EXPECT_THROW(p::data_column<double>("value").general(0), std::invalid_argument);
   std::string label = "Energy";
   auto table =
@@ -92,6 +92,136 @@ TEST(DataTable, ValidatesSchemaAndOwnsMetadata)
   EXPECT_EQ(col.label(), "Energy");
   EXPECT_EQ(col.unit(), "J");
   EXPECT_EQ(col.description(), "Total energy");
+}
+
+TEST(DataTable, ColumnAndProjectionUseTheSamePrecisionValidation)
+{
+  using Notation = uni20::real_format_notation;
+  auto table = p::make_data_table("values", p::data_column<double>("x"));
+  table.append(1.25);
+  for (auto notation : {Notation::general, Notation::fixed, Notation::scientific})
+    for (int digits : {-2, -1, 0, 3})
+    {
+      SCOPED_TRACE(digits);
+      SCOPED_TRACE(static_cast<int>(notation));
+      p::data_column<double> column("x");
+      auto configure = [&] {
+        switch (notation)
+        {
+          case Notation::general:
+            column.general(digits);
+            break;
+          case Notation::fixed:
+            column.fixed(digits);
+            break;
+          case Notation::scientific:
+            column.scientific(digits);
+            break;
+        }
+      };
+      p::table_projection projection{.display = {{"x", {.numeric = {.precision = digits, .notation = notation}}}}};
+      if (digits < -1 || (digits == 0 && notation == Notation::general))
+      {
+        EXPECT_THROW(configure(), std::invalid_argument);
+        EXPECT_THROW((void)p::to_report_table(table, projection), std::invalid_argument);
+      }
+      else
+      {
+        EXPECT_NO_THROW(configure());
+        auto configured = p::make_data_table("values", column);
+        configured.append(1.25);
+        auto const direct = p::to_report_table(configured);
+        auto const override = p::to_report_table(table, projection);
+        EXPECT_EQ(p::render_plain(std::get<std::vector<p::table_cell>>(direct.entries()[0])[0].content),
+                  p::render_plain(std::get<std::vector<p::table_cell>>(override.entries()[0])[0].content));
+      }
+    }
+}
+
+template <typename Real> class DataTablePrecision : public ::testing::Test {};
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
+using TableRealTypes = ::testing::Types<float, double, long double, uni20::float128>;
+#else
+using TableRealTypes = ::testing::Types<float, double, long double>;
+#endif
+TYPED_TEST_SUITE(DataTablePrecision, TableRealTypes);
+
+TYPED_TEST(DataTablePrecision, DefaultDigitCountRespectsNotation)
+{
+  using Real = TypeParam;
+  auto table =
+      p::make_data_table("precision", p::data_column<Real>("fixed").fixed(-1),
+                         p::data_column<Real>("scientific").scientific(-1), p::data_column<Real>("general").general());
+  table.append(1.25, 1.25, 1.25);
+  auto report = p::to_report_table(table);
+  auto const& row = std::get<std::vector<p::table_cell>>(report.entries()[0]);
+  std::string const zeros(uni20::numeric_limits<Real>::max_digits10 - 2, '0');
+  EXPECT_EQ(p::render_plain(row[0].content), "1.25" + zeros);
+  EXPECT_EQ(p::render_plain(row[1].content), "1.25" + zeros + "e+00");
+  EXPECT_EQ(p::render_plain(row[2].content), "1.25");
+}
+
+TYPED_TEST(DataTablePrecision, RoundTripDisplayPreservesValuesAndSignedZero)
+{
+  using Real = TypeParam;
+  Real const epsilon = uni20::numeric_limits<Real>::epsilon();
+  // Includes digits beyond double/long-double precision, small values that fixed display
+  // would round to zero, and finite values at the endpoints of the normal range.
+  std::array const values{Real{1} + epsilon,
+                          Real{1} / Real{10},
+                          epsilon * epsilon * epsilon,
+                          uni20::numeric_limits<Real>::min(),
+                          uni20::numeric_limits<Real>::max(),
+                          -Real{0}};
+  auto table = p::make_data_table("round trip", p::data_column<std::optional<Real>>("x").fixed(2).round_trip());
+  for (auto value : values)
+    table.append(value);
+  table.append(std::nullopt);
+  auto report = p::to_report_table(table);
+  std::ostringstream output;
+  p::write_csv(output, table, {.precision = p::data_export_precision::display});
+  std::istringstream input(output.str());
+  std::string line;
+  std::getline(input, line); // Header.
+  for (std::size_t i = 0; i < values.size(); ++i)
+  {
+    auto text = p::render_plain(std::get<std::vector<p::table_cell>>(report.entries()[i])[0].content);
+    EXPECT_EQ(uni20::parse_real<Real>(text), values[i]);
+    ASSERT_TRUE(static_cast<bool>(std::getline(input, line)));
+    EXPECT_EQ(line, text);
+    if (i + 1 == values.size())
+    {
+      EXPECT_EQ(text, "-0");
+      EXPECT_TRUE(std::signbit(static_cast<long double>(uni20::parse_real<Real>(text))));
+    }
+  }
+  EXPECT_EQ(p::render_plain(std::get<std::vector<p::table_cell>>(report.entries().back())[0].content), "—");
+}
+
+TEST(DataTable, FixedDefaultPrecisionDoesNotPromiseRoundTripAccuracy)
+{
+  auto table = p::make_data_table("small", p::data_column<double>("x").fixed(-1));
+  table.append(1e-20);
+  auto report = p::to_report_table(table);
+  EXPECT_EQ(p::render_plain(std::get<std::vector<p::table_cell>>(report.entries()[0])[0].content),
+            "0.00000000000000000");
+  std::ostringstream machine;
+  p::write_csv(machine, table);
+  EXPECT_EQ(uni20::parse_real<double>(machine.str().substr(2, machine.str().size() - 3)), 1e-20);
+}
+
+TEST(DataTable, LaterDisplayHelperReplacesRoundTripMode)
+{
+  auto table = p::make_data_table("zeros", p::data_column<double>("fixed").round_trip().fixed(2),
+                                  p::data_column<double>("scientific").round_trip().scientific(2),
+                                  p::data_column<double>("general").round_trip().general());
+  table.append(-0.0, -0.0, -0.0);
+  auto report = p::to_report_table(table);
+  auto const& row = std::get<std::vector<p::table_cell>>(report.entries()[0]);
+  EXPECT_EQ(p::render_plain(row[0].content), "0.00");
+  EXPECT_EQ(p::render_plain(row[1].content), "0.00e+00");
+  EXPECT_EQ(p::render_plain(row[2].content), "0");
 }
 
 TEST(DataTable, HalfIntegersRemainExactAndCheckWholeIntegerInsertion)

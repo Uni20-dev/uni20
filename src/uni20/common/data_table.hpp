@@ -123,6 +123,7 @@ To convert(From&& input)
 }
 
 void validate_identifier(std::string_view identifier);
+void validate_numeric_precision(real_format_notation notation, int digits);
 void write_field(std::ostream& out, std::string_view field, char delimiter, bool quote_empty = false);
 void check_output(std::ostream& out);
 
@@ -213,23 +214,33 @@ template <DataTableValue T> class data_column {
       return *this;
     }
 
-    /// \brief Use digits after the decimal point for real display.
+    /// \brief Use digits after the decimal point for real display; -1 selects the type's max_digits10.
     data_column& fixed(int digits)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::fixed, digits);
     }
-    /// \brief Use digits after the decimal point in the mantissa for real display.
+    /// \brief Use digits after the mantissa's decimal point; -1 selects the type's max_digits10.
     data_column& scientific(int digits)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::scientific, digits);
     }
-    /// \brief Use significant digits for real display; -1 selects round-trip precision.
+    /// \brief Use significant digits for real display; -1 selects the type's max_digits10.
     data_column& general(int digits = -1)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::general, digits);
+    }
+    /// \brief Recover finite real values from their text, including the sign of zero.
+    /// \details Selects general notation with max_digits10 and disables negative-zero normalization.
+    ///          A later fixed/scientific/general call replaces this numeric format with ordinary display formatting.
+    data_column& round_trip()
+      requires Real<data_table_detail::value_type<T>>
+    {
+      this->set_numeric(real_format_notation::general, -1);
+      display_.numeric.normalize_negative_zero = false;
+      return *this;
     }
     /// \brief Display exact fractions instead of exact decimals for half-integers.
     data_column& fractional(bool enabled = true)
@@ -248,12 +259,10 @@ template <DataTableValue T> class data_column {
   private:
     data_column& set_numeric(real_format_notation notation, int digits)
     {
-      if (digits < 0 && !(notation == real_format_notation::general && digits == -1))
-        throw std::invalid_argument("negative data table display precision");
-      if (notation == real_format_notation::general && digits == 0)
-        throw std::invalid_argument("general display precision must be positive");
+      data_table_detail::validate_numeric_precision(notation, digits);
       display_.numeric.notation = notation;
       display_.numeric.precision = digits;
+      display_.numeric.normalize_negative_zero = true;
       return *this;
     }
     std::string identifier_;
@@ -662,8 +671,7 @@ template <typename Schema> resolved_projection resolve_projection(Schema const& 
         std::find(result.indices.begin(), result.indices.end(), found - names.begin()) == result.indices.end())
       throw std::invalid_argument("display override requires a selected data table column: " + name);
     auto const& numeric = format.numeric;
-    if (numeric.precision < -1 || (numeric.notation == real_format_notation::general && numeric.precision == 0))
-      throw std::invalid_argument("invalid data table output precision");
+    validate_numeric_precision(numeric.notation, numeric.precision);
   }
   return result;
 }

@@ -184,6 +184,29 @@ fixed notation uses digits after the decimal point; scientific notation uses
 digits after the decimal point in the mantissa. A setting of three scientific
 fractional digits therefore displays four significant digits.
 
+`-1` selects the stored real type's `max_digits10` as the digit count in all
+three notations. Both column helpers and projection overrides accept it,
+including an override that chooses a notation and leaves precision at its
+default. Values below `-1` are rejected. Zero digits is valid for fixed and
+scientific notation, but general notation requires a positive count or `-1`.
+This default digit count is not a universal round-trip guarantee: for `double`,
+`.fixed(-1)` uses 17 fractional digits and renders `1e-20` as zero.
+
+Use `.round_trip()` on a real or optional-real column to request text from which
+the original finite value can be recovered, including the sign of zero:
+
+```cpp
+p::data_column<long double>("energy").round_trip();
+```
+
+This selects general notation, `max_digits10`, and preservation of negative
+zero. Ordinary `.fixed(...)`, `.scientific(...)` and `.general(...)` helpers
+normalize negative zero; calling one after `.round_trip()` replaces that mode
+with its display format. To apply round-trip formatting to one projection, copy
+the desired column's `.round_trip().display()` settings into the projection's
+`display` map. Formatting never changes stored values, and NaN payload bits are
+outside text round-tripping's scope.
+
 A future conditional-emphasis adapter will receive the original typed value,
 including missingness, before display rounding. It returns semantic presentation intent rather than
 ANSI, HTML or LaTeX fragments. The terminal adapter can lower that intent to
@@ -201,7 +224,8 @@ Preservation of NaN payload bits is outside text export's scope.
 The explicit `{.precision = data_export_precision::display}` export option
 applies the selected real display precision to CSV/TSV. It still uses machine
 field encoding and omits styles, units suffixes and other decorations. Such export is intentionally
-rounded and must not be described as lossless.
+allowed to round and has no blanket lossless guarantee; a column explicitly
+configured with `.round_trip()` retains that precision even in display mode.
 
 ## Output Adapters
 
