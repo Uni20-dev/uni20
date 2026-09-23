@@ -98,11 +98,13 @@ namespace format
 
 /// \brief Already formatted display text with numeric alignment semantics retained by its producer.
 /// \details Finite decimal text is a candidate; missing/nonfinite numeric values are exceptions.
+///          Numeric tokens stay intact independently of their alignment or fractional notation.
 struct formatted_cell
 {
     presentation::styled_text text;
     bool decimal_candidate = false;
     bool decimal_exception = false;
+    bool keep_together = false;
 };
 
 /// \brief Presentation payload carried to a display sink before final rendering.
@@ -116,6 +118,8 @@ struct event
     bool newline = true;
     std::string context;
     std::source_location where;
+    /// \brief Sinks must retain the supplied line breaks without applying additional wrapping.
+    bool preserve_layout = false;
 };
 
 /// \brief Callable that receives display events for final routing and rendering.
@@ -161,6 +165,8 @@ class scoped_sink {
 };
 
 /// \brief Schema-first table for progress output where rows are emitted immediately.
+/// \details Switches to vertical key/value output when a cell marked keep_together cannot fit its column.
+///          Such cells are never split, even when one value exceeds the available terminal width.
 class streaming_table {
   public:
     explicit streaming_table(std::string title = {}, stream destination = stream::out);
@@ -321,8 +327,10 @@ template <typename T> [[nodiscard]] formatted_cell format_cell_value(column_form
     auto text = make_plain_cell(numeric ? fmt::format(fmt::runtime(format.pattern), std::forward<T>(value))
                                         : fmt::format("{}", std::forward<T>(value)),
                                 finite ? format.style : format.exception_style);
-    return formatted_cell{
-        .text = std::move(text), .decimal_candidate = numeric && finite, .decimal_exception = numeric && !finite};
+    return formatted_cell{.text = std::move(text),
+                          .decimal_candidate = numeric && finite,
+                          .decimal_exception = numeric && !finite,
+                          .keep_together = true};
   }
   else if constexpr (std::is_same_v<value_type, std::string>)
   {

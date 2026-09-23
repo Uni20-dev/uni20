@@ -124,7 +124,8 @@ template <typename T> display::formatted_cell terminal_cell(T const& value, data
       candidate = !format.fractions;
     return {.text = styled_text{}.append(cell_text(value, format, false)),
             .decimal_candidate = candidate,
-            .decimal_exception = exception};
+            .decimal_exception = exception,
+            .keep_together = Real<T> || integer<T> || half_integer<T>};
   }
 }
 

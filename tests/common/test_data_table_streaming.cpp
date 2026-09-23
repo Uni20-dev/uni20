@@ -270,6 +270,59 @@ TEST(DataTableStreaming, TerminalAdapterPreservesDecimalAlignmentAfterFormatting
   EXPECT_EQ(rendered[0].find('.', first_row_start) - first_row_start, rendered[1].find('.'));
 }
 
+template <typename Real> class DataTableStreamingPrecision : public ::testing::Test {};
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
+using StreamingRealTypes = ::testing::Types<double, long double, uni20::float128>;
+#else
+using StreamingRealTypes = ::testing::Types<double, long double>;
+#endif
+TYPED_TEST_SUITE(DataTableStreamingPrecision, StreamingRealTypes);
+
+TYPED_TEST(DataTableStreamingPrecision, NarrowTerminalKeepsRoundTripNumbersIntact)
+{
+  using Real = TypeParam;
+  for (bool compact_first : {false, true})
+  {
+    SCOPED_TRACE(compact_first);
+    std::vector<std::string> rendered;
+    uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+      rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+    });
+    auto table = p::make_data_table("", p::data_column<Real>("x").round_trip(),
+                                      p::data_column<Real>("y").round_trip(), p::data_column<Real>("z").round_trip());
+    table.attach(p::terminal_sink({.wrap_width = 60}));
+    if (compact_first) table.append(1, 2, 3);
+    Real const x = Real{1} / Real{7};
+    Real const y = -Real{1} / Real{11};
+    Real const z = uni20::numeric_limits<Real>::min();
+    table.append(x, y, z);
+    auto const& output = rendered.back();
+    for (auto value : {x, y, z})
+      EXPECT_NE(output.find(uni20::format_real(value)), std::string::npos) << output;
+    EXPECT_NE(output.find("x:"), std::string::npos);
+    EXPECT_NE(output.find("y:"), std::string::npos);
+    EXPECT_NE(output.find("z:"), std::string::npos);
+    std::istringstream lines(output);
+    for (std::string line; std::getline(lines, line);)
+      EXPECT_LE(p::display_width(line, p::plain_policy()), 60U);
+    table.finish();
+  }
+}
+
+TEST(DataTableStreaming, VerticalTerminalKeepsHalfIntegerFractionsIntact)
+{
+  std::string rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered += std::visit([](auto const& content) { return p::render_plain(content); }, event.content);
+  });
+  auto table = p::make_data_table("", p::data_column<uni20::half_int>("spin").fractional());
+  table.attach(p::terminal_sink({.wrap_width = 8}));
+  table.append(uni20::from_twice(12345));
+  table.finish();
+  EXPECT_NE(rendered.find("12345/2"), std::string::npos) << rendered;
+}
+
 TEST(DataTableStreaming, ReentrantMutationIsRejectedWithoutAcceptingAnotherRow)
 {
   auto table = p::make_data_table("run", p::data_column<int>("x"));

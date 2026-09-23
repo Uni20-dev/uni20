@@ -400,8 +400,12 @@ Explicit finalization is required to discover flush errors. Destruction releases
 adapters without calling their output methods or inventing a final summary.
 CSV/TSV/JSON adapters flush their borrowed stream at finish, but do not close it;
 the owner must check close errors. The terminal adapter uses
-`display::streaming_table` with incremental fit widths. The default display
-router flushes each emission and reports stdio failures; custom display routers
+`display::streaming_table` with incremental fit widths. Numeric values remain
+intact, including round-trip real text and half-integer fractions. If a value
+cannot fit its column, the table switches to vertical key/value output for that
+and subsequent rows. A single overlong value is emitted intact even if its line
+exceeds the requested width. The default display router flushes each emission
+and reports stdio failures; custom display routers
 must report their own failures. Terminal metadata/summary display can be
 disabled with `.show_metadata = false`; generic CSV/TSV always omits them to keep
 the output rectangular. JSON records them separately from rows.

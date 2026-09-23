@@ -34,6 +34,7 @@ void default_sink(event const& item)
 {
   auto* file = file_for_stream(item.destination);
   auto policy = display_policy(file);
+  if (item.preserve_layout) policy.wrap_width = std::nullopt;
   auto rendered = std::visit([&](auto const& content) { return presentation::render_terminal(content, policy, file); },
                              item.content);
 
@@ -62,6 +63,16 @@ void emit_event(event item)
     current = sink_storage();
   }
   current(item);
+}
+
+void emit_preformatted(presentation::styled_text text, stream destination, bool newline, std::source_location where)
+{
+  emit_event(event{.destination = destination,
+                   .content = std::move(text),
+                   .newline = newline,
+                   .context = {},
+                   .where = where,
+                   .preserve_layout = true});
 }
 
 [[nodiscard]] std::string spaces(std::size_t count) { return std::string(count, ' '); }
@@ -253,7 +264,8 @@ struct wrapped_cell_line
 [[nodiscard]] std::vector<wrapped_cell_line> wrap_streaming_cell(formatted_cell const& cell, std::size_t width,
                                                                  presentation::output_policy const& policy)
 {
-  auto const raw_lines = wrap_cell(cell.text, width, policy);
+  auto const raw_lines = cell.keep_together ? std::vector<presentation::styled_text>{cell.text}
+                                           : wrap_cell(cell.text, width, policy);
   std::vector<wrapped_cell_line> lines;
   lines.reserve(raw_lines.size());
   lines.push_back(wrapped_cell_line{.text = raw_lines.front(),
@@ -629,7 +641,18 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
   }
 
   this->resolve_widths();
-  if (!vertical_fallback_) this->expand_fit_columns(cells);
+  if (!vertical_fallback_)
+  {
+    this->expand_fit_columns(cells);
+    for (std::size_t i = 0; i != cells.size(); ++i)
+    {
+      if (cells[i].keep_together && presentation::display_width(cells[i].text, policy_) > widths_[i])
+      {
+        vertical_fallback_ = true;
+        break;
+      }
+    }
+  }
 
   presentation::styled_text text;
   if (!header_emitted_)
@@ -680,7 +703,8 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
         table_width > key_width + marker_width + 1 ? table_width - key_width - marker_width - 1 : std::size_t{1};
     for (std::size_t i = 0; i != columns_.size(); ++i)
     {
-      auto const wrapped = wrap_cell(cells[i].text, value_width, policy_);
+      auto const wrapped = cells[i].keep_together ? std::vector<presentation::styled_text>{cells[i].text}
+                                                 : wrap_cell(cells[i].text, value_width, policy_);
       text.append(presentation::pad_right(columns_[i].heading + ":", key_width + 1, policy_),
                   terminal::TerminalStyle(std::string_view("LightGray;Bold")))
           .append(" ")
@@ -691,7 +715,7 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
         text.append(spaces(key_width)).append(continuation_marker()).append(" ").append(wrapped[line]).append("\n");
       }
     }
-    emit(std::move(text), destination_, false, where);
+    emit_preformatted(std::move(text), destination_, false, where);
     return;
   }
 
@@ -749,7 +773,7 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
     }
     if (line + 1 != row_lines) text.append("\n");
   }
-  emit(std::move(text), destination_, true, where);
+  emit_preformatted(std::move(text), destination_, true, where);
 }
 
 streaming_table table(std::string title, stream destination) { return streaming_table(std::move(title), destination); }
