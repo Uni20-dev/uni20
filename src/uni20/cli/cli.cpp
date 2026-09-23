@@ -14,25 +14,30 @@ bool visible_option_group(CLI::App const* app)
   return app->get_name().empty() && !app->get_group().empty() && app->get_group().front() != '+';
 }
 
+std::string selection_limits(CLI::App const& app)
+{
+  std::string text;
+  if (auto const minimum = app.get_require_option_min(); minimum > 0)
+    text = "Minimum selected options or groups: " + std::to_string(minimum);
+  if (auto const maximum = app.get_require_option_max(); maximum > 0)
+  {
+    if (!text.empty()) text += "\n";
+    text += "Maximum selected options or groups: " + std::to_string(maximum);
+  }
+  return text;
+}
+
 void collect_groups(CLI::App const& app, std::vector<presentation::help_group>& groups)
 {
+  bool const option_group = app.get_parent() && app.get_name().empty();
+  bool constraints_shown = false;
   for (auto const& name : app.get_groups())
   {
     if (name.empty()) continue; // CLI11 uses an empty group to hide options.
     auto heading = name;
-    if (app.get_parent() && app.get_name().empty())
-      heading = app.get_group() + (name == CLI::OptionDefaults{}.get_group() ? "" : " / " + name);
+    if (option_group) heading = app.get_group() + (name == CLI::OptionDefaults{}.get_group() ? "" : " / " + name);
     presentation::help_group group{.heading = std::move(heading)};
-    if (app.get_parent() && app.get_name().empty()) group.description = app.get_description();
-    auto const minimum = app.get_require_option_min();
-    auto const maximum = app.get_require_option_max();
-    auto note = [&](std::string text) {
-      if (!group.description.empty()) group.description += "\n";
-      group.description += text;
-    };
-    if (app.get_required()) note("This group is required.");
-    if (minimum > 0) note("Minimum selected options: " + std::to_string(minimum));
-    if (maximum > 0) note("Maximum selected options: " + std::to_string(maximum));
+    if (option_group) group.description = app.get_description();
     for (auto const* option : app.get_options())
     {
       if (option->get_group() != name) continue;
@@ -60,7 +65,20 @@ void collect_groups(CLI::App const& app, std::vector<presentation::help_group>& 
       append_related("excludes: ", option->get_excludes());
       group.options.push_back(std::move(entry));
     }
-    if (!group.options.empty()) groups.push_back(std::move(group));
+    if (group.options.empty()) continue;
+    if (option_group && !constraints_shown)
+    {
+      auto constraints = selection_limits(app);
+      if (app.get_required())
+        constraints = "This group is required." + (constraints.empty() ? std::string{} : "\n" + constraints);
+      if (!constraints.empty())
+      {
+        if (!group.description.empty()) group.description += "\n";
+        group.description += "For option group '" + app.get_group() + "' as a whole:\n" + constraints;
+      }
+      constraints_shown = true;
+    }
+    groups.push_back(std::move(group));
   }
   // CLI11 implements composable option groups as unnamed subcommands.
   for (auto const* child : app.get_subcommands(visible_option_group))
@@ -140,7 +158,9 @@ presentation::report_builder help_report(CLI::App const& app, presentation::prog
 {
   auto usage = program.name + " [options]";
   append_positionals(app, usage);
-  return presentation::help_report(program, usage, help_groups(app));
+  auto report = presentation::help_report(program, usage, help_groups(app));
+  if (auto const limits = selection_limits(app); !limits.empty()) report.field("Option selection", limits);
+  return report;
 }
 
 presentation::report_builder build_info_report(presentation::program_info const& program)

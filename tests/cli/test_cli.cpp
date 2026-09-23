@@ -278,9 +278,9 @@ TEST(CliHelp, DescribesActualOptionsGroupsDefaultsAndConstraints)
   app.add_option("--hidden", hidden)->group("");
   app.add_option_group("")->add_option("--hidden-group", hidden);
   auto text = render(c::help_report(app, program()));
-  for (auto const* part :
-       {"Model", "Numerics", "-s,--spin", "HALF_INT", "default: 1.5", "default: 12", "required", "excludes: --points",
-        "fp64", "fp128", "probe [options] input", "Model quantum numbers and input", "Minimum selected options: 1"})
+  for (auto const* part : {"Model", "Numerics", "-s,--spin", "HALF_INT", "default: 1.5", "default: 12", "required",
+                           "excludes: --points", "fp64", "fp128", "probe [options] input",
+                           "Model quantum numbers and input", "Minimum selected options or groups: 1"})
     EXPECT_NE(text.find(part), std::string::npos) << part << '\n' << text;
   EXPECT_EQ(text.find("--hidden"), std::string::npos);
   count->description("Updated description");
@@ -289,6 +289,61 @@ TEST(CliHelp, DescribesActualOptionsGroupsDefaultsAndConstraints)
   policy.color = p::color_mode::always;
   EXPECT_NE(p::render_terminal(c::help_report(app, program()), policy).find("\033["), std::string::npos);
   EXPECT_EQ(text.find("\033["), std::string::npos);
+}
+
+TEST(CliHelp, ApplicationSelectionLimitsAreGlobalAcrossPresentationGroups)
+{
+  CLI::App app;
+  c::configure(app, program());
+  int model = 0, numerics = 0;
+  app.add_option("--model", model)->group("Model");
+  app.add_option("--numerics", numerics)->group("Numerics");
+  app.require_option(1);
+
+  EXPECT_EQ(parse(app, {"--model=3"}).requested, c::action::run);
+  EXPECT_EQ(parse(app, {"--numerics=4"}).requested, c::action::run);
+  EXPECT_EQ(parse(app, {"--model=3", "--numerics=4"}).requested, c::action::error);
+  EXPECT_EQ(parse(app, {}, {.empty = c::no_arguments::run}).requested, c::action::error);
+
+  for (auto const& group : c::help_groups(app))
+    EXPECT_TRUE(group.description.empty()) << group.heading << ": " << group.description;
+  auto const report = c::help_report(app, program());
+  unsigned selections = 0;
+  for (auto const& [key, value] : report.fields())
+  {
+    if (key != "Option selection") continue;
+    ++selections;
+    EXPECT_EQ(value, "Minimum selected options or groups: 1\nMaximum selected options or groups: 1");
+  }
+  EXPECT_EQ(selections, 1u);
+}
+
+TEST(CliHelp, ChildSelectionLimitsApplyOnceAcrossItsPresentationGroups)
+{
+  CLI::App app;
+  c::configure(app, program());
+  auto* model = app.add_option_group("Model");
+  model->require_option(1);
+  model->required();
+  int spin = 0, interaction = 0;
+  model->add_option("--spin", spin)->group("Quantum numbers");
+  model->add_option("--interaction", interaction)->group("Interactions");
+  EXPECT_EQ(parse(app, {"--spin=1"}).requested, c::action::run);
+  EXPECT_EQ(parse(app, {"--interaction=4"}).requested, c::action::run);
+  EXPECT_EQ(parse(app, {"--spin=1", "--interaction=4"}).requested, c::action::error);
+
+  unsigned constraints = 0;
+  for (auto const& group : c::help_groups(app))
+  {
+    if (group.description.empty()) continue;
+    ++constraints;
+    EXPECT_EQ(group.description, "For option group 'Model' as a whole:\nThis group is required.\n"
+                                 "Minimum selected options or groups: 1\nMaximum selected options or groups: 1");
+  }
+  EXPECT_EQ(constraints, 1u);
+  auto const report = c::help_report(app, program());
+  for (auto const& [key, value] : report.fields())
+    EXPECT_NE(key, "Option selection");
 }
 
 TEST(CliHelp, MergedOptionGroupsExposeContentsAndEmptyGroupsHideThem)

@@ -120,6 +120,12 @@ and custom CLI11 formatter layouts are outside this first adapter's scope.
 CLI11 itself remains available for those applications; the semantic document
 model is independent of it.
 
+Application-wide `require_option(...)` limits appear once in the global
+`Option selection` field. Child option-group requirements appear once and name
+the whole group they constrain, even when its options use several presentation
+headings. Selection counts follow CLI11: an option or an option group counts as
+one selection, not each individual value or presentation heading.
+
 `program_report`, `help_report` and `build_info_report` return ordinary
 `report_builder` documents. `display::emit` applies existing color, glyph,
 character-set and terminal-width policy. Applications can also render the same
