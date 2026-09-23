@@ -9,7 +9,7 @@ if(UNI20_BUILD_CLI)
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cli_include_dirs.cmake"
     "set(CLI_INCLUDE_DIRS [==[${UNI20_TEST_CLI_INCLUDE_DIRS}]==])\n")
   configure_file(run_cli.cmake.in run_cli.cmake @ONLY)
-  foreach(cli_case IN ITEMS disabled parent)
+  foreach(cli_case IN ITEMS disabled parent reconfigure)
     add_test(NAME CMakeSubproject.cli_${cli_case}
       COMMAND "${CMAKE_COMMAND}" "-Dcli_case=${cli_case}" "-Dconfig=$<CONFIG>"
         -P "${CMAKE_CURRENT_BINARY_DIR}/run_cli.cmake")

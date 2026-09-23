@@ -32,6 +32,10 @@ falls back to the pinned v2.7.2 source. `ON` requires a system package; `OFF`
 selects the pinned source. Parent-supplied targets remain the parent's
 responsibility; the header also checks the version when compiling the adapter.
 The FetchContent revision is `cbd58a3696887b34c70949aef21a71735a0c2ad5`.
+Dependency metadata is refreshed on every configure. Disabling CLI removes its
+detected source, target, version and path from build information while preserving
+lookup preferences and package hints. Parent-provided targets are identified as
+`parent`; their version and package path are not inferred from an earlier build.
 
 ## Parse, decide, then run
 

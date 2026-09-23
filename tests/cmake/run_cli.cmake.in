@@ -5,11 +5,55 @@ function(run_checked)
     message(FATAL_ERROR "CLI consumer failed: ${ARGV}\n${output}\n${error}")
   endif()
 endfunction()
-run_checked("@CMAKE_COMMAND@" --fresh
-  -S "@CMAKE_CURRENT_SOURCE_DIR@/cli" -B "${build_dir}" -G "@CMAKE_GENERATOR@"
-  "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@" "-Dcli_case=${cli_case}"
-  "-DCLI_INCLUDE_FILE=@CMAKE_CURRENT_BINARY_DIR@/cli_include_dirs.cmake" "-DCMAKE_BUILD_TYPE=${config}"
+function(configure_cli resolution)
+  run_checked("@CMAKE_COMMAND@" ${ARGN}
+    -S "@CMAKE_CURRENT_SOURCE_DIR@/cli" -B "${build_dir}" -G "@CMAKE_GENERATOR@"
+    "-DUNI20_SOURCE_DIR=@PROJECT_SOURCE_DIR@" "-Dcli_case=${resolution}"
+    "-DCLI_INCLUDE_FILE=@CMAKE_CURRENT_BINARY_DIR@/cli_include_dirs.cmake" "-DCMAKE_BUILD_TYPE=${config}"
 @UNI20_SUBPROJECT_TEST_ARGS@
-)
+  )
+  file(READ "${build_dir}/uni20/src/uni20/buildinfo.hpp" buildinfo)
+  if(resolution STREQUAL "disabled")
+    if(buildinfo MATCHES "UNI20_CLI11_(DIR|SOURCE|TARGET|VERSION)|UNI20_DETECTED_CLI11")
+      message(FATAL_ERROR "Disabled CLI retained generated dependency metadata")
+    endif()
+  else()
+    string(FIND "${buildinfo}" "{\"UNI20_DETECTED_CLI11\", \"${resolution}\"" detected)
+    if(detected EQUAL -1)
+      message(FATAL_ERROR "Generated CLI11 metadata does not identify ${resolution}")
+    endif()
+    if(resolution STREQUAL "parent" AND buildinfo MATCHES "UNI20_CLI11_(DIR|VERSION)")
+      message(FATAL_ERROR "Parent CLI11 retained generated version or path metadata")
+    endif()
+  endif()
+endfunction()
+
+if(cli_case STREQUAL "reconfigure")
+  # A real find_package resolution supplies version/path metadata that must
+  # disappear when disabled or replaced by a parent-owned target.
+  set(package_dir "${build_dir}/package")
+  file(MAKE_DIRECTORY "${package_dir}")
+  file(WRITE "${package_dir}/CLI11Config.cmake" [=[
+set(CLI11_VERSION 2.7.2)
+include("${CLI_INCLUDE_FILE}")
+add_library(CLI11::CLI11 INTERFACE IMPORTED)
+set_property(TARGET CLI11::CLI11 PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${CLI_INCLUDE_DIRS}")
+]=])
+  include(CMakePackageConfigHelpers)
+  write_basic_package_version_file("${package_dir}/CLI11ConfigVersion.cmake"
+    VERSION 2.7.2 COMPATIBILITY SameMajorVersion)
+  configure_cli(system --fresh "-DCLI11_DIR:PATH=${package_dir}")
+  configure_cli(disabled)
+  configure_cli(system)
+  configure_cli(parent)
+  configure_cli(disabled)
+  file(STRINGS "${build_dir}/CMakeCache.txt" package_hint REGEX "^CLI11_DIR:[^=]*=")
+  if(NOT package_hint STREQUAL "CLI11_DIR:PATH=${package_dir}")
+    message(FATAL_ERROR "CLI11 package hint was lost: ${package_hint}")
+  endif()
+  return()
+endif()
+
+configure_cli(${cli_case} --fresh)
 run_checked("@CMAKE_COMMAND@" --build "${build_dir}" --config "${config}" --target consumer --parallel 2)
 run_checked("@CMAKE_CTEST_COMMAND@" --test-dir "${build_dir}" -C "${config}" --output-on-failure)

@@ -1,6 +1,7 @@
 # CLI11 is opt-in and must never become a numerical target's dependency.
 if(TARGET CLI11::CLI11)
   set(UNI20_CLI11_SOURCE "parent" CACHE INTERNAL "CLI11 dependency source" FORCE)
+  set(UNI20_CLI11_TARGET "CLI11::CLI11" CACHE INTERNAL "CLI11 dependency target" FORCE)
   set(UNI20_DETECTED_CLI11 "parent" CACHE INTERNAL "CLI11 dependency source" FORCE)
 else()
   uni20_add_dependency(
