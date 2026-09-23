@@ -107,6 +107,17 @@ option(UNI20_BUILD_EXTERNAL_TESTS "Build tests for external dependencies" OFF)
 option(UNI20_ILP64                "Enable ILP64 integer type for BLAS (64-bit integers)" OFF)
 option(UNI20_BUILD_PYTHON         "Build the Python bindings" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_EXAMPLES       "Build the example programs" ${PROJECT_IS_TOP_LEVEL})
+option(UNI20_BUILD_CLI            "Build CLI11 application helpers and presentation adapters" OFF)
+# These entries describe this configure's resolution, not package lookup hints.
+# Rebuild them when CLI11 is enabled; leave them absent when it is disabled.
+foreach(_uni20_cli_cache_var IN ITEMS
+    UNI20_CLI11_DIR
+    UNI20_CLI11_SOURCE
+    UNI20_CLI11_TARGET
+    UNI20_CLI11_VERSION
+    UNI20_DETECTED_CLI11)
+  unset(${_uni20_cli_cache_var} CACHE)
+endforeach()
 option(UNI20_BUILD_DOCS           "Add the Doxygen documentation target" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_FORMAT_TARGET  "Add the clang-format target" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_ENABLE_CUDA          "Enable CUDA backend support" OFF)
@@ -537,6 +548,10 @@ if(NOT UNI20_DOCS_WEB)
     REPO https://github.com/fmtlib/fmt.git
     TAG 11.1.4
   )
+
+  if(UNI20_BUILD_CLI)
+    include(Uni20CLI)
+  endif()
 
   # mdspan reference implementation, put it into stdex namespace to prevent possible conflict with standard library version
   # and set up the uni20_mdspan_base interface target for configured consumers

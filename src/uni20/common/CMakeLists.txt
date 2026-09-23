@@ -18,6 +18,7 @@ add_library(uni20_common STATIC
     data_table.cpp
     display.cpp
     presentation.cpp
+    program.cpp
     terminal.cpp
 )
 target_link_libraries(uni20_common PUBLIC uni20_mdspan_base uni20_deps)

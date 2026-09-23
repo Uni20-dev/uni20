@@ -15,6 +15,8 @@ logic. Keep these files brief; detailed design notes belong in `/docs`.
   small math/type utilities.
 - [`common/`](common/): diagnostics, trace/check infrastructure, presentation helpers,
   and common containers/utilities.
+- [`cli/`](cli/): optional CLI11 adapters for executable options, semantic help,
+  version/build information and exact scalar conversion.
 - [`mdspan/`](mdspan/): configured mdspan integration, structural concepts,
   accessors, lazy transform views, stride helpers, and backend-neutral iteration
   plans.

@@ -1,5 +1,9 @@
 # Presentation Examples
 
+- `cli_example.cpp` demonstrates CLI11 help, version/build information, exact
+  half-integers and deferred native-precision conversion followed by typed-table
+  display or CSV/TSV/JSON export. Build `presentation_cli_example` with
+  `UNI20_BUILD_CLI=ON`; see [Command-line Applications](../../docs/diagnostics/command_line.md).
 - `table_layout_example.cpp` demonstrates report composition, table borders,
   spans, separators, decimal alignment, width pressure, and numeric formatting.
   It builds both `presentation_example` and `presentation_table_layout_example`.

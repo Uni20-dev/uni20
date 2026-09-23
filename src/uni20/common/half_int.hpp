@@ -207,6 +207,10 @@ template <std::signed_integral T> class basic_half_int {
       auto const sign = (!whole.empty() && whole.front() == '-') ? T{-1} : T{1};
       auto const twice_whole = checked_double(parse_integral<T>(whole));
       auto const half = (fractional == "5") ? sign : T{0};
+      if (half < 0 && twice_whole == std::numeric_limits<T>::min())
+      {
+        throw std::overflow_error("basic_half_int doubled representation overflow");
+      }
       return from_twice(twice_whole + half);
     }
 

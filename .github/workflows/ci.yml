@@ -56,6 +56,7 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DUNI20_BUILD_CLI=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \
@@ -156,6 +157,7 @@ jobs:
             -DUNI20_BUILD_ASM=OFF \
             -DUNI20_BUILD_PYTHON=OFF \
             -DUNI20_ENABLE_MPLAPACK=ON \
+            -DUNI20_BUILD_CLI=ON \
             -DUNI20_USE_SYSTEM_MPLAPACK=OFF \
             -DUNI20_USE_SYSTEM_TBB=OFF \
             -DUNI20_USE_SYSTEM_FMT=OFF \
@@ -168,12 +170,14 @@ jobs:
             uni20_mplapack_binary128_tests \
             uni20_linalg_mplapack_binary128_tests \
             uni20_krylov_mplapack_binary128_tests \
+            uni20_cli_tests \
+            presentation_cli_example \
             spin_half_heisenberg_dmrg_example
 
-      - name: Test binary128 provider and DMRG paths
+      - name: Test binary128 provider, CLI and DMRG paths
         run: |
           ctest --test-dir build --output-on-failure \
-            -R "MplapackBinary128|SpinHalfHeisenbergDmrg.*Float128"
+            -R "MplapackBinary128|SpinHalfHeisenbergDmrg.*Float128|^Cli"
 
   ubuntu-clang-debug:
     name: Ubuntu Clang 19 Debug
@@ -217,6 +221,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DUNI20_BUILD_CLI=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \
