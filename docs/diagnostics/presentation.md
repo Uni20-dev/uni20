@@ -221,6 +221,10 @@ column widths if the table fits, then prefers shrinking columns that can still w
 split inside an unbreakable token. Report-specific renderers disable final whole-string wrapping after the table has been
 formatted, because wrapping a completed table would split borders and column alignment.
 
+Report header fields also use the wrap width: values wrap at whitespace, with continuation lines aligned below the value.
+Indivisible tokens such as numbers, executable names and URLs may exceed the available width. A long token does not
+widen the surrounding prose. With no wrap width (or a width of zero), field values retain their original layout.
+
 Use `table.preserve_tokens()` when a cell contains numbers, command-line arguments, identifiers or links which must stay
 intact. This makes whitespace the only wrapping boundary and allows the table to exceed `wrap_width` if necessary.
 Minimum widths account for headings and spanning cells as well as ordinary cells, including their rendered styles and

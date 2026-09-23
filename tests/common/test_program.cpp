@@ -25,6 +25,29 @@ TEST(ProgramDocuments, IdentityAndBannerDoNotEvaluateReferenceProvider)
   EXPECT_EQ(p::program_identity({.name = "unnumbered"}), "unnumbered");
 }
 
+TEST(ProgramDocuments, NarrowBannerWrapsProseThroughTheDisplaySink)
+{
+  p::program_info info{
+      .name = "probe",
+      .description = "Inspect Hubbard-style parameters using native precision; this example does not run a solver."};
+  auto const report = p::program_report(info);
+  std::string const expected = "probe\n"
+                               "  Description  Inspect Hubbard-style\n"
+                               "               parameters using native\n"
+                               "               precision; this example\n"
+                               "               does not run a solver.\n";
+  auto policy = p::strict_ascii_policy();
+  policy.wrap_width = 40;
+  EXPECT_EQ(p::render_plain(report, policy), expected);
+
+  uni20::test::EnvVarGuard columns("COLUMNS", "40");
+  uni20::test::EnvVarGuard color("UNI20_COLOR", "never");
+  uni20::display::scoped_sink use_default(uni20::display::sink{});
+  ::testing::internal::CaptureStdout();
+  uni20::display::emit(report, uni20::display::stream::out, false);
+  EXPECT_EQ(::testing::internal::GetCapturedStdout(), expected);
+}
+
 TEST(ProgramDocuments, HelpUsesApplicationReferencesAndSemanticPolicies)
 {
   p::program_info info{.name = "application", .references = [] {

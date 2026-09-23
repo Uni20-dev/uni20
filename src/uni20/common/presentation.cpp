@@ -1482,6 +1482,9 @@ std::deque<report_table> const& report_builder::tables() const noexcept { return
 namespace
 {
 
+[[nodiscard]] std::vector<std::string> wrap_text_impl(std::string_view text, std::size_t max_width,
+                                                      output_policy const& policy, bool preserve_tokens);
+
 [[nodiscard]] std::string render_plain_unwrapped(styled_text const& text, output_policy const& policy)
 {
   auto render_policy = policy;
@@ -2381,10 +2384,23 @@ styled_text render_report(report_builder const& report, output_policy const& pol
 
   for (auto const& [key, value] : report.fields())
   {
-    text.append("  ")
-        .append(pad_right(key, key_width + 2, policy), terminal_style("LightGray"))
-        .append(value)
-        .append("\n");
+    text.append("  ").append(pad_right(key, key_width + 2, policy), terminal_style("LightGray"));
+    if (policy.wrap_width && *policy.wrap_width > 0)
+    {
+      auto const indent = key_width + 4;
+      auto const width = *policy.wrap_width > indent ? *policy.wrap_width - indent : 1;
+      auto const lines = wrap_text_impl(value, width, policy, true);
+      for (std::size_t i = 0; i < lines.size(); ++i)
+      {
+        if (i > 0) text.append("\n").append(std::string(indent, ' '));
+        text.append(lines[i]);
+      }
+    }
+    else
+    {
+      text.append(value);
+    }
+    text.append("\n");
   }
 
   for (auto const& table : report.tables())
@@ -2676,7 +2692,10 @@ std::string indent_text(std::string_view text, std::size_t spaces, output_policy
   return prefix_lines(text, std::string(spaces, ' '), policy, indent_first);
 }
 
-std::vector<std::string> wrap_text(std::string_view text, std::size_t max_width, output_policy const& policy)
+namespace
+{
+std::vector<std::string> wrap_text_impl(std::string_view text, std::size_t max_width, output_policy const& policy,
+                                        bool preserve_tokens)
 {
   auto const rendered = render_text(text, policy);
   if (max_width == 0) return {std::string(rendered)};
@@ -2776,7 +2795,7 @@ std::vector<std::string> wrap_text(std::string_view text, std::size_t max_width,
         column = used;
         refresh_last_break(current, break_begin, break_end);
       }
-      else
+      else if (!preserve_tokens)
       {
         lines.push_back(current);
         current.clear();
@@ -2806,6 +2825,12 @@ std::vector<std::string> wrap_text(std::string_view text, std::size_t max_width,
 
   lines.push_back(current);
   return lines;
+}
+} // namespace
+
+std::vector<std::string> wrap_text(std::string_view text, std::size_t max_width, output_policy const& policy)
+{
+  return wrap_text_impl(text, max_width, policy, false);
 }
 
 std::vector<styled_text> wrap_text(styled_text const& text, std::size_t max_width, output_policy const& policy)

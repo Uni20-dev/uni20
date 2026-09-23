@@ -612,6 +612,8 @@ class report_builder {
     report_builder& status(semantic_glyph glyph, std::string label);
 
     /// \brief Add a labeled field to the report header.
+    /// \details Rendering with a wrap width breaks values at whitespace and aligns continuation lines below
+    ///          the value. Indivisible tokens may exceed the width.
     /// \param key Field label.
     /// \param value Already formatted field value.
     /// \return Reference to this report for chaining.

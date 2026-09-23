@@ -764,6 +764,42 @@ TEST(PresentationReportBuilder, RendersStatusFieldsAndAlignedTables)
                                                         "  arpack      238   8.0e-13\n");
 }
 
+TEST(PresentationReportBuilder, WrapsFieldProseAndIndentsContinuationLines)
+{
+  auto policy = base_policy();
+  policy.wrap_width = 21;
+  presentation::report_builder report;
+  report.field("Notes", "alpha beta gamma delta\nomega").field("Empty", "");
+  EXPECT_EQ(presentation::render_plain(report, policy), "  Notes  alpha beta\n"
+                                                        "         gamma delta\n"
+                                                        "         omega\n"
+                                                        "  Empty  \n");
+
+  presentation::report_builder unicode;
+  unicode.field("界", "alpha beta gamma");
+  policy.wrap_width = 17;
+  EXPECT_EQ(presentation::render_plain(unicode, policy), "  界  alpha beta\n"
+                                                         "      gamma\n");
+}
+
+TEST(PresentationReportBuilder, FieldTokensOverflowWithoutWideningSurroundingProse)
+{
+  auto policy = base_policy();
+  policy.wrap_width = 18;
+  presentation::report_builder report;
+  report.field("Run", "use --U=4.000000000000000000000000000001 then more words");
+  EXPECT_EQ(presentation::render_plain(report, policy), "  Run  use\n"
+                                                        "       --U=4.000000000000000000000000000001\n"
+                                                        "       then more\n"
+                                                        "       words\n");
+  policy.wrap_width = 1;
+  EXPECT_EQ(presentation::render_plain(report, policy), "  Run  use\n"
+                                                        "       --U=4.000000000000000000000000000001\n"
+                                                        "       then\n"
+                                                        "       more\n"
+                                                        "       words\n");
+}
+
 TEST(PresentationReportBuilder, TableReferencesRemainStableWhenAddingTables)
 {
   presentation::report_builder report("Stable tables");
