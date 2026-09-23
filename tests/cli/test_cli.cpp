@@ -277,20 +277,40 @@ TEST(CliHelp, DescribesActualOptionsGroupsDefaultsAndConstraints)
   app.add_option("--precision", precision)->check(CLI::IsMember({"fp64", "fp128"}))->group("Numerics");
   app.add_option("--hidden", hidden)->group("");
   app.add_option_group("")->add_option("--hidden-group", hidden);
-  app.add_option_group("+internal")->add_option("--internal", hidden);
   auto text = render(c::help_report(app, program()));
   for (auto const* part :
        {"Model", "Numerics", "-s,--spin", "HALF_INT", "default: 1.5", "default: 12", "required", "excludes: --points",
         "fp64", "fp128", "probe [options] input", "Model quantum numbers and input", "Minimum selected options: 1"})
     EXPECT_NE(text.find(part), std::string::npos) << part << '\n' << text;
   EXPECT_EQ(text.find("--hidden"), std::string::npos);
-  EXPECT_EQ(text.find("--internal"), std::string::npos);
   count->description("Updated description");
   EXPECT_NE(render(c::help_report(app, program())).find("Updated description"), std::string::npos);
   auto policy = p::strict_ascii_policy();
   policy.color = p::color_mode::always;
   EXPECT_NE(p::render_terminal(c::help_report(app, program()), policy).find("\033["), std::string::npos);
   EXPECT_EQ(text.find("\033["), std::string::npos);
+}
+
+TEST(CliHelp, MergedOptionGroupsExposeContentsAndEmptyGroupsHideThem)
+{
+  CLI::App app;
+  c::configure(app, program());
+  std::string value;
+  app.add_option("--parent", value); // Establish the parent's default Options heading.
+  auto* merged = app.add_option_group("+merged");
+  merged->add_option("--merged-option", value);
+  merged->add_option("merged-input", value);
+  auto* hidden = app.add_option_group("");
+  hidden->add_option("--hidden-option", value);
+  hidden->add_option("hidden-input", value);
+
+  auto const text = render(c::help_report(app, program()));
+  EXPECT_NE(text.find("--parent"), std::string::npos);
+  EXPECT_NE(text.find("--merged-option"), std::string::npos);
+  EXPECT_NE(text.find("probe [options] [merged-input]"), std::string::npos);
+  EXPECT_EQ(text.find("+merged"), std::string::npos);
+  EXPECT_EQ(text.find("--hidden-option"), std::string::npos);
+  EXPECT_EQ(text.find("hidden-input"), std::string::npos);
 }
 
 TEST(CliPrecision, TokensSurviveParsingUntilPrecisionIsResolved)

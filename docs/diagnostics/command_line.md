@@ -113,9 +113,12 @@ Version output and error diagnostics do not print a bibliography.
 `help_groups(app)` reads the actual CLI11 names, descriptions, type/validator
 labels, captured defaults, requirements, dependencies, exclusions and environment
 names. Ordinary `.group(...)` declarations and unnamed `add_option_group(...)`
-groups are supported. Named subcommands and custom CLI11 formatter layouts are
-outside this first adapter's scope. CLI11 itself remains available for those
-applications; the semantic document model is independent of it.
+groups are supported. An empty group name hides its contents. An option group
+named `+name` suppresses its own heading and exposes its contents through the
+parent's help and usage, following CLI11's group semantics. Named subcommands
+and custom CLI11 formatter layouts are outside this first adapter's scope.
+CLI11 itself remains available for those applications; the semantic document
+model is independent of it.
 
 `program_report`, `help_report` and `build_info_report` return ordinary
 `report_builder` documents. `display::emit` applies existing color, glyph,
