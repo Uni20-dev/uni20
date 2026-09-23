@@ -159,9 +159,9 @@ Display may select fractions such as `3/2` or exact decimals such as `1.5`.
 CSV/TSV numerical export uses exact integer or `.5` decimal spellings derived
 from `twice()`, never `to_double()`. Handle negative halves and the underlying
 integer's full supported range without negating its minimum value. Typed JSON
-records the half-integer type and its doubled integer as an exact decimal
-string. The column remains a half-integer quantity, rather than a user-managed
-`twice_spin` column or a string containing a fraction.
+records the half-integer type and emits the value as a JSON number using the
+same exact decimal spelling. The column remains a half-integer quantity, rather
+than a user-managed `twice_spin` column or a string containing a fraction.
 
 A later borrowed row/column adapter can expose existing application results
 without copying them. Its lifetime and mutation rules must be explicit. Writers
@@ -315,9 +315,16 @@ display fractions or approximations. These latter mappings are not part of the
 first implementation.
 
 For `basic_half_int<T>`, describe `type: "half_int"`, the signed storage width,
-and `encoding: "twice_decimal_string"`. A value of `3/2` is encoded as `"3"`;
-an optional missing value remains `null`. This follows the existing JSON
-schema/rows structure while retaining exact quantum numbers.
+and `encoding: "number"`. A value of `3/2` is encoded as the unquoted JSON
+number `1.5`; whole values use integer spelling and an optional missing value
+remains `null`. Generate the decimal text directly from the integer storage,
+without floating-point conversion or display formatting. JSON specifies no
+particular numeric precision; a binary64 reader represents every half-integer
+with magnitude below `2^52` exactly, sufficient for the intended quantum-number
+values. The writer also emits larger values exactly, but reading those values
+without rounding requires a reader with sufficient numeric precision. This
+encoding is consistent across the column and does not switch to strings for
+large values.
 
 The ordered schema, row arrays and precision-preserving decimal strings are
 implemented by `write_json` and `json_sink`. Integer columns whose type has
@@ -540,7 +547,7 @@ brevity):
   "columns": [
     {"id": "level", "label": "Level", "type": "uint32", "encoding": "number"},
     {"id": "spin", "label": "Spin", "type": "half_int", "storage_bits": 64,
-     "encoding": "twice_decimal_string"},
+     "encoding": "number"},
     {"id": "momentum", "label": "P", "type": "real", "radix": 2,
      "precision_bits": 53, "encoding": "decimal_string"},
     {"id": "energy", "label": "Energy", "type": "real", "radix": 2,
@@ -550,8 +557,8 @@ brevity):
     {"id": "converged", "label": "Converged", "type": "bool"}
   ],
   "rows": [
-    [1, "1", "0", "-6.25", "0", true],
-    [2, "-3", "0.5", "-6.125", null, false]
+    [1, 0.5, "0", "-6.25", "0", true],
+    [2, -1.5, "0.5", "-6.125", null, false]
   ]
 }
 ```
@@ -605,7 +612,8 @@ rejection without row insertion when any cell is out of range.
 For half-integers, test positive and negative halves, whole values, optional
 values, storage conversions, integer-to-half range checks and doubled values
 beyond binary64's exact integer precision. Check exact decimal/fraction output
-and JSON doubled-integer reconstruction without a floating intermediate.
+and unquoted JSON numbers without a floating intermediate, independent of
+fractional display settings and consistent between snapshots and streaming.
 Test zero rows, invalid/duplicate identifiers, stream failures and independence
 from terminal/color settings. Validate JSON with an independent parser. Reader defaults that narrow values are not exporter tests.
 

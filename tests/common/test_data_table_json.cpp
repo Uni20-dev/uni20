@@ -23,15 +23,38 @@ TEST(DataTableJson, EncodesExactTypedValuesAndMissingness)
   p::write_json(out, table);
   EXPECT_TRUE(out.str().starts_with("{\"title\":\"β\\\"\\u000a\""));
   EXPECT_NE(out.str().find("\"type\":\"uint64\",\"encoding\":\"decimal_string\""), std::string::npos);
-  EXPECT_NE(out.str().find("\"type\":\"half_int\",\"storage_bits\":64,\"encoding\":\"twice_decimal_string\""),
+  EXPECT_NE(out.str().find("\"type\":\"half_int\",\"storage_bits\":64,\"encoding\":\"number\""),
             std::string::npos);
   EXPECT_NE(out.str().find("\"type\":\"real\",\"radix\":2,\"precision_bits\":53,\"encoding\":\"decimal_string\""),
             std::string::npos);
-  EXPECT_NE(out.str().find("\"rows\":[[1,\"18446744073709551615\",\"9007199254740993\",\"1.2345678901234567\",null,"
+  EXPECT_NE(out.str().find("\"rows\":[[1,\"18446744073709551615\",4503599627370496.5,\"1.2345678901234567\",null,"
                            "true,\"a\\u0000b\\u000a\\\"\\\\\\u0000\"]]"),
             std::string::npos);
   EXPECT_EQ(out.str().find("\"summary\""), std::string::npos);
   EXPECT_EQ(out.width(), 100);
+}
+
+TEST(DataTableJson, HalfIntegersUseDecimalNumbersInSnapshotsAndStreaming)
+{
+  using SmallHalf = uni20::basic_half_int<std::int16_t>;
+  auto table = p::make_data_table("spins", p::data_column<uni20::half_int>("spin").fractional(),
+                                  p::data_column<std::optional<SmallHalf>>("optional").fractional());
+  table.append(0, std::nullopt);
+  std::ostringstream live, snapshot;
+  table.attach(p::json_sink(live));
+  table.append(uni20::from_twice(3), uni20::from_twice(-1));
+  table.append(uni20::from_twice(-3), uni20::from_twice(1));
+  table.append(2, -2);
+  table.append(uni20::from_twice(uni20::numeric_limits<std::int64_t>::min()), std::nullopt);
+  table.append(uni20::from_twice(uni20::numeric_limits<std::int64_t>::max()), std::nullopt);
+  table.finish();
+  p::write_json(snapshot, table);
+  EXPECT_EQ(live.str(), snapshot.str());
+  EXPECT_NE(snapshot.str().find("\"type\":\"half_int\",\"storage_bits\":16,\"encoding\":\"number\",\"nullable\":true"),
+            std::string::npos);
+  EXPECT_NE(snapshot.str().find("\"rows\":[[0,null],[1.5,-0.5],[-1.5,0.5],[2,-2],"
+                                "[-4611686018427387904,null],[4611686018427387903.5,null]]"),
+            std::string::npos);
 }
 
 TEST(DataTableJson, NonfiniteValuesAreStringsAndSignedZeroIsPreserved)

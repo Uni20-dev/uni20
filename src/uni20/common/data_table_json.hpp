@@ -44,8 +44,6 @@ template <typename T> void write_json_value(json_output& out, T const& value)
     else
       out << "null";
   }
-  else if constexpr (half_integer<T>)
-    write_json_string(out.stream, fmt::format("{}", value.twice()));
   else if constexpr (std::same_as<T, std::string>)
     write_json_string(out.stream, value);
   else if constexpr (Real<T>)
@@ -72,7 +70,7 @@ template <DataTableValue T> void write_json_column(json_output& out, data_column
   {
     out << "\"half_int\",\"storage_bits\":"
         << fmt::format("{}", uni20::numeric_limits<typename V::value_type>::digits + 1)
-        << ",\"encoding\":\"twice_decimal_string\"";
+        << ",\"encoding\":\"number\"";
   }
   else if constexpr (Real<V>)
   {
@@ -155,7 +153,8 @@ inline void write_json_end(json_output& out, table_metadata const* summary)
 } // namespace data_table_detail
 
 /// \brief Write an ordered schema and typed rows, preserving real and integer precision.
-/// \details Reals and wide integers are decimal strings; half-integers use their exact doubled integer.
+/// \details Reals and wide integers are decimal strings; half-integers are JSON numbers formatted exactly
+///          without floating-point conversion. Readers choose their own numeric precision.
 ///          UTF-8 text is validated. The caller owns the stream and must check flush/close errors.
 ///          In-progress snapshots omit the final summary. No-retention tables reject snapshots before writing.
 template <DataTableValue... Ts>
