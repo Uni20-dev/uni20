@@ -715,7 +715,7 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
         text.append(spaces(key_width)).append(continuation_marker()).append(" ").append(wrapped[line]).append("\n");
       }
     }
-    emit_preformatted(std::move(text), destination_, false, where);
+    this->emit_text(std::move(text), false, where);
     return;
   }
 
@@ -773,7 +773,28 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
     }
     if (line + 1 != row_lines) text.append("\n");
   }
-  emit_preformatted(std::move(text), destination_, true, where);
+  this->emit_text(std::move(text), true, where);
+}
+
+streaming_table& streaming_table::output(sink destination, presentation::output_policy policy)
+{
+  this->ensure_can_change_schema();
+  output_ = std::move(destination);
+  policy_ = std::move(policy);
+  return *this;
+}
+
+void streaming_table::emit_text(presentation::styled_text text, bool newline, std::source_location where)
+{
+  if (output_)
+    output_(event{.destination = destination_,
+                  .content = std::move(text),
+                  .newline = newline,
+                  .context = {},
+                  .where = where,
+                  .preserve_layout = true});
+  else
+    emit_preformatted(std::move(text), destination_, newline, where);
 }
 
 streaming_table table(std::string title, stream destination) { return streaming_table(std::move(title), destination); }

@@ -98,6 +98,8 @@ struct data_terminal_options
     std::size_t minimum_column_width = 10;
     std::optional<std::size_t> wrap_width = std::nullopt;
     bool show_metadata = true;
+    display::sink output = {};
+    std::optional<output_policy> policy = std::nullopt;
 };
 
 namespace data_table_detail
@@ -137,6 +139,7 @@ class terminal_sink_adapter {
     {
       selection_ = resolve_projection(schema, options_.projection);
       table_.emplace(title, options_.destination);
+      if (options_.output) table_->output(options_.output, options_.policy.value_or(plain_policy()));
       if (options_.wrap_width) table_->wrap_width(*options_.wrap_width);
       for (std::size_t p = 0; p < selection_.indices.size(); ++p)
         visit_column(schema, selection_.indices[p], [&](auto const& column) {
@@ -161,7 +164,17 @@ class terminal_sink_adapter {
     {
       if (!options_.show_metadata) return;
       for (auto const& [key, value] : metadata)
-        display::emit(styled_text{}.append(key + ": " + value), options_.destination);
+      {
+        auto text = styled_text{}.append(key + ": " + value);
+        if (options_.output)
+          options_.output(display::event{.destination = options_.destination,
+                                         .content = std::move(text),
+                                         .newline = true,
+                                         .context = {},
+                                         .where = std::source_location::current()});
+        else
+          display::emit(std::move(text), options_.destination);
+      }
     }
     data_terminal_options options_;
     resolved_projection selection_;

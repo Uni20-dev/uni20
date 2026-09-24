@@ -167,6 +167,33 @@ uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fm
 uni20_add_example(display_example presentation/display_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_data_table_example presentation/data_table_example.cpp fmt::fmt uni20_common)
 
+foreach(example IN ITEMS run_metadata configuration_sources output_live output_named_tables output_replay
+                         output_no_retention output_failure)
+  uni20_add_example(${example}_example presentation/${example}_example.cpp uni20_common)
+  if(NOT example STREQUAL "output_live")
+    add_test(NAME RunContextExample.${example} COMMAND ${example}_example)
+  endif()
+endforeach()
+if(UNI20_BUILD_CLI)
+  uni20_add_example(run_cli_example presentation/run_cli_example.cpp uni20_cli)
+  uni20_target_provenance(run_cli_example HEADER run_cli_revision.hpp NAMESPACE run_cli_build
+    SOURCE_DIR "${PROJECT_SOURCE_DIR}")
+  add_test(NAME RunContextExample.CliHelp COMMAND run_cli_example --help --config=/nonexistent/run.toml)
+  add_test(NAME RunContextExample.CliLongDouble COMMAND run_cli_example --U=4.000000000000000001 --format=named-json)
+  find_program(UNI20_TEST_PYTHON NAMES python3)
+  if(UNI20_TEST_PYTHON)
+    add_test(NAME RunContextExample.ExportContracts COMMAND "${UNI20_TEST_PYTHON}"
+      "${PROJECT_SOURCE_DIR}/tests/cli/check_run_examples.py" "$<TARGET_FILE_DIR:run_cli_example>")
+    add_test(NAME RunContextExample.SourceProvenance COMMAND "${UNI20_TEST_PYTHON}"
+      "${PROJECT_SOURCE_DIR}/tests/common/check_source_provenance.py" "${CMAKE_COMMAND}"
+      "${PROJECT_SOURCE_DIR}/cmake/WriteSourceProvenance.cmake")
+  endif()
+  if(UNI20_HAS_FLOAT128)
+    add_test(NAME RunContextExample.CliFloat128 COMMAND run_cli_example
+      --U=4.000000000000000000000000000001 --precision=fp128 --format=named-json)
+  endif()
+endif()
+
 uni20_add_example(async_example async/async_example.cpp fmt::fmt uni20_common uni20_async)
 uni20_add_example(async_example2 async/async_example2.cpp fmt::fmt uni20_common uni20_async)
 uni20_add_example(async_ops_example async/async_ops_example.cpp fmt::fmt uni20_common uni20_async)

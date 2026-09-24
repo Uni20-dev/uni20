@@ -23,6 +23,34 @@
   attaches before the first row and keeps no history.
 - `presentation_example_common.hpp` contains shared example-only policy and
   styling helpers; it is not an executable target.
+- `run_metadata_example.cpp` demonstrates native metadata, snapshots, display
+  mapping, provenance and explicit computation timing without CLI11.
+- `configuration_sources_example.cpp` resolves API, file, attribute, environment
+  and default sources, displays their origins, and copies selected output attributes.
+- `run_cli_example.cpp` combines CLI11 source bindings, an explicit TOML/INI file,
+  input attributes, deferred precision and shared output controls. For terminal
+  results and simultaneous file exports, try
+  `run_cli_example --export=csv:results.csv --export=named-json:results.json`.
+  Use `commented-csv` or `commented-tsv` to include metadata comments in a file.
+- `output_live_example.cpp` displays live results while writing owned TSV and
+  JSON files. The terminal selects step and energy; files also retain residuals
+  at full precision. Pass an existing output directory; files are created exclusively.
+- `output_named_tables_example.cpp` writes different schemas and a final run
+  summary in the explicit named JSON envelope.
+- `output_replay_example.cpp` adds a JSON destination after rows already exist.
+- `output_no_retention_example.cpp` streams future rows with an explicit offset
+  after earlier rows were discarded.
+- `output_failure_example.cpp` reports an optional display failure while
+  delivering every result to the required TSV destination.
+
+Build targets match these eight filenames without `.cpp`. See
+[Using Run Contexts](../../docs/diagnostics/run_context_usage.md) for recipes,
+sample configuration/input files, output contracts and remaining boundaries.
+
+These eight examples begin by explaining their sample data and what to look
+for in the output. Explanations accompany human-readable stdout, or go to
+stderr when stdout carries JSON or TSV. Redirect stdout alone to save those
+exports. `run_cli_example --quiet` and `--no-preamble` suppress the explanation.
 
 See the [examples index](../), [Presentation Formatting](../../docs/diagnostics/presentation.md),
 and the [Display Layer](../../docs/diagnostics/display_layer.md).

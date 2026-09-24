@@ -19,6 +19,8 @@ add_library(uni20_common STATIC
     display.cpp
     presentation.cpp
     program.cpp
+    run_context.cpp
+    output_session.cpp
     terminal.cpp
 )
 target_link_libraries(uni20_common PUBLIC uni20_mdspan_base uni20_deps)

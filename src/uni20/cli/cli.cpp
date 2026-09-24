@@ -173,6 +173,7 @@ presentation::report_builder build_info_report(presentation::program_info const&
   build.row("Compiler path", info.cxx_compiler_path);
   build.row("Build type", info.build_type);
   build.row("Generator", info.generator);
+  build.row("Uni20 revision", info.revision);
   build.row("System", info.system_name);
   build.row("Processor", info.system_processor);
   for (auto const& [heading, entries] :
