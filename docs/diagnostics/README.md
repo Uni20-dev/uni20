@@ -18,6 +18,9 @@ diagnostics, and Graphviz output.
 
 ## Design And Forward Work
 
+- [Run Context and Output Sessions](run_context.md) proposes shared typed run
+  metadata, provenance, human reports and owned output sessions, with Bethe as
+  the first consumer.
 - [Display Layer](display_layer.md) records implemented display/report slices
   and remaining sink, Python, async-queue, and context work.
 - [Diagnostics and Logging](logging_plan.md) is a design note for durable and
