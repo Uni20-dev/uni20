@@ -1,8 +1,9 @@
 # Shared run context, provenance, and output sessions
 
-Status: design proposal, 2026-09-24. The run context and output session described
-here are not implemented. This is the canonical shared design; consumer
-adoption plans should link here rather than maintain another copy.
+Status: design proposal, 2026-09-24. The configuration resolver, run context and
+output session described here are not implemented. This is the canonical shared
+design; consumer adoption plans should link here rather than maintain another
+copy.
 
 Scope: [Uni20 issue #55](https://github.com/Uni20-dev/uni20/issues/55), following
 the CLI/presentation and data-table work. CLI11 is already the selected parser;
@@ -11,8 +12,9 @@ this proposal does not revisit that choice.
 ## 1. Recommendation and motivation
 
 Build a small, parser-independent application-support layer in Uni20, and
-incrementally replace Bethe's equivalent plumbing. Start with typed run metadata
-and its human presentation; extract output sessions as a second step.
+incrementally replace Bethe's equivalent plumbing. Start with reusable typed
+values and run documents, then shared configuration resolution; extract output
+sessions after the metadata path has a working consumer.
 
 Bethe already has working CLI and typed table output throughout its frontends.
 This work is not a prerequisite for another model and does not improve a solver's
@@ -23,6 +25,8 @@ For Bethe, this provides:
 
 - One definition of resolved parameters for screen reports and file metadata,
   retaining native scalar types until each output is formatted.
+- Reusable resolution of declared CLI, option-file, attribute, environment and
+  default sources, with the winning source recorded alongside each value.
 - A useful initial preamble before a long calculation, followed by a concise
   final summary with explicitly distinguished computation CPU and elapsed time.
 - Common provenance and output behavior across models, reusable by a future
@@ -66,36 +70,40 @@ The table cells already retain their native types. They do not need redesigning.
 
 ## 3. Ownership and dependencies
 
-Three objects have distinct responsibilities. Names below are provisional;
-`program_info` is existing API, while `run_context` and `output_session` are
-proposed API.
+Four objects have distinct responsibilities. Names below are provisional;
+`program_info` is existing API, while the other objects are proposed API.
 
 | Object | Owns | Does not own |
 | --- | --- | --- |
 | `program_info` | Application identity, help content and optional reference provider | A calculation's parameters, results or files |
+| Configuration resolver | Declared source bindings, precedence, checked conversion and resolved values with their origins | Model physics, persistent-store implementation or report/file ownership |
 | `run_context` | Owned invocation/provenance, ordered typed metadata, timing samples and application-supplied outcome | Parsing, model validation, numerical algorithms or file streams |
 | `output_session` | Destination policy, owned files, sink bindings, document lifecycle and run-report emission | Scientific schemas, eigenstate ranking or the definition of convergence |
 
 The data flow is:
 
 ```text
-CLI11 adapter or direct C++/Python caller
-                |
-        resolved application configuration
-                |
-            run_context
-             /       \
-    human documents   immutable metadata snapshots
-                              |
+CLI / option file / input attributes / environment / defaults
+                           |
+                  configuration resolver
+                           |
+                resolved values + origins
+                    /             \
+     application configuration   run_context
+               |                  /       \
+             solver      human documents   immutable snapshots
+                                                   |
 application-owned typed tables + output_session -> selected sinks
 ```
 
-The owning metadata value layer must be usable without a renderer, output
-session or persistent store. Run contexts and document builders belong alongside
+The owning metadata value layer and source resolver must be usable without a
+renderer, CLI11, output session or persistent store. Direct C++ callers can
+supply explicit values without constructing argv; a later Python adapter can
+use the same boundary. Run contexts and document builders belong alongside
 Uni20's parser-independent common/presentation facilities. Session/file helpers
 should be opt-in headers or an application-support target, with no CLI11 includes.
-Only option registration and parser-specific invocation capture belong in
-`uni20_cli`.
+CLI11 registration, option-file syntax and parser-specific source/invocation
+adapters belong in `uni20_cli`.
 Numerical targets must acquire neither a parser dependency nor runtime output
 state. Exact header/target names can follow a prototype; the dependency direction
 is a requirement, not an open decision.
@@ -121,11 +129,11 @@ format are not requirements for the new typed representation.
 
 Share owned values and snapshot machinery across these uses, not an entire
 run-context object with clocks, invocation and presentation policy. Applications
-resolve precedence between explicit options, input attributes and defaults,
-then publish the actual values. They may also publish an input identifier and
-the source of a resolved field, such as an input attribute, explicit option or
-default. Uni20 does not infer precedence or treat a pathname as durable object
-identity.
+declare source bindings and select policy; shared code performs precedence
+resolution and checked conversion. It records the winning source so an
+application need not reconstruct origins when publishing resolved values.
+Input identifiers and attribute keys can identify those origins; a pathname is
+not treated as durable object identity.
 
 An immutable run snapshot must be obtainable without an output session and must
 not retain live clocks, streams or application references. This permits a later
@@ -140,6 +148,108 @@ settings, flushing controls and process timing. Sections 6 and 7 retain the
 useful separation of these concerns without adopting global logger registries,
 environment-variable conventions or historical command-line spellings.
 
+### Shared configuration resolution
+
+Bind additional sources to an option already declared on `CLI::App`, rather
+than declaring its names, conversion and help text in a second option language.
+The CLI adapter connects those declarations to parser-independent resolution.
+This is illustrative proposed syntax, not an implemented API:
+
+```cpp
+auto* h = app.add_option("-H,--Hamiltonian", hamiltonian);
+config.bind(h).attribute("Hamiltonian").metadata("hamiltonian");
+```
+
+The binding identifies which input attribute supplies the option and which
+stable metadata ID receives its resolved value. With multiple input objects,
+the application selects the attribute provider explicitly; do not use whichever
+object happened to load last. A provider exposes application-supplied attributes
+through a lookup interface, so an in-memory map or a future object-store adapter
+works without linking persistence into the resolver. Resolving sources does not
+interpret a Hamiltonian expression or validate a wavefunction's physics.
+
+The default precedence is highest first:
+
+| Priority | Source | Purpose |
+| --- | --- | --- |
+| 1 | Explicit CLI option, or explicit value from a direct API caller | Override for this invocation |
+| 2 | Explicit option file | Settings selected for this calculation |
+| 3 | Input-object attribute | Settings carried by the selected input object |
+| 4 | Explicitly named environment variable | Ambient defaults |
+| 5 | Application default | Final fallback |
+
+The application opts each option into its applicable sources; there is no
+automatic import of every attribute or environment variable. Common cache,
+thread, formatting and verbosity settings are useful environment bindings.
+Physics parameters may use them when explicitly declared. An ambient setting
+must not replace a saved Hamiltonian under the default precedence. Any policy
+override must be declared and visible in the binding rather than implemented
+as a separate ad hoc conditional in each application.
+
+Reuse CLI11's [environment bindings](https://cliutils.github.io/CLI11/class_c_l_i_1_1_option.html)
+and [option-file support](https://cliutils.github.io/CLI11/book-config.html),
+including its TOML/INI reader. Start with explicitly named environment variables
+and one explicit `--config FILE`; automatic user/project file discovery, profiles
+and merging multiple option files are deferred. Existing initialized application
+variables can supply fallback defaults without repeating their values in the
+binding. Precision-dependent defaults are evaluated after precision selection.
+
+CLI11 support for these sources does not itself implement the full precedence
+above. The adapter must preserve distinct source candidates until attributes
+are available; a CLI11 option count after parsing is not proof that the value
+came from argv. In particular, an environment fallback must not hide a
+higher-priority attribute, and an attribute must not overwrite an explicit CLI
+or option-file value. Do not implement this by changing advertised defaults
+after parsing or replaying option callbacks with side effects.
+
+Resolution must preserve these contracts:
+
+- Presence is explicit. Zero, `false`, an empty string and a missing source are
+  different states. An empty value is converted or rejected under the option's
+  contract; it does not silently activate the next fallback.
+- Every source uses the same checked value conversion and validation. A present
+  winning value that cannot be converted is an error identifying the option and
+  its source, not permission to try a lower-priority value. Invalid option-file
+  syntax and an explicitly requested unreadable file are errors as well.
+- Retain textual real values until the resolved precision is known, then use
+  native `parse_real<Real>` and checks in that type. Preserve already typed
+  attribute/API values through checked conversions without a `double` or
+  presentation-string intermediate. Half-integer inputs retain exact semantics.
+- Return owned values and origin descriptions together. Origins distinguish CLI,
+  API, file/key, input identifier/attribute, environment name and application
+  default. They must not borrow parser buffers, environment pointers or a loaded
+  object's attribute storage. Publishing them remains application-selected.
+- Using an attribute as an input does not mutate its source object. The
+  application can explicitly copy selected resolved settings into output-object
+  attributes when saving; reading fallback values and writing attributes are
+  separate operations.
+
+### Staged parsing and required values
+
+Input attributes may become available only after opening an input object. The
+shared coordinator therefore separates collecting sources from final required
+value and cross-option validation:
+
+1. Handle help/version/references/build-info before opening option files or
+   input objects. Keep ordinary syntax handling in CLI11.
+2. Read the explicitly selected option file and collect declared environment
+   sources. Resolve bootstrap settings such as input locations from the sources
+   already available. A file locator cannot depend on attributes from the file
+   it is needed to open, or on that file's own contents.
+3. Ask the application to load input attributes through its provider. This does
+   not initialize a solver or create output files.
+4. Resolve precision and remaining options, convert selected values, then check
+   requirements and application-level consistency across options. A required
+   Hamiltonian supplied by an attribute satisfies the requirement just as a CLI
+   value does. Missing values fail before numerical work begins.
+
+The binding adapter must defer requirements on attribute-backed values to this
+final resolution stage; leaving CLI11's early `required()` check active would
+reject valid input before the attribute is loaded. Bootstrap options keep their
+own earlier requirements. Help should describe a value as required from its
+allowed sources, without loading an object to guess its default. Applications
+with no attribute sources can use a single resolution step.
+
 ## 4. Typed run metadata
 
 A run contains ordered groups of fields. Each field has:
@@ -148,8 +258,8 @@ A run contains ordered groups of fields. Each field has:
 - Group membership and insertion order; groups also have stable order.
 - An owned value, optional units/description and a human display policy.
 - Compact/detail visibility, independent of whether a field is published.
-- Optional application-supplied origin information, separate from the value
-  (for example, the input identifier and attribute that supplied it).
+- Optional origin information, separate from the value: supplied with a resolved
+  option by the shared resolver, or provided by the application for other fields.
 
 Typical groups are Model, Numerics, Provenance, Background and Summary. These
 are application-selected labels, not mandatory physics concepts built into
@@ -247,10 +357,12 @@ complete fingerprint of untracked files, inputs or runtime libraries.
 The normal lifecycle is:
 
 1. Capture a timing anchor; parse or receive configuration.
-2. Handle help, references, version and build information without creating
-   output files or starting a calculation.
-3. Resolve precision/defaults, validate the model and known destination/table
-   selections, and construct the context from publishable application data.
+2. Handle help, references, version and build information without reading option
+   files or input objects, creating output files or starting a calculation.
+3. Collect declared configuration sources and input attributes using staged
+   resolution. Resolve precision/defaults, validate the model and known
+   destination/table selections, and construct the context from publishable
+   resolved values and origins.
 4. Start the output session and emit one compact human preamble before expensive
    numerical work. No preamble goes to machine stdout or quiet stdout.
 5. Perform background/solver work, add derived metadata and publish typed tables
@@ -472,16 +584,21 @@ to establish the design.
    Add a small parser-free Uni20 example. Pilot in Bethe's Hubbard dispersion
    frontend: its background solve, long point loop and precision choices exercise
    more of the lifecycle than a trivial one-row program.
-2. **Bethe metadata adoption.** Replace formatted-overview-to-metadata copying
+2. **Shared configuration resolution.** Add source bindings, precedence, owned
+   origins and staged required-value checks, with CLI11 adapters for declared
+   environment variables and an explicit option file. Exercise attribute
+   fallback through an in-memory provider in a Uni20 example; no persistent
+   store is required. Adopt option-file/environment bindings in the Bethe pilot.
+3. **Bethe metadata adoption.** Replace formatted-overview-to-metadata copying
    with typed fields, one model family at a time. Preserve existing machine keys
    through the compatibility projection. Build human overview and exports from
    that one source; remove the old bridge once no callers remain.
-3. **Session extraction.** Move generic file, comment and document coordination
+4. **Session extraction.** Move generic file, comment and document coordination
    into the parser-independent Uni20 layer, followed by optional CLI helpers.
    Port generic failure/replay tests, add destination-preservation and explicit
    flushing tests, then replace Bethe's adapter with a thin consumer. Exercise
    both single-table dispersion and a named-table model.
-4. **User-facing completion.** Enable staged preamble/final summaries and the
+5. **User-facing completion.** Enable staged preamble/final summaries and the
    explicitly reviewed run-summary export extension. Update output docs and
    regression fixtures. Only then assess issue #55 against its full checklist.
 
@@ -494,12 +611,15 @@ belong in Uni20; consumer integration tests should remain in Bethe as well.
 | Area | Required evidence |
 | --- | --- |
 | Ownership | Temporary strings/argument buffers can disappear; copied snapshots survive later context edits; bindings cannot outlive owned streams. |
-| Independent metadata | Owned values and immutable run snapshots work without an output session, parser or persistent store; input/source annotations do not change values or decide precedence. |
+| Independent metadata | Owned values, source resolution and immutable run snapshots work without CLI11, an output session or a persistent store; rendering origin annotations does not rerun resolution. |
+| Source resolution | Each adjacent precedence pair and a full-source conflict select the declared winner; options use only declared sources; zero/false/empty remain distinct from absence; invalid winning values report their origin and never silently fall back. |
+| Staged validation | An attribute satisfies a required option after input loading; missing values fail before solver/output initialization; help/version need no option file or input object; bootstrap locations do not depend on unavailable attributes. |
+| Source ownership | Origins survive parser/provider destruction; native real and half-integer conversions are consistent across sources; explicit CLI/file values beat attributes and attributes beat environment; reading options does not mutate input attributes. |
 | Native values | fp64, long-double and enabled fp128 metadata round-trip; exact positive/negative half-integers; missing/nonfinite values; formatting never narrows through `double`. |
 | Metadata | Stable identifiers, group/order preservation in documents, explicit replacement, duplicate/collision rejection and unchanged legacy export keys. |
 | Provenance | One run timestamp across tables; actual overridden dependency revision; dirty/unknown/archive cases; no dependence on runtime cwd. |
 | Publication | Omitted invocation stays absent in every report, snapshot and replay; only supplied fields are exported; supplied empty/control-containing tokens are preserved as data and escaped for each destination. |
-| Lifecycle | Help/references/version/build-info create no files; preamble before a slow solve; one final summary; table snapshots do not change retrospectively. |
+| Lifecycle | Help/references/version/build-info read no option files or input objects and create no outputs; preamble before a slow solve; one final summary; table snapshots do not change retrospectively. |
 | Routing | Warnings remain on stderr during plain streaming; machine stdout contains only the selected result format; quiet leaves file exports and stderr diagnostics enabled; one session does not capture another's events. |
 | Timing | Deterministic injected samples distinguish compute CPU, run CPU and elapsed; invalid clocks and nested scopes follow policy. |
 | Replay | Early/late/finished-table attachment; retained replay exactly once; explicit future-only offsets; rejected unavailable full histories. |
@@ -517,7 +637,8 @@ policy and normalize nondeterministic provenance/times, not weaken value checks.
 ## 10. Deferred work and decisions before implementation
 
 Not included: a general application framework, solver registry, global run
-singleton, model expression language, configuration-file abstraction,
+singleton, model expression language, automatic user/project configuration
+discovery, profiles or merging multiple option files,
 asynchronous sinks, generic credential detection/redaction, distributed or
 cumulative historical timing, persistent object attributes/history,
 checkpoint/restart, multi-run file append, Python bindings, or a replacement
@@ -528,6 +649,8 @@ Resolve these API details in a small prototype before freezing public names:
 
 - Namespace/header/target placement and the smallest owning field interface.
   Prefer common/presentation for context/documents, with opt-in I/O helpers.
+- The source-binding interface and CLI11 collection hooks that preserve origins
+  and defer attribute-backed requirements without duplicating option syntax.
 - The advanced table-binding handle's ownership contract. Start with the scoped
   convenience, but prove ordinary late attachment remains possible.
 - Human defaults for the extra timing fields and detailed provenance selection.
