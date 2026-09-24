@@ -1,4 +1,6 @@
 #include "output_session.hpp"
+#include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <sys/stat.h>
 #include <unistd.h>

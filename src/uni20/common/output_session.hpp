@@ -5,9 +5,20 @@
 #pragma once
 #include "data_table_sinks.hpp"
 #include "run_context.hpp"
+#include <cstddef>
+#include <exception>
 #include <filesystem>
-#include <fstream>
+#include <functional>
+#include <map>
+#include <memory>
+#include <optional>
+#include <ostream>
 #include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
 namespace uni20
 {

@@ -4,7 +4,17 @@
  */
 #pragma once
 #include "cli.hpp"
+#include <algorithm>
+#include <concepts>
+#include <cstddef>
+#include <cstdlib>
+#include <functional>
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <uni20/common/configuration.hpp>
+#include <utility>
+#include <vector>
 
 namespace uni20::cli
 {

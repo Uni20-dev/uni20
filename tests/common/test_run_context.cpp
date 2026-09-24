@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
+#include <memory>
+#include <type_traits>
 #include <uni20/common/configuration.hpp>
 #include <uni20/common/run_context.hpp>
 #include <uni20/common/terminal.hpp>
+#include <utility>
 
 using namespace uni20;
 
@@ -36,6 +39,11 @@ TEST(Metadata, CheckedConversions)
   EXPECT_EQ(metadata_value(basic_half_int<short>::parse("7/2")).as<half_int>(), half_int::parse("3.5"));
   EXPECT_THROW((void)metadata_value(half_int(64)).as<basic_half_int<signed char>>(), std::overflow_error);
   EXPECT_THROW((void)metadata_value(numeric_limits<double>::max()).as<float>(), std::out_of_range);
+#if UNI20_HAS_FLOAT128
+  // Standard-library limits may be unspecialized for the configured extension scalar.
+  // Its actual exponent range must keep widening from being misdiagnosed as overflow.
+  EXPECT_EQ(metadata_value(1.5).as<uni20::float128>(), uni20::float128(1.5));
+#endif
   EXPECT_FALSE(metadata_value("false").as<bool>());
   EXPECT_EQ(metadata_value(std::optional<int>(0)).as<long>(), 0);
   EXPECT_THROW((void)metadata_value(static_cast<char const*>(nullptr)), std::invalid_argument);
@@ -167,6 +175,38 @@ TEST(RunContext, DeterministicDisjointTimingAndFrozenSnapshots)
   EXPECT_THROW((void)run.metadata(), std::logic_error);
   EXPECT_THROW((void)run.computation(), std::logic_error);
   EXPECT_THROW((void)run.finish(run_outcome::success), std::logic_error);
+}
+
+TEST(RunContext, MeasurePreservesCallableResultTypeAndCategory)
+{
+  run_context run({.name = "solver"}, {.clock = [] { return run_clock_sample{0, 0}; }, .utc = [] { return "fixed"; }});
+  auto value = [] { return 42; };
+  static_assert(std::is_same_v<decltype(run.measure(value)), int>);
+  EXPECT_EQ(run.measure(value), 42);
+
+  auto move_only = [] { return std::make_unique<int>(7); };
+  static_assert(std::is_same_v<decltype(run.measure(move_only)), std::unique_ptr<int>>);
+  auto owned = run.measure(move_only);
+  EXPECT_EQ(*owned, 7);
+
+  int number = 3;
+  auto reference = [&]() -> int& { return number; };
+  static_assert(std::is_same_v<decltype(run.measure(reference)), int&>);
+  EXPECT_EQ(&run.measure(reference), &number);
+  auto const_reference = [&]() -> int const& { return number; };
+  static_assert(std::is_same_v<decltype(run.measure(const_reference)), int const&>);
+  EXPECT_EQ(&run.measure(const_reference), &number);
+
+  auto move_reference = [&]() -> std::unique_ptr<int>&& { return std::move(owned); };
+  static_assert(std::is_same_v<decltype(run.measure(move_reference)), std::unique_ptr<int>&&>);
+  auto transferred = run.measure(move_reference);
+  EXPECT_EQ(*transferred, 7);
+  EXPECT_FALSE(owned);
+
+  auto no_value = [&] { number = 9; };
+  static_assert(std::is_void_v<decltype(run.measure(no_value))>);
+  run.measure(no_value);
+  EXPECT_EQ(number, 9);
 }
 
 TEST(RunContext, ScopeMisuseExceptionsAndUnavailableClock)

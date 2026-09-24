@@ -1,9 +1,14 @@
 #include "run_context.hpp"
 #include "terminal.hpp"
+#include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <fmt/format.h>
+#include <stdexcept>
 #include <sys/resource.h>
 #include <uni20/buildinfo.hpp>
+#include <uni20/core/math.hpp>
+#include <utility>
 
 namespace uni20
 {
@@ -11,7 +16,7 @@ namespace
 {
 std::optional<long double> difference(std::optional<long double> end, std::optional<long double> begin)
 {
-  if (!end || !begin || !std::isfinite(*end) || !std::isfinite(*begin) || *end < *begin) return std::nullopt;
+  if (!end || !begin || !uni20::isfinite(*end) || !uni20::isfinite(*begin) || *end < *begin) return std::nullopt;
   return *end - *begin;
 }
 } // namespace

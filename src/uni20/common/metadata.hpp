@@ -4,9 +4,28 @@
  */
 #pragma once
 #include "data_table.hpp"
+#include "half_int.hpp"
+#include <algorithm>
 #include <any>
 #include <charconv>
+#include <concepts>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <tuple>
 #include <typeindex>
+#include <uni20/core/math.hpp>
+#include <uni20/core/numeric_limits.hpp>
+#include <uni20/core/scalar_concepts.hpp>
+#include <uni20/core/scalar_io.hpp>
+#include <uni20/core/types.hpp>
+#include <utility>
+#include <vector>
 
 namespace uni20
 {
@@ -84,11 +103,11 @@ class metadata_value {
             if (auto p = std::any_cast<U>(&scalar))
             {
               if constexpr (Real<T> && Real<U>)
-                if constexpr (numeric_limits<U>::max_exponent > numeric_limits<T>::max_exponent ||
-                              (numeric_limits<U>::max_exponent == numeric_limits<T>::max_exponent &&
-                               numeric_limits<U>::digits >= numeric_limits<T>::digits))
-                  if (uni20::isfinite(*p) &&
-                      (*p > static_cast<U>(numeric_limits<T>::max()) || *p < -static_cast<U>(numeric_limits<T>::max())))
+                if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
+                              (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
+                               uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
+                  if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
+                                              *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
                     throw std::out_of_range("real conversion overflow");
               auto converted = dt::convert<T>(*p);
               result = std::move(converted);

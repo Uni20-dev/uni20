@@ -6,6 +6,12 @@
 #include "metadata.hpp"
 #include "program.hpp"
 #include <functional>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace uni20
 {

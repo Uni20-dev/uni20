@@ -4,9 +4,18 @@
  */
 #pragma once
 #include "metadata.hpp"
+#include <algorithm>
 #include <cstdlib>
+#include <exception>
 #include <functional>
+#include <map>
+#include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace uni20
 {

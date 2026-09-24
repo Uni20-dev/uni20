@@ -1,3 +1,4 @@
+#include <fstream>
 #include <gtest/gtest.h>
 #include <sstream>
 #include <uni20/common/output_session.hpp>

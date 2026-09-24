@@ -4,7 +4,14 @@
  */
 #pragma once
 #include "cli.hpp"
+#include <cstdio>
+#include <filesystem>
+#include <map>
+#include <stdexcept>
+#include <string>
 #include <uni20/common/output_session.hpp>
+#include <utility>
+#include <vector>
 
 namespace uni20::cli
 {
