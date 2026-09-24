@@ -21,6 +21,10 @@ or symmetry layers.
   terminal/file adapters with replay, projection and explicit finalization.
 - `program.hpp`: parser-independent application identity, banners and help documents.
   CLI11 integration lives in the optional [`../cli/`](../cli/) module.
+- `metadata.hpp`, `configuration.hpp`: owned native metadata, immutable snapshots,
+  checked source resolution, origins and explicit attribute copying.
+- `run_context.hpp`, `output_session.hpp`: run provenance/timing, grouped reports,
+  owned table outputs, replay, finalization and I/O failure reporting.
 - `aligned_buffer.hpp`, `static_vector.hpp`: small storage utilities.
 - `nifty_counter.hpp`: ordered one-time initialization and finalization shared
   by namespace-scope users across translation units.
@@ -40,4 +44,5 @@ or symmetry layers.
 - [Diagnostics and presentation](../../../docs/diagnostics/)
 - [Presentation formatting](../../../docs/diagnostics/presentation.md)
 - [Typed data tables](../../../docs/diagnostics/data_tables.md)
+- [Using run contexts](../../../docs/diagnostics/run_context_usage.md)
 - [Trace macros and failure policy](../../../docs/diagnostics/trace_macros.md)

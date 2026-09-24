@@ -187,6 +187,8 @@ class streaming_table {
     streaming_table& column(std::string heading, presentation::table_alignment alignment, column_format format);
     streaming_table& wrap_width(std::size_t width);
     streaming_table& header_separator(bool enabled = true);
+    /// \brief Route this table through an instance-owned sink and policy, without changing global display routing.
+    streaming_table& output(sink destination, presentation::output_policy policy);
 
     /// \brief Emit preformatted cells without discarding their numeric alignment semantics.
     void row(std::vector<formatted_cell> cells, std::source_location where = std::source_location::current());
@@ -217,11 +219,13 @@ class streaming_table {
     bool header_emitted_ = false;
     bool widths_resolved_ = false;
     bool vertical_fallback_ = false;
+    sink output_ = {};
 
     void ensure_can_change_schema() const;
     void resolve_widths();
     void expand_fit_columns(std::vector<formatted_cell> const& cells);
     void emit_rows(std::vector<formatted_cell> const& cells, std::source_location where);
+    void emit_text(presentation::styled_text text, bool newline, std::source_location where);
 };
 
 /// \brief Create a schema-first streaming display table.

@@ -60,11 +60,11 @@ inline bool no_color_requested()
 
 inline std::string quote_shell(std::string_view s)
 {
-  // Characters that require quoting/escaping
-  constexpr std::string_view special_chars = " \t()[]*\\\"";
+  // Tokens outside this conservative POSIX-safe alphabet need double quotes.
+  constexpr std::string_view safe_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-";
 
-  // Check if any character in s is one of the special ones
-  bool needs_quote = std::ranges::any_of(s, [&](char c) { return special_chars.find(c) != std::string_view::npos; });
+  bool needs_quote =
+      s.empty() || std::ranges::any_of(s, [&](char c) { return safe_chars.find(c) == std::string_view::npos; });
 
   if (needs_quote)
   {
@@ -77,9 +77,10 @@ inline std::string quote_shell(std::string_view s)
       {
         result.append("\\\\");
       }
-      else if (c == '"')
+      else if (c == '"' || c == '$' || c == '`')
       {
-        result.append("\\\"");
+        result.push_back('\\');
+        result.push_back(c);
       }
       else
       {

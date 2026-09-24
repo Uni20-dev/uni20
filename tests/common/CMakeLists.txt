@@ -5,6 +5,7 @@ add_test_module(common
           test_aligned_buffer.cpp test_floating_eq.cpp test_namedenum.cpp test_string_util.cpp
           test_trace_format.cpp test_terminal_utils.cpp test_presentation.cpp test_display.cpp test_nifty_counter.cpp
           test_process.cpp test_performance_measurements.cpp test_initialization.cpp test_half_int.cpp test_data_table.cpp test_data_table_streaming.cpp test_data_table_json.cpp test_program.cpp
+          test_run_context.cpp test_output_session.cpp
   LIBS uni20_common mdspan
 )
 

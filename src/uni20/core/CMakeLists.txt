@@ -4,6 +4,11 @@ add_library(uni20_core INTERFACE)
 
 target_link_libraries(uni20_core INTERFACE uni20_deps)
 
+include(Uni20Provenance)
+set(UNI20_SOURCE_REVISION "" CACHE STRING "Explicit source revision for archive or externally managed builds")
+uni20_target_provenance(uni20_deps HEADER uni20/source_revision.hpp NAMESPACE uni20::build_info
+  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../.." REVISION "${UNI20_SOURCE_REVISION}")
+
 function(uni20_escape_for_c output_var value)
   string(REPLACE "\\" "\\\\" _escaped "${value}")
   string(REPLACE "\"" "\\\"" _escaped "${_escaped}")

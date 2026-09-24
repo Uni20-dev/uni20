@@ -1,5 +1,8 @@
 # Command-line applications
 
+For shared configuration sources, staged input-attribute requirements, run
+metadata and output controls, see [Using Run Contexts](run_context_usage.md).
+
 Uni20 uses CLI11 for option parsing and the presentation layer for help,
 application banners, version/build information and usage errors. Applications
 declare options directly on `CLI::App`; there is no second option-definition

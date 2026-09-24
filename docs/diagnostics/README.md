@@ -11,6 +11,8 @@ diagnostics, and Graphviz output.
   glyphs, width-aware layout, reports, tables, and Tensor previews.
 - [Typed Data Tables](data_tables.md) documents owning typed results, checked
   insertion, deferred display formatting, CSV/TSV/JSON export, and streaming sinks.
+- [Using Run Contexts](run_context_usage.md) covers typed metadata, configuration
+  sources, provenance/timing, owned output sessions and runnable examples.
 - [Trace Macros](trace_macros.md) documents `CHECK`, `PANIC`, `ERROR`, tracing,
   stacktraces, and presentation-layer rendering.
 - [Graphviz Basics](graphviz.md) is the developer reference used by async DAG
@@ -18,9 +20,8 @@ diagnostics, and Graphviz output.
 
 ## Design And Forward Work
 
-- [Run Context and Output Sessions](run_context.md) proposes shared configuration
-  sources, typed run metadata, provenance, human reports and owned output
-  sessions, with Bethe as the first consumer.
+- [Run Context and Output Sessions](run_context.md) records the shared design,
+  implementation boundaries and remaining Bethe adoption work.
 - [Display Layer](display_layer.md) records implemented display/report slices
   and remaining sink, Python, async-queue, and context work.
 - [Diagnostics and Logging](logging_plan.md) is a design note for durable and

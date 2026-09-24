@@ -1,9 +1,19 @@
 # Shared run context, provenance, and output sessions
 
-Status: design proposal, 2026-09-24. The configuration resolver, run context and
-output session described here are not implemented. This is the canonical shared
-design; consumer adoption plans should link here rather than maintain another
-copy.
+Status: shared Uni20 implementation, 2026-09-24. The owning metadata layer,
+configuration resolver and CLI11 adapter, run context/timing/provenance, and owned
+output sessions are implemented. See [Using Run Contexts](run_context_usage.md)
+for the concrete APIs, examples and supported boundaries. This document retains
+the design rationale and consumer-adoption plan; illustrative API names below
+are design sketches, not the concrete interface.
+
+Bethe migration remains separate work. Automatic configuration discovery,
+multi-file profiles, full-document replay, persistence/history storage, typed
+metadata JSON, asynchronous output and distributed timing remain deferred.
+The first CLI binding adapter handles independent scalar options and boolean
+flags; cross-field checks run after resolution. The explicit `named_json`
+envelope carries a run summary after per-table summaries without changing the
+existing single-table JSON format.
 
 Scope: [Uni20 issue #55](https://github.com/Uni20-dev/uni20/issues/55), following
 the CLI/presentation and data-table work. CLI11 is already the selected parser;
