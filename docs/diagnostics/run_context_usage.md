@@ -264,7 +264,11 @@ attribute or export names, and the unmapped default uses canonical field IDs.
 
 Files use exclusive creation unless overwrite is explicit. Preflight rejects
 aliases by path, symlink, hard link, shared stream buffer and redirected stdout
-before opening new destinations. It is not a filesystem transaction or an
+before opening new destinations. Once a destination has opened, `file`, `stream`
+and `standard_output` preflight each new registration; a rejected addition is
+not retained and consumes no destination ID. Existing outputs can continue and
+finish after the caller catches that error. Initial registrations are checked
+together at `open()`. It is not a filesystem transaction or an
 adversarial race defense. Opening multiple destinations can leave partial files.
 Machine files buffer output by default; human terminal output flushes its
 preamble and each displayed row so live results are visible immediately.

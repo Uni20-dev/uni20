@@ -104,9 +104,8 @@ std::size_t output_session::file(std::filesystem::path path, output_format forma
   if (finished_) throw std::logic_error("output session is finished");
   if (path.empty()) throw std::invalid_argument("empty output path");
   auto id = outputs_.size();
-  outputs_.push_back(std::make_shared<output_detail::destination>(output_detail::destination{
+  return this->register_destination(std::make_shared<output_detail::destination>(output_detail::destination{
       .id = id, .name = path.string(), .format = format, .options = std::move(options), .path = std::move(path)}));
-  return id;
 }
 std::size_t output_session::stream(std::string name, std::shared_ptr<std::ostream> out, output_format format,
                                    output_destination_options options, std::function<void()> close)
@@ -114,19 +113,42 @@ std::size_t output_session::stream(std::string name, std::shared_ptr<std::ostrea
   if (finished_) throw std::logic_error("output session is finished");
   if (!out) throw std::invalid_argument("null output stream");
   auto id = outputs_.size();
-  outputs_.push_back(
+  return this->register_destination(
       std::make_shared<output_detail::destination>(output_detail::destination{.id = id,
                                                                               .name = std::move(name),
                                                                               .format = format,
                                                                               .options = std::move(options),
                                                                               .stream = std::move(out),
                                                                               .close = std::move(close)}));
-  return id;
 }
 std::size_t output_session::standard_output(output_format format, output_destination_options options)
 {
-  auto id = this->stream("stdout", std::shared_ptr<std::ostream>(&std::cout, [](auto*) {}), format, std::move(options));
-  outputs_[id]->suppressed = quiet_;
+  if (finished_) throw std::logic_error("output session is finished");
+  return this->register_destination(std::make_shared<output_detail::destination>(
+      output_detail::destination{.id = outputs_.size(),
+                                 .name = "stdout",
+                                 .format = format,
+                                 .options = std::move(options),
+                                 .stream = std::shared_ptr<std::ostream>(&std::cout, [](auto*) {}),
+                                 .suppressed = quiet_}));
+}
+std::size_t output_session::register_destination(std::shared_ptr<output_detail::destination> destination)
+{
+  auto id = destination->id;
+  outputs_.push_back(std::move(destination));
+  if (std::ranges::any_of(outputs_, [](auto const& d) { return d->opened; }))
+  {
+    // Once output has started, a rejected addition must not prevent existing streams from finishing.
+    try
+    {
+      this->preflight();
+    }
+    catch (...)
+    {
+      outputs_.pop_back();
+      throw;
+    }
+  }
   return id;
 }
 void output_session::preflight() const

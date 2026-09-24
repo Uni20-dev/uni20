@@ -179,6 +179,8 @@ class table_sink {
 /// \details Single-caller. Finish tables before finishing the session. Destruction only releases resources;
 ///          it never certifies successful output. Failures disable the destination, all other destinations
 ///          are attempted, and required failures are thrown after delivery. Rows are never retried.
+///          After a destination has opened, registration preflights new additions and rolls them back on error,
+///          leaving existing destinations usable. Initial registrations are preflighted together at open().
 class output_session {
   public:
     explicit output_session(metadata_document initial = {}, bool quiet = false)
@@ -272,6 +274,7 @@ class output_session {
     }
 
     std::vector<std::shared_ptr<output_detail::destination>> select(std::vector<std::size_t> const& ids) const;
+    std::size_t register_destination(std::shared_ptr<output_detail::destination> destination);
     void preflight() const;
     output_report checked_report() const;
     metadata_document initial_;

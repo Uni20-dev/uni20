@@ -458,6 +458,58 @@ TEST(OutputSession, ExclusiveFilesAliasesAndOverwrite)
   EXPECT_EQ(header, "n\tenergy");
 }
 
+TEST(OutputSession, InvalidLateFilesAreRejectedWithoutBlockingExistingOutput)
+{
+  directory dir;
+  auto path = dir.path / "results.json";
+  output_session session;
+  session.file(path, output_format::named_json);
+  auto data = table();
+  session.attach(data, "results");
+  data.append(1, 2.L);
+
+  EXPECT_THROW(session.file(path, output_format::tsv), std::invalid_argument);
+  auto alias = dir.path / "alias.json";
+  std::filesystem::create_hard_link(path, alias);
+  EXPECT_THROW(session.file(alias, output_format::tsv), std::invalid_argument);
+  EXPECT_THROW(session.file(dir.path, output_format::tsv), std::invalid_argument);
+
+  auto late_path = dir.path / "late.tsv";
+  auto late = session.file(late_path, output_format::tsv);
+  EXPECT_EQ(late, 1U); // Rejected additions leave no destination or consumed ID behind.
+  session.attach(data, "results", p::sink_replay::all, {late});
+  data.append(2, 3.L);
+  data.finish();
+  EXPECT_NO_THROW(session.finish());
+  EXPECT_TRUE(session.report().failures.empty());
+  std::ifstream json_file(path);
+  std::ostringstream json;
+  json << json_file.rdbuf();
+  EXPECT_NE(json.str().find("\"rows\":[[1,\"2\"],[2,\"3\"]]"), std::string::npos);
+  EXPECT_TRUE(json.str().ends_with("],\"summary\":{},\"status\":\"complete\"}"));
+  std::ifstream tsv_file(late_path);
+  std::ostringstream tsv;
+  tsv << tsv_file.rdbuf();
+  EXPECT_EQ(tsv.str(), "n\tenergy\n1\t2\n2\t3\n");
+}
+
+TEST(OutputSession, InvalidLateStreamsAreRejectedAndExistingCloserStillRuns)
+{
+  auto out = std::make_shared<std::ostringstream>();
+  output_session session;
+  int closes = 0;
+  session.stream("original", out, output_format::named_json, {}, [&] { ++closes; });
+  auto data = table();
+  data.append(1, 2.L);
+  session.write_table(data, "results");
+  EXPECT_THROW(session.stream("alias", out, output_format::tsv), std::invalid_argument);
+  EXPECT_NO_THROW(session.finish());
+  EXPECT_EQ(closes, 1);
+  EXPECT_TRUE(out->str().ends_with("],\"summary\":{},\"status\":\"complete\"}"));
+  EXPECT_NO_THROW(session.finish());
+  EXPECT_EQ(closes, 1);
+}
+
 TEST(OutputSession, QuietSuppressesMachineStdoutButRetainsFiles)
 {
   directory dir;
