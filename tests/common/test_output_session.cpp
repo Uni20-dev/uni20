@@ -89,7 +89,7 @@ TEST(OutputSession, NamedJsonSequentialDifferentSchemasAndFinalSummary)
   first.append(1, -1.L);
   session.write_table(first, "spectrum", {{"local", "first"}});
   auto second = p::make_data_table("Status", p::data_column<bool>("converged"));
-  second.append(true);
+  second.append(false); // A completely written document can contain unconverged scientific results.
   session.write_table(second, "status");
   metadata_document summary;
   summary.group("summary");
@@ -98,7 +98,28 @@ TEST(OutputSession, NamedJsonSequentialDifferentSchemasAndFinalSummary)
   auto text = out->str();
   EXPECT_TRUE(text.starts_with("{\"tables\":[{\"name\":\"spectrum\""));
   EXPECT_NE(text.find("},{\"name\":\"status\""), std::string::npos);
-  EXPECT_TRUE(text.ends_with("],\"summary\":{\"outcome\":\"partial\"},\"status\":\"partial\"}"));
+  EXPECT_TRUE(text.ends_with("],\"summary\":{\"outcome\":\"partial\"},\"status\":\"complete\"}"));
+}
+
+TEST(OutputSession, DocumentCompletionDoesNotRequireScientificOutcome)
+{
+  auto out = std::make_shared<std::ostringstream>();
+  output_session session;
+  session.stream("json", out, output_format::named_json);
+  session.finish();
+  EXPECT_EQ(out->str(), "{\"tables\":[],\"summary\":{},\"status\":\"complete\"}");
+}
+
+TEST(OutputSession, UnfinishedTableDoesNotCertifyDocumentCompletion)
+{
+  auto out = std::make_shared<std::ostringstream>();
+  output_session session;
+  session.stream("json", out, output_format::named_json);
+  auto data = table();
+  session.attach(data, "results");
+  data.append(1, 2.L);
+  EXPECT_THROW(session.finish(), output_error);
+  EXPECT_EQ(out->str().find("\"status\":\"complete\""), std::string::npos);
 }
 
 TEST(OutputSession, SnapshotExportLeavesSourceAndOtherSubscriptionsOpen)
@@ -132,19 +153,111 @@ TEST(OutputSession, CommentMetadataEscapesControlsAndCanBeSuppressed)
 {
   auto doc = initial();
   doc.add("model", "note", "line1\nline2\r\x1b");
-  for (bool preamble : {false, true})
+  for (auto format : {output_format::commented_csv, output_format::commented_tsv})
+    for (bool preamble : {false, true})
+    {
+      auto out = std::make_shared<std::ostringstream>();
+      output_session session(doc);
+      session.stream("commented", out, format, {.preamble = preamble});
+      auto data = table();
+      data.append(1, 2.L);
+      session.write_table(data, "results");
+      session.finish(doc);
+      if (preamble)
+        EXPECT_NE(out->str().find("# note: line1\\x0aline2\\x0d\\x1b\n"), std::string::npos);
+      else
+        EXPECT_EQ(out->str(), format == output_format::commented_csv ? "n,energy\n1,2\n" : "n\tenergy\n1\t2\n");
+    }
+}
+
+TEST(OutputSession, MetadataKeysApplyToInitialAndFinalExportsWithoutChangingHumanLabels)
+{
+  auto doc = initial();
+  metadata_document summary;
+  summary.group("summary");
+  summary.add("summary", "outcome", "partial");
+  std::map<std::string, std::string> keys{{"u", "Interaction"}, {"outcome", "Scientific outcome"}};
+  output_session session(doc);
+  auto csv = std::make_shared<std::ostringstream>();
+  auto json = std::make_shared<std::ostringstream>();
+  auto human = std::make_shared<std::ostringstream>();
+  session.stream("csv", csv, output_format::commented_csv, {.metadata_keys = keys});
+  session.stream("json", json, output_format::named_json, {.metadata_keys = keys});
+  session.stream("human", human, output_format::terminal, {.metadata_keys = keys});
+  auto data = table();
+  data.append(1, 2.L);
+  session.write_table(data, "results", {{"local", "done"}});
+  session.finish(summary);
+  EXPECT_EQ(csv->str(), "# Interaction: 4\nn,energy\n1,2\n# local: done\n# Scientific outcome: partial\n");
+  EXPECT_NE(json->str().find("\"metadata\":{\"Interaction\":\"4\"}"), std::string::npos);
+  EXPECT_TRUE(json->str().ends_with("\"summary\":{\"Scientific outcome\":\"partial\"},\"status\":\"complete\"}"));
+  EXPECT_EQ(human->str().find("Interaction"), std::string::npos);
+  EXPECT_EQ(human->str().find("Scientific outcome"), std::string::npos);
+  EXPECT_NE(human->str().find("outcome"), std::string::npos);
+  EXPECT_EQ(doc.strings().at("u"), "4"); // The session never renames the source document.
+}
+
+TEST(OutputSession, MetadataMappingCollisionsDisableOnlyTheAffectedDestination)
+{
+  auto doc = initial();
+  doc.add("model", "v", 5);
+  auto good = std::make_shared<std::ostringstream>();
+  auto bad = std::make_shared<std::ostringstream>();
+  output_session session(doc);
+  // Renaming into an unmapped field must also be rejected.
+  session.stream("bad", bad, output_format::named_json, {.metadata_keys = {{"u", "v"}}});
+  session.stream("good", good, output_format::named_json);
+  auto data = table();
+  data.append(1, 2.L);
+  EXPECT_THROW(session.write_table(data, "results"), output_error);
+  EXPECT_TRUE(bad->str().empty());
+  EXPECT_THROW(session.finish(), output_error);
+  EXPECT_TRUE(good->str().ends_with("\"status\":\"complete\"}"));
+
+  output_session finishing;
+  auto bad_summary = std::make_shared<std::ostringstream>();
+  auto good_summary = std::make_shared<std::ostringstream>();
+  finishing.stream("bad", bad_summary, output_format::named_json, {.metadata_keys = {{"outcome", "reason"}}});
+  finishing.stream("good", good_summary, output_format::named_json);
+  EXPECT_NO_THROW(finishing.open()); // Final-summary fields need not exist in the initial snapshot.
+  metadata_document summary;
+  summary.group("summary");
+  summary.add("summary", "outcome", "partial");
+  summary.add("summary", "reason", "not converged");
+  EXPECT_THROW(finishing.finish(summary), output_error);
+  EXPECT_EQ(finishing.report().failures.front().operation, output_operation::finish);
+  EXPECT_EQ(bad_summary->str().find("\"status\":\"complete\""), std::string::npos);
+  EXPECT_TRUE(good_summary->str().ends_with("\"status\":\"complete\"}"));
+}
+
+TEST(OutputSession, MappedRunKeysStillRejectTableMetadataCollisions)
+{
+  auto out = std::make_shared<std::ostringstream>();
+  output_session session(initial());
+  session.stream("json", out, output_format::json, {.metadata_keys = {{"u", "Interaction"}}});
+  auto data = p::make_data_table("Results", {.metadata = {{"Interaction", "table value"}}}, p::data_column<int>("n"));
+  EXPECT_THROW(session.attach(data, "results"), output_error);
+  EXPECT_TRUE(out->str().empty());
+}
+
+TEST(OutputSession, DelimitedFormatsShareQuotingAndOnlyCommentedFormatsEmitMetadata)
+{
+  for (auto format :
+       {output_format::csv, output_format::tsv, output_format::commented_csv, output_format::commented_tsv})
   {
+    char delimiter = format == output_format::csv || format == output_format::commented_csv ? ',' : '\t';
     auto out = std::make_shared<std::ostringstream>();
-    output_session session(doc);
-    session.stream("commented", out, output_format::commented_tsv, {.preamble = preamble});
-    auto data = table();
-    data.append(1, 2.L);
-    session.write_table(data, "results");
-    session.finish(doc);
-    if (preamble)
-      EXPECT_NE(out->str().find("# note: line1\\x0aline2\\x0d\\x1b\n"), std::string::npos);
-    else
-      EXPECT_EQ(out->str(), "n\tenergy\n1\t2\n");
+    output_session session(initial());
+    session.stream("delimited", out, format);
+    auto data = p::make_data_table("Quoted strings", p::data_column<int>("n"), p::data_column<std::string>("text"));
+    data.append(1, "comma,tab\tquote\"\nnext line");
+    session.write_table(data, "results", {{"local", "done"}});
+    session.finish();
+    std::string expected =
+        std::string("n") + delimiter + "text\n1" + delimiter + "\"comma,tab\tquote\"\"\nnext line\"\n";
+    if (format == output_format::commented_csv || format == output_format::commented_tsv)
+      expected = "# u: 4\n" + expected + "# local: done\n";
+    EXPECT_EQ(out->str(), expected);
   }
 }
 

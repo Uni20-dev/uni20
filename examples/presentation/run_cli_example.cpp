@@ -28,6 +28,24 @@ void calculate(arguments const& args, p::program_info const& program, uni20::met
       run.metadata().add("parameters", field.id, field.id == "u" ? uni20::metadata_value(interaction) : field.value,
                          field.options);
   auto output = args.output.session(run.snapshot());
+  if (!args.output.quiet && !args.output.no_preamble)
+  {
+    auto& explanation = args.output.format == "terminal" && args.output.path.empty() ? std::cout : std::cerr;
+    explanation << "Example: staged configuration, selected numerical precision, and result export.\n"
+                   "Values are resolved from CLI > option file > input attributes > environment > defaults.\n"
+                   "After selecting precision, U is parsed and sample rows use energy = U/(point+1),\n"
+                   "with the selected spin repeated in each row. These illustrate output, not a physical solver.\n"
+                   "The terminal shows energy to six decimal places; exports preserve numerical precision.\n"
+                << "Points: " << args.points << "; precision: " << args.precision
+                << "; output format: " << args.output.format << ".\n";
+    if (args.output.path.empty())
+      explanation << "Primary results are written to stdout.\n";
+    else
+      explanation << "Primary results are written to " << std::filesystem::path(args.output.path) << ".\n";
+    for (auto const& specification : args.output.exports)
+      explanation << "Additional export (format:path): " << specification << '\n';
+    explanation << '\n' << std::flush;
+  }
   auto table =
       p::make_data_table("Illustrative dispersion", p::data_column<unsigned>("point"),
                          p::data_column<uni20::half_int>("spin").fractional(), p::data_column<Real>("energy").fixed(6));
@@ -49,7 +67,9 @@ int main(int argc, char** argv)
       .version = "1",
       .revision = std::string(run_cli_build::source_revision),
       .examples = {{"run_cli_example --U=4.000000000000000001 --format=named-json", "Native long-double output"},
-                   {"run_cli_example --config=job.toml --input=state.ini", "File and saved-attribute fallbacks"}}};
+                   {"run_cli_example --config=job.toml --input=state.ini", "File and saved-attribute fallbacks"},
+                   {"run_cli_example --export=csv:results.csv --export=named-json:results.json",
+                    "Live terminal output with two full-precision file exports"}}};
   arguments args;
   CLI::App app;
   c::configure(app, program);

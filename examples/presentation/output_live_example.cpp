@@ -5,13 +5,25 @@ int main(int argc, char** argv)
 {
   if (argc != 2)
   {
-    std::cerr << "Usage: output_live_example NEW_OUTPUT_DIRECTORY\n";
+    std::cerr << "Usage: output_live_example OUTPUT_DIRECTORY\n"
+                 "Use an existing directory; results.tsv and results.json must not already exist.\n";
     return 1;
   }
   namespace p = uni20::presentation;
   try
   {
     std::filesystem::path directory(argv[1]);
+    std::cout << "Example: one result table, different output columns and formatting.\n"
+                 "Four illustrative rows use energy = -1/(step+1); no solver is run.\n"
+                 "The live table selects only step and energy, with energy shown to four decimal places.\n"
+                 "The TSV and JSON files retain all three columns: step, energy and residual,\n"
+                 "using full numerical precision. Residual is missing at step 0 (empty in TSV,\n"
+                 "null in JSON), then equals 1/(10*step).\n"
+                 "The final 'partial' scientific outcome illustrates results without convergence;\n"
+                 "the JSON document status is still 'complete' because all output was written.\n"
+              << "TSV file: " << directory / "results.tsv" << '\n'
+              << "JSON file: " << directory / "results.json" << "\n\n"
+              << std::flush;
     uni20::run_context run({.name = "live-sweep"});
     run.metadata().group("model");
     run.metadata().add("model", "interaction", 4.L);

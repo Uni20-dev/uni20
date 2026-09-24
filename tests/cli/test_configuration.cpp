@@ -79,6 +79,55 @@ TEST(CliOutput, CommonControlsAreIndependentOfRunMetadataAndOpenNoFilesDuringHel
   options.format = "invalid";
   EXPECT_THROW((void)options.session(), std::invalid_argument);
 }
+
+TEST(CliOutput, RepeatableExportsParseIndependentlyOfThePrimaryDestination)
+{
+  CLI::App app;
+  c::configure(app, {.name = "probe"});
+  c::output_options options;
+  c::add_output_options(app, options);
+  char const* argv[]{"probe", "--format=tsv", "--export=csv:first.csv", "--export=named-json:dir/second:part.json"};
+  ASSERT_EQ(c::parse(app, 4, argv, {.empty = c::no_arguments::run}).requested, c::action::run);
+  EXPECT_EQ(options.format, "tsv");
+  EXPECT_TRUE(options.path.empty());
+  EXPECT_EQ(options.exports, (std::vector<std::string>{"csv:first.csv", "named-json:dir/second:part.json"}));
+  EXPECT_NO_THROW((void)options.session()); // Validation and construction never open the requested paths.
+}
+
+TEST(CliOutput, InvalidExportsAreRejectedForCliAndDirectCallers)
+{
+  for (auto const& specification : {"csv", "csv:", ":results", "unknown:results"})
+  {
+    CLI::App app;
+    c::configure(app, {.name = "probe"});
+    c::output_options options;
+    c::add_output_options(app, options);
+    char const* argv[]{"probe", "--export", specification};
+    EXPECT_EQ(c::parse(app, 3, argv).requested, c::action::error);
+    options.exports = {specification};
+    EXPECT_THROW((void)options.session(), std::invalid_argument);
+  }
+}
+
+TEST(CliOutput, SessionPassesApplicationMetadataKeysToDestinations)
+{
+  c::output_options options{.format = "named-json"};
+  uni20::metadata_document initial;
+  initial.group("run");
+  initial.add("run", "program", "probe");
+  uni20::metadata_document summary;
+  summary.group("summary");
+  summary.add("summary", "outcome", "failed");
+  testing::internal::CaptureStdout();
+  auto session = options.session(initial, {{"program", "Program"}, {"outcome", "Outcome"}});
+  auto data = uni20::presentation::make_data_table("Results", uni20::presentation::data_column<int>("n"));
+  data.append(1);
+  session.write_table(data, "results");
+  session.finish(summary);
+  auto text = testing::internal::GetCapturedStdout();
+  EXPECT_NE(text.find("\"Program\":\"probe\""), std::string::npos);
+  EXPECT_TRUE(text.ends_with("\"summary\":{\"Outcome\":\"failed\"},\"status\":\"complete\"}"));
+}
 } // namespace
 
 TEST(CliConfiguration, DefaultsAttributesEnvironmentAndCliUseOriginalValidators)

@@ -27,14 +27,21 @@ void destination::comments(presentation::table_metadata const& fields)
   for (auto const& [key, value] : fields)
     *stream << "# " << metadata_line(key) << ": " << metadata_line(value) << '\n';
 }
+presentation::table_metadata destination::metadata_fields(metadata_document const& metadata) const
+{
+  auto keys = options.metadata_keys;
+  // One destination policy covers snapshots with different field sets, including the final summary.
+  std::erase_if(keys, [&](auto const& entry) { return !metadata.find(entry.first); });
+  return metadata.strings(keys);
+}
 void destination::preamble(metadata_document const& metadata)
 {
-  initial = metadata.strings();
+  initial = this->metadata_fields(metadata);
   if (format == output_format::terminal && options.preamble && !metadata.groups().empty())
     *stream << presentation::render_terminal(metadata_report(metadata), options.human_policy,
                                              options.human_policy.output_stream)
             << '\n';
-  if (format == output_format::commented_tsv && options.preamble) this->comments(initial);
+  if (is_commented(format) && options.preamble) this->comments(initial);
   if (format == output_format::named_json) *stream << "{\"tables\":[";
   presentation::data_table_detail::check_output(*stream);
   if (format == output_format::terminal) this->flush();
@@ -47,9 +54,11 @@ table_sink::adapter table_sink::make_adapter(std::shared_ptr<destination> const&
   {
     case output_format::csv:
     case output_format::tsv:
+    case output_format::commented_csv:
     case output_format::commented_tsv:
-      return presentation::data_table_detail::delimited_sink(*d.stream, d.format == output_format::csv ? ',' : '\t',
-                                                             {.projection = d.options.projection});
+      return presentation::data_table_detail::delimited_sink(
+          *d.stream, d.format == output_format::csv || d.format == output_format::commented_csv ? ',' : '\t',
+          {.projection = d.options.projection});
     case output_format::json:
     case output_format::named_json:
       return presentation::json_sink(*d.stream, {.columns = d.options.projection.columns});
@@ -82,7 +91,7 @@ void table_sink::finish(presentation::table_metadata const& summary)
     std::visit([&](auto& sink) { sink.finish(summary); }, sink_);
     auto& d = *output_;
     if (d.format == output_format::named_json) *d.stream << '}';
-    if (d.format == output_format::commented_tsv && d.options.preamble) d.comments(summary);
+    if (is_commented(d.format) && d.options.preamble) d.comments(summary);
     d.active_table = false;
   });
 }
@@ -239,7 +248,6 @@ output_report output_session::flush()
 output_report output_session::finish(metadata_document summary)
 {
   if (finished_) return this->checked_report();
-  auto fields = summary.strings();
   try
   {
     (void)this->open();
@@ -255,22 +263,19 @@ output_report output_session::finish(metadata_document summary)
         if (d->active_table) throw std::logic_error("finish the table before the output session");
         if (d->format == output_format::json && d->tables.empty())
           throw std::logic_error("JSON output requires one table");
+        auto fields = d->metadata_fields(summary);
         if (d->format == output_format::named_json)
         {
           *d->stream << "],\"summary\":";
           presentation::data_table_detail::json_output out{*d->stream};
           presentation::data_table_detail::write_json_metadata(out, fields);
-          *d->stream << ",\"status\":";
-          auto found = fields.find("outcome");
-          presentation::data_table_detail::write_json_string(*d->stream,
-                                                             found == fields.end() ? "unspecified" : found->second);
-          *d->stream << '}';
+          *d->stream << ",\"status\":\"complete\"}";
         }
         if (d->format == output_format::terminal && !summary.groups().empty())
           *d->stream << presentation::render_terminal(metadata_report(summary), d->options.human_policy,
                                                       d->options.human_policy.output_stream)
                      << '\n';
-        if (d->format == output_format::commented_tsv && d->options.preamble) d->comments(fields);
+        if (output_detail::is_commented(d->format) && d->options.preamble) d->comments(fields);
         presentation::data_table_detail::check_output(*d->stream);
       }
       catch (...)

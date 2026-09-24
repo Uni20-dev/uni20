@@ -16,6 +16,7 @@ enum class output_format
   terminal,
   csv,
   tsv,
+  commented_csv,
   commented_tsv,
   json,
   named_json
@@ -38,6 +39,9 @@ struct output_destination_options
     bool flush_each_row = false;
     bool preamble = true;
     presentation::table_projection projection = {};
+    /// \brief Map run field IDs to exported keys wherever they occur in initial metadata or final summaries.
+    /// \details Absent fields are ignored; collisions with other exported fields or table metadata are rejected.
+    std::map<std::string, std::string> metadata_keys = {};
     presentation::output_policy human_policy = presentation::plain_policy();
 };
 
@@ -66,6 +70,11 @@ class output_error : public std::runtime_error {
 
 namespace output_detail
 {
+constexpr bool is_commented(output_format format)
+{
+  return format == output_format::commented_csv || format == output_format::commented_tsv;
+}
+
 struct destination
 {
     std::size_t id;
@@ -87,6 +96,7 @@ struct destination
     void fail(output_operation operation, std::exception_ptr error);
     void flush();
     void comments(presentation::table_metadata const& fields);
+    presentation::table_metadata metadata_fields(metadata_document const& metadata) const;
     void preamble(metadata_document const& metadata);
 };
 
@@ -111,7 +121,7 @@ class table_sink {
           presentation::data_table_detail::write_json_string(*d.stream, name_);
           *d.stream << ",\"data\":";
         }
-        if (d.format == output_format::commented_tsv && d.options.preamble)
+        if (is_commented(d.format) && d.options.preamble)
         {
           d.comments(metadata);
           if (start.first_row) d.comments({{"first_row", std::to_string(start.first_row)}});
@@ -203,7 +213,9 @@ class output_session {
     /// \brief Flush all active destinations without ending tables or writing summaries. Does not fsync.
     output_report flush();
     /// \brief Write the run summary, flush and close every destination, preserving original and cleanup failures.
-    /// \details Repeated calls return/rethrow the recorded report without repeating any writes.
+    /// \details Named JSON records document status "complete" independently of scientific outcome in the summary.
+    ///          Flush and close can still fail; check the returned report or exception.
+    ///          Repeated calls return/rethrow the recorded report without repeating any writes.
     output_report finish(metadata_document summary = {});
     [[nodiscard]] output_report report() const;
 

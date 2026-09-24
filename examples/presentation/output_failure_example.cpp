@@ -5,6 +5,11 @@
 int main()
 {
   namespace p = uni20::presentation;
+  std::cerr << "Example: continuing required output after an optional display fails.\n"
+               "A write failure is deliberately injected into the optional display.\n"
+               "The following 'Disabled: optional display' message is expected.\n"
+               "The required TSV on stdout still receives the sample answer 42; exit status 0\n"
+               "means this deliberate failure was handled as intended.\n\n";
   uni20::output_session output;
   auto broken_display = std::make_shared<std::ostringstream>();
   broken_display->setstate(std::ios::badbit); // Simulate an unavailable optional display.

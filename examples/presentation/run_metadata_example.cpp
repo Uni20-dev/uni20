@@ -4,6 +4,12 @@
 int main()
 {
   namespace p = uni20::presentation;
+  std::cout << "Example: native run metadata, a snapshot, and computation timing.\n"
+               "The first report shows a long-double interaction U and an exact half-integer\n"
+               "spin displayed as 3/2. A placeholder calculation then returns 42.\n"
+               "The second report shows that result and three timings: computation CPU,\n"
+               "whole-run CPU, and elapsed wall time. Rendering is outside computation timing.\n\n"
+            << std::flush;
   uni20::run_context run({.name = "native-driver", .version = "1"});
   run.metadata().group("model", "Model");
   run.metadata().add("model", "interaction", uni20::parse_real<long double>("4.000000000000000001"),

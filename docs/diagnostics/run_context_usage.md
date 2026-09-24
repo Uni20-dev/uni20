@@ -118,11 +118,27 @@ multiple-file merging and profile inheritance remain deferred. Resolution may
 assign some variables before another field fails; do not start a calculation
 unless the whole resolution and application validation succeed.
 
-`cli::add_output_options(app, options)` registers format, output path, quiet,
-plain, preamble, overwrite and per-row-flush controls. `options.session(initial)`
-constructs an unopened output session. These options are intentionally not copied
+`cli::add_output_options(app, options)` registers format, output path, repeatable
+exports, quiet, plain, preamble, overwrite and per-row-flush controls.
+`options.session(initial, metadata_keys)` constructs an unopened output session;
+the optional mapping applies to initial metadata and final summaries on every
+destination. These options are intentionally not copied
 to scientific metadata automatically. Help/version/build-info create no output
 files, read no option/input files, and do not resolve environment fallbacks.
+
+`--format` selects the primary stdout representation; `--output=PATH` redirects
+that primary destination to a file. Each `--export=FORMAT:PATH` adds an independent
+file destination, leaving the primary destination in place. Split at the first
+colon; subsequent colons and spaces belong to the path (quote the argument when
+needed). The available formats are `terminal`, `csv`, `tsv`, `commented-csv`,
+`commented-tsv`, `json` and `named-json`. All files are required destinations and
+share the overwrite, preamble and flush controls. Quiet suppresses stdout while
+file exports continue. For example:
+
+```sh
+run_cli_example --export=csv:results.csv --export=named-json:results.json
+run_cli_example --quiet --export=commented-csv:results.csv --export=json:results.json
+```
 
 ## Timing and provenance
 
@@ -198,8 +214,8 @@ full-history replay writes nothing. JSON records the first-row offset. Strict CS
 and TSV have no metadata channel for offsets. Document-wide history/replay is not
 retained. Sequential named tables must finish before starting the next table.
 
-Each destination has its own projection, human policy, required/optional status,
-and flush policy. Terminal streams use instance-local routing, leaving unrelated
+Each destination has its own projection, metadata export-key mapping, human
+policy, required/optional status, and flush policy. Terminal streams use instance-local routing, leaving unrelated
 stderr diagnostics and the process-wide display router intact. Plain output is
 an explicit policy. Quiet suppresses session stdout, including machine formats;
 files and caller-owned diagnostics continue. No-preamble affects the initial
@@ -210,15 +226,37 @@ summary.
 | --- | --- |
 | `terminal` | Initial report, streaming tables and final run report; numeric tokens stay intact. |
 | `csv`, `tsv` | One rectangular table, no comments or summaries. |
-| `commented_tsv` | One TSV table with escaped initial/table/final `# key: value` comments. |
+| `commented_csv`, `commented_tsv` | One delimited table with escaped initial/table/final `# key: value` comments. Both use the same comment handling and CSV-style field quoting. |
 | `json` | One existing data-table JSON document, including its table summary. |
 | `named_json` | Sequential `{name, data}` tables with an outer run summary and status. |
 
 The named envelope is `{"tables":[{"name":"dispersion","data":...}],
-"summary":{...},"status":"success"}`. Initial run metadata is projected into
+"summary":{"outcome":"partial",...},"status":"complete"}`. Initial run metadata is projected into
 each table's metadata. Run/table key collisions are rejected. A single-table JSON
 stream is closed at table finish; use `named_json` to carry a later run summary
-separately. Scientific outcome and I/O completion are distinct.
+separately. Explicit finalization writes `status: "complete"` independently of
+scientific outcome, including partial or failed calculations. Unconverged results
+can therefore form a complete document. This marker describes the document,
+not successful flush/close or durable storage: callers must still check
+`finish()` for I/O failures. Interruption or write failure can leave incomplete
+JSON; no destructor or automatic abort path repairs it or certifies completion.
+
+Export-key mappings apply to run metadata wherever the field is present. A
+single mapping can cover disjoint initial and summary fields; entries absent
+from a particular snapshot are ignored. Human labels and the source metadata
+remain unchanged, and table-local metadata and summaries keep their own keys.
+Collisions between mapped fields (including an unmapped field with the same key),
+or between mapped run metadata and table metadata, disable that destination and
+are reported through the ordinary required/optional failure policy. Other
+destinations are still attempted.
+
+```cpp
+output.file("results.json", uni20::output_format::named_json,
+            {.metadata_keys = {{"program", "Program"}, {"outcome", "Outcome"}}});
+```
+
+The application supplies these mappings. Uni20 does not encode consumer-specific
+attribute or export names, and the unmapped default uses canonical field IDs.
 
 Files use exclusive creation unless overwrite is explicit. Preflight rejects
 aliases by path, symlink, hard link, shared stream buffer and redirected stdout
@@ -254,6 +292,17 @@ All examples are in [examples/presentation](../../examples/presentation/).
 | `output_replay_example` | Attach a new destination after rows already exist. |
 | `output_no_retention_example` | Future-only output with an explicit offset. |
 | `output_failure_example` | Disable an optional display while required TSV succeeds. |
+
+Each example prints a preamble explaining its sample values and expected
+behavior. Examples with JSON or TSV on stdout send that explanation to stderr,
+so redirecting stdout still produces a valid data file. The CLI example honors
+`--quiet` and `--no-preamble` for this explanation too.
+
+`output_live_example` deliberately selects only step and energy for its live
+table, while the TSV and JSON files retain residuals as well, at full numerical
+precision. Its preamble explains the missing first residual and the deliberately
+partial final outcome. `output_failure_example` similarly identifies its
+injected optional-display failure as expected behavior.
 
 A small `job.toml` for the CLI example:
 
