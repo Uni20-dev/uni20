@@ -4,9 +4,18 @@ if(NOT "${REVISION_OVERRIDE}" STREQUAL "")
 else()
   find_package(Git QUIET)
   if(GIT_FOUND)
-    # An archive nested under an unrelated checkout must not inherit that checkout's HEAD.
-    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" ls-files --error-unmatch -- CMakeLists.txt
-      RESULT_VARIABLE _tracked OUTPUT_QUIET ERROR_QUIET)
+    # A vendored archive must not inherit the consumer's HEAD, even when the consumer tracks its files.
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" rev-parse --show-toplevel
+      RESULT_VARIABLE _root_status OUTPUT_VARIABLE _root OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    set(_tracked 1)
+    if(_root_status EQUAL 0)
+      file(REAL_PATH "${SOURCE_DIR}" _source_real)
+      file(REAL_PATH "${_root}" _root_real)
+      if(_source_real STREQUAL _root_real)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" ls-files --error-unmatch -- CMakeLists.txt
+          RESULT_VARIABLE _tracked OUTPUT_QUIET ERROR_QUIET)
+      endif()
+    endif()
     if(_tracked EQUAL 0)
       execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" rev-parse --verify HEAD
         RESULT_VARIABLE _status OUTPUT_VARIABLE _head OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)

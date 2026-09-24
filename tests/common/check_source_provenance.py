@@ -32,5 +32,16 @@ with tempfile.TemporaryDirectory(prefix="uni20-provenance-") as directory:
     archive.mkdir()
     (archive / "CMakeLists.txt").write_text("# independent archive\n")
     assert '"unknown"' in generate(archive)  # Do not inherit the unrelated parent repository identity.
+    subprocess.run(["git", "-C", str(source), "add", "untracked-archive/CMakeLists.txt"], check=True)
+    # Vendoring the archive in the consumer repository must not turn its HEAD into Uni20's identity.
+    assert '"unknown"' in generate(archive)
+    assert '"release-archive"' in generate(archive, override="release-archive")
 
-print("Source identity, dirty tree, archive and explicit override contracts passed")
+    linked = root / "linked-worktree"
+    subprocess.run(["git", "-C", str(source), "worktree", "add", "-q", "--detach", str(linked), "HEAD"], check=True)
+    assert f'"{head}"' in generate(linked)  # Worktrees use a .git file, not a .git directory.
+    alias = root / "source-alias"
+    alias.symlink_to(linked, target_is_directory=True)
+    assert f'"{head}"' in generate(alias)
+
+print("Source identity, dirty tree, vendored archives, worktrees, symlinks and explicit override contracts passed")

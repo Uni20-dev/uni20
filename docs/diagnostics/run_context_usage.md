@@ -168,8 +168,10 @@ control bytes are escaped in human metadata and comments. Applications select
 publishable fields. Generic credential detection/redaction is deferred.
 
 `build_info::current().revision` identifies the actual Uni20 source tree at build
-time, including tracked dirty changes. Archives report `unknown`, unless the
-build sets `UNI20_SOURCE_REVISION`. A consumer can reuse the same generator:
+time, including tracked dirty changes. The selected source directory must be
+the Git worktree root (symlinks are resolved). Archives report `unknown`, even
+when tracked inside a consumer repository, unless the build sets
+`UNI20_SOURCE_REVISION`. A consumer can reuse the same generator:
 
 ```cmake
 uni20_target_provenance(my_solver HEADER my_solver_revision.hpp
@@ -178,8 +180,10 @@ uni20_target_provenance(my_solver HEADER my_solver_revision.hpp
 
 Include that header and pass `std::string(my_solver_build::source_revision)` into
 `program_info::revision`. `REVISION` supplies an explicit archive/package identity.
-The helper never consults the executable's runtime working directory. Untracked
-files do not affect Git's dirty flag.
+Choose the consumer's repository root as `SOURCE_DIR` when its CMake project
+lives in a subdirectory. Linked worktrees and submodule repositories work as
+independent source trees. The helper never consults the executable's runtime
+working directory. Untracked files do not affect Git's dirty flag.
 
 ## Streaming and owned output sessions
 
