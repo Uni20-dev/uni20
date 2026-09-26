@@ -17,7 +17,19 @@
 namespace uni20::linalg
 {
 
-/// \brief Compute a tridiagonal eigensystem through an explicit backend selector.
+/// \brief Overwrite a real symmetric tridiagonal matrix with its eigensystem.
+/// \details On success, `diagonal` contains eigenvalues in ascending order and
+///          `subdiagonal` is destroyed. With `compute_vectors == true`, column `j` of
+///          `eigenvectors` is the orthonormal eigenvector of the original tridiagonal
+///          matrix associated with `diagonal[j]`. Existing vector entries are ignored;
+///          this does not accumulate a prior reduction from a dense matrix.
+/// \pre For `n = diagonal.size()`, subdiagonal length is `n - 1` (zero when `n == 0`).
+///      Requested vectors have shape `n x n` and the same real scalar type. The spans
+///      and requested vector storage must not overlap. No output is resized.
+/// \note Empty input is a no-op. LAPACK convergence failure uses Uni20's error policy;
+///       modified workspaces are not rolled back and no partial-result API is provided.
+/// \note `compute_vectors`: If false, vector elements are unchanged and their dimensions
+///       are ignored; a tensor of a supported type must still be supplied.
 template <class BackendSelector, uni20::LapackReal Scalar, uni20::MutableRankedTensorView<2> EigenvectorTensor>
 void symmetric_tridiagonal_eigen(BackendSelector&& selector, std::span<Scalar> diagonal, std::span<Scalar> subdiagonal,
                                  EigenvectorTensor&& eigenvectors, bool compute_vectors)
@@ -28,7 +40,7 @@ void symmetric_tridiagonal_eigen(BackendSelector&& selector, std::span<Scalar> d
                   eigenvector_descriptor);
 }
 
-/// \brief Compute a tridiagonal eigensystem using host tensor backend policy.
+/// \brief Apply the destructive `symmetric_tridiagonal_eigen` contract using host tensor backend policy.
 template <uni20::LapackReal Scalar, uni20::MutableRankedTensorView<2> EigenvectorTensor>
 void symmetric_tridiagonal_eigen(std::span<Scalar> diagonal, std::span<Scalar> subdiagonal,
                                  EigenvectorTensor&& eigenvectors, bool compute_vectors)

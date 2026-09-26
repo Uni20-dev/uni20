@@ -24,6 +24,10 @@ namespace uni20::linalg
 {
 
 /// \brief Compute a bare mdspan matrix norm into a rank-zero output.
+/// \details `MatrixNorm` defines the four supported norms. Input may be rectangular;
+///          either zero extent gives zero. Complex input uses mathematical magnitude,
+///          and the result has the corresponding real scalar type. Output's old value
+///          is ignored. Tensor overloads use the same numerical definitions.
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedMdspanLike<0> OutputMdspan,
           uni20::RankedMdspanLike<2> MatrixMdspan>
   requires uni20::RealOrComplex<typename std::remove_cvref_t<MatrixMdspan>::value_type> &&
@@ -51,6 +55,9 @@ template <KernelBackendSelector BackendSelector, uni20::RankedMdspanLike<2> Matr
 }
 
 /// \brief Compute a Tensor matrix norm into an existing real scalar Tensor.
+/// \details Uses the `MatrixNorm` definitions, including zero for empty input and
+///          mathematical complex magnitude. Output has rank zero and the input's
+///          corresponding real scalar type; its old value is ignored.
 template <KernelBackendSelector BackendSelector, uni20::MutableScalarTensorView OutputTensor,
           uni20::RankedTensorView<2> MatrixTensor>
   requires uni20::RealOrComplex<uni20::tensor_element_t<MatrixTensor>> &&
@@ -77,6 +84,9 @@ void matrix_norm(OutputTensor&& output, MatrixTensor const& matrix, MatrixNorm k
 }
 
 /// \brief Return a storage-preserving rank-zero Tensor matrix norm.
+/// \details Uses the `MatrixNorm` definitions. The result has the same owning storage
+///          policy as `uni20::norm(matrix)` and the input's corresponding real scalar
+///          type. Use `matrix_norm_host` when a host C++ scalar is required.
 template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
   requires uni20::RealOrComplex<uni20::tensor_element_t<MatrixTensor>> &&
            requires(MatrixTensor const& matrix) { uni20::norm(matrix); }
@@ -100,6 +110,10 @@ template <uni20::RankedTensorView<2> MatrixTensor>
 }
 
 /// \brief Return a Tensor matrix norm as a host C++ scalar through an explicit selector.
+/// \details Uses the `MatrixNorm` definitions and the input's corresponding real scalar
+///          type. This synchronous overload returns a completed host value; it does not
+///          preserve the input storage policy. Backend availability still determines
+///          which input memory domains are supported.
 template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
   requires uni20::RealOrComplex<uni20::tensor_element_t<MatrixTensor>>
 [[nodiscard]] auto matrix_norm_host(BackendSelector&& selector, MatrixTensor const& matrix,

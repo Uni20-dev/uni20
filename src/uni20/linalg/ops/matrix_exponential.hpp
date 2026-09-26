@@ -16,7 +16,15 @@
 namespace uni20::linalg
 {
 
-/// \brief Compute a fixed-output matrix exponential through an explicit selector.
+/// \brief Overwrite a fixed-size output with the matrix exponential `exp(time * input)`.
+/// \details Both matrices must have the same square shape; output is not resized and
+///          its old values are ignored. This is the matrix exponential, not entrywise
+///          exponentiation. The CPU backend accepts real or complex time and promotes
+///          a real input to a complex result for complex time; output elements must be
+///          assignable from the computed result type.
+/// \note The current CPU backend materializes the input before writing the output.
+///       This implementation detail does not establish an aliasing contract for other
+///       backends or Async overloads; Async input and output require distinct queues.
 template <class BackendSelector, uni20::MutableRankedTensorView<2> OutputTensor, uni20::RankedTensorView<2> InputTensor,
           class TimeScalar>
 void matrix_exponential(BackendSelector&& selector, OutputTensor&& output, InputTensor const& input, TimeScalar time)
@@ -27,7 +35,7 @@ void matrix_exponential(BackendSelector&& selector, OutputTensor&& output, Input
                   time);
 }
 
-/// \brief Compute a fixed-output matrix exponential using tensor storage policy.
+/// \brief Apply the fixed-output `matrix_exponential` contract using tensor storage policy.
 template <uni20::MutableRankedTensorView<2> OutputTensor, uni20::RankedTensorView<2> InputTensor, class TimeScalar>
 void matrix_exponential(OutputTensor&& output, InputTensor const& input, TimeScalar time)
 {

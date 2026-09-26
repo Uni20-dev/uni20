@@ -66,6 +66,7 @@ Operation values and diagnostic names are defined centrally in
 
 ## Related Documentation
 
+- [Dense operation contracts](../../../../docs/linalg/dense_operation_contracts.md)
 - [Linalg source map](../)
 - [Tensor operations](../../../../docs/tensor/operations.md)
 - [Mdspan linear algebra dispatch](../../../../docs/linalg/mdspan_dispatch.md)

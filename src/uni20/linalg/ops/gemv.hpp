@@ -20,7 +20,15 @@
 namespace uni20::linalg
 {
 
-/// \brief Run tensor GEMV through an explicit backend selector.
+/// \brief Update a fixed-size vector as `output = alpha * matrix * input + beta * output`.
+/// \details For a matrix of shape `m x n`, `input` has length `n` and `output` must
+///          already have length `m`; it is never resized. Operands and coefficients
+///          use the same scalar type. Transpose or conjugate the matrix view explicitly
+///          when required. With `beta == 0`, old output elements are not read; with
+///          `alpha == 0`, matrix and input elements are not read. For finite coefficients,
+///          a zero inner dimension leaves only beta scaling. An output of length zero
+///          has no elements to update; compatible dimensions are still required.
+/// \pre Output storage must not overlap the matrix or input vector.
 template <class BackendSelector, uni20::MutableRankedTensorView<1> OutputTensor, class Scalar,
           uni20::RankedTensorView<2> MatrixTensor, uni20::RankedTensorView<1> InputTensor>
 void gemv(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, MatrixTensor const& matrix,
@@ -33,7 +41,7 @@ void gemv(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, Matri
                   beta);
 }
 
-/// \brief Run tensor GEMV using the operands' default backend selector.
+/// \brief Apply the fixed-storage `gemv` contract using the operands' default backend selector.
 template <uni20::MutableRankedTensorView<1> OutputTensor, class Scalar, uni20::RankedTensorView<2> MatrixTensor,
           uni20::RankedTensorView<1> InputTensor>
 void gemv(OutputTensor&& output, Scalar alpha, MatrixTensor const& matrix, InputTensor const& input, Scalar beta)
