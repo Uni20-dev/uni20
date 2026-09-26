@@ -20,6 +20,9 @@ namespace uni20::linalg
 ///          backend may reuse or replace that prepared output. Terminal
 ///          execution failures are reported through the operation's ordinary
 ///          error or exception mechanism instead.
+///          Dispatch success means the operation was handled. An operation may
+///          return a recoverable numerical failure in a separate output, such
+///          as SolveInfo, while returning `success` here to prevent fallback.
 enum class KernelAttempt
 {
   success,

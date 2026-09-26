@@ -352,6 +352,13 @@ Terminal failures are not represented by `KernelAttempt`. Once execution is comm
 provider failures, task failures, and operation failures are reported through the
 operation's ordinary error or exception mechanism.
 
+Dispatch success does not certify numerical success. An operation may define a
+separate recoverable status output: for example, `linear_solve_op` writes
+`SolveInfo` and returns `KernelAttempt::success` even when it encounters a
+singular matrix. The backend handled the operation, and dispatch must not retry
+another backend on the overwritten workspaces. See [square linear
+solves](../linalg/linear_solve.md) for that operation's numerical contract.
+
 ### Optional coroutine attempt
 
 A backend that needs suspendable resource admission may additionally define:
