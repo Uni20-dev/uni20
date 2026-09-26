@@ -5,6 +5,8 @@ optional multiprecision support, and linear-algebra design background.
 
 ## Implemented Layers And Forward Work
 
+- [Square Linear Solves](linear_solve.md) describes strict and recoverable
+  frontends, pivot policy, workspace ownership, and backend diagnostics.
 - [Mdspan Linear Algebra Dispatch](mdspan_dispatch.md) tracks implemented
   operation-tag vertical slices and the remaining dense-operation sequence.
 - [BLAS/LAPACK Mdspan Wrappers](blas_lapack_wrappers.md) describes the

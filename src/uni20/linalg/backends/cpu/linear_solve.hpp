@@ -9,6 +9,7 @@
 #include <uni20/common/trace.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/core/scalar_traits.hpp>
+#include <uni20/linalg/backends/linear_solve_common.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/mdspan/concepts.hpp>
@@ -67,7 +68,8 @@ void swap_rows(MatrixMdspan& matrix, std::size_t lhs, std::size_t rhs, std::size
 }
 
 template <class CoefficientMdspan, class RhsMdspan>
-KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_hand_sides)
+KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_hand_sides, SolveInfo& info,
+                           SolveOptions<uni20::make_real_t<typename CoefficientMdspan::value_type>> const& options)
 {
   using coefficient_type = std::remove_cvref_t<CoefficientMdspan>;
   using rhs_type = std::remove_cvref_t<RhsMdspan>;
@@ -80,7 +82,11 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
   CHECK_EQUAL(coefficients.extent(0), right_hand_sides.extent(0));
   std::size_t const order = static_cast<std::size_t>(coefficients.extent(0));
   std::size_t const rhs_count = static_cast<std::size_t>(right_hand_sides.extent(1));
-  if (rhs_count == 0) return KernelAttempt::success;
+  require_solve_options(options);
+  info = {};
+  if (order == 0 || rhs_count == 0) return KernelAttempt::success;
+  real_type scale{};
+  if (!prepare_linear_solve(coefficients, right_hand_sides, scale, info)) return KernelAttempt::success;
 
   using std::abs;
   for (std::size_t k = 0; k < order; ++k)
@@ -99,7 +105,7 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
       }
     }
 
-    ERROR_IF(pivot_value == real_type{}, "singular matrix in solve");
+    if (!check_solve_pivot(pivot_value, scale, options, k, info)) return KernelAttempt::success;
     swap_rows(coefficients, k, pivot_row, order);
     swap_rows(right_hand_sides, k, pivot_row, rhs_count);
 
@@ -116,6 +122,11 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
         auto const coefficient_col = static_cast<coefficient_index>(col);
         scalar_type value = static_cast<scalar_type>(coefficients[coefficient_row, coefficient_col]);
         value -= factor * static_cast<scalar_type>(coefficients[coefficient_k, coefficient_col]);
+        if (!uni20::isfinite(value))
+        {
+          info.status = SolveStatus::nonfinite_result;
+          return KernelAttempt::success;
+        }
         coefficients[coefficient_row, coefficient_col] = value;
       }
       for (std::size_t col = 0; col < rhs_count; ++col)
@@ -125,6 +136,11 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
         auto const rhs_col = static_cast<rhs_index>(col);
         scalar_type value = static_cast<scalar_type>(right_hand_sides[rhs_row, rhs_col]);
         value -= factor * static_cast<scalar_type>(right_hand_sides[rhs_k, rhs_col]);
+        if (!uni20::isfinite(value))
+        {
+          info.status = SolveStatus::nonfinite_result;
+          return KernelAttempt::success;
+        }
         right_hand_sides[rhs_row, rhs_col] = value;
       }
     }
@@ -146,7 +162,13 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
         value -= static_cast<scalar_type>(coefficients[coefficient_row, coefficient_k]) *
                  static_cast<scalar_type>(right_hand_sides[rhs_k, rhs_col]);
       }
-      right_hand_sides[rhs_row, rhs_col] = value / pivot;
+      value /= pivot;
+      if (!uni20::isfinite(value))
+      {
+        info.status = SolveStatus::nonfinite_result;
+        return KernelAttempt::success;
+      }
+      right_hand_sides[rhs_row, rhs_col] = value;
     }
   }
 
@@ -158,7 +180,9 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
 /// \brief Report eligibility for a host-accessible dense general solve.
 template <uni20::MutableRankedMdspecLike<2> CoefficientMdspec, uni20::MutableRankedMdspecLike<2> RhsMdspec>
   requires uni20::HostWritableMdspec<CoefficientMdspec> && uni20::HostWritableMdspec<RhsMdspec>
-consteval auto kernel_accepts_types(CpuReferenceBackend const&, linear_solve_op const&, CoefficientMdspec&, RhsMdspec&)
+consteval auto kernel_accepts_types(CpuReferenceBackend const&, linear_solve_op const&, CoefficientMdspec&, RhsMdspec&,
+                                    SolveInfo&,
+                                    SolveOptions<uni20::make_real_t<typename CoefficientMdspec::value_type>> const&)
 {
   using coefficient_span = uni20::host_write_mdspan_t<CoefficientMdspec>;
   using rhs_span = uni20::host_write_mdspan_t<RhsMdspec>;
@@ -173,13 +197,14 @@ consteval auto kernel_accepts_types(CpuReferenceBackend const&, linear_solve_op 
 template <uni20::MutableRankedMdspecLike<2> CoefficientMdspec, uni20::MutableRankedMdspecLike<2> RhsMdspec>
   requires uni20::HostWritableMdspec<CoefficientMdspec> && uni20::HostWritableMdspec<RhsMdspec>
 KernelAttempt try_kernel(CpuReferenceBackend, linear_solve_op const&, CoefficientMdspec& coefficients,
-                         RhsMdspec& right_hand_sides)
+                         RhsMdspec& right_hand_sides, SolveInfo& info,
+                         SolveOptions<uni20::make_real_t<typename CoefficientMdspec::value_type>> const& options)
 {
   auto coefficient_access = acquire_host_write_access_sync(coefficients);
   auto rhs_access = acquire_host_write_access_sync(right_hand_sides);
   auto coefficient_span = coefficient_access.mdspan();
   auto rhs_span = rhs_access.mdspan();
-  return detail::cpu_reference::linear_solve(coefficient_span, rhs_span);
+  return detail::cpu_reference::linear_solve(coefficient_span, rhs_span, info, options);
 }
 
 } // namespace uni20::linalg

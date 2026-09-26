@@ -122,6 +122,10 @@ struct matrix_norm_op
 /// \brief Destructive dense general linear-system solve operation tag.
 /// \details Backends overwrite coefficient and right-hand-side work matrices
 ///          while solving `coefficients * solution = right_hand_sides`.
+///          Kernel arguments are `(coefficients, right_hand_sides, SolveInfo&,
+///          SolveOptions<Real> const&)`, with Real matching the scalar's real
+///          type. Numerical failures write diagnostics and return dispatch
+///          success; a dispatch decline preserves all three output arguments.
 struct linear_solve_op
 {
     static constexpr std::string_view name = "linear_solve";
