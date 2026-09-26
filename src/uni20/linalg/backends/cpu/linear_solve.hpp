@@ -82,6 +82,7 @@ KernelAttempt linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right_han
   CHECK_EQUAL(coefficients.extent(0), right_hand_sides.extent(0));
   std::size_t const order = static_cast<std::size_t>(coefficients.extent(0));
   std::size_t const rhs_count = static_cast<std::size_t>(right_hand_sides.extent(1));
+  // Direct mdspan dispatch bypasses the Tensor frontend's option validation.
   require_solve_options(options);
   info = {};
   if (order == 0 || rhs_count == 0) return KernelAttempt::success;

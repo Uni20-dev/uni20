@@ -503,4 +503,26 @@ TEST(RecoverableSolveDispatchTest, InvalidToleranceIsTerminal)
         { (void)solve_inplace_with_info(a, b, {.relative_pivot_tolerance = invalid}); },
         "finite nonnegative relative pivot tolerance");
 }
+
+TEST(RecoverableSolveDispatchTest, DirectDispatchRejectsInvalidTolerance)
+{
+  uni20::DenseMatrix<double> a(1, 1), b(1, 1);
+  a[0, 0] = b[0, 0] = 1;
+  auto a_span = a.mdspan();
+  auto b_span = b.mdspan();
+  SolveInfo info;
+  for (bool lapack : {false, true})
+    for (double invalid : {-1.0, uni20::numeric_limits<double>::infinity(), uni20::numeric_limits<double>::quiet_NaN()})
+    {
+      SolveOptions<double> options{.relative_pivot_tolerance = invalid};
+      EXPECT_DEATH(
+          {
+            if (lapack)
+              dispatch_kernel(LapackBackend{}, linear_solve_op{}, a_span, b_span, info, options);
+            else
+              dispatch_kernel(CpuReferenceBackend{}, linear_solve_op{}, a_span, b_span, info, options);
+          },
+          "finite nonnegative relative pivot tolerance");
+    }
+}
 } // namespace
