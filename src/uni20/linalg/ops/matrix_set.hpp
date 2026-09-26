@@ -16,7 +16,12 @@
 namespace uni20::linalg
 {
 
-/// \brief Initialize a matrix region through an explicit backend selector.
+/// \brief Set diagonal and off-diagonal entries in a selected matrix region.
+/// \details Selected entries with `row == column` receive `diagonal`; other selected
+///          entries receive `off_diagonal`. Upper and Lower both include the diagonal.
+///          Entries outside the region are unchanged. Rectangular matrices are allowed;
+///          no resize occurs, and an empty matrix has no entries to write.
+/// \note `region`: All entries by default, or the inclusive upper/lower triangle.
 template <class BackendSelector, uni20::MutableRankedTensorView<2> MatrixTensor, class Scalar>
 void set_matrix(BackendSelector&& selector, MatrixTensor&& matrix, Scalar diagonal, Scalar off_diagonal,
                 MatrixRegion region = MatrixRegion::All)
@@ -26,7 +31,7 @@ void set_matrix(BackendSelector&& selector, MatrixTensor&& matrix, Scalar diagon
                   off_diagonal);
 }
 
-/// \brief Initialize a matrix region using the matrix storage's backend selector.
+/// \brief Apply the `set_matrix` region contract using the matrix storage's backend selector.
 template <uni20::MutableRankedTensorView<2> MatrixTensor, class Scalar>
 void set_matrix(MatrixTensor&& matrix, Scalar diagonal, Scalar off_diagonal, MatrixRegion region = MatrixRegion::All)
 {

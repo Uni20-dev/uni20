@@ -101,11 +101,17 @@ struct norm_op
 };
 
 /// \brief Matrix norm selected by `matrix_norm_op`.
+/// \details All choices use mathematical magnitude for complex entries and return
+///          zero when either matrix dimension is zero.
 enum class MatrixNorm
 {
+  /// \brief Largest entry magnitude, `max_ij abs(A[i,j])`.
   MaxAbs,
+  /// \brief Induced one-norm: largest column sum of entry magnitudes.
   One,
+  /// \brief Induced infinity-norm: largest row sum of entry magnitudes.
   Infinity,
+  /// \brief Frobenius norm: square root of the sum of squared entry magnitudes.
   Frobenius
 };
 
@@ -165,8 +171,11 @@ struct matrix_exponential_op
 /// \brief Matrix region selected by structured initialization operations.
 enum class MatrixRegion
 {
+  /// \brief All entries, including rectangular portions of the matrix.
   All,
+  /// \brief Entries with `row <= column`, including the diagonal.
   Upper,
+  /// \brief Entries with `row >= column`, including the diagonal.
   Lower
 };
 

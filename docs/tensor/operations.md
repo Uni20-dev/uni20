@@ -407,7 +407,9 @@ their bound descriptor.
 ## Dense Linear Algebra Support
 
 These are tensor-front-end operations even though their leaf kernels receive
-mdspans or spans.
+mdspans or spans. [Dense operation contracts](../linalg/dense_operation_contracts.md)
+explains fixed-output requirements, norm definitions, destructive spectral
+workspaces, and Schur reordering indices.
 
 | Operation | Synchronous contract | Output/storage behavior | Async support |
 |---|---|---|---|

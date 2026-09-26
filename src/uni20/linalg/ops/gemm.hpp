@@ -23,7 +23,16 @@
 
 namespace uni20::linalg
 {
-/// \brief Run fixed-storage tensor GEMM through an explicit backend selector.
+/// \brief Update a fixed-size matrix as `output = alpha * lhs * rhs + beta * output`.
+/// \details For `lhs` of shape `m x k` and `rhs` of shape `k x n`, `output` must already
+///          have shape `m x n`; it is never resized. Operands and coefficients use the
+///          same scalar type. Multiplication observes the supplied views: transpose
+///          or conjugate a view explicitly when required.
+///          With `beta == 0`, old output elements are not read. With `alpha == 0` or
+///          `k == 0`, only the beta scaling remains. An empty output has no elements
+///          to update; compatible dimensions are still required.
+/// \pre Output storage must not overlap either input. Input views may overlap each other.
+/// \note Use `assign_product` for an overwrite operation that may resize its output.
 template <class BackendSelector, uni20::MutableRankedTensorView<2> OutputTensor, class Scalar,
           uni20::RankedTensorView<2> LhsTensor, uni20::RankedTensorView<2> RhsTensor>
 void gemm(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, LhsTensor const& lhs, RhsTensor const& rhs,
@@ -35,7 +44,7 @@ void gemm(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, LhsTe
   dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta);
 }
 
-/// \brief Run fixed-storage tensor GEMM using the operands' default backend selector.
+/// \brief Apply the fixed-storage `gemm` contract using the operands' default backend selector.
 template <uni20::MutableRankedTensorView<2> OutputTensor, class Scalar, uni20::RankedTensorView<2> LhsTensor,
           uni20::RankedTensorView<2> RhsTensor>
 void gemm(OutputTensor&& output, Scalar alpha, LhsTensor const& lhs, RhsTensor const& rhs, Scalar beta)
