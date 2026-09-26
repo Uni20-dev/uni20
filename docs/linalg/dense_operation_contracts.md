@@ -48,9 +48,15 @@ For a matrix `A`, `MatrixNorm` selects:
 
 Here `abs` is mathematical complex magnitude, not the sum of the magnitudes
 of the real and imaginary components. All four choices give zero if either
-dimension is zero. `matrix_norm(A, kind)` returns a real rank-zero Tensor with
-the input's owning storage policy; `matrix_norm_host(A, kind)` returns a host
-C++ scalar. These differ in result residency, not norm definition.
+dimension is zero. For synchronous Tensor inputs, `matrix_norm(A, kind)`
+returns a real rank-zero Tensor with the input's owning storage policy;
+`matrix_norm_host(A, kind)` returns a host C++ scalar. These differ in result
+residency, not norm definition.
+
+For `Async<Tensor>` inputs, both functions return their respective results
+wrapped in `Async`: a scalar Tensor for `matrix_norm`, and a real C++ scalar
+for `matrix_norm_host`. The `_host` suffix describes result residency; it
+does not imply blocking evaluation.
 
 `set_matrix(A, diagonal, off_diagonal, region)` also accepts rectangular
 matrices. `Upper` selects `row <= column`, `Lower` selects `row >= column`,
