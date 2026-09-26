@@ -86,7 +86,10 @@ before they lower to backend wrappers and kernels.
   complex Frobenius norms but declines its incompatible component-sum forms.
 - `linear_solve_op` is the destructive general-system workspace operation.
   `solve_inplace` exposes that contract directly, while `solve` preserves its
-  inputs by materializing column-major host work matrices.
+  inputs by materializing column-major host work matrices. The recoverable
+  `solve_inplace_with_info` frontend returns the kernel's `SolveInfo` output;
+  numerical failure does not mean dispatch decline. See
+  [square solves](../../../docs/linalg/linear_solve.md) for pivot policy and precision.
 - `qr_op` and `lq_op` are destructive reduced real factorization operations.
   Their preserving value APIs materialize column-major host work and return
   owning reduced factors.

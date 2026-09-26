@@ -6,7 +6,8 @@ This directory contains LAPACK operation-tag backend adapters.
 
 - `common.hpp`: checked LAPACK workspace-query conversion helpers.
 - `matrix_norm.hpp`: general dense matrix norms through `lange`.
-- `linear_solve.hpp`: destructive dense general solves through `gesv`.
+- `linear_solve.hpp`: destructive dense general solves through `getrf`/`getrs`,
+  with recoverable numerical diagnostics and an optional relative pivot threshold.
 - `lq.hpp`: reduced real LQ factorization through `gelqf` and `orglq`.
 - `tridiagonal_eigen.hpp`: symmetric tridiagonal eigenvalues and eigenvectors
   through `sterf` and `steqr`.
