@@ -7,6 +7,7 @@
  */
 
 #include <uni20/core/scalar_concepts.hpp>
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
 #include <uni20/tensor/concepts.hpp>
 
@@ -19,7 +20,7 @@
 namespace uni20
 {
 /// \brief Non-owning read-only view of a tensor-level object.
-template <TensorView Tensor> class ConstTensorView {
+template <TensorView Tensor> class ConstTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
   public:
     using tensor_type = std::remove_cvref_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<tensor_type>;
@@ -27,7 +28,10 @@ template <TensorView Tensor> class ConstTensorView {
     using async_alias_tag = void;
 
     /// \brief Bind a read-only view to an existing tensor.
-    explicit constexpr ConstTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor)) {}
+    explicit constexpr ConstTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
+    {
+      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
+    }
 
     /// \brief Bind a read-only view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
@@ -81,7 +85,7 @@ template <TensorView Tensor> class ConstTensorView {
 /// \details The view preserves tensor metadata and backend selection while
 ///          delegating value transformation to `conjugated_accessor`. It is
 ///          read-only and may not outlive the referenced tensor.
-template <TensorView Tensor> class ConjugatedTensorView {
+template <TensorView Tensor> class ConjugatedTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
   public:
     using tensor_type = std::remove_cvref_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<tensor_type>;
@@ -89,7 +93,10 @@ template <TensorView Tensor> class ConjugatedTensorView {
     using async_alias_tag = void;
 
     /// \brief Bind a lazy conjugating view to an existing tensor.
-    explicit constexpr ConjugatedTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor)) {}
+    explicit constexpr ConjugatedTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
+    {
+      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
+    }
 
     /// \brief Bind a conjugating view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
@@ -150,19 +157,19 @@ template <TensorView Tensor>
 /// \brief Cancel a tensor conjugation view and return the read-only base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor>& view) noexcept
 {
-  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Cancel a const tensor conjugation view and return the read-only base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor> const& view) noexcept
 {
-  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Cancel a temporary tensor conjugation view and return its durable base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor>&& view) noexcept
 {
-  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Reapply conjugation to a read-only complex tensor view.
@@ -170,7 +177,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor>& view) noexcept
 {
-  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Reapply conjugation to a const read-only complex tensor view.
@@ -178,7 +185,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor> const& view) noexcept
 {
-  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Reapply conjugation to a temporary read-only complex tensor view.
@@ -186,7 +193,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor>&& view) noexcept
 {
-  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
+  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
 }
 
 /// \brief Return a read-only identity view of a non-complex tensor lvalue.

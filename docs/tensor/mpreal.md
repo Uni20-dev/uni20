@@ -230,8 +230,49 @@ bounds during Uni20 calculations.
 
 `Async<mpreal>` can be initialized with an explicit scalar. Coroutine lambdas must
 remain captureless and `static`, passing values or `Precision` as arguments.
-Tensor storage factories and MPLAPACK's internal temporary precision require
-separate integration; these are not implied by Async scalar support.
+MPLAPACK's internal temporary precision requires separate integration; it is not
+implied by Async scalar support.
+
+## Tensor construction defaults
+
+Host tensors accept a trailing `Precision`:
+
+```cpp
+auto p = uni20::Precision::bits(256);
+uni20::DenseMatrix<uni20::mpreal> a(2, 3, p); // Actual zeros at 256 bits.
+uni20::DenseMatrix<uni20::mpreal> work(uni20::uninitialized, 2, 3, p);
+// work's scalar objects exist, but are unset until assigned.
+auto view = uni20::reshape_view(a, 6);
+a.default_precision(uni20::Precision::bits(80));
+// Existing elements and view.default_precision() still have 256 bits.
+auto rounded = uni20::at_precision(a, uni20::Precision::bits(80));
+// rounded owns converted elements and has an 80-bit construction default.
+```
+
+The default belongs to the storage and survives copying, moving, empty shapes
+and owning reshapes. It supplies the precision of new zeros during construction
+or growth. Explicitly uninitialized allocation creates unset objects, without
+skipping their C++ lifetimes. Ordinary nonempty zero construction without a
+default throws; default-constructed empty tensors may acquire a default later.
+
+Element assignment adopts that scalar's precision and does not update the
+tensor default. Changing `default_precision(p)` changes metadata only; it never
+scans or converts existing elements. `at_precision(tensor, p)` is the explicit
+owning conversion and rejects unset source elements. A low-precision input's
+lost digits cannot be recovered by conversion to a higher precision.
+
+Views of existing tensors snapshot the default. Raw mdspans do not carry it.
+Descriptors constructed from a pointer to reserved storage, including current
+async alias factories, cannot inspect an unconstructed parent and start without
+a default. They need an explicitly supplied default or operation precision.
+Access to their parent must still respect its readable epoch. This avoids both
+unsynchronized metadata reads and mutable caches inside read-only views.
+
+`common_default_precision(a, b)` selects matching input defaults and throws if
+either is missing or they differ. It does not inspect individual elements.
+`prepare_output(output, extents, p)` records the operation precision and prepares
+unset storage when a new allocation is needed. Reused elements are not converted;
+the numerical operation must overwrite the elements promised by its contract.
 
 Run `mpreal_example` for exact fractions, an 80-digit calculation, pi generation,
 and explicit mixed-precision conversion with explanatory output.

@@ -199,7 +199,8 @@ template <StridedMdspanLike Span, std::integral... Extents>
 /// \brief Tensor-level descriptor owning a reshaped mdspan and backend selector.
 /// \details The descriptor aliases the same element storage as its source.
 ///          Mutability follows the preserved source accessor.
-template <MdspanLike Mdspan, class StoragePolicy, class BackendSelector> class ReshapedTensor {
+template <MdspanLike Mdspan, class StoragePolicy, class BackendSelector>
+class ReshapedTensor : public detail::precision_default<typename Mdspan::value_type> {
   public:
     using mdspan_type = Mdspan;
     using storage_policy = StoragePolicy;
@@ -265,7 +266,7 @@ template <MdspanLike Mdspan, class StoragePolicy, class BackendSelector> class R
 ///          alias to bind reserved storage before the parent value is constructed.
 template <class Tensor, detail::CanonicalReshapeLayout LayoutPolicy, std::integral... RequestedExtents>
   requires TensorView<Tensor> && StridedTensorView<Tensor>
-class IndirectReshapedTensorView {
+class IndirectReshapedTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
   public:
     using tensor_type = std::remove_reference_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<std::remove_cv_t<tensor_type>>;
@@ -288,6 +289,7 @@ class IndirectReshapedTensorView {
         : IndirectReshapedTensorView(std::addressof(tensor), requested_extents...)
     {
       static_cast<void>(this->mdspec());
+      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
     }
 
     /// \brief Bind a reshape to externally retained tensor storage.
@@ -380,7 +382,8 @@ template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::
   using span_type = decltype(span);
   using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
   using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
-  return ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()};
+  return with_precision_default(
+      ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()}, tensor);
 }
 
 } // namespace detail

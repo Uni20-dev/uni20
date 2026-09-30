@@ -1,5 +1,9 @@
 # tests/tensor/CMakeLists.txt
 
+if(UNI20_ENABLE_MPFR)
+  add_test_module(tensor_precision SOURCES test_tensor_precision.cpp LIBS uni20_common uni20_core uni20_linalg)
+endif()
+
 add_test_module(tensor
   SOURCES
     test_tensor.cpp
