@@ -3,6 +3,11 @@ function(uni20_add_example target source)
   target_link_libraries(${target} PRIVATE ${ARGN})
 endfunction()
 
+if(UNI20_ENABLE_MPFR)
+  uni20_add_example(mpreal_example common/mpreal_example.cpp uni20_core)
+  add_test(NAME MpRealExample COMMAND mpreal_example)
+endif()
+
 uni20_add_example(buildinfo_example common/buildinfo_example.cpp fmt::fmt uni20_core uni20_common)
 uni20_add_example(gtest_floating_eq_example common/gtest_floating_eq_example.cpp gtest fmt::fmt uni20_common)
 uni20_add_example(trace_example common/trace_example.cpp fmt::fmt mdspan uni20_common)

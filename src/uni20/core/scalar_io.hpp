@@ -3,6 +3,9 @@
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
 #include "types.hpp"
+#if UNI20_ENABLE_MPFR
+#include "mpreal.hpp"
+#endif
 
 #include <cerrno>
 #include <cmath>
@@ -38,6 +41,24 @@ struct scalar_format_options
 
 namespace detail
 {
+#if UNI20_ENABLE_MPFR
+inline std::string format_mpreal(mpreal const& value, scalar_format_options const& options)
+{
+  auto const requested = options.precision < 0 ? mpfr_get_str_ndigits(10, value.precision().bit_count())
+                                               : static_cast<std::size_t>(options.precision);
+  if (requested > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    throw std::length_error("mpreal: decimal formatting precision is too large");
+  char const* format = options.notation == real_format_notation::fixed        ? "%.*RNf"
+                       : options.notation == real_format_notation::scientific ? "%.*RNe"
+                                                                              : "%.*RNg";
+  char* buffer = nullptr;
+  int const count = mpfr_asprintf(&buffer, format, static_cast<int>(requested), value.native_handle());
+  std::unique_ptr<char, decltype(&mpfr_free_str)> owned(buffer, &mpfr_free_str);
+  if (count < 0) throw std::runtime_error("mpreal: decimal formatting failed");
+  return std::string(buffer, static_cast<std::size_t>(count));
+}
+#endif
+
 template <typename T> [[nodiscard]] int effective_precision(scalar_format_options const& options)
 {
   if (options.precision >= 0)
@@ -192,20 +213,30 @@ template <typename T> [[nodiscard]] T parse_builtin_real(std::string_view text)
 template <Real T> [[nodiscard]] std::string format_real(T value, scalar_format_options const& options = {})
 {
   using real_type = std::remove_cv_t<T>;
-  if (options.normalize_negative_zero && value == real_type{})
+#if UNI20_ENABLE_MPFR
+  if constexpr (std::same_as<real_type, mpreal>)
   {
-    value = real_type{};
-  }
-
-#if UNI20_HAS_FLOAT128
-  if constexpr (std::same_as<real_type, uni20::float128>)
-  {
-    return detail::format_float128(value, options);
+    if (options.normalize_negative_zero && value == 0) value = mpreal(value.precision());
+    return detail::format_mpreal(value, options);
   }
   else
 #endif
   {
-    return detail::fmt_real(value, options);
+    if (options.normalize_negative_zero && value == real_type{})
+    {
+      value = real_type{};
+    }
+
+#if UNI20_HAS_FLOAT128
+    if constexpr (std::same_as<real_type, uni20::float128>)
+    {
+      return detail::format_float128(value, options);
+    }
+    else
+#endif
+    {
+      return detail::fmt_real(value, options);
+    }
   }
 }
 
@@ -259,7 +290,11 @@ template <RealOrComplex T>
 /// \throws std::invalid_argument if the text is not a complete real literal.
 /// \throws std::out_of_range if the literal overflows or underflows the target type.
 /// \ingroup core_math
-template <Real T> [[nodiscard]] T parse_real(std::string_view text)
+template <Real T>
+#if UNI20_ENABLE_MPFR
+  requires(!std::same_as<std::remove_cv_t<T>, mpreal>)
+#endif
+[[nodiscard]] T parse_real(std::string_view text)
 {
   using real_type = std::remove_cv_t<T>;
 #if UNI20_HAS_FLOAT128
@@ -274,10 +309,21 @@ template <Real T> [[nodiscard]] T parse_real(std::string_view text)
   }
 }
 
+#if UNI20_ENABLE_MPFR
+/// \brief Parse an arbitrary-precision real at explicit working precision.
+template <Real T>
+  requires std::same_as<std::remove_cv_t<T>, mpreal>
+[[nodiscard]] T parse_real(std::string_view text, Precision precision)
+{
+  return mpreal(text, precision);
+}
+#endif
+
 /// \brief Read a Uni20 real scalar from a stream token.
 /// \details This helper exists because extension real aliases such as
 ///          `uni20::float128` cannot portably receive ordinary overloaded stream
-///          extraction operators.
+///          extraction operators. For mpreal, parsing retains the destination's
+///          working precision; invalid input leaves its value unchanged.
 /// \tparam T Real scalar type.
 /// \param stream Input stream.
 /// \param value Destination value.
@@ -294,7 +340,12 @@ template <Real T> std::istream& read_real(std::istream& stream, T& value)
 
   try
   {
-    value = parse_real<T>(token);
+#if UNI20_ENABLE_MPFR
+    if constexpr (std::same_as<std::remove_cv_t<T>, mpreal>)
+      value = parse_real<T>(token, value.precision());
+    else
+#endif
+      value = parse_real<T>(token);
   }
   catch (...)
   {

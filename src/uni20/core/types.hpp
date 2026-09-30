@@ -22,6 +22,10 @@ using index_type = std::ptrdiff_t;
 using float32 = float;
 using float64 = double;
 
+#if UNI20_ENABLE_MPFR
+class mpreal;
+#endif
+
 #if UNI20_HAS_FLOAT80
 /// \brief Native x87 extended-precision real scalar, with 64 significand bits.
 /// \details Available only when long double has the fp80 numerical format. Storage may contain padding;
@@ -40,9 +44,14 @@ static_assert(std::numeric_limits<float80>::is_iec559 && std::numeric_limits<flo
 /// \details This is intentionally an alias to `std::complex`, not a wrapper. Code in Uni20 should spell complex
 ///          scalar types as `uni20::complex<T>` so future scalar-policy changes have one namespace-level hook while
 ///          preserving standard-library ABI and interop today.
+///          mpreal is excluded until its MPC-backed complex implementation is available.
 /// \tparam Real Underlying real scalar type.
 /// \ingroup core_math
-template <typename Real> using complex = std::complex<Real>;
+template <typename Real>
+#if UNI20_ENABLE_MPFR
+  requires(!std::same_as<std::remove_cv_t<Real>, mpreal>)
+#endif
+using complex = std::complex<Real>;
 
 using complex64 = complex<float>;
 using complex128 = complex<double>;

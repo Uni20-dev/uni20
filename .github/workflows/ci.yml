@@ -44,7 +44,9 @@ jobs:
             libopenblas-dev \
             liblapack-dev \
             libbenchmark-dev \
-            libgtest-dev
+            libgtest-dev \
+            libgmp-dev \
+            libmpfr-dev
 
       - name: Use minimum supported CMake
         run: |
@@ -57,6 +59,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DUNI20_BUILD_CLI=ON \
+            -DUNI20_ENABLE_MPFR=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \
@@ -208,7 +211,9 @@ jobs:
             libopenblas-dev \
             liblapack-dev \
             libbenchmark-dev \
-            libgtest-dev
+            libgtest-dev \
+            libgmp-dev \
+            libmpfr-dev
 
       - name: Use current CMake 4.x
         run: |
@@ -222,6 +227,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DUNI20_BUILD_CLI=ON \
+            -DUNI20_ENABLE_MPFR=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \
