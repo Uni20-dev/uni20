@@ -5,6 +5,9 @@
 #if UNI20_ENABLE_MPFR
 #include "mpreal.hpp"
 #endif
+#if UNI20_ENABLE_MPC
+#include "mpcomplex.hpp"
+#endif
 #include <complex>
 #include <numeric>
 #include <type_traits>
@@ -41,7 +44,7 @@ template <typename T> inline constexpr bool has_trivial_conj = Real<T> || Intege
 /// \param x Complex value whose conjugate is requested.
 /// \return The complex conjugate of `x`.
 /// \ingroup core_math
-template <typename T> uni20::complex<T> conj(uni20::complex<T> x) { return std::conj(x); }
+template <typename T> uni20::complex<T> conj(detail::standard_complex<T> x) { return std::conj(x); }
 
 /// \brief Returns the conjugate of a real-valued scalar.
 /// \details Real numbers are unchanged by conjugation, so the value is returned verbatim. The overload is
@@ -132,7 +135,7 @@ template <Real R> constexpr bool isfinite(R const& x)
 /// \param z Complex scalar to inspect.
 /// \return `true` when both the real and imaginary components are finite.
 /// \ingroup core_math
-template <typename T> constexpr bool isfinite(uni20::complex<T> const& z)
+template <Complex C> constexpr bool isfinite(C const& z)
 {
   return uni20::isfinite(z.real()) && uni20::isfinite(z.imag());
 }
@@ -144,7 +147,7 @@ template <typename T> constexpr bool isfinite(uni20::complex<T> const& z)
 /// \param z Complex number whose real component will be exposed.
 /// \return Reference to the real component of `z`.
 /// \ingroup core_math
-template <typename T> constexpr T& real(uni20::complex<T>& z) noexcept { return reinterpret_cast<T*>(&z)[0]; }
+template <typename T> constexpr T& real(detail::standard_complex<T>& z) noexcept { return reinterpret_cast<T*>(&z)[0]; }
 
 using std::real;
 
@@ -155,7 +158,7 @@ using std::real;
 /// \param z Complex number whose imaginary component will be exposed.
 /// \return Reference to the imaginary component of `z`.
 /// \ingroup core_math
-template <typename T> constexpr T& imag(uni20::complex<T>& z) noexcept { return reinterpret_cast<T*>(&z)[1]; }
+template <typename T> constexpr T& imag(detail::standard_complex<T>& z) noexcept { return reinterpret_cast<T*>(&z)[1]; }
 
 using std::imag;
 

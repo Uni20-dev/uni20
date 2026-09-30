@@ -2,12 +2,12 @@
 
 The first arbitrary-precision slice supplies `uni20::mpreal`, an owning MPFR
 scalar, explicit `Precision`, exact rational literal arithmetic, and a
-precision-aware pi constant. It is a CPU scalar API. Tensor allocation,
-MPC-backed `uni20::complex<mpreal>`, MPLAPACK kernels, and table/CLI precision
+precision-aware pi constant. Optional MPC supplies `uni20::complex<mpreal>`.
+It is a CPU scalar API. Tensor allocation, MPLAPACK kernels, and table/CLI precision
 selection are subsequent integration work; enabling this option does not
 advertise an arbitrary-precision BLAS or LAPACK backend.
-`complex<mpreal>` and `make_complex_t<mpreal>` are deliberately unavailable in
-this slice, so generic code cannot silently select the standard complex layout.
+`complex<mpreal>` and `make_complex_t<mpreal>` are unavailable without MPC, so
+generic code cannot silently select the standard complex layout.
 
 ## Configuration
 
@@ -30,8 +30,10 @@ support, including in cross builds. Consumers linking `uni20_core` inherit the
 required includes and libraries. With the option off, those dependencies are
 not searched for or linked.
 
-MPC is not needed for this real-only slice. Install `libmpc-dev` for the planned
-complex layer. The MPFR scalar option is independent of
+MPC is not needed for real-only scalars. Install `libmpc-dev` and set
+`UNI20_ENABLE_MPC=ON` together with `UNI20_ENABLE_MPFR=ON` for complex scalars.
+Custom installations accept `UNI20_MPC_INCLUDE_DIR` and `UNI20_MPC_LIBRARY`.
+The MPFR scalar option is independent of
 `UNI20_ENABLE_MPLAPACK`, which currently selects binary128 dense kernels.
 
 ## Explicit working precision and value semantics
@@ -49,14 +51,20 @@ mpreal y{"0.2", p};
 auto z = x + y;                   // Owning mpreal, evaluated immediately.
 ```
 
-`mpreal` has no default constructor. Every new numerical value obtains precision
+Default construction produces an unset `mpreal` without allocating MPFR storage.
+Use `initialized()` to query this state. Copying, moving, swapping, destruction
+and assignment are safe; assignment from a numerical value supplies its value
+and precision. Numerical use, formatting, precision queries and native-handle
+access on an unset object throw `std::logic_error`. Unset is neither zero nor NaN.
+This permits allocate-then-assign buffers; it does not supply a zero accumulator.
+Every new numerical value obtains precision
 explicitly or from another scalar. `Precision::decimal_digits` uses a conservative
 upper bound for conversion to binary bits and can allocate slightly more bits
 than the mathematical minimum.
 
 Copy and move construction and assignment preserve the source value and
-precision. After move construction, the source is zero at its original precision;
-move assignment also leaves its source valid. No arithmetic expression retains
+precision. Moving leaves the source unset; self-move assignment preserves the
+value. No arithmetic expression retains
 references to its operands.
 
 Binary `mpreal` arithmetic, including compound assignment, requires equal
@@ -162,6 +170,39 @@ supply its runtime precision. `has_numeric_limits_v<mpreal>` is false; algorithm
 must use explicit/value-derived precision and `epsilon(p)` rather than
 `numeric_limits<mpreal>::epsilon()`. Existing generic algorithms may need further
 adaptation for constants, allocation, and precision before accepting this scalar.
+
+## Complex scalars
+
+```cpp
+#include <uni20/core/mpcomplex.hpp>
+auto p = uni20::Precision::bits(256);
+uni20::complex<uni20::mpreal> z{"1.25", "-0.5", p};
+auto product = z * uni20::conj(z); // Owning complex result.
+auto magnitude = uni20::abs(z);   // Owning real at p.
+auto component = z.real();        // Independent owning copy.
+z.imag(uni20::mpreal{"0.1", uni20::Precision::bits(400)}); // Round to p.
+```
+
+Both components have one working precision. Construction from two `mpreal`
+values requires matching precisions; a third `Precision` argument explicitly
+converts both. Embedding one real value retains its precision and supplies
+positive imaginary zero. Copy/move assignment adopts the whole source precision;
+component setters preserve the existing complex precision. `real()` and `imag()`
+return owning values, never references into MPC storage.
+
+The complex type shares the real type's unset default state, owning value
+semantics, nearest-even rounding and explicit `.at(p)` conversion. Arithmetic
+requires matching precision; exact constants first round at the complex operand's
+precision. Equality compares stored values without requiring equal precision,
+and a NaN component makes equality false. No complex ordering is provided.
+
+`conj`, `abs`, `norm`, `arg`, `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` use
+MPC. Square root and logarithm use the principal branch; signed imaginary zero
+selects the side of the negative-real-axis cut. Classification uses the two
+components: finite requires both finite; `isnan`/`isinf` report whether either
+component has that classification. Round-trip component strings can reconstruct
+the value with the two-string constructor. Stream output is `(real,imag)`;
+`format_scalar` uses the existing presentation options and imaginary-unit suffix.
 
 ## Text and asynchronous use
 

@@ -11,6 +11,7 @@ namespace uni20
 namespace detail
 {
 struct mpreal_access;
+struct mpcomplex_access;
 inline void require_mpfr_tls()
 {
   static bool const supported = mpfr_buildopt_tls_p() != 0;
@@ -21,15 +22,20 @@ inline void require_mpfr_tls()
 /// \brief Owning MPFR real scalar with explicit precision and eager arithmetic.
 /// \details Arithmetic rounds to nearest, ties to even. Binary real arithmetic
 ///          requires equal precision. Copy and move assignment adopt the source
-///          precision. There is no default construction or implicit float conversion.
+///          precision. Default construction is unset; numerical use then throws
+///          std::logic_error until a value is assigned. No implicit float conversion.
 class mpreal {
   public:
+    /// \brief Construct an unset value without allocating MPFR storage.
+    mpreal() noexcept = default;
+
     /// \brief Construct positive zero at the specified precision.
     explicit mpreal(Precision precision)
     {
       detail::require_mpfr_tls();
       mpfr_init2(value_, precision.bit_count());
       mpfr_set_zero(value_, 1);
+      initialized_ = true;
     }
 
     /// \brief Parse a complete base-ten value, rounding once at explicit precision.
@@ -54,6 +60,10 @@ class mpreal {
     }
     mpreal(decimal_literal value, Precision precision) : mpreal(exact_constant(value), precision) {}
 
+    /// \brief Copy a valid borrowed MPFR value, rounding at explicit precision.
+    /// \pre value points to an initialized MPFR object for the duration of the call.
+    explicit mpreal(mpfr_srcptr value, Precision precision) : mpreal(precision) { mpfr_set(value_, value, MPFR_RNDN); }
+
     template <std::integral I>
       requires(!std::same_as<I, bool>)
     mpreal(I value, Precision precision) : mpreal(exact_constant(value), precision)
@@ -67,32 +77,62 @@ class mpreal {
     }
 
     /// \brief Explicitly round or promote an existing value to a new precision.
-    mpreal(mpreal const& other, Precision precision) : mpreal(precision) { mpfr_set(value_, other.value_, MPFR_RNDN); }
-    mpreal(mpreal const& other) : mpreal(other, other.precision()) {}
-    mpreal(mpreal&& other) : mpreal(other.precision()) { mpfr_swap(value_, other.value_); }
+    mpreal(mpreal const& other, Precision precision) : mpreal(precision)
+    {
+      mpfr_set(value_, other.native_handle(), MPFR_RNDN);
+    }
+    mpreal(mpreal const& other) : mpreal()
+    {
+      if (other.initialized())
+      {
+        mpreal copy(other, other.precision());
+        this->swap(copy);
+      }
+    }
+    /// \brief Transfer ownership, leaving the source unset.
+    mpreal(mpreal&& other) noexcept : mpreal() { this->swap(other); }
     mpreal& operator=(mpreal other) noexcept
     {
-      mpfr_swap(value_, other.value_);
+      this->swap(other);
       return *this;
     }
-    ~mpreal() { mpfr_clear(value_); }
+    ~mpreal()
+    {
+      if (initialized_) mpfr_clear(value_);
+    }
+
+    /// \brief Whether this object owns a numerical value with a working precision.
+    bool initialized() const noexcept { return initialized_; }
+    /// \brief Exchange values, precisions and unset states without allocation.
+    void swap(mpreal& other) noexcept
+    {
+      // Transfer the complete C handle together with its lifetime flag. Unset
+      // handles are zero-initialized bookkeeping and are never passed to MPFR.
+      std::swap(value_[0], other.value_[0]);
+      std::swap(initialized_, other.initialized_);
+    }
 
     /// \brief The stored value's working precision.
-    Precision precision() const noexcept { return Precision(mpfr_get_prec(value_)); }
+    Precision precision() const { return Precision(mpfr_get_prec(this->native_handle())); }
     /// \brief Borrow the read-only MPFR value; valid for this object's lifetime.
-    mpfr_srcptr native_handle() const noexcept { return value_; }
+    mpfr_srcptr native_handle() const
+    {
+      if (!initialized_) throw std::logic_error("mpreal: numerical use of an unset value");
+      return value_;
+    }
     /// \brief Return a copy rounded to an explicitly chosen precision.
     mpreal at(Precision precision) const { return mpreal(*this, precision); }
 
     /// \brief Convert explicitly to a native float, with nearest-even rounding.
-    explicit operator double() const { return mpfr_get_d(value_, MPFR_RNDN); }
-    explicit operator long double() const { return mpfr_get_ld(value_, MPFR_RNDN); }
+    explicit operator double() const { return mpfr_get_d(this->native_handle(), MPFR_RNDN); }
+    explicit operator long double() const { return mpfr_get_ld(this->native_handle(), MPFR_RNDN); }
 
     /// \brief Format locale-independent decimal scientific notation.
     /// \details Zero digits selects enough significant decimal digits to round-trip
     ///          at this value's precision. A positive count requests that many digits.
     std::string to_string(std::size_t digits = 0) const
     {
+      (void)this->native_handle();
       if (mpfr_nan_p(value_)) return "nan";
       if (mpfr_inf_p(value_)) return mpfr_signbit(value_) ? "-inf" : "inf";
       if (mpfr_zero_p(value_)) return mpfr_signbit(value_) ? "-0" : "0";
@@ -130,7 +170,9 @@ class mpreal {
   private:
     friend mpreal epsilon(Precision precision);
     friend struct detail::mpreal_access;
-    mpfr_t value_;
+    friend struct detail::mpcomplex_access;
+    mpfr_t value_{};
+    bool initialized_ = false;
 };
 
 namespace detail
@@ -178,7 +220,11 @@ inline mpreal operator-(mpreal const& a, mpreal const& b) { return detail::mprea
 inline mpreal operator*(mpreal const& a, mpreal const& b) { return detail::mpreal_access::apply<mpfr_mul>(a, b); }
 inline mpreal operator/(mpreal const& a, mpreal const& b) { return detail::mpreal_access::apply<mpfr_div>(a, b); }
 inline mpreal operator-(mpreal const& a) { return detail::mpreal_access::apply<mpfr_neg>(a); }
-inline mpreal operator+(mpreal const& a) { return a; }
+inline mpreal operator+(mpreal const& a)
+{
+  (void)a.native_handle();
+  return a;
+}
 
 // An exact operand is rounded at the real operand's precision before arithmetic.
 inline mpreal operator+(mpreal const& a, exact_constant const& b) { return a + b.at(a.precision()); }
@@ -260,10 +306,15 @@ inline std::partial_ordering operator<=>(mpreal const& a, I b)
                    : std::partial_ordering::equivalent;
 }
 
-inline bool isfinite(mpreal const& x) noexcept { return mpfr_number_p(x.native_handle()); }
-inline bool isnan(mpreal const& x) noexcept { return mpfr_nan_p(x.native_handle()); }
-inline bool isinf(mpreal const& x) noexcept { return mpfr_inf_p(x.native_handle()); }
-inline bool signbit(mpreal const& x) noexcept { return mpfr_signbit(x.native_handle()); }
+inline bool isfinite(mpreal const& x) { return mpfr_number_p(x.native_handle()); }
+inline bool isnan(mpreal const& x) { return mpfr_nan_p(x.native_handle()); }
+inline bool isinf(mpreal const& x) { return mpfr_inf_p(x.native_handle()); }
+inline bool signbit(mpreal const& x) { return mpfr_signbit(x.native_handle()); }
+inline mpreal conj(mpreal const& x)
+{
+  (void)x.native_handle();
+  return x;
+}
 inline mpreal abs(mpreal const& x) { return detail::mpreal_access::apply<mpfr_abs>(x); }
 inline mpreal sqrt(mpreal const& x) { return detail::mpreal_access::apply<mpfr_sqrt>(x); }
 inline mpreal exp(mpreal const& x) { return detail::mpreal_access::apply<mpfr_exp>(x); }

@@ -4475,7 +4475,7 @@ RealSymmetricEigensystem<Scalar> real_generalized_symmetric_eigensystem_index_ra
 /// \return Eigenvalues and, optionally, eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real>
-complex_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix, bool compute_vectors,
+complex_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix, bool compute_vectors,
                               MatrixFill triangle = MatrixFill::Upper)
 {
   if (!std::cmp_equal(matrix.rows(), matrix.cols()))
@@ -4521,7 +4521,7 @@ complex_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20::complex<Rea
 /// \return Eigenvalues and, optionally, eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real>
-complex_hermitian_eigensystem_divide_and_conquer(detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix,
+complex_hermitian_eigensystem_divide_and_conquer(detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix,
                                                  bool compute_vectors, MatrixFill triangle = MatrixFill::Upper)
 {
   if (!std::cmp_equal(matrix.rows(), matrix.cols()))
@@ -4574,7 +4574,7 @@ complex_hermitian_eigensystem_divide_and_conquer(detail::ColumnMajorLapackMatrix
 /// \return Selected eigenvalues and, optionally, selected eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real>
-complex_hermitian_eigensystem_index_range(detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix,
+complex_hermitian_eigensystem_index_range(detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix,
                                           std::size_t first_index, std::size_t last_index, bool compute_vectors,
                                           MatrixFill triangle = MatrixFill::Upper)
 {
@@ -4644,8 +4644,8 @@ complex_hermitian_eigensystem_index_range(detail::ColumnMajorLapackMatrix<uni20:
 /// \return Eigenvalues and, optionally, generalized eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real>
-complex_generalized_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix,
-                                          detail::ColumnMajorLapackMatrix<uni20::complex<Real>> metric,
+complex_generalized_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix,
+                                          detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> metric,
                                           bool compute_vectors, MatrixFill triangle = MatrixFill::Upper)
 {
   if (!std::cmp_equal(matrix.rows(), matrix.cols()))
@@ -4700,8 +4700,8 @@ complex_generalized_hermitian_eigensystem(detail::ColumnMajorLapackMatrix<uni20:
 /// \return Eigenvalues and, optionally, generalized eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real> complex_generalized_hermitian_eigensystem_divide_and_conquer(
-    detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix,
-    detail::ColumnMajorLapackMatrix<uni20::complex<Real>> metric, bool compute_vectors,
+    detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix,
+    detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> metric, bool compute_vectors,
     MatrixFill triangle = MatrixFill::Upper)
 {
   if (!std::cmp_equal(matrix.rows(), matrix.cols()))
@@ -4766,8 +4766,8 @@ ComplexHermitianEigensystem<Real> complex_generalized_hermitian_eigensystem_divi
 /// \return Selected eigenvalues and, optionally, selected generalized eigenvectors.
 template <uni20::LapackComplexReal Real>
 ComplexHermitianEigensystem<Real>
-complex_generalized_hermitian_eigensystem_index_range(detail::ColumnMajorLapackMatrix<uni20::complex<Real>> matrix,
-                                                      detail::ColumnMajorLapackMatrix<uni20::complex<Real>> metric,
+complex_generalized_hermitian_eigensystem_index_range(detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> matrix,
+                                                      detail::ColumnMajorLapackMatrix<uni20::detail::standard_complex<Real>> metric,
                                                       std::size_t first_index, std::size_t last_index,
                                                       bool compute_vectors, MatrixFill triangle = MatrixFill::Upper)
 {

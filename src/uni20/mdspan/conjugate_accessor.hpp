@@ -22,8 +22,8 @@ namespace detail
 
 struct conjugate_function
 {
-    template <class Real>
-    [[nodiscard]] constexpr auto operator()(uni20::complex<Real> const& value) const -> uni20::complex<Real>
+    template <uni20::Complex C>
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr auto operator()(C const& value) const -> C
     {
       return uni20::conj(value);
     }

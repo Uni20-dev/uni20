@@ -782,7 +782,7 @@ std::vector<std::size_t> select_nonsymmetric_ritz_indices(std::vector<uni20::com
 
 namespace detail
 {
-template <typename Scalar> std::vector<std::size_t> all_ritz_indices(std::vector<uni20::complex<Scalar>> const& values)
+template <uni20::Complex Scalar> std::vector<std::size_t> all_ritz_indices(std::vector<Scalar> const& values)
 {
   std::vector<std::size_t> indices(values.size());
   std::iota(indices.begin(), indices.end(), std::size_t{0});

@@ -6,6 +6,11 @@ int main()
   using namespace uni20;
   using namespace uni20::literals;
   auto p = Precision::decimal_digits(80);
+  mpreal deferred;
+  std::cout << "Default construction is unset: " << !deferred.initialized()
+            << "; assignment supplies both value and precision.\n";
+  deferred = mpreal("0.1", p);
+  std::cout << "Assigned value: " << deferred << "\n";
   std::cout << "Explicit arbitrary precision: " << p.bit_count() << " binary significand bits.\n"
             << "Decimal literal arithmetic is exact until .at(p) selects working precision.\n";
   auto exact = 0.1_mp + 0.2_mp;

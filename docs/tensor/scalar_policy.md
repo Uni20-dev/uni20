@@ -2,12 +2,21 @@
 
 Optional [arbitrary-precision real scalars](mpreal.md) use `uni20::mpreal`
 with explicit runtime `Precision` when `UNI20_ENABLE_MPFR=ON`. This first
-slice provides scalar arithmetic and exact constants; arbitrary-precision
-complex, tensor allocation, and dense backend integration are not yet supplied.
-Unlike the fixed-precision types below, `mpreal` has no default constructor or
-type-only numerical limits. Its `Real` trait does not imply BLAS/LAPACK support.
-`complex<mpreal>` and `make_complex_t<mpreal>` are rejected until the MPC
-implementation is available; they do not fall back to `std::complex<mpreal>`.
+layer provides scalar arithmetic and exact constants. `UNI20_ENABLE_MPC=ON`
+additionally supplies MPC-backed `complex<mpreal>` and `make_complex_t<mpreal>`;
+these names are unavailable in a real-only build. Default-constructed MPFR/MPC
+scalars are unset, and their precision cannot be described by type-only numerical
+limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
+allocation and dense backend integration are separate from scalar support.
+
+`uni20::complex<T>` selects the appropriate owning scalar type. Existing native
+real types retain exact `std::complex<T>` type identity. Generic complex APIs
+should deduce the complex type directly (`template <Complex C>`) and obtain its
+real type through `make_real_t<C>`; deduction through the selecting alias is not
+supported. Internal adaptations specifically for the standard-library family
+use `detail::standard_complex<T>`, including its fixed-precision LAPACK ABI.
+MPC component access returns owning real values; setters convert to the existing
+complex precision. Do not reinterpret an MPC value as adjacent C++ real objects.
 
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
@@ -57,10 +66,9 @@ pinned 3.0.0 release with only its binary128 backend enabled. See [MPLAPACK
 Binary128 Setup](../linalg/mplapack_binary128.md) for dependency selection,
 optional system-package, and validation commands.
 
-`uni20::complex<T>` is intentionally a type alias to `std::complex<T>`, not a
-replacement class. This keeps standard-library ABI, layout expectations, and
-interop behavior unchanged while giving Uni20 a single project-level spelling
-for complex scalars.
+For native real types, `uni20::complex<T>` retains standard-library ABI, layout
+and interoperability. The MPC specialization has its own representation and
+must be explicitly converted at provider boundaries.
 
 Owning Tensor shape construction initializes stored numerical elements to zero.
 `uni20::uninitialized` explicitly requests storage whose values must be supplied

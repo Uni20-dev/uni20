@@ -26,14 +26,19 @@ template <typename T>
 concept HasComplexSpelling = requires { typename uni20::complex<T>; };
 template <typename T>
 concept HasComplexCounterpart = requires { typename uni20::make_complex_t<T>; };
-static_assert(!std::default_initializable<mpreal>);
+static_assert(std::default_initializable<mpreal>);
+static_assert(std::is_nothrow_move_constructible_v<mpreal>);
 static_assert(!std::convertible_to<double, mpreal>);
 static_assert(!std::convertible_to<mpreal, double>);
 static_assert(!AddsNativeFloat<mpreal>);
 static_assert(!HasPrecisionlessSqrt<decimal_literal>);
 static_assert(Real<mpreal> && Scalar<mpreal>);
 static_assert(!BlasReal<mpreal> && !LapackReal<mpreal>);
+#if UNI20_ENABLE_MPC
+static_assert(HasComplexSpelling<mpreal> && HasComplexCounterpart<mpreal>);
+#else
 static_assert(!HasComplexSpelling<mpreal> && !HasComplexCounterpart<mpreal>);
+#endif
 static_assert(HasComplexSpelling<double> && HasComplexCounterpart<double>);
 static_assert(!has_numeric_limits_v<mpreal>);
 static_assert(std::same_as<decltype(std::declval<mpreal>() + std::declval<mpreal>()), mpreal>);
@@ -54,6 +59,58 @@ TEST(MpReal, PrecisionIsExplicitAndValidated)
   EXPECT_EQ(zero, 0);
   EXPECT_EQ(zero.precision(), p);
   EXPECT_FALSE(signbit(zero));
+}
+
+TEST(MpReal, UnsetValuesHaveSafeOwnershipButNoNumericalMeaning)
+{
+  mpreal unset;
+  EXPECT_FALSE(unset.initialized());
+  EXPECT_THROW(unset.precision(), std::logic_error);
+  EXPECT_THROW(unset.native_handle(), std::logic_error);
+  EXPECT_THROW(unset.to_string(), std::logic_error);
+  EXPECT_THROW((void)static_cast<double>(unset), std::logic_error);
+  EXPECT_THROW(isfinite(unset), std::logic_error);
+  EXPECT_THROW(isnan(unset), std::logic_error);
+  EXPECT_THROW(isinf(unset), std::logic_error);
+  EXPECT_THROW(signbit(unset), std::logic_error);
+  EXPECT_THROW(+unset, std::logic_error);
+  EXPECT_THROW(-unset, std::logic_error);
+  EXPECT_THROW(sqrt(unset), std::logic_error);
+  EXPECT_THROW((void)(unset == 0), std::logic_error);
+  EXPECT_THROW((void)(unset < 0), std::logic_error);
+  auto p = Precision::bits(256);
+  mpreal valid(1, p);
+  EXPECT_THROW(unset + valid, std::logic_error);
+  EXPECT_THROW(valid + unset, std::logic_error);
+  EXPECT_THROW((void)(valid == unset), std::logic_error);
+  EXPECT_THROW(unset += valid, std::logic_error);
+  EXPECT_THROW(unset.at(p), std::logic_error);
+  EXPECT_THROW((void)format_real(unset), std::logic_error);
+  EXPECT_THROW((void)mpreal(unset, p), std::logic_error);
+
+  auto copy = unset;
+  auto moved = std::move(unset);
+  EXPECT_FALSE(copy.initialized());
+  EXPECT_FALSE(moved.initialized());
+  unset = valid;
+  EXPECT_EQ(unset, 1);
+  EXPECT_EQ(unset.precision(), p);
+  moved = std::move(unset);
+  EXPECT_EQ(moved, 1);
+  EXPECT_FALSE(unset.initialized());
+  moved.swap(copy);
+  EXPECT_FALSE(moved.initialized());
+  EXPECT_EQ(copy, 1);
+  copy = moved;
+  EXPECT_FALSE(copy.initialized());
+  std::vector<mpreal> buffer(4);
+  buffer[2] = valid;
+  auto duplicate = buffer;
+  EXPECT_FALSE(duplicate[0].initialized());
+  EXPECT_EQ(duplicate[2], 1);
+  buffer.resize(40);
+  EXPECT_EQ(buffer[2], 1);
+  EXPECT_FALSE(buffer[39].initialized());
 }
 
 TEST(MpReal, ArithmeticIsEagerAndOwnsItsResult)
@@ -103,7 +160,7 @@ TEST(MpReal, AssignmentCopiesPrecisionAndMoveLeavesValidSource)
   EXPECT_EQ(destination, copy);
   auto moved = std::move(source);
   EXPECT_EQ(moved, copy);
-  EXPECT_EQ(source, 0);
+  EXPECT_FALSE(source.initialized());
   source = mpreal(7, Precision::bits(64));
   destination = std::move(source);
   EXPECT_EQ(destination, 7);

@@ -189,7 +189,7 @@ Scalar lange(char norm, blas_int m, blas_int n, Scalar* a, blas_int lda, Scalar*
 
 /// \brief Compute a dense complex matrix norm through the configured LAPACK backend.
 template <uni20::LapackComplexReal Real>
-Real lange(char norm, blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* work)
+Real lange(char norm, blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* work)
 {
   return unchecked::lange(norm, m, n, a, lda, work);
 }
@@ -203,7 +203,7 @@ Scalar lansy(char norm, char uplo, blas_int n, Scalar* a, blas_int lda, Scalar* 
 
 /// \brief Compute a dense complex Hermitian matrix norm through the configured LAPACK backend.
 template <uni20::LapackComplexReal Real>
-Real lanhe(char norm, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* work)
+Real lanhe(char norm, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* work)
 {
   return unchecked::lanhe(norm, uplo, n, a, lda, work);
 }
@@ -217,7 +217,7 @@ Scalar lantr(char norm, char uplo, char diag, blas_int m, blas_int n, Scalar* a,
 
 /// \brief Compute a dense complex triangular or trapezoidal matrix norm through the configured LAPACK backend.
 template <uni20::LapackComplexReal Real>
-Real lantr(char norm, char uplo, char diag, blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* work)
+Real lantr(char norm, char uplo, char diag, blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* work)
 {
   return unchecked::lantr(norm, uplo, diag, m, n, a, lda, work);
 }
@@ -369,7 +369,7 @@ void gesv(blas_int n, blas_int nrhs, Scalar* a, blas_int lda, blas_int* ipiv, Sc
 
 /// \brief Solve a complex dense general linear system through the configured LAPACK backend.
 template <uni20::LapackComplexReal Real>
-void gesv(blas_int n, blas_int nrhs, uni20::complex<Real>* a, blas_int lda, blas_int* ipiv, uni20::complex<Real>* b,
+void gesv(blas_int n, blas_int nrhs, uni20::detail::standard_complex<Real>* a, blas_int lda, blas_int* ipiv, uni20::detail::standard_complex<Real>* b,
           blas_int ldb)
 {
   blas_int const info = unchecked::gesv(n, nrhs, a, lda, ipiv, b, ldb);
@@ -406,7 +406,7 @@ template <uni20::LapackReal Scalar> void getrf(blas_int m, blas_int n, Scalar* a
 
 /// \brief Compute a complex dense general LU factorization through the configured LAPACK backend.
 template <uni20::LapackComplexReal Real>
-void getrf(blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, blas_int* ipiv)
+void getrf(blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, blas_int* ipiv)
 {
   blas_int const info = unchecked::getrf(m, n, a, lda, ipiv);
   detail::check_singular("getrf", info);
@@ -423,8 +423,8 @@ void getrs(char trans, blas_int n, blas_int nrhs, Scalar* a, blas_int lda, blas_
 
 /// \brief Solve using an existing complex dense general LU factorization.
 template <uni20::LapackComplexReal Real>
-void getrs(char trans, blas_int n, blas_int nrhs, uni20::complex<Real>* a, blas_int lda, blas_int const* ipiv,
-           uni20::complex<Real>* b, blas_int ldb)
+void getrs(char trans, blas_int n, blas_int nrhs, uni20::detail::standard_complex<Real>* a, blas_int lda, blas_int const* ipiv,
+           uni20::detail::standard_complex<Real>* b, blas_int ldb)
 {
   blas_int const info = unchecked::getrs(trans, n, nrhs, a, lda, ipiv, b, ldb);
   detail::check_invalid_argument("getrs", info);
@@ -451,7 +451,7 @@ void getri(blas_int n, Scalar* a, blas_int lda, blas_int* ipiv, Scalar* work, bl
 
 /// \brief Invert a complex dense general matrix from an existing LU factorization.
 template <uni20::LapackComplexReal Real>
-void getri(blas_int n, uni20::complex<Real>* a, blas_int lda, blas_int* ipiv, uni20::complex<Real>* work,
+void getri(blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, blas_int* ipiv, uni20::detail::standard_complex<Real>* work,
            blas_int lwork)
 {
   blas_int const info = unchecked::getri(n, a, lda, ipiv, work, lwork);
@@ -470,7 +470,7 @@ Scalar gecon(char norm, blas_int n, Scalar const* a, blas_int lda, Scalar anorm,
 
 /// \brief Estimate a complex dense general reciprocal condition number.
 template <uni20::LapackComplexReal Real>
-Real gecon(char norm, blas_int n, uni20::complex<Real> const* a, blas_int lda, Real anorm, uni20::complex<Real>* work,
+Real gecon(char norm, blas_int n, uni20::detail::standard_complex<Real> const* a, blas_int lda, Real anorm, uni20::detail::standard_complex<Real>* work,
            Real* rwork)
 {
   Real rcond{};
@@ -719,7 +719,7 @@ void sygvx(blas_int itype, char jobz, char range, char uplo, blas_int n, Scalar*
 
 /// \brief Compute eigenvalues and optionally eigenvectors of a complex Hermitian matrix.
 template <uni20::LapackComplexReal Real>
-void heev(char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* w, uni20::complex<Real>* work,
+void heev(char jobz, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* w, uni20::detail::standard_complex<Real>* work,
           blas_int lwork, Real* rwork)
 {
   blas_int const info = unchecked::heev(jobz, uplo, n, a, lda, w, work, lwork, rwork);
@@ -728,7 +728,7 @@ void heev(char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int ld
 
 /// \brief Compute eigenvalues and optionally eigenvectors of a complex Hermitian matrix by divide and conquer.
 template <uni20::LapackComplexReal Real>
-void heevd(char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* w, uni20::complex<Real>* work,
+void heevd(char jobz, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* w, uni20::detail::standard_complex<Real>* work,
            blas_int lwork, Real* rwork, blas_int lrwork, blas_int* iwork, blas_int liwork)
 {
   blas_int const info = unchecked::heevd(jobz, uplo, n, a, lda, w, work, lwork, rwork, lrwork, iwork, liwork);
@@ -737,9 +737,9 @@ void heevd(char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int l
 
 /// \brief Compute selected eigenvalues and optionally eigenvectors of a complex Hermitian matrix.
 template <uni20::LapackComplexReal Real>
-void heevr(char jobz, char range, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda, Real vl, Real vu,
-           blas_int il, blas_int iu, Real abstol, blas_int& selected_count, Real* w, uni20::complex<Real>* z,
-           blas_int ldz, blas_int* isuppz, uni20::complex<Real>* work, blas_int lwork, Real* rwork, blas_int lrwork,
+void heevr(char jobz, char range, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real vl, Real vu,
+           blas_int il, blas_int iu, Real abstol, blas_int& selected_count, Real* w, uni20::detail::standard_complex<Real>* z,
+           blas_int ldz, blas_int* isuppz, uni20::detail::standard_complex<Real>* work, blas_int lwork, Real* rwork, blas_int lrwork,
            blas_int* iwork, blas_int liwork)
 {
   blas_int const info = unchecked::heevr(jobz, range, uplo, n, a, lda, vl, vu, il, iu, abstol, selected_count, w, z,
@@ -749,8 +749,8 @@ void heevr(char jobz, char range, char uplo, blas_int n, uni20::complex<Real>* a
 
 /// \brief Compute eigenvalues and optionally eigenvectors of a complex generalized Hermitian-definite problem.
 template <uni20::LapackComplexReal Real>
-void hegv(blas_int itype, char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda,
-          uni20::complex<Real>* b, blas_int ldb, Real* w, uni20::complex<Real>* work, blas_int lwork, Real* rwork)
+void hegv(blas_int itype, char jobz, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda,
+          uni20::detail::standard_complex<Real>* b, blas_int ldb, Real* w, uni20::detail::standard_complex<Real>* work, blas_int lwork, Real* rwork)
 {
   blas_int const info = unchecked::hegv(itype, jobz, uplo, n, a, lda, b, ldb, w, work, lwork, rwork);
   detail::check_generalized_symmetric_eigensolver("hegv", n, info);
@@ -759,8 +759,8 @@ void hegv(blas_int itype, char jobz, char uplo, blas_int n, uni20::complex<Real>
 /// \brief Compute eigenvalues and optionally eigenvectors of a complex generalized Hermitian-definite problem by divide
 ///        and conquer.
 template <uni20::LapackComplexReal Real>
-void hegvd(blas_int itype, char jobz, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda,
-           uni20::complex<Real>* b, blas_int ldb, Real* w, uni20::complex<Real>* work, blas_int lwork, Real* rwork,
+void hegvd(blas_int itype, char jobz, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda,
+           uni20::detail::standard_complex<Real>* b, blas_int ldb, Real* w, uni20::detail::standard_complex<Real>* work, blas_int lwork, Real* rwork,
            blas_int lrwork, blas_int* iwork, blas_int liwork)
 {
   blas_int const info =
@@ -770,9 +770,9 @@ void hegvd(blas_int itype, char jobz, char uplo, blas_int n, uni20::complex<Real
 
 /// \brief Compute selected eigenvalues and optionally eigenvectors of a complex generalized Hermitian-definite problem.
 template <uni20::LapackComplexReal Real>
-void hegvx(blas_int itype, char jobz, char range, char uplo, blas_int n, uni20::complex<Real>* a, blas_int lda,
-           uni20::complex<Real>* b, blas_int ldb, Real vl, Real vu, blas_int il, blas_int iu, Real abstol,
-           blas_int& selected_count, Real* w, uni20::complex<Real>* z, blas_int ldz, uni20::complex<Real>* work,
+void hegvx(blas_int itype, char jobz, char range, char uplo, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda,
+           uni20::detail::standard_complex<Real>* b, blas_int ldb, Real vl, Real vu, blas_int il, blas_int iu, Real abstol,
+           blas_int& selected_count, Real* w, uni20::detail::standard_complex<Real>* z, blas_int ldz, uni20::detail::standard_complex<Real>* work,
            blas_int lwork, Real* rwork, blas_int* iwork, blas_int* ifail)
 {
   blas_int const info = unchecked::hegvx(itype, jobz, range, uplo, n, a, lda, b, ldb, vl, vu, il, iu, abstol,
@@ -827,8 +827,8 @@ void gebak(char job, char side, blas_int n, blas_int first, blas_int last, Scala
 
 /// \brief Compute eigenvalues and optionally eigenvectors of a complex nonsymmetric matrix.
 template <uni20::LapackComplexReal Real>
-void geev(char jobvl, char jobvr, blas_int n, uni20::complex<Real>* a, blas_int lda, uni20::complex<Real>* w,
-          uni20::complex<Real>* vl, blas_int ldvl, uni20::complex<Real>* vr, blas_int ldvr, uni20::complex<Real>* work,
+void geev(char jobvl, char jobvr, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, uni20::detail::standard_complex<Real>* w,
+          uni20::detail::standard_complex<Real>* vl, blas_int ldvl, uni20::detail::standard_complex<Real>* vr, blas_int ldvr, uni20::detail::standard_complex<Real>* work,
           blas_int lwork, Real* rwork)
 {
   blas_int const info = unchecked::geev(jobvl, jobvr, n, a, lda, w, vl, ldvl, vr, ldvr, work, lwork, rwork);
@@ -851,8 +851,8 @@ void gees(char jobvs, char sort, blas_int n, Scalar* a, blas_int lda, blas_int& 
 
 /// \brief Compute the complex Schur form of a complex nonsymmetric matrix.
 template <uni20::LapackComplexReal Real>
-void gees(char jobvs, char sort, blas_int n, uni20::complex<Real>* a, blas_int lda, blas_int& selected_dimension,
-          uni20::complex<Real>* w, uni20::complex<Real>* vs, blas_int ldvs, uni20::complex<Real>* work, blas_int lwork,
+void gees(char jobvs, char sort, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, blas_int& selected_dimension,
+          uni20::detail::standard_complex<Real>* w, uni20::detail::standard_complex<Real>* vs, blas_int ldvs, uni20::detail::standard_complex<Real>* work, blas_int lwork,
           Real* rwork, blas_int* bwork)
 {
   blas_int const info =
@@ -892,7 +892,7 @@ void trexc(char compq, blas_int n, Scalar* t, blas_int ldt, Scalar* q, blas_int 
 
 /// \brief Reorder adjacent entries in a complex Schur form.
 template <uni20::LapackComplexReal Real>
-void trexc(char compq, blas_int n, uni20::complex<Real>* t, blas_int ldt, uni20::complex<Real>* q, blas_int ldq,
+void trexc(char compq, blas_int n, uni20::detail::standard_complex<Real>* t, blas_int ldt, uni20::detail::standard_complex<Real>* q, blas_int ldq,
            blas_int& first, blas_int& last)
 {
   blas_int const info = unchecked::trexc(compq, n, t, ldt, q, ldq, first, last);
@@ -1185,8 +1185,8 @@ void gesvd(char jobu, char jobvt, blas_int m, blas_int n, Scalar* a, blas_int ld
 
 /// \brief Compute a complex dense singular value decomposition.
 template <uni20::LapackComplexReal Real>
-void gesvd(char jobu, char jobvt, blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* s,
-           uni20::complex<Real>* u, blas_int ldu, uni20::complex<Real>* vt, blas_int ldvt, uni20::complex<Real>* work,
+void gesvd(char jobu, char jobvt, blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* s,
+           uni20::detail::standard_complex<Real>* u, blas_int ldu, uni20::detail::standard_complex<Real>* vt, blas_int ldvt, uni20::detail::standard_complex<Real>* work,
            blas_int lwork, Real* rwork)
 {
   blas_int const info = unchecked::gesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, rwork);
@@ -1204,8 +1204,8 @@ void gesdd(char jobz, blas_int m, blas_int n, Scalar* a, blas_int lda, Scalar* s
 
 /// \brief Compute a complex dense divide-and-conquer singular value decomposition.
 template <uni20::LapackComplexReal Real>
-void gesdd(char jobz, blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, Real* s, uni20::complex<Real>* u,
-           blas_int ldu, uni20::complex<Real>* vt, blas_int ldvt, uni20::complex<Real>* work, blas_int lwork,
+void gesdd(char jobz, blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real* s, uni20::detail::standard_complex<Real>* u,
+           blas_int ldu, uni20::detail::standard_complex<Real>* vt, blas_int ldvt, uni20::detail::standard_complex<Real>* work, blas_int lwork,
            Real* rwork, blas_int* iwork)
 {
   blas_int const info = unchecked::gesdd(jobz, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, rwork, iwork);
@@ -1225,9 +1225,9 @@ void gesvdx(char jobu, char jobvt, char range, blas_int m, blas_int n, Scalar* a
 
 /// \brief Compute selected singular values and vectors of a complex dense matrix.
 template <uni20::LapackComplexReal Real>
-void gesvdx(char jobu, char jobvt, char range, blas_int m, blas_int n, uni20::complex<Real>* a, blas_int lda, Real vl,
-            Real vu, blas_int il, blas_int iu, blas_int& selected_count, Real* singular_values, uni20::complex<Real>* u,
-            blas_int ldu, uni20::complex<Real>* vt, blas_int ldvt, uni20::complex<Real>* work, blas_int lwork,
+void gesvdx(char jobu, char jobvt, char range, blas_int m, blas_int n, uni20::detail::standard_complex<Real>* a, blas_int lda, Real vl,
+            Real vu, blas_int il, blas_int iu, blas_int& selected_count, Real* singular_values, uni20::detail::standard_complex<Real>* u,
+            blas_int ldu, uni20::detail::standard_complex<Real>* vt, blas_int ldvt, uni20::detail::standard_complex<Real>* work, blas_int lwork,
             Real* rwork, blas_int* iwork)
 {
   blas_int const info = unchecked::gesvdx(jobu, jobvt, range, m, n, a, lda, vl, vu, il, iu, selected_count,

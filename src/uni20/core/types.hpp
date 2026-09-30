@@ -25,6 +25,27 @@ using float64 = double;
 #if UNI20_ENABLE_MPFR
 class mpreal;
 #endif
+#if UNI20_ENABLE_MPC
+class mpcomplex;
+#endif
+
+namespace detail
+{
+// Preserve deduction where code specifically adapts the standard-library family.
+template <typename Real> using standard_complex = std::complex<Real>;
+template <typename Real> struct complex_type
+{
+    using type = standard_complex<Real>;
+};
+#if UNI20_ENABLE_MPFR
+template <> struct complex_type<mpreal>
+{
+#if UNI20_ENABLE_MPC
+    using type = mpcomplex;
+#endif
+};
+#endif
+} // namespace detail
 
 #if UNI20_HAS_FLOAT80
 /// \brief Native x87 extended-precision real scalar, with 64 significand bits.
@@ -41,17 +62,12 @@ static_assert(std::numeric_limits<float80>::is_iec559 && std::numeric_limits<flo
 #endif
 
 /// \brief Project-level complex scalar spelling.
-/// \details This is intentionally an alias to `std::complex`, not a wrapper. Code in Uni20 should spell complex
-///          scalar types as `uni20::complex<T>` so future scalar-policy changes have one namespace-level hook while
-///          preserving standard-library ABI and interop today.
-///          mpreal is excluded until its MPC-backed complex implementation is available.
+/// \details Native real types retain std::complex identity and ABI. With MPC enabled,
+///          mpreal selects the owning MPC scalar. Generic functions should deduce
+///          the complex value type directly rather than deducing through this alias.
 /// \tparam Real Underlying real scalar type.
 /// \ingroup core_math
-template <typename Real>
-#if UNI20_ENABLE_MPFR
-  requires(!std::same_as<std::remove_cv_t<Real>, mpreal>)
-#endif
-using complex = std::complex<Real>;
+template <typename Real> using complex = typename detail::complex_type<Real>::type;
 
 using complex64 = complex<float>;
 using complex128 = complex<double>;

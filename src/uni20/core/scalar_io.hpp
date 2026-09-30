@@ -6,6 +6,9 @@
 #if UNI20_ENABLE_MPFR
 #include "mpreal.hpp"
 #endif
+#if UNI20_ENABLE_MPC
+#include "mpcomplex.hpp"
+#endif
 
 #include <cerrno>
 #include <cmath>
@@ -250,14 +253,14 @@ template <Complex T> [[nodiscard]] std::string format_complex(T const& value, sc
 {
   using real_type = make_real_t<T>;
   real_type imag = value.imag();
-  bool const negative_imag = detail::scalar_signbit(imag) && !(options.normalize_negative_zero && imag == real_type{});
+  bool const negative_imag = detail::scalar_signbit(imag) && !(options.normalize_negative_zero && imag == 0);
   if (negative_imag)
   {
     imag = -imag;
   }
-  else if (options.normalize_negative_zero && imag == real_type{})
+  else if (options.normalize_negative_zero && imag == 0 && detail::scalar_signbit(imag))
   {
-    imag = real_type{};
+    imag = -imag;
   }
 
   return format_real(value.real(), options) + (negative_imag ? "-" : "+") + format_real(imag, options) +

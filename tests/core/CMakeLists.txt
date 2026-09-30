@@ -4,6 +4,10 @@ if(UNI20_ENABLE_MPFR)
   add_test_module(mpfr SOURCES test_mpreal.cpp LIBS uni20_core uni20_async TBB::tbb)
 endif()
 
+if(UNI20_ENABLE_MPC)
+  add_test_module(mpc SOURCES test_mpcomplex.cpp LIBS uni20_core uni20_async TBB::tbb)
+endif()
+
 add_test_module(core
   SOURCES test_types.cpp test_numeric_limits.cpp test_scalar_traits.cpp test_scalar_concepts.cpp test_scalar_io.cpp
           test_scalar_precision.cpp test_float80.cpp test_math.cpp test_buildinfo.cpp

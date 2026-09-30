@@ -143,10 +143,13 @@ pre-populate the CMake FetchContent sources instead.
 * Uni20 uses the Kokkos reference `mdspan` implementation, in namespace `stdex::`.
 * Uni20 uses square brackets `[]` for multi-dimensional indexing of tensors. **Do not** define `MDSPAN_USE_PAREN_OPERATOR`, use `[]` instead. This may mean adding brackets when code like `[a,b]` is used in a macro invocation, especially in TRACE and gtest macros.
 * Spell complex scalar types as `uni20::complex<T>` in Uni20 code, tests,
-  examples, and docs. `uni20::complex<T>` is intentionally an alias to
-  `std::complex<T>`, not a wrapper. Direct `std::complex<T>` spellings should
-  be limited to the alias definition, explicit alias tests/docs, or narrow
-  external interop boundaries.
+  examples, and docs. Native real types retain `std::complex<T>` identity;
+  `complex<mpreal>` selects the MPC-backed owning scalar when enabled. Deduce
+  generic complex value types directly through `Complex C`, since the selecting
+  alias is not a deduction surface. Direct `std::complex<T>` spellings should
+  be limited to the native alias definition, explicit alias tests/docs, or
+  narrow external interop boundaries. Internal standard-family adapters may
+  use `detail::standard_complex<T>` where real-type deduction is required.
 * Use `uni20::numeric_limits<T>` in scalar-generic Uni20 algorithms. It
   delegates to `std::numeric_limits<T>` for ordinary arithmetic types and is the
   project customization point for extension or library scalar types with
