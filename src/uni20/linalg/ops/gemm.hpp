@@ -53,7 +53,7 @@ void gemm(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, LhsTe
       throw std::invalid_argument("GEMM: differing output default requires explicit working precision");
     dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta,
                     p);
-    output.default_precision(p);
+    if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
   }
   else
 #endif

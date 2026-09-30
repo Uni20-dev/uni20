@@ -22,11 +22,12 @@ MPC component access returns owning real values; setters convert to the existing
 complex precision. Do not reinterpret an MPC value as adjacent C++ real objects.
 
 Runtime-precision host tensors take a trailing `Precision` and carry a construction
-default independently of their elements. Views of existing tensors snapshot it;
+default independently of their elements. Parent-backed structural views inherit
+that default, resolving it within the readable parent epoch for async aliases;
 changing a default never converts stored values. Use `at_precision(tensor, p)` for
 explicit bulk conversion. Fixed-precision storage and views have no corresponding
 runtime state. See [tensor construction defaults](mpreal.md#tensor-construction-defaults)
-for output allocation and deferred-view limitations.
+for output allocation and view metadata semantics.
 
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in

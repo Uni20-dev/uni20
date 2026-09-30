@@ -35,16 +35,7 @@ template <typename T> struct precision_default<T, true>
     Precision default_precision() const { return this->get(); }
     void default_precision(Precision p) { value = p; }
     std::optional<Precision> default_precision_if_set() const noexcept { return value; }
-    template <class Source> void copy_default_precision(Source const& source)
-    {
-      if constexpr (requires { source.default_precision_if_set(); }) value = source.default_precision_if_set();
-    }
 };
 #endif
-template <typename Target, typename Source> constexpr Target with_precision_default(Target target, Source const& source)
-{
-  if constexpr (requires { target.copy_default_precision(source); }) target.copy_default_precision(source);
-  return target;
-}
 } // namespace detail
 } // namespace uni20

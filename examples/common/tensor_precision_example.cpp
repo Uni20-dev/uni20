@@ -15,8 +15,8 @@ int main()
   std::cout << "Tensor precision defaults control future initialization, independently of stored values.\n"
             << "After changing the default to 3 bits, the first element still has "
             << values[0, 0].precision().bit_count() << " bits.\n"
-            << "A view created earlier keeps its " << view.default_precision().bit_count()
-            << "-bit default snapshot.\n";
+            << "A view created earlier follows the parent's new " << view.default_precision().bit_count()
+            << "-bit default without converting its elements.\n";
   auto converted = at_precision(values, low);
   std::cout << "Explicit conversion to 3 bits rounds 1.125 to " << converted[0, 0] << " and 1.375 to "
             << converted[1, 0] << " (nearest-even ties).\n"

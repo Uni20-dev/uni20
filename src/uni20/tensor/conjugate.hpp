@@ -20,7 +20,7 @@
 namespace uni20
 {
 /// \brief Non-owning read-only view of a tensor-level object.
-template <TensorView Tensor> class ConstTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
+template <TensorView Tensor> class ConstTensorView {
   public:
     using tensor_type = std::remove_cvref_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<tensor_type>;
@@ -29,14 +29,29 @@ template <TensorView Tensor> class ConstTensorView : public detail::precision_de
 
     /// \brief Bind a read-only view to an existing tensor.
     explicit constexpr ConstTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
-    {
-      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
-    }
+    {}
 
     /// \brief Bind a read-only view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
     ///          callers must not resolve the view until the tensor is constructed.
     explicit constexpr ConstTensorView(tensor_type const* tensor) noexcept : tensor_(tensor) {}
+
+#if UNI20_ENABLE_MPFR
+    /// \brief Read the parent's current default precision without converting elements.
+    /// \pre The parent is constructed and readable, including its async epoch when applicable.
+    [[nodiscard]] Precision default_precision() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision();
+    }
+
+    /// \brief Read the parent's optional default under the same access rules as its values.
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision_if_set();
+    }
+#endif
 
     /// \brief Return the underlying tensor's backend selector.
     [[nodiscard]] constexpr decltype(auto) backend_selector() const
@@ -85,7 +100,7 @@ template <TensorView Tensor> class ConstTensorView : public detail::precision_de
 /// \details The view preserves tensor metadata and backend selection while
 ///          delegating value transformation to `conjugated_accessor`. It is
 ///          read-only and may not outlive the referenced tensor.
-template <TensorView Tensor> class ConjugatedTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
+template <TensorView Tensor> class ConjugatedTensorView {
   public:
     using tensor_type = std::remove_cvref_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<tensor_type>;
@@ -94,14 +109,29 @@ template <TensorView Tensor> class ConjugatedTensorView : public detail::precisi
 
     /// \brief Bind a lazy conjugating view to an existing tensor.
     explicit constexpr ConjugatedTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
-    {
-      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
-    }
+    {}
 
     /// \brief Bind a conjugating view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
     ///          callers must not resolve the view until the tensor is constructed.
     explicit constexpr ConjugatedTensorView(tensor_type const* tensor) noexcept : tensor_(tensor) {}
+
+#if UNI20_ENABLE_MPFR
+    /// \brief Read the parent's current default precision without converting elements.
+    /// \pre The parent is constructed and readable, including its async epoch when applicable.
+    [[nodiscard]] Precision default_precision() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision();
+    }
+
+    /// \brief Read the parent's optional default under the same access rules as its values.
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision_if_set();
+    }
+#endif
 
     /// \brief Return the underlying tensor's backend selector.
     [[nodiscard]] constexpr decltype(auto) backend_selector() const
@@ -157,19 +187,19 @@ template <TensorView Tensor>
 /// \brief Cancel a tensor conjugation view and return the read-only base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor>& view) noexcept
 {
-  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Cancel a const tensor conjugation view and return the read-only base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor> const& view) noexcept
 {
-  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Cancel a temporary tensor conjugation view and return its durable base tensor.
 template <TensorView Tensor> [[nodiscard]] constexpr auto conj(ConjugatedTensorView<Tensor>&& view) noexcept
 {
-  return detail::with_precision_default(ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConstTensorView<typename ConjugatedTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Reapply conjugation to a read-only complex tensor view.
@@ -177,7 +207,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor>& view) noexcept
 {
-  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Reapply conjugation to a const read-only complex tensor view.
@@ -185,7 +215,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor> const& view) noexcept
 {
-  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Reapply conjugation to a temporary read-only complex tensor view.
@@ -193,7 +223,7 @@ template <TensorView Tensor>
   requires Complex<tensor_element_t<Tensor>>
 [[nodiscard]] constexpr auto conj(ConstTensorView<Tensor>&& view) noexcept
 {
-  return detail::with_precision_default(ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()}, view);
+  return ConjugatedTensorView<typename ConstTensorView<Tensor>::tensor_type>{view.base()};
 }
 
 /// \brief Return a read-only identity view of a non-complex tensor lvalue.

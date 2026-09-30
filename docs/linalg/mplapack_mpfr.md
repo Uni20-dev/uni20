@@ -46,7 +46,8 @@ auto y = uni20::linalg::solve(a, b, uni20::Precision::bits(400));
 Without an override, the input tensors must have equal construction defaults.
 Missing or differing defaults are errors; element precision is not scanned for
 consistency. `assign_product(output, a, b, p)` and `solve(a, b, p)` select an
-explicit working precision. A successful result carries that default.
+explicit working precision. A successful owning result carries that default; writing through a structural
+view leaves the parent construction default unchanged.
 
 `gemm(output, alpha, a, b, beta[, p])` keeps the output's existing shape. With no
 override and nonzero `beta`, its default must also match the input defaults.
@@ -114,15 +115,17 @@ This first slice uses routines with no workspace-query calls.
 Include the corresponding headers under `<uni20/linalg/async/>` for scheduled
 products and solves. `assign_product(output, a, b[, p])`, explicit-coefficient
 `assign_product`, `gemm`, and `solve(a, b[, p])` select or apply precision only
-after the required inputs are readable. An async alias created over reserved
-parent storage has no inferred default; supply operation precision explicitly.
+after the required inputs are readable. Async conjugation and reshape aliases
+inherit their parent's default in that readable epoch, including aliases created
+before the parent was constructed. Later parent-default changes are observed by
+subsequent operations through the same alias.
 The existing async `add_product` convenience interface is not yet adapted to
 runtime-precision coefficient construction; use `gemm` with explicit scalar
 coefficients for accumulation.
 
 ## Examples and validation
 
-- `tensor_precision_example`: construction defaults, view snapshots and bulk conversion.
+- `tensor_precision_example`: construction defaults, inherited view defaults and bulk conversion.
 - `mplapack_mpfr_example`: a complex 400-bit solve which becomes singular at
   113 bits, with a separately evaluated 512-bit residual.
 - `mplapack_precision_example`: concurrent async solves at four independent precisions.

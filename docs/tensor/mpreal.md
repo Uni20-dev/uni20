@@ -244,7 +244,7 @@ uni20::DenseMatrix<uni20::mpreal> work(uni20::uninitialized, 2, 3, p);
 // work's scalar objects exist, but are unset until assigned.
 auto view = uni20::reshape_view(a, 6);
 a.default_precision(uni20::Precision::bits(80));
-// Existing elements and view.default_precision() still have 256 bits.
+// Existing elements still have 256 bits; view.default_precision() now reports 80 bits.
 auto rounded = uni20::at_precision(a, uni20::Precision::bits(80));
 // rounded owns converted elements and has an 80-bit construction default.
 ```
@@ -261,17 +261,28 @@ scans or converts existing elements. `at_precision(tensor, p)` is the explicit
 owning conversion and rejects unset source elements. A low-precision input's
 lost digits cannot be recovered by conversion to a higher precision.
 
-Views of existing tensors snapshot the default. Raw mdspans do not carry it.
-Descriptors constructed from a pointer to reserved storage, including current
-async alias factories, cannot inspect an unconstructed parent and start without
-a default. They need an explicitly supplied default or operation precision.
-Access to their parent must still respect its readable epoch. This avoids both
-unsynchronized metadata reads and mutable caches inside read-only views.
+Parent-backed structural views inherit the parent's current default. Changing
+an owner's default is visible through existing conjugation and reshape views,
+including nested views; it does not convert their elements. Views do not offer
+an independent default setter. Materializing an owning tensor copies the current
+default, after which its metadata is independent of the source.
+
+Async aliases may bind reserved storage before the parent is constructed. They
+resolve precision through the parent only once the relevant epoch is readable,
+just like other parent metadata. Reusing an alias across epochs observes each
+readable parent state's default without a mutable cache. Raw mdspans carry no
+tensor default and require explicit operation precision.
+
+Writing through a structural view changes elements but does not change the
+parent's construction default, even if the operation requests another working
+precision. A future view that converts element precision would be a separate
+numerical transformation, not an ordinary structural view.
 
 `common_default_precision(a, b)` selects matching input defaults and throws if
 either is missing or they differ. It does not inspect individual elements.
-`prepare_output(output, extents, p)` records the operation precision and prepares
-unset storage when a new allocation is needed. Reused elements are not converted;
+`prepare_output(output, extents, p)` records the operation precision on owning
+outputs and prepares unset storage when a new allocation is needed. Structural
+view outputs keep their parent's default. Reused elements are not converted;
 the numerical operation must overwrite the elements promised by its contract.
 
 Run `mpreal_example` for exact fractions, an 80-digit calculation, pi generation,

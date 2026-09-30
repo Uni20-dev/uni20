@@ -198,3 +198,67 @@ TEST(MpfrLinalg, AsyncReservedParentAliasesAcceptExplicitOperationPrecision)
   EXPECT_EQ(value.default_precision(), p);
   EXPECT_EQ((value[0, 0]), complex<mpreal>("1", "2", p));
 }
+
+TEST(MpfrLinalg, AsyncViewsInferPrecisionFromEachReadableParentEpoch)
+{
+  using namespace uni20::async;
+  using Matrix = DenseMatrix<complex<mpreal>>;
+  DebugScheduler scheduler;
+  ScopedScheduler scope(&scheduler);
+  auto p = Precision::bits(256), q = Precision::bits(80);
+  Async<Matrix> a, b, first, second;
+  auto producer_a = a.write();
+  auto producer_b = b.write();
+  auto conjugated = uni20::async::conj(a);
+  auto reshaped = uni20::async::reshape_view(conjugated, 1, 1);
+  auto rhs = uni20::async::reshape_view(std::as_const(b), 1, 1);
+  linalg::assign_product(first, reshaped, rhs);
+  auto first_solution = linalg::solve(reshaped, first);
+
+  // This write belongs after the first consumers, but before the second ones.
+  scheduler.schedule([](WriteBuffer<Matrix> a, WriteBuffer<Matrix> b, Precision q) static -> AsyncTask {
+    auto av = co_await a;
+    auto bv = co_await b;
+    av.get().default_precision(q);
+    bv.get().default_precision(q);
+  }(a.write(), b.write(), q));
+  linalg::assign_product(second, reshaped, rhs);
+  auto second_solution = linalg::solve(reshaped, second);
+
+  // Publish only after both sets of consumers have been scheduled.
+  scheduler.schedule([](WriteBuffer<Matrix> a, WriteBuffer<Matrix> b, Precision p) static -> AsyncTask {
+    Matrix av(1, 1, p), bv(1, 1, p);
+    av[0, 0] = complex<mpreal>("3", "4", p);
+    bv[0, 0] = complex<mpreal>("1", "2", p);
+    co_await a = std::move(av);
+    co_await b = std::move(bv);
+  }(std::move(producer_a), std::move(producer_b), p));
+
+  auto const& before = first_solution.get_wait(scheduler);
+  auto const& after = second_solution.get_wait(scheduler);
+  EXPECT_EQ(before.default_precision(), p);
+  EXPECT_EQ(after.default_precision(), q);
+  EXPECT_EQ((before[0, 0]), complex<mpreal>("1", "2", p));
+  EXPECT_EQ((after[0, 0]), complex<mpreal>("1", "2", q));
+  EXPECT_EQ(first.get_wait(scheduler).default_precision(), p);
+  EXPECT_EQ(second.get_wait(scheduler).default_precision(), q);
+}
+
+TEST(MpfrLinalg, WritingThroughViewsPreservesParentDefault)
+{
+  auto p = Precision::bits(256), q = Precision::bits(80);
+  DenseMatrix<mpreal> a(1, 1, p), b(1, 1, p), output(1, 1, q);
+  a[0, 0] = mpreal(2, p);
+  b[0, 0] = mpreal(3, p);
+  auto view = reshape_view(output, 1, 1);
+  linalg::assign_product(view, a, b);
+  EXPECT_EQ((output[0, 0]), 6);
+  EXPECT_EQ((output[0, 0].precision()), p);
+  EXPECT_EQ(output.default_precision(), q);
+  EXPECT_EQ(view.default_precision(), q);
+  linalg::gemm(view, mpreal(1, p), a, b, mpreal(0, p));
+  EXPECT_EQ(view.default_precision(), q);
+  output.default_precision(p);
+  linalg::add_product(view, a, b);
+  EXPECT_EQ((output[0, 0]), 12);
+}

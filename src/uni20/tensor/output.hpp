@@ -222,15 +222,16 @@ Output& prepare_output(async::shared_storage<Output>& storage, RequiredExtents c
 }
 
 #if UNI20_ENABLE_MPFR
-/// \brief Prepare a runtime-precision output and record the operation's working precision.
+/// \brief Prepare a runtime-precision output, recording working precision on owning outputs.
 /// \details Existing elements are not converted. The operation must assign every
 ///          output element it promises to produce, including when storage is reused.
+///          Parent-backed views retain the parent's default; writing through a view
+///          does not change that metadata for the rest of the parent tensor.
 template <MutableTensorView Output, TensorExtentsLike RequiredExtents>
-  requires has_runtime_precision_v<tensor_element_t<Output>> &&
-           requires(Output& output, Precision p) { output.default_precision(p); }
+  requires has_runtime_precision_v<tensor_element_t<Output>>
 Output& prepare_output(Output& output, RequiredExtents const& required, Precision p)
 {
-  output.default_precision(p);
+  if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
   return prepare_output(output, required);
 }
 

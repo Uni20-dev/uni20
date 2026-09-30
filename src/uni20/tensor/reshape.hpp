@@ -266,7 +266,7 @@ class ReshapedTensor : public detail::precision_default<typename Mdspan::value_t
 ///          alias to bind reserved storage before the parent value is constructed.
 template <class Tensor, detail::CanonicalReshapeLayout LayoutPolicy, std::integral... RequestedExtents>
   requires TensorView<Tensor> && StridedTensorView<Tensor>
-class IndirectReshapedTensorView : public detail::precision_default<tensor_element_t<Tensor>> {
+class IndirectReshapedTensorView {
   public:
     using tensor_type = std::remove_reference_t<Tensor>;
     using storage_policy = tensor_storage_policy_t<std::remove_cv_t<tensor_type>>;
@@ -289,7 +289,6 @@ class IndirectReshapedTensorView : public detail::precision_default<tensor_eleme
         : IndirectReshapedTensorView(std::addressof(tensor), requested_extents...)
     {
       static_cast<void>(this->mdspec());
-      if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>) this->copy_default_precision(tensor);
     }
 
     /// \brief Bind a reshape to externally retained tensor storage.
@@ -300,6 +299,23 @@ class IndirectReshapedTensorView : public detail::precision_default<tensor_eleme
     {
       CHECK(tensor_ != nullptr);
     }
+
+#if UNI20_ENABLE_MPFR
+    /// \brief Read the parent's current default precision without converting elements.
+    /// \pre The parent is constructed and readable, including its async epoch when applicable.
+    [[nodiscard]] Precision default_precision() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision();
+    }
+
+    /// \brief Read the parent's optional default under the same access rules as its values.
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision_if_set();
+    }
+#endif
 
     /// \brief Return the source storage's backend selector.
     [[nodiscard]] constexpr decltype(auto) backend_selector() const { return this->base().backend_selector(); }
@@ -378,19 +394,29 @@ template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::
   requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
 [[nodiscard]] auto make_tensor_reshape_view(Tensor&& tensor, Extents... requested_extents)
 {
-  auto span = make_reshape_view<LayoutPolicy>(tensor.mdspan(), requested_extents...);
-  using span_type = decltype(span);
-  using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
-  using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
-  return with_precision_default(
-      ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()}, tensor);
+  if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>)
+  {
+    // Retain the parent so later default changes are visible without a metadata cache.
+    return IndirectReshapedTensorView<std::remove_reference_t<Tensor>, LayoutPolicy, Extents...>{tensor,
+                                                                                            requested_extents...};
+  }
+  else
+  {
+    auto span = make_reshape_view<LayoutPolicy>(tensor.mdspan(), requested_extents...);
+    using span_type = decltype(span);
+    using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
+    using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
+    return ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()};
+  }
 }
 
 } // namespace detail
 
 /// \brief Return a tensor-level no-copy reshape preserving a canonical source layout.
 /// \details Rvalue tensors are rejected because the returned descriptor does
-///          not extend the lifetime of addressable source storage.
+///          not extend the lifetime of addressable source storage. Runtime-precision
+///          views also retain a reference to the parent tensor to inherit its
+///          default, so that parent object must outlive the view.
 template <ImmediateTensorView Tensor, std::integral... Extents>
   requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor> &&
            detail::CanonicalReshapeLayout<typename immediate_tensor_mdspan_t<Tensor>::layout_type>)

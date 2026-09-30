@@ -54,7 +54,7 @@ TEST(TensorPrecision, UnsetStorageAndEmptyShapesCarryDefaults)
 }
 
 #if UNI20_ENABLE_MPC
-TEST(TensorPrecision, ViewsSnapshotDefaultsAndStorageTransferPreservesThem)
+TEST(TensorPrecision, ViewsFollowParentDefaultsAndMaterializationCopiesThem)
 {
   auto p = Precision::bits(256), q = Precision::bits(80);
   DenseMatrix<complex<mpreal>> a(2, 3, p);
@@ -62,35 +62,50 @@ TEST(TensorPrecision, ViewsSnapshotDefaultsAndStorageTransferPreservesThem)
   auto c = conj(a);
   auto r = reshape_view(a, 6);
   a.default_precision(q);
-  EXPECT_EQ(c.default_precision(), p);
-  EXPECT_EQ(r.default_precision(), p);
+  EXPECT_EQ(c.default_precision(), q);
+  EXPECT_EQ(r.default_precision(), q);
   auto twice = conj(c);
-  EXPECT_EQ(twice.default_precision(), p);
+  EXPECT_EQ(twice.default_precision(), q);
   auto copy = Tensor(c);
-  EXPECT_EQ(copy.default_precision(), p);
+  EXPECT_EQ(copy.default_precision(), q);
   EXPECT_EQ((copy[0, 0]), complex<mpreal>("1", "-2", p));
+  auto nested = conj(r);
+  auto restored = conj(nested);
+  a.default_precision(p);
+  EXPECT_EQ(nested.default_precision(), p);
+  EXPECT_EQ(restored.default_precision(), p);
+  EXPECT_EQ(copy.default_precision(), q); // Materialization owns its metadata.
+  a.default_precision(q);
   auto flat = reshape(std::move(a), 6);
   EXPECT_EQ(flat.default_precision(), q);
   EXPECT_EQ(flat[0].precision(), p);
 }
 #endif
 
-TEST(TensorPrecision, RealViewsAndMaterializationPreserveSnapshots)
+TEST(TensorPrecision, RealViewsFollowParentDefaults)
 {
   auto p = Precision::bits(256), q = Precision::bits(80);
   DenseMatrix<mpreal> a(2, 3, p);
-  auto c = conj(a);
+  auto const& c = conj(a);
   IndirectReshapedTensorView<DenseMatrix<mpreal>, stdex::layout_left, int> r(a, 6);
   a.default_precision(q);
-  EXPECT_EQ(c.default_precision(), p);
-  EXPECT_EQ(r.default_precision(), p);
+  EXPECT_EQ(c.default_precision(), q);
+  EXPECT_EQ(r.default_precision(), q);
   auto copy = Tensor(r);
-  EXPECT_EQ(copy.default_precision(), p);
+  EXPECT_EQ(copy.default_precision(), q);
   auto deferred = ConstTensorView<DenseMatrix<mpreal>>(&a);
-  EXPECT_FALSE(deferred.default_precision_if_set());
-  EXPECT_THROW((void)deferred.default_precision(), std::logic_error);
-  deferred.default_precision(p);
+  EXPECT_EQ(deferred.default_precision_if_set(), q);
+  a.default_precision(p);
   EXPECT_EQ(deferred.default_precision(), p);
+  EXPECT_EQ(r.default_precision(), p);
+  EXPECT_EQ(copy.default_precision(), q);
+
+  DenseMatrix<mpreal> empty;
+  auto const& empty_view = conj(empty);
+  EXPECT_FALSE(empty_view.default_precision_if_set());
+  EXPECT_THROW((void)empty_view.default_precision(), std::logic_error);
+  empty.default_precision(q);
+  EXPECT_EQ(empty_view.default_precision(), q);
 }
 
 TEST(TensorPrecision, BulkConversionChangesValuesAndDefaultExplicitly)
