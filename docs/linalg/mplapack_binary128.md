@@ -15,7 +15,9 @@ cmake -S . -B ./build_codex/build_gcc13_debug_mplapack \
   -DUNI20_ENABLE_MPLAPACK=ON
 ```
 
-The fetched build enables only the reference binary128 backend. MPLAPACK's
+By default the fetched build enables only the reference binary128 backend.
+`UNI20_ENABLE_MPLAPACK_MPFR=ON` independently adds the
+[arbitrary-precision MPFR/MPC backend](mplapack_mpfr.md). MPLAPACK's
 other scalar backends, optimized duplicate library, examples, tests,
 benchmarks, CUDA, and OpenCL targets remain disabled.
 

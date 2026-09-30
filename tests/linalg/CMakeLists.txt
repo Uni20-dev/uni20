@@ -1,3 +1,7 @@
+if(UNI20_ENABLE_MPLAPACK_MPFR)
+  add_test_module(linalg_mpfr SOURCES test_mplapack_mpfr.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+endif()
+
 add_test_module(linalg
   SOURCES
     cpu/test_matrix_exponential.cpp

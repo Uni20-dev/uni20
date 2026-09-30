@@ -8,6 +8,9 @@ these names are unavailable in a real-only build. Default-constructed MPFR/MPC
 scalars are unset, and their precision cannot be described by type-only numerical
 limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
 allocation and dense backend integration are separate from scalar support.
+`UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a narrowly scoped
+[matrix-product and LU-solve backend](../linalg/mplapack_mpfr.md), without extending
+the type-only `LapackScalar` concepts or generic Krylov support.
 
 `uni20::complex<T>` selects the appropriate owning scalar type. Existing native
 real types retain exact `std::complex<T>` type identity. Generic complex APIs

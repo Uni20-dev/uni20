@@ -35,7 +35,8 @@ template <class CoefficientMdspan, class RhsMdspan> consteval auto linear_solve_
   using coefficient_index = typename coefficient_type::index_type;
   using rhs_index = typename rhs_type::index_type;
 
-  if constexpr (uni20::RealOrComplex<scalar_type> && std::same_as<scalar_type, typename rhs_type::value_type> &&
+  if constexpr (!uni20::has_runtime_precision_v<scalar_type> && uni20::RealOrComplex<scalar_type> &&
+                std::same_as<scalar_type, typename rhs_type::value_type> &&
                 requires(CoefficientMdspan& coefficients, RhsMdspan& rhs, coefficient_index coefficient_i,
                          rhs_index rhs_i, scalar_type value) {
                   static_cast<scalar_type>(coefficients[coefficient_i, coefficient_i]);

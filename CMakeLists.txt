@@ -135,7 +135,11 @@ if(NOT UNI20_ENABLE_MPFR)
   unset(UNI20_MPFR_HAS_TLS CACHE)
 endif()
 option(UNI20_ENABLE_MPLAPACK      "Enable the optional MPLAPACK binary128 backend" OFF)
-if(UNI20_ENABLE_MPLAPACK)
+option(UNI20_ENABLE_MPLAPACK_MPFR "Enable the optional MPLAPACK MPFR/MPC backend" OFF)
+if(UNI20_ENABLE_MPLAPACK_MPFR AND NOT UNI20_ENABLE_MPC)
+  message(FATAL_ERROR "UNI20_ENABLE_MPLAPACK_MPFR requires UNI20_ENABLE_MPFR=ON and UNI20_ENABLE_MPC=ON")
+endif()
+if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR)
   uni20_dependency_option(UNI20_USE_SYSTEM_MPLAPACK "MPLAPACK library" AUTO)
 endif()
 set(UNI20_HAS_FLOAT128 OFF)
@@ -153,7 +157,7 @@ check_cxx_source_compiles([=[
   int main() {}
 ]=] UNI20_NATIVE_FLOAT80)
 set(UNI20_HAS_FLOAT80 ${UNI20_NATIVE_FLOAT80})
-if(NOT UNI20_ENABLE_MPLAPACK)
+if(NOT UNI20_ENABLE_MPLAPACK AND NOT UNI20_ENABLE_MPLAPACK_MPFR)
   foreach(_uni20_disabled_mplapack_cache_var IN ITEMS
       UNI20_MPLAPACK_DIR
       UNI20_MPLAPACK_SOURCE
@@ -211,6 +215,7 @@ if(UNI20_DOCS_WEB)
   set(UNI20_BUILD_ASM OFF CACHE BOOL "Build stand-alone assembly dumps for snippets in asm/" FORCE)
   set(UNI20_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA backend support" FORCE)
   set(UNI20_ENABLE_MPLAPACK OFF CACHE BOOL "Enable the optional MPLAPACK binary128 backend" FORCE)
+  set(UNI20_ENABLE_MPLAPACK_MPFR OFF CACHE BOOL "Enable the optional MPLAPACK MPFR/MPC backend" FORCE)
 endif()
 
 if(UNI20_BUILD_FORMAT_TARGET)
@@ -472,32 +477,51 @@ if(NOT UNI20_DOCS_WEB)
     endif()
   endif()
 
-  if(UNI20_ENABLE_MPLAPACK)
+  if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR)
+    set(_uni20_mplapack_components "")
+    if(UNI20_ENABLE_MPLAPACK)
+      list(APPEND _uni20_mplapack_components binary128)
+    endif()
+    if(UNI20_ENABLE_MPLAPACK_MPFR)
+      list(APPEND _uni20_mplapack_components mpfr)
+    endif()
+    list(GET _uni20_mplapack_components 0 _uni20_mplapack_primary)
     uni20_add_dependency(
       NAME mplapack
       VERSION 3.0.0
-      TARGET mplapack::mplapack_binary128
+      TARGET mplapack::mplapack_${_uni20_mplapack_primary}
       REPO https://github.com/nakatamaho/mplapack.git
       TAG v3.0.0
-      COMPONENTS binary128
+      COMPONENTS ${_uni20_mplapack_components}
       SETTINGS
         "MPLAPACK_CXX_STANDARD=23"
         "MPLAPACK_CXX_EXTENSIONS=ON"
-        "MPLAPACK_ENABLE_BINARY128=ON"
+        "MPLAPACK_ENABLE_BINARY128=${UNI20_ENABLE_MPLAPACK}"
+        "MPLAPACK_ENABLE_MPFR=${UNI20_ENABLE_MPLAPACK_MPFR}"
+        "MPLAPACK_ENABLE_OPT=OFF"
+        "MPLAPACK_ENABLE_CUDA=OFF"
+        "MPLAPACK_ENABLE_OPENCL=OFF"
       DEFAULTS
         "MPLAPACK_ENABLE_DOUBLE=OFF"
-        "MPLAPACK_ENABLE_MPFR=OFF"
         "MPLAPACK_ENABLE_GMP=OFF"
         "MPLAPACK_ENABLE_QD=OFF"
         "MPLAPACK_ENABLE_DD=OFF"
         "MPLAPACK_ENABLE_BINARY80=OFF"
-        "MPLAPACK_ENABLE_OPT=OFF"
-        "MPLAPACK_ENABLE_CUDA=OFF"
-        "MPLAPACK_ENABLE_OPENCL=OFF"
         "MPLAPACK_BUILD_EXAMPLES=OFF"
         "MPLAPACK_BUILD_TESTS=OFF"
         "MPLAPACK_BUILD_BENCHMARKS=OFF"
     )
+    foreach(_uni20_component IN LISTS _uni20_mplapack_components)
+      if(NOT TARGET mplapack::mplapack_${_uni20_component})
+        message(FATAL_ERROR "MPLAPACK must provide target mplapack::mplapack_${_uni20_component}")
+      endif()
+      if(UNI20_MPLAPACK_SOURCE STREQUAL "fetched")
+        relax_warnings(mplapack::mplapack_${_uni20_component})
+      endif()
+    endforeach()
+  endif()
+
+  if(UNI20_ENABLE_MPLAPACK)
     if(NOT TARGET mplapack::mplapack_binary128)
       message(FATAL_ERROR
         "UNI20_ENABLE_MPLAPACK=ON requires MPLAPACK >= 3.0.0 with its binary128 component.\n"
@@ -678,6 +702,9 @@ if(NOT UNI20_DOCS_WEB)
   endif()
   if(UNI20_ENABLE_MPLAPACK)
     target_link_libraries(uni20_deps INTERFACE mplapack::mplapack_binary128)
+  endif()
+  if(UNI20_ENABLE_MPLAPACK_MPFR)
+    target_link_libraries(uni20_deps INTERFACE mplapack::mplapack_mpfr)
   endif()
 
   # Add subdirectories

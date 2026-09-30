@@ -10,6 +10,10 @@
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/tensor/concepts.hpp>
+#include <uni20/tensor/precision.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include <uni20/linalg/backends/mplapack/mpfr.hpp>
+#endif
 
 #if UNI20_BACKEND_BLAS
 #include <uni20/linalg/backends/blas/gemm.hpp>
@@ -41,7 +45,19 @@ void gemm(BackendSelector&& selector, OutputTensor&& output, Scalar alpha, LhsTe
   auto output_span = uni20::mdspec_of(output);
   auto lhs_span = uni20::mdspec_of(lhs);
   auto rhs_span = uni20::mdspec_of(rhs);
-  dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta);
+#if UNI20_ENABLE_MPFR
+  if constexpr (has_runtime_precision_v<tensor_element_t<OutputTensor>>)
+  {
+    auto p = common_default_precision(lhs, rhs);
+    if (beta != 0 && output.default_precision() != p)
+      throw std::invalid_argument("GEMM: differing output default requires explicit working precision");
+    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta,
+                    p);
+    output.default_precision(p);
+  }
+  else
+#endif
+    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta);
 }
 
 /// \brief Apply the fixed-storage `gemm` contract using the operands' default backend selector.
@@ -52,5 +68,29 @@ void gemm(OutputTensor&& output, Scalar alpha, LhsTensor const& lhs, RhsTensor c
   auto selector = select_backend(gemm_op{}, output, lhs, rhs);
   gemm(selector, std::forward<OutputTensor>(output), alpha, lhs, rhs, beta);
 }
+
+#if UNI20_ENABLE_MPFR
+/// \brief Apply fixed-shape GEMM at explicit precision, converting all participating values at the backend boundary.
+template <KernelBackendSelector BackendSelector, MutableRankedTensorView<2> Output, class Scalar, RankedTensorView<2> A,
+          RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<Output>>
+void gemm(BackendSelector&& selector, Output&& output, Scalar alpha, A const& a, B const& b, Scalar beta, Precision p)
+{
+  auto out = mdspec_of(output);
+  auto ad = mdspec_of(a);
+  auto bd = mdspec_of(b);
+  dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, out, alpha, ad, bd, beta, p);
+  if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
+}
+
+/// \brief Apply explicit-precision GEMM through the storage-selected backend.
+template <MutableRankedTensorView<2> Output, class Scalar, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<Output>>
+void gemm(Output&& output, Scalar alpha, A const& a, B const& b, Scalar beta, Precision p)
+{
+  auto selector = select_backend(gemm_op{}, output, a, b);
+  gemm(selector, std::forward<Output>(output), alpha, a, b, beta, p);
+}
+#endif
 
 } // namespace uni20::linalg

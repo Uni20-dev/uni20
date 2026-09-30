@@ -1,0 +1,2 @@
+add_library(uni20_backend_mplapack_mpfr STATIC mpfr.cpp)
+target_link_libraries(uni20_backend_mplapack_mpfr PUBLIC uni20_core PRIVATE mplapack::mplapack_mpfr)

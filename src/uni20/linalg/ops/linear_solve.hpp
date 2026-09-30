@@ -16,6 +16,9 @@
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/tensor.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include <uni20/linalg/backends/mplapack/mpfr.hpp>
+#endif
 
 #include <concepts>
 #include <type_traits>
@@ -64,8 +67,17 @@ template <KernelBackendSelector BackendSelector, class CoefficientTensor, class 
   auto coefficient_descriptor = uni20::mdspec_of(coefficients);
   auto rhs_descriptor = uni20::mdspec_of(right_hand_sides);
   SolveInfo info;
-  dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, coefficient_descriptor, rhs_descriptor,
-                  info, options);
+#if UNI20_ENABLE_MPFR
+  if constexpr (has_runtime_precision_v<tensor_element_t<CoefficientTensor>>)
+  {
+    auto p = common_default_precision(coefficients, right_hand_sides);
+    dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, coefficient_descriptor, rhs_descriptor,
+                    info, options, p);
+  }
+  else
+#endif
+    dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, coefficient_descriptor, rhs_descriptor,
+                    info, options);
   return info;
 }
 
@@ -143,5 +155,59 @@ template <uni20::RankedTensorView<2> CoefficientTensor, uni20::RankedTensorView<
   solve_inplace(selector, coefficient_work, solution);
   return solution;
 }
+
+#if UNI20_ENABLE_MPFR
+/// \brief Solve in place at an explicit operation precision, independent of workspace defaults.
+template <KernelBackendSelector BackendSelector, class A, class B>
+  requires detail::CompatibleLinearSolveTensors<A, B> && has_runtime_precision_v<tensor_element_t<A>>
+[[nodiscard]] SolveInfo solve_inplace_with_info(BackendSelector&& selector, A&& a, B&& b, Precision p,
+                                                SolveOptions<mpreal> const& options = {})
+{
+  detail::require_linear_solve_shape(a, b);
+  detail::require_solve_options(options);
+  auto ad = mdspec_of(a);
+  auto bd = mdspec_of(b);
+  SolveInfo info;
+  dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, ad, bd, info, options, p);
+  if (info.succeeded())
+  {
+    if constexpr (requires { a.default_precision(p); }) a.default_precision(p);
+    if constexpr (requires { b.default_precision(p); }) b.default_precision(p);
+  }
+  return info;
+}
+
+/// \brief Solve at explicit precision using storage-selected backends.
+template <class A, class B>
+  requires detail::CompatibleLinearSolveTensors<A, B> && has_runtime_precision_v<tensor_element_t<A>>
+[[nodiscard]] SolveInfo solve_inplace_with_info(A&& a, B&& b, Precision p, SolveOptions<mpreal> const& options = {})
+{
+  auto selector = select_backend(linear_solve_op{}, a, b);
+  return solve_inplace_with_info(selector, std::forward<A>(a), std::forward<B>(b), p, options);
+}
+
+/// \brief Preserve inputs and solve at p, converting values at the backend boundary.
+template <KernelBackendSelector BackendSelector, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(BackendSelector&& selector, A const& a, B const& b, Precision p)
+{
+  detail::require_linear_solve_shape(a, b);
+  auto aw = make_tensor<ColumnMajor>(a);
+  auto bw = make_tensor<ColumnMajor>(b);
+  aw.default_precision(p);
+  bw.default_precision(p);
+  solve_inplace(std::forward<BackendSelector>(selector), aw, bw);
+  return bw;
+}
+
+/// \brief Preserve inputs and solve at p using storage-selected backends.
+template <RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(A const& a, B const& b, Precision p)
+{
+  auto selector = select_backend(linear_solve_op{}, a, b);
+  return solve(selector, a, b, p);
+}
+#endif
 
 } // namespace uni20::linalg

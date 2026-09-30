@@ -7,6 +7,7 @@
  */
 
 #include <uni20/common/trace.hpp>
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/mdspan/concepts.hpp>
 
@@ -19,8 +20,8 @@ namespace uni20::linalg::cpu
 /// \brief Report whether resolved mdspans support reference CPU GEMM expressions.
 template <class OutputMdspan, class Scalar, class LhsMdspan, class RhsMdspan>
 concept GemmCompatible =
-    uni20::MutableRankedMdspanLike<OutputMdspan, 2> && uni20::Scalar<Scalar> && uni20::RankedMdspanLike<LhsMdspan, 2> &&
-    uni20::RankedMdspanLike<RhsMdspan, 2> &&
+    (!uni20::has_runtime_precision_v<Scalar>) && uni20::MutableRankedMdspanLike<OutputMdspan, 2> &&
+    uni20::Scalar<Scalar> && uni20::RankedMdspanLike<LhsMdspan, 2> && uni20::RankedMdspanLike<RhsMdspan, 2> &&
     std::same_as<std::remove_cv_t<typename std::remove_cvref_t<OutputMdspan>::element_type>, Scalar> &&
     std::same_as<std::remove_cv_t<typename std::remove_cvref_t<LhsMdspan>::element_type>, Scalar> &&
     std::same_as<std::remove_cv_t<typename std::remove_cvref_t<RhsMdspan>::element_type>, Scalar> &&

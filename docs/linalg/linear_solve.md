@@ -4,6 +4,11 @@ Include `<uni20/linalg/ops/linear_solve.hpp>`. All interfaces solve
 `A X = B`, with square rank-two `A` and rank-two `B` containing one or more
 right-hand sides. The scalar types must match.
 
+Optional `mpreal` and `complex<mpreal>` support uses the
+[MPLAPACK MPFR/MPC backend](mplapack_mpfr.md). Matching tensor defaults select
+working precision; a trailing `Precision` selects it explicitly. Its
+`SolveOptions<mpreal>` uses an optional tolerance, with omission meaning zero.
+
 ## Choosing the failure policy
 
 ```cpp

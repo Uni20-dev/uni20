@@ -230,8 +230,8 @@ bounds during Uni20 calculations.
 
 `Async<mpreal>` can be initialized with an explicit scalar. Coroutine lambdas must
 remain captureless and `static`, passing values or `Precision` as arguments.
-MPLAPACK's internal temporary precision requires separate integration; it is not
-implied by Async scalar support.
+The optional [MPLAPACK adapter](../linalg/mplapack_mpfr.md) establishes internal
+temporary precision separately for every synchronous provider call after awaits.
 
 ## Tensor construction defaults
 

@@ -1,6 +1,10 @@
 #pragma once
 
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/core/scalar_concepts.hpp>
+#if UNI20_ENABLE_MPFR
+#include <uni20/core/mpreal.hpp>
+#endif
 
 #include <cstddef>
 #include <optional>
@@ -55,5 +59,13 @@ template <uni20::Real Real> struct SolveOptions
     /// \brief Reject nonzero pivots at or below this fraction of the original maximum entry magnitude.
     Real relative_pivot_tolerance = Real{};
 };
+
+#if UNI20_ENABLE_MPFR
+/// \brief Runtime-precision pivot policy; an omitted tolerance means exact zero only.
+template <> struct SolveOptions<mpreal>
+{
+    std::optional<mpreal> relative_pivot_tolerance = {};
+};
+#endif
 
 } // namespace uni20::linalg

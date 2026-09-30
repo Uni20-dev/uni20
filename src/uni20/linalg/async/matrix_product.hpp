@@ -55,7 +55,24 @@ async::AsyncTask co_assign_product(BackendSelector const selector, async::WriteB
   scalar_type const alpha_scalar = static_cast<scalar_type>(alpha_value);
   auto lhs_descriptor = uni20::mdspec_of(lhs_value);
   auto rhs_descriptor = uni20::mdspec_of(rhs_value);
-  if constexpr (async::is_async_alias_v<OutputTensor>)
+#if UNI20_ENABLE_MPFR
+  if constexpr (has_runtime_precision_v<scalar_type>)
+  {
+    auto p = common_default_precision(lhs_value, rhs_value);
+    if constexpr (async::is_async_alias_v<OutputTensor>)
+    {
+      auto output_value = uni20::detail::mutable_async_tensor_value<OutputTensor>(std::get<0>(awaited));
+      uni20::linalg::assign_product(selector, output_value, lhs_value, rhs_value, alpha_scalar);
+    }
+    else
+    {
+      auto& result = prepare_output(std::get<0>(awaited), matrix_product_shape(lhs_value, rhs_value), p);
+      uni20::linalg::assign_product(selector, result, lhs_value, rhs_value, alpha_scalar);
+    }
+  }
+  else
+#endif
+      if constexpr (async::is_async_alias_v<OutputTensor>)
   {
     auto output_value = uni20::detail::mutable_async_tensor_value<OutputTensor>(std::get<0>(awaited));
     co_await co_dispatch_kernel(selector, assign_product_op{}, output_value, alpha_scalar, lhs_descriptor,
@@ -91,7 +108,12 @@ async::AsyncTask co_gemm(BackendSelector const selector, async::WriteBuffer<Outp
   auto output_span = uni20::mdspec_of(output_value);
   auto lhs_span = uni20::mdspec_of(lhs_value);
   auto rhs_span = uni20::mdspec_of(rhs_value);
-  co_await co_dispatch_kernel(selector, gemm_op{}, output_span, alpha_scalar, lhs_span, rhs_span, beta_scalar);
+#if UNI20_ENABLE_MPFR
+  if constexpr (has_runtime_precision_v<scalar_type>)
+    uni20::linalg::gemm(selector, output_value, alpha_scalar, lhs_value, rhs_value, beta_scalar);
+  else
+#endif
+    co_await co_dispatch_kernel(selector, gemm_op{}, output_span, alpha_scalar, lhs_span, rhs_span, beta_scalar);
   co_return;
 }
 
@@ -170,7 +192,7 @@ template <class BackendSelector, uni20::MutableRankedTensorView<2> OutputTensor,
            detail::CompatibleMatrixProductTensors<OutputTensor, LhsTensor, RhsTensor> &&
            AsyncOperationScalar<Alpha, uni20::tensor_element_t<OutputTensor>>
 void assign_product(BackendSelector selector, async::Async<OutputTensor>& output, async::Async<LhsTensor> const& lhs,
-                    async::Async<RhsTensor> const& rhs, Alpha&& alpha = uni20::tensor_element_t<OutputTensor>{1})
+                    async::Async<RhsTensor> const& rhs, Alpha&& alpha)
 {
   detail::schedule_async_assign_product(std::move(selector), output, lhs, rhs, async::read(std::forward<Alpha>(alpha)));
 }
@@ -186,7 +208,7 @@ template <uni20::MutableRankedTensorView<2> OutputTensor, uni20::RankedTensorVie
            detail::CompatibleMatrixProductTensors<OutputTensor, LhsTensor, RhsTensor> &&
            AsyncOperationScalar<Alpha, uni20::tensor_element_t<OutputTensor>>
 void assign_product(async::Async<OutputTensor>& output, async::Async<LhsTensor> const& lhs,
-                    async::Async<RhsTensor> const& rhs, Alpha&& alpha = uni20::tensor_element_t<OutputTensor>{1})
+                    async::Async<RhsTensor> const& rhs, Alpha&& alpha)
 {
   auto selector = select_backend_for<OutputTensor, LhsTensor, RhsTensor>(assign_product_op{});
   detail::schedule_async_assign_product(std::move(selector), output, lhs, rhs, async::read(std::forward<Alpha>(alpha)));
@@ -223,6 +245,71 @@ void add_product(async::Async<OutputTensor>& output, async::Async<LhsTensor> con
                  async::Async<RhsTensor> const& rhs, Alpha&& alpha = uni20::tensor_element_t<OutputTensor>{1})
 {
   gemm(output, std::forward<Alpha>(alpha), lhs, rhs, uni20::tensor_element_t<OutputTensor>{1});
+}
+
+#if UNI20_ENABLE_MPFR
+namespace detail
+{
+template <class Selector, class Output, class A, class B>
+async::AsyncTask co_runtime_product(Selector selector, async::WriteBuffer<Output> output, async::ReadBuffer<A> a,
+                                    async::ReadBuffer<B> b, std::optional<Precision> requested)
+{
+  auto output_awaiter = uni20::detail::mutable_async_tensor_awaiter(output);
+  auto awaited = co_await async::all(output_awaiter, a, b);
+  auto const& av = std::get<1>(awaited);
+  auto const& bv = std::get<2>(awaited);
+  auto p = requested ? *requested : common_default_precision(av, bv);
+  if constexpr (async::is_async_alias_v<Output>)
+  {
+    auto out = uni20::detail::mutable_async_tensor_value<Output>(std::get<0>(awaited));
+    uni20::linalg::assign_product(selector, out, av, bv, p);
+  }
+  else
+  {
+    auto& out = prepare_output(std::get<0>(awaited), matrix_product_shape(av, bv), p);
+    uni20::linalg::assign_product(selector, out, av, bv, p);
+  }
+  co_return;
+}
+} // namespace detail
+
+/// \brief Schedule a unit-coefficient arbitrary-precision product, selecting precision after the inputs are ready.
+template <KernelBackendSelector Selector, uni20::AsyncTensorOutput Output, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(Selector selector, async::Async<Output>& output, async::Async<A> const& a, async::Async<B> const& b,
+                    std::optional<Precision> p = {})
+{
+  detail::validate_async_matrix_product_aliasing(output, a, b);
+  auto task = detail::co_runtime_product(std::move(selector), output.write(), a.read(), b.read(), p);
+  task.debug_name("assign_product");
+  async::schedule(std::move(task));
+}
+
+/// \brief Schedule an arbitrary-precision product through storage-selected backends.
+template <uni20::AsyncTensorOutput Output, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(async::Async<Output>& output, async::Async<A> const& a, async::Async<B> const& b,
+                    std::optional<Precision> p = {})
+{
+  auto selector = select_backend_for<Output, A, B>(assign_product_op{});
+  assign_product(std::move(selector), output, a, b, p);
+}
+#endif
+
+/// \brief Schedule a fixed-precision product with unit coefficient.
+template <KernelBackendSelector Selector, uni20::AsyncTensorOutput Output, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires(!has_runtime_precision_v<tensor_element_t<Output>>) && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(Selector selector, async::Async<Output>& output, async::Async<A> const& a, async::Async<B> const& b)
+{
+  assign_product(std::move(selector), output, a, b, tensor_element_t<Output>{1});
+}
+
+/// \brief Schedule a fixed-precision product through storage-selected backends.
+template <uni20::AsyncTensorOutput Output, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires(!has_runtime_precision_v<tensor_element_t<Output>>) && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(async::Async<Output>& output, async::Async<A> const& a, async::Async<B> const& b)
+{
+  assign_product(select_backend_for<Output, A, B>(assign_product_op{}), output, a, b, tensor_element_t<Output>{1});
 }
 
 } // namespace uni20::linalg
