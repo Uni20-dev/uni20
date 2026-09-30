@@ -1,5 +1,14 @@
 # Scalar Type Policy
 
+Optional [arbitrary-precision real scalars](mpreal.md) use `uni20::mpreal`
+with explicit runtime `Precision` when `UNI20_ENABLE_MPFR=ON`. This first
+slice provides scalar arithmetic and exact constants; arbitrary-precision
+complex, tensor allocation, and dense backend integration are not yet supplied.
+Unlike the fixed-precision types below, `mpreal` has no default constructor or
+type-only numerical limits. Its `Real` trait does not imply BLAS/LAPACK support.
+`complex<mpreal>` and `make_complex_t<mpreal>` are rejected until the MPC
+implementation is available; they do not fall back to `std::complex<mpreal>`.
+
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
 `src/uni20/core/scalar_traits.hpp` and `src/uni20/core/scalar_concepts.hpp`.

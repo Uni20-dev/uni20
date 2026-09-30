@@ -2,6 +2,16 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
+if(UNI20_ENABLE_MPFR)
+  add_test(NAME CMakeSubproject.mpfr_dependencies
+    COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+      "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/mpfr_dependencies"
+      "-Dgmp_include=${UNI20_GMP_INCLUDE_DIR}" "-Dgmp_library=${UNI20_GMP_LIBRARY}"
+      "-Dmpfr_include=${UNI20_MPFR_INCLUDE_DIR}"
+      "-Dcompiler=${CMAKE_CXX_COMPILER}" -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mpfr.cmake")
+  set_tests_properties(CMakeSubproject.mpfr_dependencies PROPERTIES LABELS cmake TIMEOUT 60)
+endif()
+
 if(UNI20_BUILD_CLI)
   # Exercise the public target from an embedding application and verify that
   # opting out leaves both the numerical targets and common documents CLI-free.

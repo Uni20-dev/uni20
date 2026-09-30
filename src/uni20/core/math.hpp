@@ -2,6 +2,9 @@
 
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
+#if UNI20_ENABLE_MPFR
+#include "mpreal.hpp"
+#endif
 #include <complex>
 #include <numeric>
 #include <type_traits>
@@ -98,6 +101,7 @@ template <Integer I> constexpr bool isfinite(I const& x) noexcept
 /// \brief Returns whether a real scalar is neither NaN nor positive/negative infinity.
 /// \details This uses `uni20::numeric_limits<T>` so extension real scalar types can define their own infinity
 ///         representation without depending on standard-library overload coverage for `std::isfinite`.
+///          Runtime-precision mpreal uses its native classification instead of type-only limits.
 /// \tparam R Real scalar type.
 /// \param x Real scalar to inspect.
 /// \return `true` when `x` is finite.
@@ -105,6 +109,9 @@ template <Integer I> constexpr bool isfinite(I const& x) noexcept
 template <Real R> constexpr bool isfinite(R const& x)
 {
   using value_type = std::remove_cvref_t<R>;
+#if UNI20_ENABLE_MPFR
+  if constexpr (std::same_as<value_type, mpreal>) return uni20::isfinite(x);
+#endif
   if (!(x == x))
   {
     return false;
