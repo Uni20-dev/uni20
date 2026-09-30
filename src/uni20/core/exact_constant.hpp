@@ -110,6 +110,9 @@ inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
   bool const denominator = exponent_negative || fraction > exponent;
   auto const scale =
       exponent_negative ? fraction + exponent : (denominator ? fraction - exponent : exponent - fraction);
+  // Bound expansion of short inputs such as 1e999999999 before allocating 10^scale.
+  constexpr unsigned long max_decimal_scale = 1'000'000;
+  if (scale > max_decimal_scale) throw std::out_of_range("exact_constant: decimal scale exceeds 1000000");
   mpz_set_str(mpq_numref(result), digits.c_str(), 10);
   mpz_set_ui(mpq_denref(result), 1);
   if (mpz_sgn(mpq_numref(result)) == 0) return;

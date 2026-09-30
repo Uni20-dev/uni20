@@ -63,6 +63,8 @@ Binary `mpreal` arithmetic, including compound assignment, requires equal
 precision. A mismatch throws `std::invalid_argument` before modifying either
 operand. Explicit conversion uses `x.at(p)` or `mpreal{x, p}`; reducing precision
 rounds, and increasing precision cannot restore digits already lost.
+Compound arithmetic updates the destination in place, including when both
+operands are the same object, without constructing a separate result scalar.
 
 ```cpp
 auto q = Precision::bits(400);
@@ -100,6 +102,12 @@ There is no symbolic expression tree. Decimal point and decimal exponent notatio
 are supported; hexadecimal and binary spellings are rejected. Digit separators
 between digits are accepted. All integer spellings are interpreted in base ten,
 including those with leading zeros. Exact zero has no sign.
+
+Decimal parsing limits the power-of-ten expansion to 1,000,000 places, after
+combining the exponent with the number of fractional digits. Larger scales throw
+`std::out_of_range` before expansion, including for zero inputs. This prevents
+accidentally enormous allocations from short decimal spellings; it does not cap
+`mpreal` working precision or the size of results from exact rational arithmetic.
 
 Mixing an exact constant with `mpreal` first rounds the constant at the real
 operand's precision, then performs the real operation. Parentheses therefore
@@ -153,8 +161,9 @@ adaptation for constants, allocation, and precision before accepting this scalar
 
 `value.to_string()` emits enough decimal digits to round-trip at the same
 precision, without a native-float intermediate. `value.to_string(n)` requests
-`n` significant digits. Finite nonzero output uses scientific notation; zero
-preserves its sign, and exceptional values use `inf`, `-inf`, or `nan`. The string
+`n` significant digits, including a single digit when `n == 1`. Finite nonzero
+output uses scientific notation; zero preserves its sign, and exceptional values
+use `inf`, `-inf`, or `nan`. The string
 constructor rejects incomplete input, whitespace, and embedded NUL. Stream
 insertion uses the round-trip representation; stream precision does not override
 it. `format_real`/`format_scalar` also support this type, including general, fixed,

@@ -152,6 +152,14 @@ struct mpreal_access
       Operation(result.value_, a.value_, b.value_, MPFR_RNDN);
       return result;
     }
+    template <auto Operation> static mpreal& assign(mpreal& a, mpreal const& b)
+    {
+      if (a.precision() != b.precision())
+        throw std::invalid_argument("mpreal: mixed precisions require explicit conversion");
+      // MPFR permits the destination to alias either or both operands.
+      Operation(a.value_, a.value_, b.value_, MPFR_RNDN);
+      return a;
+    }
     /// \brief Evaluate a provider constant directly at explicit precision.
     template <auto Operation> static mpreal constant(Precision precision)
     {
@@ -182,14 +190,14 @@ inline mpreal operator-(exact_constant const& a, mpreal const& b) { return a.at(
 inline mpreal operator*(exact_constant const& a, mpreal const& b) { return a.at(b.precision()) * b; }
 inline mpreal operator/(exact_constant const& a, mpreal const& b) { return a.at(b.precision()) / b; }
 
-inline mpreal& mpreal::operator+=(mpreal const& rhs) { return *this = *this + rhs; }
-inline mpreal& mpreal::operator-=(mpreal const& rhs) { return *this = *this - rhs; }
-inline mpreal& mpreal::operator*=(mpreal const& rhs) { return *this = *this * rhs; }
-inline mpreal& mpreal::operator/=(mpreal const& rhs) { return *this = *this / rhs; }
-inline mpreal& mpreal::operator+=(exact_constant const& rhs) { return *this = *this + rhs; }
-inline mpreal& mpreal::operator-=(exact_constant const& rhs) { return *this = *this - rhs; }
-inline mpreal& mpreal::operator*=(exact_constant const& rhs) { return *this = *this * rhs; }
-inline mpreal& mpreal::operator/=(exact_constant const& rhs) { return *this = *this / rhs; }
+inline mpreal& mpreal::operator+=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_add>(*this, rhs); }
+inline mpreal& mpreal::operator-=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_sub>(*this, rhs); }
+inline mpreal& mpreal::operator*=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_mul>(*this, rhs); }
+inline mpreal& mpreal::operator/=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_div>(*this, rhs); }
+inline mpreal& mpreal::operator+=(exact_constant const& rhs) { return *this += rhs.at(this->precision()); }
+inline mpreal& mpreal::operator-=(exact_constant const& rhs) { return *this -= rhs.at(this->precision()); }
+inline mpreal& mpreal::operator*=(exact_constant const& rhs) { return *this *= rhs.at(this->precision()); }
+inline mpreal& mpreal::operator/=(exact_constant const& rhs) { return *this /= rhs.at(this->precision()); }
 
 /// \brief Compare stored values without rounding; precision need not match.
 inline bool operator==(mpreal const& a, mpreal const& b) { return mpfr_equal_p(a.native_handle(), b.native_handle()); }

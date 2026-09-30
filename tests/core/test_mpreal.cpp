@@ -112,6 +112,35 @@ TEST(MpReal, AssignmentCopiesPrecisionAndMoveLeavesValidSource)
   EXPECT_EQ(destination, 7);
 }
 
+TEST(MpReal, CompoundArithmeticSupportsAliasingAndPreservesPrecision)
+{
+  auto p = Precision::bits(256);
+  mpreal x("1.5", p);
+  EXPECT_EQ(&(x += x), &x);
+  EXPECT_EQ(x, 3);
+  EXPECT_EQ(&(x *= x), &x);
+  EXPECT_EQ(x, 9);
+  EXPECT_EQ(&(x /= x), &x);
+  EXPECT_EQ(x, 1);
+  EXPECT_EQ(&(x -= x), &x);
+  EXPECT_EQ(x, 0);
+  EXPECT_EQ(x.precision(), p);
+
+  auto low = Precision::bits(3);
+  x = mpreal(1, low);
+  x += 0.14_mp; // 0.14 first rounds to 0.125; the sum is a tie that rounds to 1.
+  EXPECT_EQ(x, 1);
+  x -= 0.07_mp; // 0.07 first rounds to 0.0625; the difference rounds to 1.
+  EXPECT_EQ(x, 1);
+  x = mpreal("1.25", low);
+  x *= 1.1_mp; // 1.1 rounds to 1 before multiplication.
+  EXPECT_EQ(x, 1.25_mp);
+  x = mpreal(1, low);
+  x /= 1.1_mp;
+  EXPECT_EQ(x, 1);
+  EXPECT_EQ(x.precision(), low);
+}
+
 TEST(MpReal, RoundNearestTiesToEven)
 {
   auto p = Precision::bits(3);
@@ -156,6 +185,17 @@ TEST(MpReal, ParenthesesDetermineTheRoundingBoundary)
   EXPECT_EQ(x + (0.125_mp + 0.125_mp), mpreal("1.25", p));
   EXPECT_EQ((x + 0.125_mp) + 0.125_mp, 1);
   EXPECT_NE(mpreal("0.1", p), 0.1_mp); // Comparison does not round the exact rational.
+}
+
+TEST(MpReal, DecimalExpansionRejectsExcessiveScales)
+{
+  for (auto text : {"1e1000001", "1e-1000001", "0.1e-1000000", "0e1000001", "1e999999999"})
+    EXPECT_THROW((void)exact_constant(text), std::out_of_range) << text;
+  // The limit applies to the combined scale, not the exponent in isolation.
+  auto positive = exact_constant("1.0e1000001");
+  auto negative = exact_constant("1e-1000000");
+  EXPECT_EQ(positive * negative, 10_mp);
+  EXPECT_EQ(exact_constant("0e1000000"), 0_mp);
 }
 
 TEST(MpReal, IntegralOperandsRemainExactUntilConversion)
@@ -203,6 +243,22 @@ TEST(MpReal, ParsingAndRoundTripFormatting)
   std::ostringstream os;
   os << mpreal("0.1", p);
   EXPECT_EQ(mpreal(os.str(), p), mpreal("0.1", p));
+}
+
+TEST(MpReal, SingleDigitFormattingRoundsAndCarries)
+{
+  // MPFR >= 4.1 supports one output digit; older MPFR documentation required two.
+  auto p = Precision::bits(80);
+  EXPECT_EQ(mpreal("1.234", p).to_string(1), "1e0");
+  EXPECT_EQ(mpreal("1.5", p).to_string(1), "2e0");
+  EXPECT_EQ(mpreal("2.5", p).to_string(1), "2e0");
+  EXPECT_EQ(mpreal("9.5", p).to_string(1), "1e1");
+  EXPECT_EQ(mpreal("-9.5", p).to_string(1), "-1e1");
+  EXPECT_EQ(mpreal("0.125", p).to_string(1), "1e-1");
+  EXPECT_EQ(mpreal("0", p).to_string(1), "0");
+  EXPECT_EQ(mpreal("-0", p).to_string(1), "-0");
+  EXPECT_EQ(mpreal("inf", p).to_string(1), "inf");
+  EXPECT_EQ(mpreal("nan", p).to_string(1), "nan");
 }
 
 TEST(MpReal, ConstantsMathAndExceptionalValues)
