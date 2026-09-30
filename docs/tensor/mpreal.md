@@ -124,6 +124,12 @@ Comparisons do not round operands. Two `mpreal` values may be compared even if
 precisions differ, and comparisons with an exact rational compare their actual
 values. Thus `mpreal{"0.1", p} == 0.1_mp` is false: a finite binary value cannot
 represent exactly 1/10.
+Native integer comparisons also remain exact, even when the integer needs more
+bits than the real's working precision. Signed and unsigned integers fitting
+`long` and `unsigned long`, respectively, use MPFR's integer comparisons without
+allocating rational temporaries; wider types retain an exact rational fallback.
+Equality with integer zero uses a direct zero check. Both operand orders are
+supported, signed zeros compare equal, and NaNs are unordered.
 
 ## Constants, elementary functions, and exceptional values
 

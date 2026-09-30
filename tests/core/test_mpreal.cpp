@@ -217,6 +217,74 @@ TEST(MpReal, IntegralOperandsRemainExactUntilConversion)
   EXPECT_EQ(x, 3);
 }
 
+TEST(MpReal, IntegerComparisonsPreserveExactValues)
+{
+  auto check_type = []<std::integral I>() {
+    auto p = Precision::bits(256);
+    for (I value : {I{0}, I{1}, std::numeric_limits<I>::lowest(), std::numeric_limits<I>::max()})
+    {
+      mpreal x(value, p);
+      EXPECT_TRUE(x == value);
+      EXPECT_TRUE(value == x);
+      EXPECT_FALSE(x != value);
+      EXPECT_FALSE(value != x);
+      EXPECT_EQ(x <=> value, std::partial_ordering::equivalent);
+      EXPECT_EQ(value <=> x, std::partial_ordering::equivalent);
+      EXPECT_LT(x - 1, value);
+      EXPECT_GT(value, x - 1);
+      EXPECT_GT(x + 1, value);
+      EXPECT_LT(value, x + 1);
+    }
+  };
+  check_type.operator()<signed char>();
+  check_type.operator()<unsigned char>();
+  check_type.operator()<short>();
+  check_type.operator()<unsigned short>();
+  check_type.operator()<int>();
+  check_type.operator()<unsigned int>();
+  check_type.operator()<long>();
+  check_type.operator()<unsigned long>();
+  check_type.operator()<long long>();
+  check_type.operator()<unsigned long long>();
+
+  // Rounding the integer to the real's precision would incorrectly give equality.
+  mpreal low(8, Precision::bits(3));
+  EXPECT_LT(low, 9);
+  EXPECT_NE(low, 9);
+  EXPECT_GT(-low, -9);
+  mpreal beyond_double("9007199254740992", Precision::bits(53));
+  EXPECT_LT(beyond_double, 9007199254740993ULL);
+  EXPECT_NE(beyond_double, 9007199254740993ULL);
+  EXPECT_LT(mpreal(-1, Precision::bits(80)), std::numeric_limits<unsigned long long>::max());
+}
+
+TEST(MpReal, IntegerComparisonsHandleZeroAndExceptionalValues)
+{
+  auto p = Precision::bits(80);
+  for (auto text : {"0", "-0"})
+  {
+    mpreal zero(text, p);
+    EXPECT_TRUE(zero == 0);
+    EXPECT_TRUE(0U == zero);
+    EXPECT_EQ(zero <=> 0, std::partial_ordering::equivalent);
+    EXPECT_EQ(0U <=> zero, std::partial_ordering::equivalent);
+  }
+  mpreal nan("nan", p), inf("inf", p);
+  for (int value : {0, 1, -1})
+  {
+    EXPECT_FALSE(nan == value);
+    EXPECT_FALSE(value == nan);
+    EXPECT_TRUE(nan != value);
+    EXPECT_FALSE(nan < value);
+    EXPECT_FALSE(nan >= value);
+    EXPECT_EQ(nan <=> value, std::partial_ordering::unordered);
+    EXPECT_EQ(value <=> nan, std::partial_ordering::unordered);
+    EXPECT_NE(inf, value);
+    EXPECT_GT(inf, value);
+    EXPECT_LT(-inf, value);
+  }
+}
+
 TEST(MpReal, ParsingAndRoundTripFormatting)
 {
   for (auto bits : {2, 53, 80, 256, 400})

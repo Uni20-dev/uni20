@@ -223,6 +223,43 @@ inline std::partial_ordering operator<=>(mpreal const& a, exact_constant const& 
                    : std::partial_ordering::equivalent;
 }
 
+namespace detail
+{
+// The caller handles NaN. Native MPFR comparisons do not round the integer.
+template <std::integral I> int compare_integer(mpreal const& a, I b)
+{
+  if constexpr (std::is_signed_v<I> && std::numeric_limits<I>::digits <= std::numeric_limits<long>::digits)
+    return mpfr_cmp_si(a.native_handle(), static_cast<long>(b));
+  else if constexpr (!std::is_signed_v<I> &&
+                     std::numeric_limits<I>::digits <= std::numeric_limits<unsigned long>::digits)
+    return mpfr_cmp_ui(a.native_handle(), static_cast<unsigned long>(b));
+  else
+    return mpfr_cmp_q(a.native_handle(), exact_constant(b).native_handle());
+}
+} // namespace detail
+
+/// \brief Compare with an integer exactly, without constructing a real approximation.
+/// \details Integers fitting MPFR's long/unsigned long interfaces avoid rational
+///          temporaries. Zero equality uses a direct classification check.
+template <std::integral I>
+  requires(!std::same_as<I, bool>)
+inline bool operator==(mpreal const& a, I b)
+{
+  if (b == 0) return mpfr_zero_p(a.native_handle());
+  return mpfr_number_p(a.native_handle()) && detail::compare_integer(a, b) == 0;
+}
+/// \brief Order against an exact integer; NaN is unordered.
+template <std::integral I>
+  requires(!std::same_as<I, bool>)
+inline std::partial_ordering operator<=>(mpreal const& a, I b)
+{
+  if (mpfr_nan_p(a.native_handle())) return std::partial_ordering::unordered;
+  int const cmp = detail::compare_integer(a, b);
+  return cmp < 0   ? std::partial_ordering::less
+         : cmp > 0 ? std::partial_ordering::greater
+                   : std::partial_ordering::equivalent;
+}
+
 inline bool isfinite(mpreal const& x) noexcept { return mpfr_number_p(x.native_handle()); }
 inline bool isnan(mpreal const& x) noexcept { return mpfr_nan_p(x.native_handle()); }
 inline bool isinf(mpreal const& x) noexcept { return mpfr_inf_p(x.native_handle()); }
