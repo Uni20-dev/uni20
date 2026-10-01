@@ -362,6 +362,24 @@ TEST(PresentationLayout, PrefixesAndIndentsRenderedLines)
   EXPECT_EQ(presentation::prefix_lines("\xE4\xB8\xAD\n\xE2\x86\x92", "\xE2\x94\x82 ", policy), "| \\u4E2D\n| ->");
 }
 
+TEST(PresentationNumeric, DeducesComplexScalarAndUsesItsComponentPrecision)
+{
+  presentation::numeric_format_options options;
+  options.notation = presentation::real_notation::fixed;
+  options.float32_precision = 1;
+  options.float64_precision = 2;
+  options.long_double_precision = 3;
+  EXPECT_EQ(presentation::format_complex(uni20::complex<float>{1.25f, 2.5f}, options), "1.2+2.5i");
+  EXPECT_EQ(presentation::format_complex(uni20::complex<double>{1.25, 2.5}, options), "1.25+2.50i");
+  EXPECT_EQ(presentation::format_scalar(uni20::complex<long double>{1.25L, 2.5L}, options), "1.250+2.500i");
+#if UNI20_ENABLE_MPC
+  auto p = uni20::Precision::bits(100);
+  uni20::complex<uni20::mpreal> z("1.25", "2.5", p);
+  EXPECT_EQ(presentation::format_complex(z, options), "1.250+2.500i");
+  EXPECT_EQ(presentation::format_scalar(z, options), "1.250+2.500i");
+#endif
+}
+
 TEST(PresentationNumeric, RealAndComplexFormattingUsesConfiguredDigits)
 {
   presentation::numeric_format_options options;
