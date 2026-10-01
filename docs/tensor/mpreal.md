@@ -1,13 +1,13 @@
 # Arbitrary-precision real scalars
 
-The first arbitrary-precision slice supplies `uni20::mpreal`, an owning MPFR
-scalar, explicit `Precision`, exact rational literal arithmetic, and a
-precision-aware pi constant. Optional MPC supplies `uni20::complex<mpreal>`.
-It is a CPU scalar API. Tensor allocation, MPLAPACK kernels, and table/CLI precision
-selection are subsequent integration work; enabling this option does not
-advertise an arbitrary-precision BLAS or LAPACK backend.
-`complex<mpreal>` and `make_complex_t<mpreal>` are unavailable without MPC, so
-generic code cannot silently select the standard complex layout.
+`uni20::mpreal` is an experimental eager value type that holds either an exact
+GMP rational or a finite-precision MPFR approximation. Optional MPC supplies
+`uni20::complex<mpreal>` with two exact rational components or one MPC payload.
+Symbolic constants such as `pi<mpreal>` remain separate descriptor types.
+
+This is CPU arithmetic. Tensor construction defaults and the optional
+[MPLAPACK product/solve backend](../linalg/mplapack_mpfr.md) are described below.
+Table schemas and CLI selection do not yet support arbitrary precision.
 
 ## Configuration
 
@@ -51,28 +51,78 @@ mpreal y{"0.2", p};
 auto z = x + y;                   // Owning mpreal, evaluated immediately.
 ```
 
-Default construction produces an unset `mpreal` without allocating MPFR storage.
-Use `initialized()` to query this state. Copying, moving, swapping, destruction
-and assignment are safe; assignment from a numerical value supplies its value
-and precision. Numerical use, formatting, precision queries and native-handle
-access on an unset object throw `std::logic_error`. Unset is neither zero nor NaN.
-This permits allocate-then-assign buffers; it does not supply a zero accumulator.
-Every new numerical value obtains precision
-explicitly or from another scalar. `Precision::decimal_digits` uses a conservative
-upper bound for conversion to binary bits and can allocate slightly more bits
-than the mathematical minimum.
+Default construction and integer construction produce exact values: `mpreal{}`
+is exact zero and `mpreal{1}` is exact one. `mpreal{0.1_mp}` retains the exact
+rational `1/10`. `Precision::exact()` identifies this state; `is_exact()` queries
+it. `bit_count()` throws for exact precision, and precision values have equality
+but no numerical ordering. `common_precision(a, b)` treats exact state as neutral
+and rejects differing finite precisions.
+
+```cpp
+mpreal third = mpreal{1} / mpreal{3}; // Exact 1/3, no working precision.
+mpreal sum{};
+sum += third;
+sum += third;
+sum += third;                       // Exactly 1.
+sum += mpreal{"0.1", p};             // Now approximate at p.
+```
+
+Exact arithmetic covers `+`, `-`, `*`, `/`, unary signs, `abs`, `conj`,
+classification and comparison. `sqrt` preserves rational perfect squares;
+`hypot` does likewise when the sum of squares has a rational square root.
+Real `pow` supports integer exponents (including negative exponents) and rational
+exponents whose real root is rational: `pow(16, 3/4)` is exactly 8. For negative
+bases, exact rational powers use the real root when the denominator is odd.
+This differs from approximate MPFR `pow`, where a noninteger approximate exponent
+on a negative base produces NaN. Zero to the zeroth power is one.
+Exact identities include `exp(0)`, `log(1)`, `sin(0)`, `cos(0)`, `tan(0)`, `atan(0)`
+and `atan2(0, positive)`. These rules never reclassify approximate operands as exact.
+
+Exact division by zero and negative powers of zero throw `std::domain_error`.
+Approximate division retains MPFR's infinity/NaN behavior. Exact arithmetic can
+grow large numerators and denominators; it is not automatically rounded to limit
+cost. A result outside the supported rational representation requires explicit
+finite precision: `sqrt(mpreal{2})` throws; use `sqrt(mpreal{2}.at(p))`.
+This is rational arithmetic, not a symbolic algebra system.
+
+`uni20::is_exact(x)` in `core/numeric_limits.hpp` is the generic value query:
+it calls a runtime scalar's member `is_exact()` or uses the static
+`numeric_limits<T>::is_exact` property for ordinary types. Integers report true;
+floating types report false, including `double{1}`. Unset runtime values report
+false. `core/math.hpp` also supports ordinary complex values. The type-level
+`numeric_limits<T>::is_exact` remains a compile-time property, not a runtime
+query; `mpreal` is not an always-exact type. Do not interpret a floating value's
+binary representability as an exact-arithmetic guarantee.
+
+`scalar_like(exemplar, value)` in `core/math.hpp` constructs the exemplar's scalar
+type with its precision, or uses ordinary construction for fixed-precision types:
+`sqrt(scalar_like(x, 2))` works for both an approximate `mpreal x` and a `double x`.
+An exact exemplar remains exact and cannot supply a finite approximation budget.
+
+Explicit `mpreal{uninitialized}` produces an unset placeholder. Copying, moving,
+swapping and assignment are safe, but numerical use of an unset value throws
+`std::logic_error`. `initialized()` distinguishes it from exact zero. Explicitly
+uninitialized tensor storage uses this state; ordinary `std::vector<mpreal>(n)`
+contains exact zeros. `Precision::decimal_digits` uses a conservative conversion
+to binary bits and can allocate slightly more bits than the mathematical minimum.
 
 Copy and move construction and assignment preserve the source value and
-precision. Moving leaves the source unset; self-move assignment preserves the
-value. No arithmetic expression retains
-references to its operands.
+exact/approximate state and precision. Moving leaves the source unset; self-move
+assignment preserves the value. No arithmetic expression retains references to
+its operands.
 
-Binary `mpreal` arithmetic, including compound assignment, requires equal
-precision. A mismatch throws `std::invalid_argument` before modifying either
-operand. Explicit conversion uses `x.at(p)` or `mpreal{x, p}`; reducing precision
-rounds, and increasing precision cannot restore digits already lost.
-Compound arithmetic updates the destination in place, including when both
-operands are the same object, without constructing a separate result scalar.
+Binary arithmetic between approximate `mpreal` values, including compound
+assignment, requires equal finite precision. A mismatch throws
+`std::invalid_argument` before modifying either operand. Explicit conversion uses `x.at(p)` or `mpreal{x, p}`; reducing precision
+rounds, and increasing precision cannot restore digits already lost. With one
+exact operand, that operand first rounds at the approximate operand's precision;
+with two exact operands, supported rational arithmetic stays exact. Assigning an
+exact value makes the destination exact, independently of its previous precision.
+An approximate result is never reclassified as exact, even when it equals an
+integer; `.at(Precision::exact())` rejects approximate inputs.
+Compound arithmetic supports self-aliasing. Two approximate operands update the
+destination in place; exact arithmetic and state transitions may allocate a new
+payload.
 
 ```cpp
 auto q = Precision::bits(400);
@@ -87,7 +137,11 @@ inputs require a constructor with explicit precision, such as `mpreal{0.1, p}`;
 this imports the already-rounded binary64 value. Use decimal text or `_mp`
 literals to avoid that initial rounding. Plain integer operands are accepted.
 No implicit conversion to a native floating type is provided; explicit `double`
-and `long double` conversions are available.
+and `long double` conversions, plus explicit `float` conversion, accept exact
+and approximate values. Exact conversion rounds directly to the destination
+format, including subnormals, without an intermediate double-rounding error.
+Borrowed MPFR access still requires `.at(p)` for exact values. `copy_to(mpfr_ptr)` explicitly rounds either state into an initialized
+MPFR destination at the destination's precision.
 
 ## Exact literal arithmetic
 
@@ -101,7 +155,7 @@ auto b = x + third;               // Round third to x's precision, then add.
 
 The `_mp` literal records source characters without conversion through a machine
 float. Its descriptor can be `constexpr`; operations on descriptors materialize
-owning GMP rationals at runtime. `exact_constant` accepts decimal text for runtime
+owning GMP rationals at runtime. `exact_constant` accepts decimal or integer-fraction text for runtime
 input and formats as a reduced numerator/denominator, or an integer.
 
 Precisionless operations are unary signs, addition, subtraction, multiplication,
@@ -144,7 +198,7 @@ supported, signed zeros compare equal, and NaNs are unordered.
 ```cpp
 auto pi_value = pi<mpreal>.at(p);
 auto twice_pi = mpreal(2, p) * pi<mpreal>; // Infer p, evaluate immediately.
-auto root = sqrt(mpreal(2, p));
+auto root = sqrt(mpreal{2}, p);            // Select an approximation for an exact input.
 auto spacing = epsilon(p);                // 2^(1-p.bit_count()).
 ```
 
@@ -154,11 +208,32 @@ previously rounded approximation. It supports arithmetic with an existing
 supplies `pi<mpreal>`, not a generic replacement for `std::numbers`.
 
 The scalar math functions include `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`,
-`tan`, `atan`, `atan2`, `hypot`, and `pow`. Results retain their operand precision;
-binary functions require matching precision. Functions such as `sqrt` do not
-accept precisionless constants in this slice.
+`tan`, `atan`, `atan2`, `hypot`, and `pow`. Each accepts an optional trailing
+`Precision`. Without it, the exact-result rules above apply; approximate operands
+supply working precision, and differing finite precisions are rejected.
 
-Real arithmetic follows MPFR's infinity/NaN behavior: real division by zero can
+An explicit finite `p` requests **input conversion followed by evaluation**:
+`f(x, p)` means `f(x.at(p))`, and `f(x, y, p)` means
+`f(x.at(p), y.at(p))`. Inputs remain unchanged. The result is always approximate
+at `p`, even for `sqrt(mpreal{4}, p)` or `exp(mpreal{}, p)`. Binary overloads
+therefore accept differing operand precisions. `Precision::exact()` and unset
+operands throw `std::logic_error`; omit the precision argument to retain supported
+exact results when the inputs are exact. No ambient precision is changed, including across async tasks.
+
+```cpp
+auto exact_root = sqrt(mpreal{4});       // Exact 2.
+auto approximate = sqrt(mpreal{4}, p);   // Approximate 2 at p.
+auto irrational = sqrt(mpreal{2}, p);    // Approximate sqrt(2) at p.
+auto power = pow(x, y, p);              // Convert both inputs, then evaluate.
+```
+
+This does not promise one correctly rounded evaluation of the original rational
+expression. For example, at two bits `sqrt(mpreal{6.4_mp}, p)` first rounds 6.4
+to 6, then rounds its square root to 2. Evaluating the original square root and
+rounding only the final result would produce 3. Approximate paths retain MPFR's
+exceptional-value rules: `sqrt(mpreal{-1}, p)` yields NaN.
+
+Approximate real arithmetic follows MPFR's infinity/NaN behavior: real division by zero can
 produce infinity or NaN, and `sqrt` of a negative value produces NaN. This differs
 from exact rational division, whose result must remain rational. `isfinite`,
 `isinf`, `isnan`, and `signbit` inspect real values, and ordering with NaN is
@@ -183,30 +258,51 @@ auto component = z.real();        // Independent owning copy.
 z.imag(uni20::mpreal{"0.1", uni20::Precision::bits(400)}); // Round to p.
 ```
 
-Both components have one working precision. Construction from two `mpreal`
-values requires matching precisions; a third `Precision` argument explicitly
-converts both. Embedding one real value retains its precision and supplies
-positive imaginary zero. Copy/move assignment adopts the whole source precision;
-component setters preserve the existing complex precision. `real()` and `imag()`
-return owning values, never references into MPC storage.
+Both components are exact, or both share one finite precision. Construction from
+one exact and one approximate component uses the approximate component's
+precision. Two approximate components must match unless a third `Precision`
+argument requests conversion. `complex<mpreal>{}` and `complex<mpreal>{1}` are
+exact zero and one. Explicit `uninitialized` constructs an unset placeholder.
 
-The complex type shares the real type's unset default state, owning value
-semantics, nearest-even rounding and explicit `.at(p)` conversion. Arithmetic
-requires matching precision; exact constants first round at the complex operand's
-precision. Equality compares stored values without requiring equal precision,
-and a NaN component makes equality false. No complex ordering is provided.
+Complex addition, subtraction, multiplication, division, conjugation, negation
+and squared norm preserve exact rational components. `sqrt` returns exact
+principal roots when both components are rational, and `abs` stays exact when
+the magnitude is rational. Integer and half-integer powers use exact arithmetic;
+positive real bases also support rational real powers. General complex
+noninteger powers still require finite precision. Zero/unit identities for
+`exp`, `log`, `sin`, `cos` and `arg(positive real)` remain exact. Exact zero has no
+sign: on the negative real axis, the exact square root takes the upper cut side.
+With an approximate operand, exact components first round to its precision. The
+finite path continues to use MPC's principal branches and signed imaginary zero.
 
-`conj`, `abs`, `norm`, `arg`, `sqrt`, `exp`, `log`, `sin`, `cos` and `pow` use
-MPC. Square root and logarithm use the principal branch; signed imaginary zero
-selects the side of the negative-real-axis cut. Classification uses the two
-components: finite requires both finite; `isnan`/`isinf` report whether either
-component has that classification. Round-trip component strings can reconstruct
-the value with the two-string constructor. Stream output is `(real,imag)`;
-`format_scalar` uses the existing presentation options and imaginary-unit suffix.
+Complex `sqrt`, `exp`, `log`, `sin`, `cos`, `pow`, `abs`, `norm`, and `arg`
+also accept a trailing finite `Precision`, with the same convert-then-evaluate
+contract. `abs`, `norm`, and `arg` return an approximate `mpreal` at that precision.
+MPC's principal branches apply after conversion; an approximate negative imaginary
+zero retains its sign, whereas exact zero converts to positive zero.
+
+Assignment adopts the complete source state. Component setters retain an
+existing finite precision. On an exact complex value, an exact replacement stays
+exact; an approximate replacement supplies precision for both components.
+`real()` and `imag()` return independent owning values. Comparisons compare values
+without rounding; NaN is unequal. No complex ordering is provided.
+
+Borrowed MPC access requires an approximate value. `copy_to(mpc_ptr)` rounds
+exact or approximate components into an initialized destination. Stream output is
+`(real,imag)`; `format_scalar` uses the usual imaginary-unit suffix.
 
 ## Text and asynchronous use
 
-`value.to_string()` emits enough decimal digits to round-trip at the same
+Exact values print as canonical fractions (`1/3`) or integers (`1`). Formatting
+options do not turn them into decimal approximations; convert with `.at(p)` first.
+Both exact and finite-precision parsing accept fractions of signed base-ten
+integers, such as `-2/3` or `4/-6`, and canonicalize them. Finite-precision parsing
+rounds the rational once. Whitespace, decimal/exponent fraction components, and
+multiple slashes are rejected; a zero denominator throws `std::domain_error`.
+Canonical fraction output round-trips exactly through parsing at
+`Precision::exact()`.
+
+For approximate values, `value.to_string()` emits enough decimal digits to round-trip at the same
 precision, without a native-float intermediate. `value.to_string(n)` requests
 `n` significant digits, including a single digit when `n == 1`. Finite nonzero
 output uses scientific notation; zero preserves its sign, and exceptional values
@@ -279,7 +375,9 @@ precision. A future view that converts element precision would be a separate
 numerical transformation, not an ordinary structural view.
 
 `common_default_precision(a, b)` selects matching input defaults and throws if
-either is missing or they differ. It does not inspect individual elements.
+either is missing or their finite defaults differ. Exact defaults are neutral;
+two exact defaults produce `Precision::exact()`, which a numerical backend may
+reject unless the caller supplies finite operation precision. It does not inspect individual elements.
 `prepare_output(output, extents, p)` records the operation precision on owning
 outputs and prepares unset storage when a new allocation is needed. Structural
 view outputs keep their parent's default. Reused elements are not converted;
@@ -287,3 +385,14 @@ the numerical operation must overwrite the elements promised by its contract.
 
 Run `mpreal_example` for exact fractions, an 80-digit calculation, pi generation,
 and explicit mixed-precision conversion with explanatory output.
+
+## Experiment scope and representation
+
+The active payload is selected by a variant: unset, exact rational, or MPFR/MPC.
+Approximate precision is queried from the native payload rather than duplicated.
+The exact real payload reuses `exact_constant`; exact complex uses two rationals.
+No ambient scalar precision or expression templates are introduced.
+
+`mpreal_exact_example` demonstrates unchanged generic accumulation with `T{}`
+and `T{1}`, exact complex arithmetic, and the explicit approximation boundary.
+The experiment has not optimized payload size or rational allocation costs.

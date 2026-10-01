@@ -1,3 +1,4 @@
+#include <array>
 #include <gtest/gtest.h>
 #include <uni20/async/async.hpp>
 #include <uni20/async/tbb_scheduler.hpp>
@@ -9,6 +10,47 @@
 #include <uni20/tensor/async.hpp>
 
 using namespace uni20;
+
+static_assert(linalg::AsyncOperationScalar<int, mpreal>);
+static_assert(linalg::AsyncOperationScalar<decimal_literal, complex<mpreal>>);
+static_assert(!linalg::AsyncOperationScalar<Precision, mpreal>);
+static_assert(!linalg::AsyncOperationScalar<Precision, complex<mpreal>>);
+static_assert(!linalg::AsyncOperationScalar<uninitialized_t, mpreal>);
+static_assert(!linalg::AsyncOperationScalar<double, mpreal>);
+
+namespace
+{
+// Probe declarations, not function bodies, for each public synchronous GEMM form.
+template <class S, class Alpha, class Beta>
+constexpr auto gemm_coefficient_forms = std::array{requires(DenseMatrix<S> & out, DenseMatrix<S> const& a, Alpha alpha,
+                                                            Beta beta){linalg::gemm(out, alpha, a, a, beta);
+} // namespace
+, requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta) {
+  linalg::gemm(linalg::MplapackMpfrBackend{}, out, alpha, a, a, beta);
+}, requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta, Precision p) {
+  linalg::gemm(out, alpha, a, a, beta, p);
+}, requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta, Precision p) {
+  linalg::gemm(linalg::MplapackMpfrBackend{}, out, alpha, a, a, beta, p);
+}
+}
+;
+
+template <class S> consteval bool gemm_coefficients_are_numeric()
+{
+  constexpr std::array accepted{true, true, true, true};
+  constexpr std::array rejected{false, false, false, false};
+  return gemm_coefficient_forms<S, S, S> == accepted && gemm_coefficient_forms<S, int, int> == accepted &&
+         gemm_coefficient_forms<S, decimal_literal, exact_constant> == accepted &&
+         gemm_coefficient_forms<S, exact_constant, decimal_literal> == accepted &&
+         gemm_coefficient_forms<S, Precision, int> == rejected &&
+         gemm_coefficient_forms<S, int, Precision> == rejected &&
+         gemm_coefficient_forms<S, uninitialized_t, int> == rejected &&
+         gemm_coefficient_forms<S, int, uninitialized_t> == rejected &&
+         gemm_coefficient_forms<S, double, int> == rejected && gemm_coefficient_forms<S, int, double> == rejected;
+}
+static_assert(gemm_coefficients_are_numeric<mpreal>());
+static_assert(gemm_coefficients_are_numeric<complex<mpreal>>());
+} // namespace
 
 TEST(MpfrLinalg, ProductAndSolveUseTensorDefaults)
 {
@@ -73,8 +115,8 @@ TEST(MpfrLinalg, GemmNoReadCasesAndOutputPrecision)
   EXPECT_EQ((out[0, 0]), 14);
   EXPECT_EQ((out[1, 0]), 18);
   EXPECT_EQ(out.default_precision(), p);
-  out[0, 0] = mpreal{};
-  out[1, 0] = mpreal{};
+  out[0, 0] = mpreal(uninitialized);
+  out[1, 0] = mpreal(uninitialized);
   linalg::gemm(out, mpreal(0, p), a, b, mpreal(0, p));
   EXPECT_EQ((out[0, 0]), 0);
   EXPECT_EQ((out[1, 0]), 0);
@@ -261,4 +303,79 @@ TEST(MpfrLinalg, WritingThroughViewsPreservesParentDefault)
   output.default_precision(p);
   linalg::add_product(view, a, b);
   EXPECT_EQ((output[0, 0]), 12);
+}
+
+TEST(MpfrLinalg, ExactInputsAndCoefficientsMaterializeAtTheOperationPrecision)
+{
+  auto exact = Precision::exact(), p = Precision::bits(256);
+  DenseMatrix<mpreal> a(1, 1, exact), b(1, 1, exact), out(1, 1, p);
+  a[0, 0] = mpreal{2};
+  b[0, 0] = mpreal{6};
+  EXPECT_THROW(linalg::gemm(out, 1, a, b, 0), std::logic_error);
+  EXPECT_THROW((void)linalg::solve(a, b), std::logic_error);
+  EXPECT_THROW(linalg::gemm(out, 1, a, b, 0, exact), std::logic_error);
+  EXPECT_EQ((out[0, 0]), 0);
+  linalg::gemm(out, 1, a, b, 0, p);
+  EXPECT_EQ((out[0, 0]), 12);
+  EXPECT_EQ((out[0, 0].precision()), p);
+  auto x = linalg::solve(a, b, p);
+  EXPECT_EQ((x[0, 0]), 3);
+  EXPECT_EQ(x.default_precision(), p);
+  EXPECT_TRUE((a[0, 0].is_exact()));
+  EXPECT_TRUE((b[0, 0].is_exact()));
+  b.default_precision(p); // Tensor metadata supplies precision even for exact elements.
+  using namespace uni20::literals;
+  linalg::gemm(out, 0.5_mp, a, b, 0);
+  EXPECT_EQ((out[0, 0]), 6);
+  linalg::assign_product(out, a, b, 1);
+  linalg::add_product(out, a, b, -1);
+  EXPECT_EQ((out[0, 0]), 0);
+  DenseMatrix<mpreal> exact_output(1, 1, exact);
+  linalg::gemm(exact_output, 1, a, b, 1);
+  EXPECT_EQ((exact_output[0, 0]), 12);
+  EXPECT_EQ(exact_output.default_precision(), p);
+}
+
+TEST(MpfrLinalg, AsyncExactCoefficientsSupportGenericAccumulation)
+{
+  using namespace uni20::async;
+  using Matrix = DenseMatrix<complex<mpreal>>;
+  DebugScheduler scheduler;
+  ScopedScheduler scope(&scheduler);
+  auto p = Precision::bits(256);
+  Matrix av(1, 1, p), bv(1, 1, p), cv(1, 1, p);
+  av[0, 0] = complex<mpreal>(mpreal{1}, mpreal{2});
+  bv[0, 0] = complex<mpreal>{3};
+  Async<Matrix> a(std::move(av)), b(std::move(bv)), c(std::move(cv));
+  linalg::gemm(c, 1, a, b, 0);
+  linalg::add_product(c, a, b);
+  auto const& result = c.get_wait(scheduler);
+  EXPECT_EQ((result[0, 0]), complex<mpreal>(mpreal{6}, mpreal{12}));
+  EXPECT_EQ((result[0, 0].precision()), p);
+}
+
+TEST(MpfrLinalg, SyncGemmAcceptsNumericCoefficientsInEveryForm)
+{
+  auto check = []<class S>() {
+    using namespace uni20::literals;
+    auto p = Precision::bits(128);
+    DenseMatrix<S> a(1, 1, p), b(1, 1, p), out(1, 1, p);
+    a[0, 0] = S{2};
+    b[0, 0] = S{6};
+    auto quarter = exact_constant("1/4");
+    out[0, 0] = S{4};
+    linalg::gemm(out, 0.5_mp, a, b, quarter);
+    EXPECT_EQ((out[0, 0]), S{7});
+    out[0, 0] = S{4};
+    linalg::gemm(linalg::MplapackMpfrBackend{}, out, 0.5_mp, a, b, quarter);
+    EXPECT_EQ((out[0, 0]), S{7});
+    out[0, 0] = S{4};
+    linalg::gemm(out, quarter, a, b, 0.5_mp, p);
+    EXPECT_EQ((out[0, 0]), S{5});
+    out[0, 0] = S{4};
+    linalg::gemm(linalg::MplapackMpfrBackend{}, out, quarter, a, b, 0.5_mp, p);
+    EXPECT_EQ((out[0, 0]), S{5});
+  };
+  check.operator()<mpreal>();
+  check.operator()<complex<mpreal>>();
 }

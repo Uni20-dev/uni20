@@ -28,8 +28,8 @@ void require_size(std::size_t actual, std::size_t rows, std::size_t cols)
 template <class Scalar>
 using provider_scalar = std::conditional_t<std::same_as<Scalar, mpreal>, mpfrxx::mpfr_class, mpfrxx::mpc_class>;
 
-void set(mpfrxx::mpfr_class& out, mpreal const& in) { mpfr_set(out.mpfr_data(), in.native_handle(), MPFR_RNDN); }
-void set(mpfrxx::mpc_class& out, mpcomplex const& in) { mpc_set(out.mpc_data(), in.native_handle(), MPC_RNDNN); }
+void set(mpfrxx::mpfr_class& out, mpreal const& in) { in.copy_to(out.mpfr_data()); }
+void set(mpfrxx::mpc_class& out, mpcomplex const& in) { in.copy_to(out.mpc_data()); }
 mpreal get(mpfrxx::mpfr_class const& in, Precision p) { return mpreal(in.mpfr_data(), p); }
 mpcomplex get(mpfrxx::mpc_class const& in, Precision p) { return mpcomplex(in.mpc_data(), p); }
 

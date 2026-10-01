@@ -11,7 +11,7 @@ namespace uni20::mplapack::detail
 /// \warning Must never live across an await or a transfer to another thread.
 class precision_scope {
   public:
-    explicit precision_scope(Precision p) noexcept
+    explicit precision_scope(Precision p)
         : precision_(mpfr_get_default_prec()), rounding_(mpfr_get_default_rounding_mode()), emin_(mpfr_get_emin()),
           emax_(mpfr_get_emax()), stable_rounding_(gmpfrxx_mkII::detail::stable_mpfr_rounding_mode_storage()),
           real_initialized_(gmpfrxx_mkII::detail::mpfr_defaults_initialized_storage()),
@@ -19,14 +19,15 @@ class precision_scope {
           complex_precision_(mpfrxx::mpc_precision_override_storage()),
           complex_rounding_(mpfrxx::mpc_rounding_override_storage())
     {
+      auto const bits = p.bit_count(); // Validate before mutating any provider defaults.
       mpfrxx::initialize_thread_defaults();
       mpfrxx::initialize_mpc_defaults_for_current_thread();
       // Wrapper first-use initialization may read exponent bounds from the
       // environment. Preserve Uni20's executing-thread exponent range instead.
       gmpfrxx_mkII::detail::set_mpfr_default_exponent_range(emin_, emax_);
-      mpfrxx::set_default_precision_bits(p.bit_count());
+      mpfrxx::set_default_precision_bits(bits);
       mpfrxx::set_default_rounding_mode(MPFR_RNDN);
-      mpfrxx::set_default_mpc_precision_bits(p.bit_count());
+      mpfrxx::set_default_mpc_precision_bits(bits);
       mpfrxx::set_default_mpc_rounding_mode(MPFR_RNDN);
     }
     ~precision_scope() noexcept

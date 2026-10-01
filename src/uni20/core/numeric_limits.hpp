@@ -24,6 +24,21 @@ template <typename T> struct numeric_limits<T volatile> : numeric_limits<T>
 template <typename T> struct numeric_limits<T const volatile> : numeric_limits<T>
 {};
 
+/// \brief Query a value's exact-arithmetic state, or its type's static exactness.
+/// \details Runtime scalar types provide an is_exact() member. For ordinary
+///          scalars this returns numeric_limits<T>::is_exact: integers are exact,
+///          floating types are approximate even when their value is an integer.
+///          Unset runtime scalar values report false.
+template <class T>
+  requires(requires(T const& x) { x.is_exact(); } || numeric_limits<T>::is_specialized)
+constexpr bool is_exact(T const& x)
+{
+  if constexpr (requires { x.is_exact(); })
+    return x.is_exact();
+  else
+    return numeric_limits<T>::is_exact;
+}
+
 /// \brief True when Uni20 has numeric limits for `T`.
 /// \tparam T Type to inspect.
 /// \ingroup core_math

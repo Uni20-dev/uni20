@@ -5,8 +5,9 @@ with explicit runtime `Precision` when `UNI20_ENABLE_MPFR=ON`. This first
 layer provides scalar arithmetic and exact constants. `UNI20_ENABLE_MPC=ON`
 additionally supplies MPC-backed `complex<mpreal>` and `make_complex_t<mpreal>`;
 these names are unavailable in a real-only build. Default-constructed MPFR/MPC
-scalars are unset, and their precision cannot be described by type-only numerical
-limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
+scalars are exact zero; explicit `uninitialized` supplies an unset placeholder.
+They hold exact rationals until finite working precision is supplied. Their
+precision cannot be described by type-only numerical limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
 allocation and dense backend integration are separate from scalar support.
 `UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a narrowly scoped
 [matrix-product and LU-solve backend](../linalg/mplapack_mpfr.md), without extending
@@ -317,3 +318,20 @@ template <> struct numeric_limits<my_real>
 Do not add specializations of `std::numeric_limits` for compiler fundamental
 extension types such as `__float128` or `_Float128`. Those are not
 user-defined types. Keep such support behind the Uni20 customization point.
+
+### Exactness queries
+
+`uni20::is_exact(value)` queries the active arithmetic state of `mpreal` and
+`complex<mpreal>`, and the static exactness of ordinary scalar types. It returns
+false for an unset runtime scalar. `numeric_limits<T>::is_exact` remains a
+compile-time type property; it cannot describe the changing state of an
+individual `mpreal`. Ordinary integers are exact, while native floating values
+are approximate even when numerically integral. Exact rational roots, powers,
+parsing and explicit native conversions are described in [mpreal](mpreal.md).
+
+Runtime-precision real and complex math functions accept a trailing finite
+`Precision`: they convert each input to that precision, then evaluate, always
+returning an approximate result at that precision. Without an override, exact
+results remain exact where supported, and approximate operands supply the working
+precision. This distinction also applies to the real outputs of complex `abs`,
+`norm`, and `arg`.

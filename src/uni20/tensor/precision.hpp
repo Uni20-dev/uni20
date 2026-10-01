@@ -20,15 +20,14 @@ template <TensorView Input>
 }
 
 /// \brief Select a binary operation's default without inspecting element precisions.
-/// \details Missing or differing tensor defaults require an explicit operation precision.
+/// \details Exact defaults are neutral. Missing or differing finite defaults
+///          require explicit operation precision. Two exact defaults remain exact;
+///          approximation-only kernels require a finite override.
 template <TensorView A, TensorView B>
   requires(has_runtime_precision_v<tensor_element_t<A>> && has_runtime_precision_v<tensor_element_t<B>>)
 [[nodiscard]] Precision common_default_precision(A const& a, B const& b)
 {
-  auto p = a.default_precision();
-  if (p != b.default_precision())
-    throw std::invalid_argument("tensor operation: differing defaults require explicit working precision");
-  return p;
+  return common_precision(a.default_precision(), b.default_precision());
 }
 } // namespace uni20
 #endif

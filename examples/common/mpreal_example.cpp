@@ -6,8 +6,8 @@ int main()
   using namespace uni20;
   using namespace uni20::literals;
   auto p = Precision::decimal_digits(80);
-  mpreal deferred;
-  std::cout << "Default construction is unset: " << !deferred.initialized()
+  mpreal deferred(uninitialized);
+  std::cout << "Explicitly uninitialized construction is unset: " << !deferred.initialized()
             << "; assignment supplies both value and precision.\n";
   deferred = mpreal("0.1", p);
   std::cout << "Assigned value: " << deferred << "\n";

@@ -43,15 +43,25 @@ auto x = uni20::linalg::solve(a, b);          // Inputs preserved.
 auto y = uni20::linalg::solve(a, b, uni20::Precision::bits(400));
 ```
 
-Without an override, the input tensors must have equal construction defaults.
-Missing or differing defaults are errors; element precision is not scanned for
-consistency. `assign_product(output, a, b, p)` and `solve(a, b, p)` select an
-explicit working precision. A successful owning result carries that default; writing through a structural
-view leaves the parent construction default unchanged.
+Without an override, finite input construction defaults must match; an exact
+default is neutral. Missing defaults are errors, and element precision is not
+scanned for consistency. These numerical provider kernels require finite working
+precision: all-exact input defaults require an explicit override, unless a
+participating GEMM output supplies finite precision. Exact elements and exact
+coefficients are rounded at that selected precision. `assign_product(output, a, b, p)`
+and `solve(a, b, p)` select explicit working precision. A successful owning result
+carries that default; writing through a structural view leaves the parent
+construction default unchanged.
 
 `gemm(output, alpha, a, b, beta[, p])` keeps the output's existing shape. With no
-override and nonzero `beta`, its default must also match the input defaults.
+override and nonzero `beta`, its default also participates in precision selection;
+exact defaults are neutral and differing finite defaults are rejected.
 All participating values, including coefficients, convert at the backend boundary.
+Coefficients may be exact scalar values, integers or `_mp` literals; for example,
+`gemm(output, 1, a, b, 0)` needs no separately constructed scalar constants.
+Both synchronous and asynchronous interfaces constrain coefficient sources:
+`Precision` and `uninitialized` tags are rejected as coefficients at compile time.
+An operation precision belongs in the trailing `p` argument, not in `alpha` or `beta`.
 With zero `beta`, old output elements may be unset; with zero `alpha` or zero
 inner dimension, input elements are not numerically read. Shape requirements
 still apply. Output storage must not overlap either input.
@@ -119,9 +129,8 @@ after the required inputs are readable. Async conjugation and reshape aliases
 inherit their parent's default in that readable epoch, including aliases created
 before the parent was constructed. Later parent-default changes are observed by
 subsequent operations through the same alias.
-The existing async `add_product` convenience interface is not yet adapted to
-runtime-precision coefficient construction; use `gemm` with explicit scalar
-coefficients for accumulation.
+Async `add_product` constructs exact unit coefficients and now works for
+runtime-precision tensors without specifying coefficient precision.
 
 ## Examples and validation
 

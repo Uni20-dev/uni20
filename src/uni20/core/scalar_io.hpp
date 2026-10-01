@@ -47,6 +47,7 @@ namespace detail
 #if UNI20_ENABLE_MPFR
 inline std::string format_mpreal(mpreal const& value, scalar_format_options const& options)
 {
+  if (value.is_exact()) return value.to_string();
   auto const requested = options.precision < 0 ? mpfr_get_str_ndigits(10, value.precision().bit_count())
                                                : static_cast<std::size_t>(options.precision);
   if (requested > static_cast<std::size_t>(std::numeric_limits<int>::max()))
@@ -84,6 +85,10 @@ template <typename T> [[nodiscard]] int effective_precision(scalar_format_option
   }
   return 'g';
 }
+
+#if UNI20_ENABLE_MPFR
+inline bool scalar_signbit(mpreal const& value) { return uni20::signbit(value); }
+#endif
 
 template <typename T> [[nodiscard]] bool scalar_signbit(T value)
 {

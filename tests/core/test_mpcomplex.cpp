@@ -18,7 +18,7 @@ static_assert(std::is_nothrow_move_constructible_v<C>);
 TEST(MpComplex, UnsetOwnershipAndExplicitPrecision)
 {
   auto p = Precision::bits(256);
-  C z;
+  C z(uninitialized);
   EXPECT_FALSE(z.initialized());
   EXPECT_THROW(z.native_handle(), std::logic_error);
   EXPECT_THROW(z.precision(), std::logic_error);
@@ -48,7 +48,8 @@ TEST(MpComplex, UnsetOwnershipAndExplicitPrecision)
   buffer[3] = moved;
   buffer.resize(24);
   EXPECT_EQ(buffer[3], moved);
-  EXPECT_FALSE(buffer[23].initialized());
+  EXPECT_TRUE(buffer[23].is_exact());
+  EXPECT_EQ(buffer[23], 0);
 }
 
 TEST(MpComplex, ComponentsConvertOnlyWhenExplicit)
@@ -187,4 +188,144 @@ TEST(MpComplex, AsyncCalculationsCarryIndependentPrecisions)
     EXPECT_EQ(value.real(), 2);
     EXPECT_EQ(value.imag(), 1);
   }
+}
+
+TEST(MpComplex, ExactComplexArithmeticAndComponentTransitions)
+{
+  C zero{}, one{1};
+  EXPECT_TRUE(zero.is_exact());
+  EXPECT_EQ(zero, 0);
+  C a(mpreal{1}, mpreal{2}), b(mpreal{3}, mpreal{-4});
+  EXPECT_TRUE(a.is_exact());
+  auto c = a * b;
+  EXPECT_TRUE(c.is_exact());
+  EXPECT_EQ(c.real(), 11);
+  EXPECT_EQ(c.imag(), 2);
+  EXPECT_EQ(c / b, a);
+  EXPECT_EQ(norm(a), 5);
+  EXPECT_TRUE(norm(a).is_exact());
+  EXPECT_EQ(conj(a), C(mpreal{1}, mpreal{-2}));
+  auto fraction = a / C{3};
+  EXPECT_EQ(fraction.real().to_string(), "1/3");
+  EXPECT_EQ(fraction.imag().to_string(), "2/3");
+  EXPECT_THROW(a / zero, std::domain_error);
+  EXPECT_THROW(a /= zero, std::domain_error);
+  EXPECT_EQ(a.real(), 1);
+  EXPECT_THROW(sqrt(a), std::logic_error);
+  EXPECT_THROW(abs(a), std::logic_error);
+  EXPECT_THROW(a.native_handle(), std::logic_error);
+  EXPECT_TRUE(isfinite(a));
+  EXPECT_EQ(format_scalar(fraction), "1/3+2/3i");
+  auto p = Precision::bits(80), q = Precision::bits(256);
+  auto approximate = a.at(p);
+  EXPECT_EQ(approximate, a);
+  EXPECT_FALSE(approximate.is_exact());
+  EXPECT_EQ((a + approximate).precision(), p);
+  EXPECT_EQ((approximate * a).precision(), p);
+  EXPECT_THROW(approximate + a.at(q), std::invalid_argument);
+  EXPECT_THROW(approximate.at(Precision::exact()), std::invalid_argument);
+  C sum{};
+  sum += a;
+  EXPECT_TRUE(sum.is_exact());
+  sum += approximate;
+  EXPECT_EQ(sum.precision(), p);
+  EXPECT_EQ(sum, C(mpreal{2}, mpreal{4}));
+  C mixed(mpreal{1}, mpreal(2, p));
+  EXPECT_EQ(mixed.precision(), p);
+  EXPECT_EQ(mixed.real().precision(), p);
+  a.real(mpreal{3});
+  EXPECT_TRUE(a.is_exact());
+  a.imag(mpreal(7, p));
+  EXPECT_EQ(a.precision(), p);
+  EXPECT_EQ(a.real(), 3);
+  a.real(mpreal(8, q));
+  EXPECT_EQ(a.precision(), p); // Existing finite component-setter policy.
+  EXPECT_EQ(scalar_like(a, 1).precision(), p);
+  EXPECT_EQ(scalar_like(a, 1), one);
+  auto copied = fraction;
+  auto moved = std::move(fraction);
+  EXPECT_FALSE(fraction.initialized());
+  EXPECT_EQ(copied, moved);
+  copied.swap(approximate);
+  EXPECT_FALSE(copied.is_exact());
+  EXPECT_TRUE(approximate.is_exact());
+}
+
+TEST(MpComplex, ExactRootsPowersAndIdentities)
+{
+  using C = complex<mpreal>;
+  C z(mpreal{3}, mpreal{4});
+  EXPECT_EQ(sqrt(z), C(mpreal{2}, mpreal{1}));
+  EXPECT_EQ(sqrt(conj(z)), C(mpreal{2}, mpreal{-1}));
+  EXPECT_EQ(sqrt(C{-4}), C(mpreal{}, mpreal{2}));
+  EXPECT_EQ(abs(z), 5);
+  EXPECT_TRUE(is_exact(abs(z)));
+  EXPECT_EQ(pow(z, C{3}), z * z * z);
+  EXPECT_EQ(pow(z, C{-2}), C{1} / (z * z));
+  EXPECT_EQ(pow(z, C(mpreal("1/2", Precision::exact()))), sqrt(z));
+  EXPECT_EQ(exp(C{}), C{1});
+  EXPECT_EQ(log(C{1}), C{});
+  EXPECT_EQ(cos(C{}), C{1});
+  EXPECT_EQ(sin(C{}), C{});
+  EXPECT_EQ(arg(C{1}), 0);
+  EXPECT_TRUE(is_exact(sqrt(z)));
+  EXPECT_FALSE(is_exact(z.at(Precision::bits(100))));
+  EXPECT_FALSE(is_exact(C(uninitialized)));
+  EXPECT_THROW(sqrt(C{2}), std::logic_error);
+}
+
+TEST(MpComplex, ExplicitMathPrecisionEvaluatesExactInputs)
+{
+  auto p = Precision::bits(80);
+  C z(mpreal{3}, mpreal{4});
+  using Unary = C (*)(C const&, Precision);
+  for (Unary function : {static_cast<Unary>(&uni20::sqrt), &uni20::exp, &uni20::log, &uni20::sin, &uni20::cos})
+  {
+    auto result = function(z, p);
+    EXPECT_EQ(result.precision(), p);
+    EXPECT_FALSE(result.is_exact());
+    EXPECT_THROW(function(z, Precision::exact()), std::logic_error);
+    EXPECT_THROW(function(C(uninitialized), p), std::logic_error);
+  }
+  using RealResult = mpreal (*)(C const&, Precision);
+  for (RealResult function : {static_cast<RealResult>(&uni20::abs), &uni20::norm, &uni20::arg})
+  {
+    auto result = function(z, p);
+    EXPECT_EQ(result.precision(), p);
+    EXPECT_FALSE(result.is_exact());
+    EXPECT_THROW(function(z, Precision::exact()), std::logic_error);
+    EXPECT_THROW(function(C(uninitialized), p), std::logic_error);
+  }
+  EXPECT_EQ(sqrt(z, p), C(mpreal{2}, mpreal{1}));
+  EXPECT_EQ(abs(z, p), 5);
+  EXPECT_EQ(norm(z, p), 25);
+  EXPECT_EQ(arg(C{1}, p), 0);
+  EXPECT_EQ(exp(C{}, p), C{1});
+  EXPECT_EQ(log(C{1}, p), C{});
+  EXPECT_EQ(sin(C{}, p), C{});
+  EXPECT_EQ(cos(C{}, p), C{1});
+  EXPECT_EQ(abs(C(mpreal{1}, mpreal{1}), p), sqrt(mpreal{2}, p));
+  EXPECT_TRUE(z.is_exact());
+}
+
+TEST(MpComplex, ExplicitMathPrecisionOverridesInputsAndPreservesCutSide)
+{
+  auto low = Precision::bits(2), p = Precision::bits(80), high = Precision::bits(256);
+  C x(mpreal("32/5", Precision::exact()));
+  EXPECT_EQ(sqrt(x, low), C{2});
+  EXPECT_EQ(sqrt(x.at(high)).at(low), C{3});
+  C a(mpreal{1}, mpreal{1});
+  auto b = C{2}.at(high);
+  EXPECT_THROW(pow(a.at(p), b), std::invalid_argument);
+  auto square = pow(a.at(p), b, p);
+  EXPECT_EQ(square, C(mpreal{}, mpreal{2}));
+  EXPECT_EQ(square.precision(), p);
+  EXPECT_EQ(b.precision(), high);
+  EXPECT_FALSE(pow(C{2}, C{3}, p).is_exact());
+  EXPECT_THROW(pow(a, b, Precision::exact()), std::logic_error);
+  EXPECT_THROW(pow(C(uninitialized), b, p), std::logic_error);
+  EXPECT_THROW(pow(a, C(uninitialized), p), std::logic_error);
+  EXPECT_EQ(sqrt(C("-4", "-0", high), p), C("0", "-2", p));
+  EXPECT_LT(log(C("-1", "-0", high), p).imag(), 0);
+  EXPECT_GT(log(C{-1}, p).imag(), 0); // Exact zero has no negative sign.
 }

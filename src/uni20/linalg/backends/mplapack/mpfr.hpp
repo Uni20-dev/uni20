@@ -54,6 +54,7 @@ template <MutableRankedMdspecLike<2> C, mplapack_detail::RuntimeScalar S, Ranked
 KernelAttempt try_kernel(MplapackMpfrBackend, gemm_op const&, C& c, S const& alpha, A& a, B& b, S const& beta,
                          Precision p)
 {
+  (void)p.bit_count(); // Numerical provider kernels require finite working precision.
   ERROR_IF(a.extent(1) != b.extent(0) || c.extent(0) != a.extent(0) || c.extent(1) != b.extent(1),
            "GEMM operand shapes do not agree");
   if (c.extent(0) == 0 || c.extent(1) == 0) return KernelAttempt::success;
@@ -89,6 +90,7 @@ template <MutableRankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
 KernelAttempt try_kernel(MplapackMpfrBackend, linear_solve_op const&, A& a, B& b, SolveInfo& info,
                          SolveOptions<mpreal> const& options, Precision p)
 {
+  (void)p.bit_count(); // Numerical provider kernels require finite working precision.
   ERROR_IF(a.extent(0) != a.extent(1) || a.extent(0) != b.extent(0), "solve operand shapes do not agree");
   detail::require_solve_options(options);
   info = {};

@@ -29,6 +29,12 @@ namespace uni20
  * \ingroup core
  */
 
+/// \brief A standard complex value is exact only when both components are exact.
+template <class T> constexpr bool is_exact(detail::standard_complex<T> const& x)
+{
+  return uni20::is_exact(x.real()) && uni20::is_exact(x.imag());
+}
+
 /// \brief Indicates whether the Uni20 conjugation helper is a no-op for the provided scalar type.
 /// \details Evaluates to `true` when the scalar is already real-valued or integral, allowing callers to skip
 ///         complex conjugation work. The variable template is `constexpr`, so the result may be used in
@@ -161,5 +167,20 @@ using std::real;
 template <typename T> constexpr T& imag(detail::standard_complex<T>& z) noexcept { return reinterpret_cast<T*>(&z)[1]; }
 
 using std::imag;
+
+/// \brief Construct a scalar using an exemplar's type and numerical precision.
+/// \details Fixed-precision types use ordinary construction. Runtime-precision
+///          types use the exemplar's exact state or finite precision. This does
+///          not invent working precision when the exemplar is exact.
+template <Scalar S, class Value>
+  requires(std::constructible_from<S, Value const&> ||
+           requires(S const& exemplar, Value const& value) { S(value, exemplar.precision()); })
+[[nodiscard]] auto scalar_like(S const& exemplar, Value const& value) -> S
+{
+  if constexpr (requires { S(value, exemplar.precision()); })
+    return S(value, exemplar.precision());
+  else
+    return S(value);
+}
 
 } // namespace uni20

@@ -199,7 +199,11 @@ template <typename ElementType> class HostBuffer {
 #if UNI20_ENABLE_MPFR
       if constexpr (has_runtime_precision_v<value_type>)
       {
-        if (count != 0 && initialization == StorageInitialization::Zero)
+        if (initialization == StorageInitialization::Uninitialized)
+        {
+          for (size_type i = 0; i < count; ++i) data[i] = value_type(uninitialized);
+        }
+        else if (count != 0)
         {
           auto p = this->default_precision();
           for (size_type i = 0; i < count; ++i) data[i] = value_type(p);
@@ -222,7 +226,10 @@ template <typename ElementType> class HostBuffer {
       {
         try
         {
-          std::uninitialized_value_construct_n(result, size);
+          if constexpr (has_runtime_precision_v<value_type>)
+            std::uninitialized_fill_n(result, size, value_type(uninitialized));
+          else
+            std::uninitialized_value_construct_n(result, size);
         }
         catch (...)
         {

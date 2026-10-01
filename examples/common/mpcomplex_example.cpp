@@ -6,7 +6,7 @@ int main()
 {
   using namespace uni20;
   auto p = Precision::decimal_digits(80);
-  complex<mpreal> z;
+  complex<mpreal> z(uninitialized);
   std::cout << "MPC complex scalars: unset storage is filled by explicit-precision assignment.\n";
   z = complex<mpreal>{"3", "4", p};
   std::cout << "z = " << format_scalar(z) << " at " << z.precision().bit_count() << " bits per component\n"

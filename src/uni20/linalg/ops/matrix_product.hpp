@@ -187,4 +187,42 @@ void assign_product(Output&& output, A const& a, B const& b, Precision p)
 }
 #endif
 
+#if UNI20_ENABLE_MPFR
+/// \brief Overwrite a runtime-precision tensor using an exact coefficient.
+template <KernelBackendSelector Selector, MutableRankedTensorView<2> Output, RankedTensorView<2> A,
+          RankedTensorView<2> B, ExactRationalSource Alpha>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(Selector&& selector, Output&& output, A const& a, B const& b, Alpha const& alpha)
+{
+  assign_product(std::forward<Selector>(selector), std::forward<Output>(output), a, b, tensor_element_t<Output>(alpha));
+}
+
+/// \brief Overwrite with an exact coefficient through the storage-selected backend.
+template <MutableRankedTensorView<2> Output, RankedTensorView<2> A, RankedTensorView<2> B, ExactRationalSource Alpha>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void assign_product(Output&& output, A const& a, B const& b, Alpha const& alpha)
+{
+  assign_product(select_backend(assign_product_op{}, output, a, b), std::forward<Output>(output), a, b,
+                 tensor_element_t<Output>(alpha));
+}
+
+/// \brief Accumulate a runtime-precision matrix product with an exact coefficient.
+template <KernelBackendSelector Selector, MutableRankedTensorView<2> Output, RankedTensorView<2> A,
+          RankedTensorView<2> B, ExactRationalSource Alpha>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void add_product(Selector&& selector, Output&& output, A const& a, B const& b, Alpha const& alpha)
+{
+  add_product(std::forward<Selector>(selector), std::forward<Output>(output), a, b, tensor_element_t<Output>(alpha));
+}
+
+/// \brief Accumulate with an exact coefficient through the storage-selected backend.
+template <MutableRankedTensorView<2> Output, RankedTensorView<2> A, RankedTensorView<2> B, ExactRationalSource Alpha>
+  requires has_runtime_precision_v<tensor_element_t<Output>> && detail::CompatibleMatrixProductTensors<Output, A, B>
+void add_product(Output&& output, A const& a, B const& b, Alpha const& alpha)
+{
+  add_product(select_backend(gemm_op{}, output, a, b), std::forward<Output>(output), a, b,
+              tensor_element_t<Output>(alpha));
+}
+#endif
+
 } // namespace uni20::linalg

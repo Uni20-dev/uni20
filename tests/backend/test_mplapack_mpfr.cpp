@@ -45,7 +45,7 @@ TEST(MplapackMpfr, RealProductPreservesBitsBeyondBinary128AndDoesNotReadUnsetOut
 {
   auto p = Precision::bits(400);
   auto delta = uni20::pow(Real(2, p), Real(-300, p));
-  std::vector<Real> a{Real(1, p) + delta}, b{Real(1, p)}, c(1);
+  std::vector<Real> a{Real(1, p) + delta}, b{Real(1, p)}, c(1, Real(uni20::uninitialized));
   provider::gemm(1, 1, 1, Real(1, p), a, b, Real(0, p), c, p);
   EXPECT_EQ(c[0], a[0]);
   EXPECT_EQ(c[0] - 1, delta);
@@ -123,7 +123,7 @@ TEST(MplapackMpfr, CallsRestoreDistinctComplexDefaultsAndRoundingAfterFailure)
   provider::gemm(1, 1, 1, Complex(Real(1, p)), a, b, Complex(p), c, p);
   EXPECT_EQ(c[0], a[0]);
   EXPECT_EQ(c[0].imag() - 1, delta);
-  a[0] = Complex{};
+  a[0] = Complex(uni20::uninitialized);
   EXPECT_THROW(provider::gemm(1, 1, 1, Complex(Real(1, p)), a, b, Complex(p), c, p), std::logic_error);
   EXPECT_EQ(mpfrxx::default_precision_bits(), 77);
   EXPECT_EQ(mpfrxx::default_rounding_mode(), MPFR_RNDD);
