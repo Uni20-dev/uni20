@@ -38,6 +38,7 @@ class decimal_literal {
 
 namespace detail
 {
+struct mpreal_access;
 // Own temporary GMP integers, including on parser exceptions.
 struct mp_integer
 {
@@ -202,6 +203,7 @@ class exact_constant {
     friend exact_constant operator-(exact_constant const& a);
 
   private:
+    friend struct detail::mpreal_access;
     mpq_t value_;
 };
 

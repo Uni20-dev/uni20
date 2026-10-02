@@ -85,6 +85,15 @@ cost. A result outside the supported rational representation requires explicit
 finite precision: `sqrt(mpreal{2})` throws; use `sqrt(mpreal{2}.at(p))`.
 This is rational arithmetic, not a symbolic algebra system.
 
+Algorithms seeking an approximate solution, such as Newton iteration, must
+require finite working precision from their inputs or an explicit precision
+argument before iterating. Rational arithmetic alone supplies no error budget:
+even Newton iteration for `sqrt(2)` can keep producing larger fractions without
+ever reaching the desired irrational value. Exact identities inside such an
+algorithm do not establish that its overall approximation policy is valid.
+This is the policy for future runtime-precision algorithm support, not a claim
+that the current Krylov or other generic iterative APIs support `mpreal`.
+
 `uni20::is_exact(x)` in `core/numeric_limits.hpp` is the generic value query:
 it calls a runtime scalar's member `is_exact()` or uses the static
 `numeric_limits<T>::is_exact` property for ordinary types. Integers report true;
@@ -115,14 +124,28 @@ Binary arithmetic between approximate `mpreal` values, including compound
 assignment, requires equal finite precision. A mismatch throws
 `std::invalid_argument` before modifying either operand. Explicit conversion uses `x.at(p)` or `mpreal{x, p}`; reducing precision
 rounds, and increasing precision cannot restore digits already lost. With one
-exact operand, that operand first rounds at the approximate operand's precision;
-with two exact operands, supported rational arithmetic stays exact. Assigning an
+exact operand, basic `+`, `-`, `*` and `/` retain its rational value until the
+result is rounded at the approximate operand's precision. For example, at three
+bits `mpreal(1, p) - mpreal{9.0_mp / 8_mp}` gives `-1/8`, rather than zero.
+For finite operands and a nonzero divisor, the result is correctly rounded;
+complex results round each component once. With two exact operands, supported
+rational arithmetic stays exact. Assigning an
 exact value makes the destination exact, independently of its previous precision.
 An approximate result is never reclassified as exact, even when it equals an
 integer; `.at(Precision::exact())` rejects approximate inputs.
 Compound arithmetic supports self-aliasing. Two approximate operands update the
 destination in place; exact arithmetic and state transitions may allocate a new
 payload.
+
+Most mixed real operations use MPFR's rational-operand routines. Exact divided
+by approximate, and mixed complex multiplication/division, use exact rational
+temporaries for the finite stored binary values, then round the result. Those
+temporaries can grow with exponent magnitude as well as rational size. This
+first implementation prioritizes accurate cancellation; a later implementation
+may replace them with certified adaptive-precision evaluation. Approximate-only
+operations continue to use MPFR/MPC directly. Transcendental functions and
+explicit-precision math overloads retain their documented input-conversion
+semantics; the single-rounding rule here applies to basic arithmetic operators.
 
 ```cpp
 auto q = Precision::bits(400);
@@ -171,9 +194,8 @@ combining the exponent with the number of fractional digits. Larger scales throw
 accidentally enormous allocations from short decimal spellings; it does not cap
 `mpreal` working precision or the size of results from exact rational arithmetic.
 
-Mixing an exact constant with `mpreal` first rounds the constant at the real
-operand's precision, then performs the real operation. Parentheses therefore
-identify a rounding boundary:
+Mixing an exact constant with `mpreal` in basic arithmetic rounds the result at
+the real operand's precision. Each approximate operation is a rounding boundary:
 
 ```cpp
 auto low = Precision::bits(3);
@@ -272,8 +294,9 @@ positive real bases also support rational real powers. General complex
 noninteger powers still require finite precision. Zero/unit identities for
 `exp`, `log`, `sin`, `cos` and `arg(positive real)` remain exact. Exact zero has no
 sign: on the negative real axis, the exact square root takes the upper cut side.
-With an approximate operand, exact components first round to its precision. The
-finite path continues to use MPC's principal branches and signed imaginary zero.
+With an approximate operand, basic arithmetic retains exact components until
+rounding each result component to its precision. Elementary functions continue
+to use MPC's principal branches and signed imaginary zero after input conversion.
 
 Complex `sqrt`, `exp`, `log`, `sin`, `cos`, `pow`, `abs`, `norm`, and `arg`
 also accept a trailing finite `Precision`, with the same convert-then-evaluate

@@ -270,6 +270,48 @@ struct mpcomplex_access
       Operation(out.approximate(), x.native_handle(), MPC_RNDNN);
       return out;
     }
+    template <auto Operation> static mpcomplex mixed_finite(mpcomplex const& a, mpcomplex const& b, Precision p)
+    {
+      auto ar = a.real(), ai = a.imag(), br = b.real(), bi = b.imag();
+      if constexpr (Operation == mpc_add)
+        return mpcomplex(ar + br, ai + bi, p);
+      else if constexpr (Operation == mpc_sub)
+        return mpcomplex(ar - br, ai - bi, p);
+      else
+      {
+        auto xr = mpreal_access::stored_rational(ar), xi = mpreal_access::stored_rational(ai);
+        auto yr = mpreal_access::stored_rational(br), yi = mpreal_access::stored_rational(bi);
+        // Form each component exactly before its single final rounding. Keep
+        // signed-zero rules from the component products: rational zero alone
+        // does not distinguish the two sides of a complex branch cut.
+        auto rr = xr * yr, ii = xi * yi, ri = xr * yi, ir = xi * yr;
+        bool const rr_negative = signbit(ar) != signbit(br);
+        bool const ii_negative = signbit(ai) != signbit(bi);
+        bool const ri_negative = signbit(ar) != signbit(bi);
+        bool const ir_negative = signbit(ai) != signbit(br);
+        exact_complex value;
+        bool re_negative_zero, im_negative_zero;
+        if constexpr (Operation == mpc_mul)
+        {
+          value = {rr - ii, ri + ir};
+          re_negative_zero = rr == 0 && ii == 0 && rr_negative && !ii_negative;
+          im_negative_zero = ri == 0 && ir == 0 && ri_negative && ir_negative;
+        }
+        else
+        {
+          auto d = yr * yr + yi * yi;
+          value = {(rr + ii) / d, (ir - ri) / d};
+          re_negative_zero = rr == 0 && ii == 0 && rr_negative && ii_negative;
+          im_negative_zero = ir == 0 && ri == 0 && ir_negative && !ri_negative;
+        }
+        mpcomplex result(value);
+        result = result.at(p);
+        if (value.re == 0) mpfr_set_zero(mpc_realref(result.approximate()), re_negative_zero ? -1 : 1);
+        if (value.im == 0) mpfr_set_zero(mpc_imagref(result.approximate()), im_negative_zero ? -1 : 1);
+        return result;
+      }
+    }
+
     template <auto Operation> static mpcomplex binary(mpcomplex const& a, mpcomplex const& b)
     {
       auto p = common_precision(a.precision(), b.precision());
@@ -302,6 +344,17 @@ struct mpcomplex_access
             if (x.re == 1 && x.im == 0) return mpcomplex{1};
           }
           throw std::logic_error("complex<mpreal>: elementary function requires finite working precision");
+        }
+      }
+      if constexpr (Operation == mpc_add || Operation == mpc_sub || Operation == mpc_mul || Operation == mpc_div)
+      {
+        if (a.is_exact() != b.is_exact())
+        {
+          auto const& approximate = a.is_exact() ? b : a;
+          auto native = approximate.native_handle();
+          bool const finite = mpfr_number_p(mpc_realref(native)) && mpfr_number_p(mpc_imagref(native));
+          if (finite && (Operation != mpc_div || b.real() != 0 || b.imag() != 0))
+            return mixed_finite<Operation>(a, b, p);
         }
       }
       mpcomplex av(uninitialized), bv(uninitialized);

@@ -332,6 +332,14 @@ individual `mpreal`. Ordinary integers are exact, while native floating values
 are approximate even when numerically integral. Exact rational roots, powers,
 parsing and explicit native conversions are described in [mpreal](mpreal.md).
 
+Mixed exact/approximate basic arithmetic retains exact operands until rounding
+the result to the finite operand's precision. Finite `+`, `-`, `*` and `/`
+results are correctly rounded (per component for complex values); division
+requires a nonzero divisor for this statement. Two approximate operands still
+require matching precision. Approximation-driven algorithms must obtain finite
+working precision explicitly or from their inputs; an all-exact state supplies
+no approximation budget.
+
 Runtime-precision real and complex math functions accept a trailing finite
 `Precision`: they convert each input to that precision, then evaluate, always
 returning an approximate result at that precision. Without an override, exact

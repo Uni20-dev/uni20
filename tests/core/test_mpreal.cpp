@@ -187,17 +187,75 @@ TEST(MpReal, CompoundArithmeticSupportsAliasingAndPreservesPrecision)
 
   auto low = Precision::bits(3);
   x = mpreal(1, low);
-  x += 0.14_mp; // 0.14 first rounds to 0.125; the sum is a tie that rounds to 1.
-  EXPECT_EQ(x, 1);
-  x -= 0.07_mp; // 0.07 first rounds to 0.0625; the difference rounds to 1.
-  EXPECT_EQ(x, 1);
-  x = mpreal("1.25", low);
-  x *= 1.1_mp; // 1.1 rounds to 1 before multiplication.
+  x += 0.14_mp; // Round 1.14 once, without first rounding the literal.
   EXPECT_EQ(x, 1.25_mp);
+  x -= 0.07_mp;
+  EXPECT_EQ(x, 1.25_mp);
+  x = mpreal("1.25", low);
+  x *= 1.1_mp; // 1.375 is a tie, rounded to the even significand.
+  EXPECT_EQ(x, 1.5_mp);
   x = mpreal(1, low);
   x /= 1.1_mp;
-  EXPECT_EQ(x, 1);
+  EXPECT_EQ(x, 0.875_mp);
   EXPECT_EQ(x.precision(), low);
+}
+
+TEST(MpReal, MixedBasicArithmeticRoundsTheResultOnce)
+{
+  for (auto bits : {3, 128})
+  {
+    auto p = Precision::bits(bits);
+    for (auto text : {"1", "-1", "5/4", "-3/2"})
+    {
+      exact_constant x(text);
+      mpreal a(x, p);
+      for (auto fraction : {"1/7", "9/8", "-19/13", "11/10", "1/10000000000000000000000000000000000000000"})
+      {
+        exact_constant q(fraction);
+        mpreal b(q);
+        EXPECT_EQ(a + b, mpreal(x + q, p));
+        EXPECT_EQ(b + a, mpreal(q + x, p));
+        EXPECT_EQ(a - b, mpreal(x - q, p));
+        EXPECT_EQ(b - a, mpreal(q - x, p));
+        EXPECT_EQ(a * b, mpreal(x * q, p));
+        EXPECT_EQ(b * a, mpreal(q * x, p));
+        EXPECT_EQ(a / b, mpreal(x / q, p));
+        EXPECT_EQ(b / a, mpreal(q / x, p));
+        auto c = b;
+        c -= a;
+        EXPECT_EQ(c, b - a);
+        EXPECT_EQ(c.precision(), p);
+        c = b;
+        c /= a;
+        EXPECT_EQ(c, b / a);
+        EXPECT_EQ(c.precision(), p);
+      }
+    }
+    auto epsilon = exact_constant("1/10000000000000000000000000000000000000000");
+    mpreal just_above_one(exact_constant{1} + epsilon);
+    EXPECT_EQ(just_above_one - mpreal(1, p), epsilon.at(p));
+    EXPECT_EQ(mpreal(1, p) - just_above_one, (-epsilon).at(p));
+  }
+}
+
+TEST(MpReal, MixedArithmeticRetainsExceptionalValuesAndSignedZeros)
+{
+  auto p = Precision::bits(80);
+  mpreal zero{}, one{1}, negative_zero("-0", p), negative_one(-1, p);
+  EXPECT_FALSE(signbit(one - mpreal(1, p)));
+  EXPECT_FALSE(signbit(zero - negative_zero));
+  EXPECT_TRUE(signbit(negative_zero - zero));
+  EXPECT_TRUE(signbit(zero / negative_one));
+  EXPECT_TRUE(signbit(zero * negative_one));
+  EXPECT_TRUE(isinf(one / negative_zero));
+  EXPECT_TRUE(signbit(one / negative_zero));
+  EXPECT_TRUE(isnan(zero / negative_zero));
+  mpreal inf("inf", p), nan("nan", p);
+  EXPECT_EQ(mpreal(exact_constant("1e10000")) / inf, 0);
+  EXPECT_TRUE(isnan(one / nan));
+  EXPECT_TRUE(isinf(inf + one));
+  EXPECT_TRUE(isnan(inf * zero));
+  EXPECT_TRUE(isinf(one / zero.at(p)));
 }
 
 TEST(MpReal, RoundNearestTiesToEven)

@@ -251,6 +251,72 @@ TEST(MpComplex, ExactComplexArithmeticAndComponentTransitions)
   EXPECT_TRUE(approximate.is_exact());
 }
 
+TEST(MpComplex, MixedBasicArithmeticRoundsEachResultComponentOnce)
+{
+  for (auto bits : {3, 128})
+  {
+    auto p = Precision::bits(bits);
+    C x(mpreal{1}, mpreal{-1});
+    C a = x.at(p);
+    for (auto re : {"9/8", "1/7", "-11/10"})
+      for (auto im : {"1/8", "-19/13", "1/10000000000000000000000000000000000000000"})
+      {
+        C b(mpreal{exact_constant(re)}, mpreal{exact_constant(im)});
+        EXPECT_EQ(a + b, (x + b).at(p));
+        EXPECT_EQ(b + a, (b + x).at(p));
+        EXPECT_EQ(a - b, (x - b).at(p));
+        EXPECT_EQ(b - a, (b - x).at(p));
+        EXPECT_EQ(a * b, (x * b).at(p));
+        EXPECT_EQ(b * a, (b * x).at(p));
+        EXPECT_EQ(a / b, (x / b).at(p));
+        EXPECT_EQ(b / a, (b / x).at(p));
+        auto c = b;
+        c *= a;
+        EXPECT_EQ(c, (b * x).at(p));
+        EXPECT_EQ(c.precision(), p);
+        c = b;
+        c /= a;
+        EXPECT_EQ(c, (b / x).at(p));
+        EXPECT_EQ(c.precision(), p);
+      }
+    // Nearly cancelling real products; pre-rounding the exact operand loses this component.
+    exact_constant tiny("1/10000000000000000000000000000000000000000");
+    C b(mpreal{exact_constant{1} + tiny}, mpreal{-1});
+    EXPECT_EQ((a * b).real(), tiny.at(p));
+  }
+}
+
+TEST(MpComplex, MixedArithmeticPreservesMpcSignedZeroRules)
+{
+  auto p = Precision::bits(80);
+  auto check = [](char const* operation, C const& result, C const& expected) {
+    SCOPED_TRACE(operation);
+    EXPECT_EQ(result, expected);
+    if (expected.real() == 0)
+    {
+      EXPECT_EQ(signbit(result.real()), signbit(expected.real()));
+    }
+    if (expected.imag() == 0)
+    {
+      EXPECT_EQ(signbit(result.imag()), signbit(expected.imag()));
+    }
+  };
+  for (auto re : {"0", "-0", "1", "-1"})
+    for (auto im : {"0", "-0", "1", "-1"})
+      for (auto qr : {-1, 0, 1})
+        for (auto qi : {-1, 0, 1})
+        {
+          SCOPED_TRACE(testing::Message() << re << ',' << im << " with " << qr << ',' << qi);
+          C a(re, im, p), b(mpreal{qr}, mpreal{qi}), finite_b = b.at(p);
+          check("a+b", a + b, a + finite_b);
+          check("b-a", b - a, finite_b - a);
+          check("a*b", a * b, a * finite_b);
+          check("b*a", b * a, finite_b * a);
+          if (b != 0) check("a/b", a / b, a / finite_b);
+          if (a != 0) check("b/a", b / a, finite_b / a);
+        }
+}
+
 TEST(MpComplex, ExactRootsPowersAndIdentities)
 {
   using C = complex<mpreal>;

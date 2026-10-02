@@ -260,6 +260,62 @@ namespace detail
 {
 struct mpreal_access
 {
+    // Internal arithmetic representation of a finite stored value. This does
+    // not reclassify the user's approximation as an exact scalar.
+    static exact_constant stored_rational(mpreal const& x)
+    {
+      if (x.is_exact()) return x.exact_value();
+      exact_constant result;
+      mpfr_get_q(result.value_, x.native_handle());
+      return result;
+    }
+
+    template <auto Operation> static mpreal mixed(mpreal const& a, mpreal const& b, Precision p)
+    {
+      auto const& real = a.is_exact() ? b : a;
+      auto const& rational = a.is_exact() ? a.exact_value() : b.exact_value();
+      auto q = rational.native_handle();
+      mpreal result(p);
+      if (rational == 0)
+      {
+        // MPFR's _q helpers may copy their floating operand for q == 0.
+        // Use floating +0 to preserve binary-operation signed-zero semantics.
+        auto r = real.native_handle();
+        auto zero = result.native_handle();
+        Operation(result.approximate(), a.is_exact() ? zero : r, a.is_exact() ? r : zero, MPFR_RNDN);
+        return result;
+      }
+      if constexpr (Operation == mpfr_add)
+        mpfr_add_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
+      else if constexpr (Operation == mpfr_mul)
+        mpfr_mul_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
+      else if constexpr (Operation == mpfr_sub)
+      {
+        if (a.is_exact())
+        {
+          // Negation is exact, including signed zero; adding q then rounds once.
+          mpfr_neg(result.approximate(), real.native_handle(), MPFR_RNDN);
+          mpfr_add_q(result.approximate(), result.native_handle(), q, MPFR_RNDN);
+        }
+        else
+          mpfr_sub_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
+      }
+      else if constexpr (Operation == mpfr_div)
+      {
+        if (!a.is_exact())
+          mpfr_div_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
+        else if (mpfr_number_p(real.native_handle()) && !mpfr_zero_p(real.native_handle()) && rational != 0)
+          result = mpreal(rational / stored_rational(real), p);
+        else
+        {
+          // Only signs and zero matter here. Do not overflow/underflow q while
+          // preparing zero, infinity or NaN arithmetic.
+          mpfr_set_si(result.approximate(), mpq_sgn(q), MPFR_RNDN);
+          mpfr_div(result.approximate(), result.native_handle(), real.native_handle(), MPFR_RNDN);
+        }
+      }
+      return result;
+    }
     // Explicit operation precision means convert the inputs, then evaluate.
     template <auto Operation> static mpreal apply(mpreal const& x, Precision p)
     {
@@ -329,6 +385,8 @@ struct mpreal_access
           throw std::logic_error("mpreal: elementary function requires finite working precision");
         }
       }
+      if constexpr (Operation == mpfr_add || Operation == mpfr_sub || Operation == mpfr_mul || Operation == mpfr_div)
+        if (a.is_exact() != b.is_exact()) return mixed<Operation>(a, b, p);
       mpreal av(uninitialized), bv(uninitialized);
       if (a.is_exact()) av = a.at(p);
       if (b.is_exact()) bv = b.at(p);
@@ -372,7 +430,7 @@ inline mpreal operator+(mpreal const& a)
   return a;
 }
 
-// An exact operand is rounded at the real operand's precision before arithmetic.
+// Basic arithmetic retains the exact operand until rounding the result.
 inline mpreal operator+(mpreal const& a, exact_constant const& b) { return a + mpreal(b); }
 inline mpreal operator-(mpreal const& a, exact_constant const& b) { return a - mpreal(b); }
 inline mpreal operator*(mpreal const& a, exact_constant const& b) { return a * mpreal(b); }
