@@ -477,7 +477,7 @@ template <uni20::Real Scalar> Scalar default_complex_pair_tolerance()
 ///          Values with `|imag(theta)| <= tolerance * scale` are classified as
 ///          real. Values within \p ambiguity_factor of that boundary are
 ///          classified as ambiguous.
-/// \tparam Scalar Real scalar type.
+/// \tparam C Complex scalar type deduced from the Ritz value.
 /// \param theta Ritz value to classify.
 /// \param tolerance Relative imaginary-part tolerance. If zero or negative, a
 ///        machine-precision default is used.
@@ -485,10 +485,12 @@ template <uni20::Real Scalar> Scalar default_complex_pair_tolerance()
 ///        to one.
 /// \param ambiguity_factor Width of the ambiguous band above the real threshold.
 /// \return Reality classification for \p theta.
-template <uni20::Real Scalar>
-RitzReality classify_ritz_reality(uni20::complex<Scalar> theta, Scalar tolerance = Scalar{}, Scalar scale = Scalar{1},
-                                  Scalar ambiguity_factor = Scalar{10})
+template <uni20::Complex C>
+RitzReality classify_ritz_reality(C theta, uni20::make_real_t<C> tolerance = uni20::make_real_t<C>{},
+                                  uni20::make_real_t<C> scale = uni20::make_real_t<C>{1},
+                                  uni20::make_real_t<C> ambiguity_factor = uni20::make_real_t<C>{10})
 {
+  using Scalar = uni20::make_real_t<C>;
   Scalar const effective_tolerance = tolerance > Scalar{} ? tolerance : default_complex_pair_tolerance<Scalar>();
   Scalar const effective_scale = std::max({Scalar{1}, detail::adl_abs(theta), detail::adl_abs(scale)});
   Scalar const threshold = effective_tolerance * effective_scale;

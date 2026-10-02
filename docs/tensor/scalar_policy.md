@@ -17,8 +17,11 @@ the type-only `LapackScalar` concepts or generic Krylov support.
 real types retain exact `std::complex<T>` type identity. Generic complex APIs
 should deduce the complex type directly (`template <Complex C>`) and obtain its
 real type through `make_real_t<C>`; deduction through the selecting alias is not
-supported. Internal adaptations specifically for the standard-library family
-use `detail::standard_complex<T>`, including its fixed-precision LAPACK ABI.
+supported, including in partial specializations or nested container parameters.
+Tests should exercise deduction without explicit template arguments or optional
+real-valued arguments that could mask this limitation. Internal adaptations
+specifically for the standard-library family use `detail::standard_complex<T>`,
+including its fixed-precision LAPACK ABI and CUDA storage/execution adapters.
 MPC component access returns owning real values; setters convert to the existing
 complex precision. Do not reinterpret an MPC value as adjacent C++ real objects.
 

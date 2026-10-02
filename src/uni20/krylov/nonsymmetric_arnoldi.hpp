@@ -648,23 +648,24 @@ ArnoldiRitzExtraction<Scalar> extract_arnoldi_ritz(ArnoldiFactorization<Scalar, 
 ///          `A V_m y - theta V_m y = h_{m+1,m} (e_m^T y) v_{m+1}` before
 ///          happy breakdown. This routine solves the small complex projected
 ///          Hessenberg problem and reports that residual bound.
-/// \tparam Real Real precision whose `uni20::complex<Real>` has dense LAPACK coverage.
+/// \tparam Complex Complex scalar type with dense LAPACK coverage, deduced from the factorization.
 /// \tparam Vector Opaque vector type used by the Arnoldi basis.
 /// \param factorization Complex Arnoldi factorization to extract from.
 /// \param complex_pair_tolerance Relative imaginary-part tolerance for reality classification.
 /// \param scale Optional projected-problem scale for reality classification.
 /// \return Complex Ritz values, projected right eigenvectors, residual bounds, and reality classifications.
-template <uni20::LapackComplexReal Real, typename Vector>
-ArnoldiRitzExtraction<Real>
-extract_complex_arnoldi_ritz(ArnoldiFactorization<uni20::complex<Real>, Vector> const& factorization,
-                             Real complex_pair_tolerance = Real{}, Real scale = Real{1})
+template <uni20::LapackComplex Complex, typename Vector>
+ArnoldiRitzExtraction<uni20::make_real_t<Complex>>
+extract_complex_arnoldi_ritz(ArnoldiFactorization<Complex, Vector> const& factorization,
+                             uni20::make_real_t<Complex> complex_pair_tolerance = uni20::make_real_t<Complex>{},
+                             uni20::make_real_t<Complex> scale = uni20::make_real_t<Complex>{1})
 {
   if (factorization.step_count <= 0)
   {
     throw std::invalid_argument("extract_complex_arnoldi_ritz requires a non-empty Arnoldi factorization");
   }
 
-  using Complex = uni20::complex<Real>;
+  using Real = uni20::make_real_t<Complex>;
 
   std::size_t const projected_dimension = static_cast<std::size_t>(factorization.step_count);
   auto const projected_extent = static_cast<uni20::index_type>(projected_dimension);
@@ -1394,7 +1395,7 @@ NonsymmetricEigenResult<Real, Vector> complex_nonsymmetric_arnoldi_standard(Ops&
 
   while (true)
   {
-    ArnoldiRitzExtraction<Real> ritz = extract_complex_arnoldi_ritz<Real>(factorization, params.complex_pair_tolerance);
+    ArnoldiRitzExtraction<Real> ritz = extract_complex_arnoldi_ritz(factorization, params.complex_pair_tolerance);
     bool const undersized_projection = ritz.ritz_values.size() < static_cast<std::size_t>(params.eigenvalue_count);
     std::vector<std::size_t> const selected = undersized_projection
                                                   ? detail::all_ritz_indices(ritz.ritz_values)

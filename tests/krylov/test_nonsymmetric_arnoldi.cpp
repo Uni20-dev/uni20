@@ -1225,6 +1225,26 @@ TEST(KrylovNonsymmetricArnoldi, ReportsComplexHappyBreakdownBeforeRequestedEigen
   EXPECT_EQ(result.diagnostics->final_projected_dimension, 1);
 }
 
+TYPED_TEST(KrylovNonsymmetricArnoldiComplexTypedTest, ExtractsRitzValuesWithDefaultTolerances)
+{
+  using Complex = TypeParam;
+  using Real = uni20::make_real_t<Complex>;
+  Complex const eigenvalue{Real{2}, Real{3}};
+  DenseHostVectorOps<Complex> ops(1, {eigenvalue});
+  DenseHostVector<Complex> initial{{Complex{1}}};
+  auto factorization = uni20::krylov::arnoldi_factorize<Complex>(ops, initial, 1);
+  ASSERT_TRUE(factorization.happy_breakdown);
+
+  auto ritz = uni20::krylov::extract_complex_arnoldi_ritz(factorization);
+
+  ASSERT_EQ(ritz.ritz_values.size(), 1);
+  EXPECT_NEAR(abs_as_double(ritz.ritz_values[0] - eigenvalue), 0.0, arnoldi_tolerance<Real>());
+  ASSERT_EQ(ritz.residual_bounds.size(), 1);
+  EXPECT_EQ(ritz.residual_bounds[0], Real{});
+  ASSERT_EQ(ritz.reality.size(), 1);
+  EXPECT_EQ(ritz.reality[0], RitzReality::Complex);
+}
+
 TYPED_TEST(KrylovNonsymmetricArnoldiComplexTypedTest, SolvesNonrestartedComplexNonsymmetricDiagonalProblem)
 {
   using Complex = TypeParam;
