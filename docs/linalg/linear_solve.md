@@ -31,7 +31,9 @@ the strict policy; an async diagnostic-returning interface is not added here.
 Both destructive workspaces may change on numerical failure. Only a successful
 result makes `B` a valid solution. `A` contains backend-dependent elimination
 data, not a portable reusable factorization. Workspaces must not overlap.
-Preserving `solve` materializes column-major host matrices before dispatch.
+Preserving `solve` materializes column-major host matrices before dispatch and
+selects the default backend from those workspace types. An explicit selector is
+used as supplied, including when an operation precision is also supplied.
 
 `SolveInfo::status` is one of:
 
@@ -53,7 +55,8 @@ to a backend-independent rank criterion. No residual bound or conditioning
 guarantee is implied by `success`.
 
 Zero-order systems and `N x 0` RHS matrices are successful no-ops: values are
-not inspected, even if `A` is singular or nonfinite. Shape mismatch, invalid
+not inspected, even if `A` is singular or nonfinite. In-place no-ops preserve
+runtime-precision construction defaults as well as values. Shape mismatch, invalid
 options, unavailable backends, and invalid provider arguments remain errors,
 not numerical statuses.
 

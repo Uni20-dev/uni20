@@ -53,6 +53,13 @@ and `solve(a, b, p)` select explicit working precision. A successful owning resu
 carries that default; writing through a structural view leaves the parent
 construction default unchanged.
 
+Precision policy belongs to the tensor operation layer: it selects the working
+precision and records defaults on owning outputs. The scalar-specific backend
+converts participating values, allocates its numerical temporaries and establishes
+provider precision. An explicit `p` is passed directly to that backend, without
+changing input defaults to convey the request. Bare descriptors have no tensor
+construction defaults, and backend kernels do not mutate owner metadata.
+
 `gemm(output, alpha, a, b, beta[, p])` keeps the output's existing shape. With no
 override and nonzero `beta`, its default also participates in precision selection;
 exact defaults are neutral and differing finite defaults are rejected.
@@ -100,6 +107,19 @@ conditioning or accuracy; evaluate a residual separately when needed.
 The destructive coefficient workspace contains backend-dependent factorization
 data. It is not a public reusable LU object. The adapter's `getrf` and `getrs`
 leaves use reusable zero-based pivot vectors internally.
+
+Successful nonempty in-place solves record the selected working precision on
+owning workspaces, whether selected explicitly or inferred from their defaults.
+Writing through a view preserves the parent's default. Empty in-place solves
+preserve both values and defaults; failed solves do not update defaults, although
+factorization may have modified values. A newly returned preserving solution
+with explicit precision carries `p` even when empty.
+
+Preserving solves select their default backend from the materialized column-major
+host workspace types, consistently for inferred and explicit precision. This also
+allows generated inputs such as `solve(full(mpreal{2}, 1, 1),
+full(mpreal{6}, 1, 1), p)`. An explicitly supplied backend selector is honored;
+an unsupported explicit selection reports dispatch failure.
 
 ## Provider context and asynchronous execution
 

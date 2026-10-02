@@ -332,7 +332,8 @@ struct HostStorage
     [[nodiscard]] static auto make_storage_like(storage_t<ElementType> const& source, std::size_t size,
                                                StorageInitialization initialization) -> storage_t<ElementType>
     {
-      return storage_t<ElementType>(size, initialization, source.default_precision());
+      if (auto p = source.default_precision_if_set()) return storage_t<ElementType>(size, initialization, *p);
+      return storage_t<ElementType>(size, initialization);
     }
 #endif
 

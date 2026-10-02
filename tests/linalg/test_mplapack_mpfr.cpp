@@ -1,4 +1,6 @@
 #include <array>
+#include <string_view>
+#include <utility>
 #include <gtest/gtest.h>
 #include <uni20/async/async.hpp>
 #include <uni20/async/tbb_scheduler.hpp>
@@ -20,6 +22,23 @@ static_assert(!linalg::AsyncOperationScalar<double, mpreal>);
 
 namespace
 {
+struct DecliningSolveBackend
+{
+    static constexpr std::string_view name = "declining_solve";
+};
+
+template <class... Args>
+consteval auto kernel_accepts_types(DecliningSolveBackend, linalg::linear_solve_op const&, Args&...)
+{
+  return linalg::kernel_types_maybe;
+}
+
+template <class... Args>
+linalg::KernelAttempt try_kernel(DecliningSolveBackend, linalg::linear_solve_op const&, Args&...)
+{
+  return linalg::KernelAttempt::unsupported_instance;
+}
+
 // Probe declarations, not function bodies, for each public synchronous GEMM form.
 template <class S, class Alpha, class Beta>
 constexpr auto gemm_coefficient_forms = std::array{requires(DenseMatrix<S> & out, DenseMatrix<S> const& a, Alpha alpha,
@@ -89,6 +108,105 @@ TEST(MpfrLinalg, ExplicitPrecisionOverridesDifferingDefaults)
   auto info = linalg::solve_inplace_with_info(a, b, p);
   EXPECT_TRUE(info.succeeded());
   EXPECT_EQ(b.default_precision(), p);
+}
+
+TEST(MpfrLinalg, PreservingSolveSelectsFromHostWorkspaces)
+{
+  auto check = []<class S>() {
+    auto p = Precision::bits(128);
+    // Generated operands select CPU reference when no concrete storage participates.
+    auto a = full(S{2}, 1, 1), b = full(S{6}, 1, 1);
+    auto result = linalg::solve(a, b, p);
+    EXPECT_EQ((result[0, 0]), S{3});
+    EXPECT_EQ(result.default_precision(), p);
+    // An explicitly chosen unsupported backend must not be silently replaced.
+    EXPECT_DEATH({ (void)linalg::solve(DecliningSolveBackend{}, a, b, p); }, "declining_solve");
+    EXPECT_TRUE((a[0, 0].is_exact()));
+    EXPECT_TRUE((b[0, 0].is_exact()));
+  };
+  check.operator()<mpreal>();
+  check.operator()<complex<mpreal>>();
+}
+
+TEST(MpfrLinalg, InferredSolveRecordsFinitePrecisionOnExactDefaults)
+{
+  auto check = []<class S>() {
+    auto p = Precision::bits(128), exact = Precision::exact();
+    for (bool exact_rhs : {false, true})
+    {
+      DenseMatrix<S> a(1, 1, exact_rhs ? p : exact), b(1, 1, exact_rhs ? exact : p);
+      a[0, 0] = S{2};
+      b[0, 0] = S{6};
+      auto result = linalg::solve(a, b);
+      EXPECT_EQ((result[0, 0]), S{3});
+      EXPECT_EQ(result.default_precision(), p);
+      auto info = linalg::solve_inplace_with_info(a, b);
+      ASSERT_TRUE(info.succeeded());
+      EXPECT_EQ(a.default_precision(), p);
+      EXPECT_EQ(b.default_precision(), p);
+      EXPECT_EQ((b[0, 0].precision()), p);
+    }
+  };
+  check.operator()<mpreal>();
+  check.operator()<complex<mpreal>>();
+}
+
+TEST(MpfrLinalg, ExplicitSolvePreservesDefaultsForEmptyWorkspaces)
+{
+  auto check = []<class S>() {
+    auto p = Precision::bits(256), q = Precision::bits(80);
+    for (auto shape : {std::pair{0, 3}, std::pair{2, 0}})
+    {
+      auto [n, nrhs] = shape;
+      DenseMatrix<S> a(uninitialized, n, n, q), b(uninitialized, n, nrhs, q);
+      // Unset coefficients make accidental numerical reads observable.
+      auto info = linalg::solve_inplace_with_info(a, b, p);
+      EXPECT_TRUE(info.succeeded());
+      EXPECT_EQ(a.default_precision(), q);
+      EXPECT_EQ(b.default_precision(), q);
+      for (auto const& value : a.storage()) EXPECT_FALSE(value.initialized());
+      auto result = linalg::solve(a, b, p);
+      EXPECT_EQ(result.extent(0), n);
+      EXPECT_EQ(result.extent(1), nrhs);
+      EXPECT_EQ(result.default_precision(), p);
+      EXPECT_EQ(a.default_precision(), q);
+      EXPECT_EQ(b.default_precision(), q);
+    }
+  };
+  check.operator()<mpreal>();
+  check.operator()<complex<mpreal>>();
+}
+
+TEST(MpfrLinalg, ExplicitSolveUsesPrecisionWithoutWorkspaceDefaults)
+{
+  auto p = Precision::bits(128);
+  DenseMatrix<mpreal> a(uninitialized, 1, 1), b(uninitialized, 1, 1);
+  a[0, 0] = mpreal{2};
+  b[0, 0] = mpreal{6};
+  auto result = linalg::solve(a, b, p);
+  EXPECT_EQ((result[0, 0]), 3);
+  EXPECT_EQ(result.default_precision(), p);
+  EXPECT_FALSE(a.default_precision_if_set());
+  EXPECT_FALSE(b.default_precision_if_set());
+  auto av = reshape_view(a, 1, 1), bv = reshape_view(b, 1, 1);
+  auto info = linalg::solve_inplace_with_info(av, bv, p);
+  ASSERT_TRUE(info.succeeded());
+  EXPECT_EQ((b[0, 0]), 3);
+  EXPECT_EQ((b[0, 0].precision()), p);
+  EXPECT_FALSE(a.default_precision_if_set());
+  EXPECT_FALSE(b.default_precision_if_set());
+}
+
+TEST(MpfrLinalg, FailedExplicitSolvePreservesDefaultsAndStrictFailurePolicy)
+{
+  auto p = Precision::bits(256), q = Precision::bits(80);
+  DenseMatrix<mpreal> a(1, 1, q), b(1, 1, q);
+  b[0, 0] = mpreal{1};
+  auto info = linalg::solve_inplace_with_info(a, b, p);
+  EXPECT_EQ(info.status, linalg::SolveStatus::singular);
+  EXPECT_EQ(a.default_precision(), q);
+  EXPECT_EQ(b.default_precision(), q);
+  EXPECT_DEATH({ (void)linalg::solve(a, b, p); }, "singular matrix in solve");
 }
 
 TEST(MpfrLinalg, ConjugateAccessorIsObservedDuringPacking)

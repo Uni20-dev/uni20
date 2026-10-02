@@ -11,6 +11,7 @@
 #include <uni20/linalg/operation_scalar.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/tensor/concepts.hpp>
+#include <uni20/tensor/output.hpp>
 #include <uni20/tensor/precision.hpp>
 #if UNI20_ENABLE_MPLAPACK_MPFR
 #include <uni20/linalg/backends/mplapack/mpfr.hpp>
@@ -57,7 +58,7 @@ void gemm(BackendSelector&& selector, OutputTensor&& output, Alpha alpha, LhsTen
     using scalar_type = tensor_element_t<OutputTensor>;
     dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, scalar_type(alpha), lhs_span,
                     rhs_span, scalar_type(beta), p);
-    if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
+    uni20::detail::record_output_precision(output, p);
   }
   else
 #endif
@@ -89,7 +90,7 @@ void gemm(BackendSelector&& selector, Output&& output, Alpha alpha, A const& a, 
   using scalar_type = tensor_element_t<Output>;
   dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, out, scalar_type(alpha), ad, bd,
                   scalar_type(beta), p);
-  if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
+  uni20::detail::record_output_precision(output, p);
 }
 
 /// \brief Apply explicit-precision GEMM through the storage-selected backend.

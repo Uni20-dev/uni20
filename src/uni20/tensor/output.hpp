@@ -222,6 +222,18 @@ Output& prepare_output(async::shared_storage<Output>& storage, RequiredExtents c
 }
 
 #if UNI20_ENABLE_MPFR
+namespace detail
+{
+// Only outputs with independent writable defaults record operation precision.
+// Structural views preserve their parent's metadata; no elements are converted.
+template <MutableTensorView Output>
+  requires has_runtime_precision_v<tensor_element_t<Output>>
+void record_output_precision(Output& output, Precision p)
+{
+  if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
+}
+} // namespace detail
+
 /// \brief Prepare a runtime-precision output, recording working precision on owning outputs.
 /// \details Existing elements are not converted. The operation must assign every
 ///          output element it promises to produce, including when storage is reused.
@@ -231,7 +243,7 @@ template <MutableTensorView Output, TensorExtentsLike RequiredExtents>
   requires has_runtime_precision_v<tensor_element_t<Output>>
 Output& prepare_output(Output& output, RequiredExtents const& required, Precision p)
 {
-  if constexpr (requires { output.default_precision(p); }) output.default_precision(p);
+  detail::record_output_precision(output, p);
   return prepare_output(output, required);
 }
 

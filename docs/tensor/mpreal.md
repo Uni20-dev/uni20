@@ -350,6 +350,8 @@ and owning reshapes. It supplies the precision of new zeros during construction
 or growth. Explicitly uninitialized allocation creates unset objects, without
 skipping their C++ lifetimes. Ordinary nonempty zero construction without a
 default throws; default-constructed empty tensors may acquire a default later.
+`reset_shape(uninitialized, extents)` preserves an existing default or its absence;
+allocating unset scalar objects does not require working precision.
 
 Element assignment adopts that scalar's precision and does not update the
 tensor default. Changing `default_precision(p)` changes metadata only; it never
