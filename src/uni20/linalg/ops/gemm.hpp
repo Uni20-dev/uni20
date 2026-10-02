@@ -31,10 +31,10 @@ namespace uni20::linalg
 {
 /// \brief Update a fixed-size matrix as `output = alpha * lhs * rhs + beta * output`.
 /// \details For `lhs` of shape `m x k` and `rhs` of shape `k x n`, `output` must already
-///          have shape `m x n`; it is never resized. Operands and coefficients use the
-///          same scalar type, except runtime-precision coefficients may also be
-///          integers or exact literals. Multiplication observes the supplied views: transpose
-///          or conjugate a view explicitly when required.
+///          have shape `m x n`; it is never resized. Operands use the same scalar
+///          type; coefficients are converted to the output scalar type. Runtime-precision
+///          coefficients also accept integers or exact literals. Multiplication observes
+///          the supplied views: transpose or conjugate a view explicitly when required.
 ///          With `beta == 0`, old output elements are not read. With `alpha == 0` or
 ///          `k == 0`, only the beta scaling remains. An empty output has no elements
 ///          to update; compatible dimensions are still required.
@@ -47,6 +47,7 @@ template <class BackendSelector, uni20::MutableRankedTensorView<2> OutputTensor,
 void gemm(BackendSelector&& selector, OutputTensor&& output, Alpha alpha, LhsTensor const& lhs, RhsTensor const& rhs,
           Beta beta)
 {
+  using scalar_type = tensor_element_t<OutputTensor>;
   auto output_span = uni20::mdspec_of(output);
   auto lhs_span = uni20::mdspec_of(lhs);
   auto rhs_span = uni20::mdspec_of(rhs);
@@ -55,14 +56,14 @@ void gemm(BackendSelector&& selector, OutputTensor&& output, Alpha alpha, LhsTen
   {
     auto p = common_default_precision(lhs, rhs);
     if (beta != 0) p = common_precision(p, output.default_precision());
-    using scalar_type = tensor_element_t<OutputTensor>;
     dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, scalar_type(alpha), lhs_span,
                     rhs_span, scalar_type(beta), p);
     uni20::detail::record_output_precision(output, p);
   }
   else
 #endif
-    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, alpha, lhs_span, rhs_span, beta);
+    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, scalar_type(alpha), lhs_span,
+                    rhs_span, scalar_type(beta));
 }
 
 /// \brief Apply the fixed-storage `gemm` contract using the operands' default backend selector.
