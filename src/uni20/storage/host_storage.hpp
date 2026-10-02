@@ -2,6 +2,7 @@
 
 #include <uni20/common/aligned_buffer.hpp>
 #include <uni20/config.hpp>
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/linalg/backend_selector.hpp>
 #include <uni20/mdspan/mdspan.hpp>
 
@@ -45,7 +46,7 @@ template <typename ElementType> class HostBuffer {
     {
       try
       {
-        detail::initialize_host_elements(data_, size_, initialization);
+        this->initialize_elements(data_, size_, initialization);
       }
       catch (...)
       {
@@ -54,11 +55,37 @@ template <typename ElementType> class HostBuffer {
       }
     }
 
+#if UNI20_ENABLE_MPFR
+    /// \brief Allocate elements with a default working precision for initialization and growth.
+    HostBuffer(size_type size, StorageInitialization initialization, Precision precision)
+      requires has_runtime_precision_v<value_type>
+        : HostBuffer(size, StorageInitialization::Uninitialized)
+    {
+      precision_.value = precision;
+      this->initialize_elements(data_, size_, initialization);
+    }
+
+    /// \brief Working precision used for future initialization, independent of element precisions.
+    Precision default_precision() const requires has_runtime_precision_v<value_type> { return precision_.get(); }
+    std::optional<Precision> default_precision_if_set() const noexcept requires has_runtime_precision_v<value_type>
+    {
+      return precision_.value;
+    }
+    /// \brief Change the default without converting existing elements.
+    void default_precision(Precision precision) requires has_runtime_precision_v<value_type>
+    {
+      precision_.value = precision;
+    }
+#endif
+
     /// \brief Allocate and fill storage with one value.
     HostBuffer(size_type size, value_type const& value) : data_(allocate(size)), size_(size)
     {
       try
       {
+#if UNI20_ENABLE_MPFR
+        if constexpr (has_runtime_precision_v<value_type>) precision_.value = value.precision();
+#endif
         std::fill_n(data_, size_, value);
       }
       catch (...)
@@ -70,7 +97,7 @@ template <typename ElementType> class HostBuffer {
       }
     }
 
-    HostBuffer(HostBuffer const& other) : data_(allocate(other.size_)), size_(other.size_)
+    HostBuffer(HostBuffer const& other) : data_(allocate(other.size_)), size_(other.size_), precision_(other.precision_)
     {
       try
       {
@@ -86,7 +113,8 @@ template <typename ElementType> class HostBuffer {
     }
 
     HostBuffer(HostBuffer&& other) noexcept
-        : data_(std::exchange(other.data_, nullptr)), size_(std::exchange(other.size_, 0))
+        : data_(std::exchange(other.data_, nullptr)), size_(std::exchange(other.size_, 0)),
+          precision_(std::move(other.precision_))
     {}
 
     ~HostBuffer() { release(data_, size_); }
@@ -105,6 +133,7 @@ template <typename ElementType> class HostBuffer {
       release(data_, size_);
       data_ = std::exchange(other.data_, nullptr);
       size_ = std::exchange(other.size_, 0);
+      precision_ = std::move(other.precision_);
       return *this;
     }
 
@@ -123,7 +152,7 @@ template <typename ElementType> class HostBuffer {
       {
         copy_values(replacement, data_, copied_size);
         if (size > copied_size)
-          detail::initialize_host_elements(replacement + copied_size, size - copied_size, initialization);
+          this->initialize_elements(replacement + copied_size, size - copied_size, initialization);
       }
       catch (...)
       {
@@ -148,6 +177,7 @@ template <typename ElementType> class HostBuffer {
       using std::swap;
       swap(data_, other.data_);
       swap(size_, other.size_);
+      swap(precision_, other.precision_);
     }
 
     [[nodiscard]] auto data() noexcept -> value_type* { return data_; }
@@ -164,6 +194,26 @@ template <typename ElementType> class HostBuffer {
     [[nodiscard]] auto operator[](size_type index) const noexcept -> value_type const& { return data_[index]; }
 
   private:
+    void initialize_elements(value_type* data, size_type count, StorageInitialization initialization)
+    {
+#if UNI20_ENABLE_MPFR
+      if constexpr (has_runtime_precision_v<value_type>)
+      {
+        if (initialization == StorageInitialization::Uninitialized)
+        {
+          for (size_type i = 0; i < count; ++i) data[i] = value_type(uninitialized);
+        }
+        else if (count != 0)
+        {
+          auto p = this->default_precision();
+          for (size_type i = 0; i < count; ++i) data[i] = value_type(p);
+        }
+      }
+      else
+#endif
+        detail::initialize_host_elements(data, count, initialization);
+    }
+
     static auto allocate(size_type size,
                          StorageInitialization initialization = StorageInitialization::Uninitialized) -> value_type*
     {
@@ -176,7 +226,10 @@ template <typename ElementType> class HostBuffer {
       {
         try
         {
-          std::uninitialized_value_construct_n(result, size);
+          if constexpr (has_runtime_precision_v<value_type>)
+            std::uninitialized_fill_n(result, size, value_type(uninitialized));
+          else
+            std::uninitialized_value_construct_n(result, size);
         }
         catch (...)
         {
@@ -240,6 +293,7 @@ template <typename ElementType> class HostBuffer {
 
     value_type* data_ = nullptr;
     size_type size_ = 0;
+    [[no_unique_address]] detail::precision_default<value_type> precision_{};
 };
 
 template <typename ElementType> void swap(HostBuffer<ElementType>& lhs, HostBuffer<ElementType>& rhs) noexcept
@@ -265,6 +319,24 @@ struct HostStorage
       return storage_t<ElementType>(size, initialization);
     }
 
+#if UNI20_ENABLE_MPFR
+    template <typename ElementType>
+      requires has_runtime_precision_v<ElementType>
+    [[nodiscard]] static auto make_storage(std::size_t size, StorageInitialization initialization, Precision p)
+        -> storage_t<ElementType>
+    {
+      return storage_t<ElementType>(size, initialization, p);
+    }
+    template <typename ElementType>
+      requires has_runtime_precision_v<ElementType>
+    [[nodiscard]] static auto make_storage_like(storage_t<ElementType> const& source, std::size_t size,
+                                               StorageInitialization initialization) -> storage_t<ElementType>
+    {
+      if (auto p = source.default_precision_if_set()) return storage_t<ElementType>(size, initialization, *p);
+      return storage_t<ElementType>(size, initialization);
+    }
+#endif
+
     template <typename ElementType> static auto make_handle(storage_t<ElementType>& storage) noexcept -> ElementType*
     {
       return storage.data();
@@ -277,20 +349,31 @@ struct HostStorage
     }
 
 #if UNI20_BACKEND_BLAS
-    using backend_selector_type =
-        linalg::backend_list<linalg::LapackBackend, linalg::BlasBackend, linalg::CpuReferenceBackend>;
+    using backend_selector_type = linalg::backend_list<
+#if UNI20_ENABLE_MPLAPACK_MPFR
+        linalg::MplapackMpfrBackend,
+#endif
+        linalg::LapackBackend, linalg::BlasBackend, linalg::CpuReferenceBackend>;
 #else
-    using backend_selector_type = linalg::backend_list<linalg::LapackBackend, linalg::CpuReferenceBackend>;
+    using backend_selector_type = linalg::backend_list<
+#if UNI20_ENABLE_MPLAPACK_MPFR
+        linalg::MplapackMpfrBackend,
+#endif
+        linalg::LapackBackend, linalg::CpuReferenceBackend>;
 #endif
 
     /// \brief Return the default ordered linalg backends for pageable host storage.
     [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
     {
-#if UNI20_BACKEND_BLAS
-      return backend_selector_type{linalg::LapackBackend{}, linalg::BlasBackend{}, linalg::CpuReferenceBackend{}};
-#else
-      return backend_selector_type{linalg::LapackBackend{}, linalg::CpuReferenceBackend{}};
+      return backend_selector_type{
+#if UNI20_ENABLE_MPLAPACK_MPFR
+          linalg::MplapackMpfrBackend{},
 #endif
+          linalg::LapackBackend{},
+#if UNI20_BACKEND_BLAS
+          linalg::BlasBackend{},
+#endif
+          linalg::CpuReferenceBackend{}};
     }
 };
 

@@ -138,4 +138,40 @@ void solve_inplace(async::Async<CoefficientTensor>& coefficients, async::Async<R
   detail::schedule_solve_inplace(std::move(selector), coefficients, right_hand_sides);
 }
 
+#if UNI20_ENABLE_MPFR
+namespace detail
+{
+template <class Selector, class Result, class A, class B>
+async::AsyncTask co_preserving_solve_at_precision(Selector selector, async::WriteBuffer<Result> output,
+                                                  async::ReadBuffer<A> a, async::ReadBuffer<B> b, Precision p)
+{
+  auto output_storage = output.storage();
+  auto awaited = co_await async::all(output_storage, a, b);
+  std::get<0>(awaited).emplace(uni20::linalg::solve(selector, std::get<1>(awaited), std::get<2>(awaited), p));
+  co_return;
+}
+} // namespace detail
+
+/// \brief Schedule a preserving solve at explicit precision, establishing provider state after all awaits.
+template <KernelBackendSelector Selector, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(Selector selector, async::Async<A> const& a, async::Async<B> const& b, Precision p)
+{
+  using result_type = detail::preserving_solve_result_t<A, B>;
+  async::Async<result_type> output;
+  auto task = detail::co_preserving_solve_at_precision(std::move(selector), output.write(), a.read(), b.read(), p);
+  task.debug_name("solve");
+  async::schedule(std::move(task));
+  return output;
+}
+
+/// \brief Schedule an explicit-precision solve using storage-selected backends.
+template <RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(async::Async<A> const& a, async::Async<B> const& b, Precision p)
+{
+  return solve(detail::select_async_solve_backend<A, B>(), a, b, p);
+}
+#endif
+
 } // namespace uni20::linalg

@@ -22,7 +22,8 @@ namespace uni20::async
 /// \brief Return a lazy conjugating alias of an async complex tensor.
 /// \details The result retains the parent tensor storage and shares its exact
 ///          epoch queue. Awaiting the alias therefore observes the same causal
-///          timeline as awaiting the parent.
+///          timeline as awaiting the parent. Default precision is read from that
+///          parent epoch rather than copied when the alias is created.
 template <uni20::TensorView Tensor>
   requires uni20::Complex<uni20::tensor_element_t<Tensor>>
 [[nodiscard]] auto conj(Async<Tensor> const& tensor)
@@ -43,7 +44,8 @@ template <uni20::TensorView Tensor>
 /// \brief Return a mutable structural reshape alias of an async tensor.
 /// \details The descriptor retains the parent storage and shares its exact
 ///          epoch queue. Shape and layout validation occurs when the shared
-///          parent epoch first becomes readable.
+///          parent epoch first becomes readable. Default precision follows the
+///          parent state observed by each operation through the alias.
 template <uni20::MutableStridedTensorView Tensor, std::integral... Extents>
   requires uni20::detail::CanonicalReshapeLayout<typename uni20::tensor_mdspec_t<Tensor>::layout_type>
 [[nodiscard]] auto reshape_view(Async<Tensor>& tensor, Extents... requested_extents)

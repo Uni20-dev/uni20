@@ -1,3 +1,7 @@
+if(UNI20_ENABLE_MPLAPACK_MPFR)
+  add_test_module(linalg_mpfr SOURCES test_mplapack_mpfr.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+endif()
+
 add_test_module(linalg
   SOURCES
     cpu/test_matrix_exponential.cpp
@@ -18,6 +22,7 @@ add_test_module(linalg
     test_cpu_strided_transform.cpp
     test_dispatch_diagnostics.cpp
     test_dense_ops_dispatch.cpp
+    test_exact_matrix_product.cpp
     test_linalg_gemv_cpu.cpp
     test_linear_solve.cpp
     test_matrix_norm.cpp

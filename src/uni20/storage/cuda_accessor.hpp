@@ -94,7 +94,7 @@ template <class ElementType> struct CudaPointerAccessor
 };
 
 /// \brief Mutable CUDA accessor for persistent `uni20::complex` storage.
-template <class Real> struct CudaPointerAccessor<uni20::complex<Real>>
+template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex<Real>>
 {
     using element_type = uni20::complex<Real>;
     using data_handle_type = element_type*;
@@ -117,7 +117,7 @@ template <class Real> struct CudaPointerAccessor<uni20::complex<Real>>
 };
 
 /// \brief Read-only CUDA accessor for persistent `uni20::complex` storage.
-template <class Real> struct CudaPointerAccessor<uni20::complex<Real> const>
+template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex<Real> const>
 {
     using element_type = uni20::complex<Real> const;
     using data_handle_type = element_type*;

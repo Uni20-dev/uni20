@@ -920,15 +920,16 @@ template <uni20::Real T> [[nodiscard]] std::string format_real(T value, numeric_
 }
 
 /// \brief Format a complex value as `real+imagi`.
-/// \tparam T Real component type.
+/// \tparam T Complex scalar type.
 /// \param value Complex value to format.
 /// \param options Numeric formatting controls.
 /// \return Formatted complex numeric text.
-template <uni20::Real T>
-[[nodiscard]] std::string format_complex(uni20::complex<T> const& value, numeric_format_options const& options)
+template <uni20::Complex T>
+[[nodiscard]] std::string format_complex(T const& value, numeric_format_options const& options)
 {
+  using real_type = uni20::make_real_t<T>;
   return uni20::format_complex(
-      value, uni20::scalar_format_options{.precision = real_precision<T>(options),
+      value, uni20::scalar_format_options{.precision = real_precision<real_type>(options),
                                           .notation = core_notation(options.notation),
                                           .normalize_negative_zero = options.normalize_negative_zero,
                                           .imaginary_unit = std::string_view(options.imaginary_unit)});

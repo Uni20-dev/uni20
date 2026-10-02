@@ -128,7 +128,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   ubuntu-mplapack-binary128:
-    name: Ubuntu MPLAPACK Binary128
+    name: Ubuntu MPLAPACK Binary128 and MPFR
     runs-on: ubuntu-24.04
 
     env:
@@ -148,7 +148,10 @@ jobs:
             g++ \
             libopenblas-dev \
             liblapack-dev \
-            libgtest-dev
+            libgtest-dev \
+            libgmp-dev \
+            libmpfr-dev \
+            libmpc-dev
 
       - name: Configure
         run: |
@@ -160,6 +163,9 @@ jobs:
             -DUNI20_BUILD_ASM=OFF \
             -DUNI20_BUILD_PYTHON=OFF \
             -DUNI20_ENABLE_MPLAPACK=ON \
+            -DUNI20_ENABLE_MPFR=ON \
+            -DUNI20_ENABLE_MPC=ON \
+            -DUNI20_ENABLE_MPLAPACK_MPFR=ON \
             -DUNI20_BUILD_CLI=ON \
             -DUNI20_USE_SYSTEM_MPLAPACK=OFF \
             -DUNI20_USE_SYSTEM_TBB=OFF \
@@ -167,9 +173,20 @@ jobs:
             -DUNI20_USE_SYSTEM_GTEST=ON \
             -DUNI20_FETCHCONTENT_SOURCE=OFF
 
-      - name: Build binary128 validation targets
+      - name: Build scalar and provider validation targets
         run: |
           cmake --build build --parallel 2 --target \
+            uni20_mpfr_tests \
+            uni20_mpc_tests \
+            uni20_tensor_precision_tests \
+            uni20_mplapack_mpfr_tests \
+            uni20_linalg_mpfr_tests \
+            mpreal_example \
+            mpreal_exact_example \
+            mpcomplex_example \
+            tensor_precision_example \
+            mplapack_mpfr_example \
+            mplapack_precision_example \
             uni20_mplapack_binary128_tests \
             uni20_linalg_mplapack_binary128_tests \
             uni20_krylov_mplapack_binary128_tests \
@@ -177,10 +194,10 @@ jobs:
             presentation_cli_example \
             spin_half_heisenberg_dmrg_example
 
-      - name: Test binary128 provider, CLI and DMRG paths
+      - name: Test scalars, providers, precision propagation, CLI and DMRG
         run: |
           ctest --test-dir build --output-on-failure \
-            -R "MplapackBinary128|SpinHalfHeisenbergDmrg.*Float128|^Cli"
+            -R "MplapackBinary128|SpinHalfHeisenbergDmrg.*Float128|^Cli|^MpReal|^MpComplex|^TensorPrecision|^MplapackMpfr|^MpfrLinalg|^MplapackPrecision"
 
   ubuntu-clang-debug:
     name: Ubuntu Clang 19 Debug
@@ -213,7 +230,8 @@ jobs:
             libbenchmark-dev \
             libgtest-dev \
             libgmp-dev \
-            libmpfr-dev
+            libmpfr-dev \
+            libmpc-dev
 
       - name: Use current CMake 4.x
         run: |
@@ -228,6 +246,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DUNI20_BUILD_CLI=ON \
             -DUNI20_ENABLE_MPFR=ON \
+            -DUNI20_ENABLE_MPC=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \

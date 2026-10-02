@@ -18,6 +18,12 @@ Keep this inventory synchronized with provider declarations and with any
 helpers promoted from the quarantined survey into operation-tag linalg
 backends.
 
+The optional [MPFR/MPC backend](mplapack_mpfr.md) adds `Rgemm`, `Cgemm`,
+`Rgetrf`, `Cgetrf`, `Rgetrs` and `Cgetrs` through explicit-precision provider
+arrays. These support dispatched matrix products and square solves for `mpreal`
+and `complex<mpreal>`. They do not imply arbitrary-precision coverage of the
+other routines in this inventory or of the projected Krylov path.
+
 CUDA provider coverage is currently narrower: cuBLAS `S/D/C/ZGEMM`, conjugate
 dot products, and Euclidean norms have checked provider wrappers and a
 Tensor-facing `CublasBackend`. Ordinary

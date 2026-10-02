@@ -73,7 +73,7 @@ void enqueue_elementwise_unary_impl(Scalar* output, Scalar const* input, Operati
 
 template <class Value> [[nodiscard]] auto to_cuda_execution_value(Value value) { return value; }
 
-template <class Real> [[nodiscard]] auto to_cuda_execution_value(uni20::complex<Real> const& value)
+template <class Real> [[nodiscard]] auto to_cuda_execution_value(uni20::detail::standard_complex<Real> const& value)
 {
   return ::cuda::std::complex<Real>{value.real(), value.imag()};
 }

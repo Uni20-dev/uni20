@@ -563,10 +563,10 @@ template <typename Scalar> [[nodiscard]] DenseHostVector<Scalar> deterministic_i
   return numeric;
 }
 
-template <typename Real>
-[[nodiscard]] std::string format_ritz_complex(uni20::complex<Real> value,
-                                              presentation::numeric_format_options const& numeric)
+template <uni20::Complex C>
+[[nodiscard]] std::string format_ritz_complex(C value, presentation::numeric_format_options const& numeric)
 {
+  using Real = uni20::make_real_t<C>;
   std::string const real = presentation::format_real(value.real(), numeric);
   std::string const imag = presentation::format_real(std::abs(value.imag()), numeric);
   return fmt::format("{} {} {}i", real, value.imag() < Real{} ? "-" : "+", imag);

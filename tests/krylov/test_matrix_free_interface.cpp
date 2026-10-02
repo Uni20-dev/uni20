@@ -211,9 +211,12 @@ TEST(KrylovMatrixFreeInterface, ClassifiesRealArnoldiRitzRealityWithScaleAwareTo
 {
   using uni20::krylov::RitzReality;
 
-  EXPECT_EQ((uni20::krylov::classify_ritz_reality<double>({2.0, 1.0e-13}, 1.0e-12, 2.0)), RitzReality::Real);
-  EXPECT_EQ((uni20::krylov::classify_ritz_reality<double>({2.0, 5.0e-12}, 1.0e-12, 2.0)), RitzReality::Ambiguous);
-  EXPECT_EQ((uni20::krylov::classify_ritz_reality<double>({2.0, 5.0e-10}, 1.0e-12, 2.0)), RitzReality::Complex);
+  EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<double>{2.0, 1.0e-13}, 1.0e-12, 2.0)),
+            RitzReality::Real);
+  EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<double>{2.0, 5.0e-12}, 1.0e-12, 2.0)),
+            RitzReality::Ambiguous);
+  EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<double>{2.0, 5.0e-10}, 1.0e-12, 2.0)),
+            RitzReality::Complex);
 }
 
 TEST(KrylovMatrixFreeInterface, RitzRealityDefaultToleranceScalesWithPrecision)
@@ -225,8 +228,18 @@ TEST(KrylovMatrixFreeInterface, RitzRealityDefaultToleranceScalesWithPrecision)
 
   EXPECT_LT(double_tol, 1.0e-7);
   EXPECT_GT(float_tol, double_tol);
-  EXPECT_EQ((uni20::krylov::classify_ritz_reality<double>({1.0, 0.5 * double_tol})), RitzReality::Real);
-  EXPECT_EQ((uni20::krylov::classify_ritz_reality<double>({1.0, 5.0 * double_tol})), RitzReality::Ambiguous);
+  auto check = []<class Real>() {
+    Real const tolerance = uni20::krylov::default_complex_pair_tolerance<Real>();
+    EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<Real>{Real{1}, Real{0.5} * tolerance})),
+              RitzReality::Real);
+    EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<Real>{Real{1}, Real{5} * tolerance})),
+              RitzReality::Ambiguous);
+    EXPECT_EQ((uni20::krylov::classify_ritz_reality(uni20::complex<Real>{Real{1}, Real{20} * tolerance})),
+              RitzReality::Complex);
+  };
+  check.operator()<float>();
+  check.operator()<double>();
+  check.operator()<long double>();
 }
 
 template <typename Scalar> class CountingMetricOps {

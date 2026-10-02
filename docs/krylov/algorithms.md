@@ -138,6 +138,11 @@ accepts only numerically real selected eigenpairs. Complex-pair handling in real
 vector output remains an interface design point; complex arithmetic is the
 available path when complex eigenpairs are required.
 
+`classify_ritz_reality(theta)` deduces the complex scalar from the Ritz value;
+`extract_complex_arnoldi_ritz(factorization)` deduces it from the factorization.
+Both calls allow the real-valued tolerance and scale arguments to be omitted.
+When specifying a template argument explicitly, use the complex scalar type.
+
 ### Krylov Exponential Actions
 
 Matrix-free exponential actions approximate `exp(t A) v` without exposing

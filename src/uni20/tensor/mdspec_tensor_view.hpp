@@ -7,6 +7,7 @@
  */
 
 #include <uni20/tensor/concepts.hpp>
+#include <uni20/core/runtime_precision.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -29,7 +30,7 @@ template <MdspecLike MutableMdspec, MdspecLike ConstMdspec, class StoragePolicy>
            std::same_as<std::remove_const_t<typename MutableMdspec::element_type>,
                         std::remove_const_t<typename ConstMdspec::element_type>> &&
            std::is_const_v<typename ConstMdspec::element_type> && requires { StoragePolicy::backend_selector(); })
-class MdspecTensorView {
+class MdspecTensorView : public detail::precision_default<typename MutableMdspec::value_type> {
   public:
     using mutable_mdspec_type = MutableMdspec;
     using const_mdspec_type = ConstMdspec;

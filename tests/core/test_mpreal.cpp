@@ -26,14 +26,19 @@ template <typename T>
 concept HasComplexSpelling = requires { typename uni20::complex<T>; };
 template <typename T>
 concept HasComplexCounterpart = requires { typename uni20::make_complex_t<T>; };
-static_assert(!std::default_initializable<mpreal>);
+static_assert(std::default_initializable<mpreal>);
+static_assert(std::is_nothrow_move_constructible_v<mpreal>);
 static_assert(!std::convertible_to<double, mpreal>);
 static_assert(!std::convertible_to<mpreal, double>);
 static_assert(!AddsNativeFloat<mpreal>);
-static_assert(!HasPrecisionlessSqrt<decimal_literal>);
+static_assert(HasPrecisionlessSqrt<decimal_literal>);
 static_assert(Real<mpreal> && Scalar<mpreal>);
 static_assert(!BlasReal<mpreal> && !LapackReal<mpreal>);
+#if UNI20_ENABLE_MPC
+static_assert(HasComplexSpelling<mpreal> && HasComplexCounterpart<mpreal>);
+#else
 static_assert(!HasComplexSpelling<mpreal> && !HasComplexCounterpart<mpreal>);
+#endif
 static_assert(HasComplexSpelling<double> && HasComplexCounterpart<double>);
 static_assert(!has_numeric_limits_v<mpreal>);
 static_assert(std::same_as<decltype(std::declval<mpreal>() + std::declval<mpreal>()), mpreal>);
@@ -54,6 +59,60 @@ TEST(MpReal, PrecisionIsExplicitAndValidated)
   EXPECT_EQ(zero, 0);
   EXPECT_EQ(zero.precision(), p);
   EXPECT_FALSE(signbit(zero));
+}
+
+TEST(MpReal, UnsetValuesHaveSafeOwnershipButNoNumericalMeaning)
+{
+  mpreal unset(uninitialized);
+  EXPECT_FALSE(unset.initialized());
+  EXPECT_THROW(unset.precision(), std::logic_error);
+  EXPECT_THROW(unset.native_handle(), std::logic_error);
+  EXPECT_THROW(unset.to_string(), std::logic_error);
+  EXPECT_THROW((void)static_cast<double>(unset), std::logic_error);
+  EXPECT_THROW(isfinite(unset), std::logic_error);
+  EXPECT_THROW(isnan(unset), std::logic_error);
+  EXPECT_THROW(isinf(unset), std::logic_error);
+  EXPECT_THROW(signbit(unset), std::logic_error);
+  EXPECT_THROW(+unset, std::logic_error);
+  EXPECT_THROW(-unset, std::logic_error);
+  EXPECT_THROW(sqrt(unset), std::logic_error);
+  EXPECT_THROW((void)(unset == 0), std::logic_error);
+  EXPECT_THROW((void)(unset < 0), std::logic_error);
+  auto p = Precision::bits(256);
+  mpreal valid(1, p);
+  EXPECT_THROW(unset + valid, std::logic_error);
+  EXPECT_THROW(valid + unset, std::logic_error);
+  EXPECT_THROW((void)(valid == unset), std::logic_error);
+  EXPECT_THROW(unset += valid, std::logic_error);
+  EXPECT_THROW(unset.at(p), std::logic_error);
+  EXPECT_THROW((void)format_real(unset), std::logic_error);
+  EXPECT_THROW((void)mpreal(unset, p), std::logic_error);
+
+  auto copy = unset;
+  auto moved = std::move(unset);
+  EXPECT_FALSE(copy.initialized());
+  EXPECT_FALSE(moved.initialized());
+  unset = valid;
+  EXPECT_EQ(unset, 1);
+  EXPECT_EQ(unset.precision(), p);
+  moved = std::move(unset);
+  EXPECT_EQ(moved, 1);
+  EXPECT_FALSE(unset.initialized());
+  moved.swap(copy);
+  EXPECT_FALSE(moved.initialized());
+  EXPECT_EQ(copy, 1);
+  copy = moved;
+  EXPECT_FALSE(copy.initialized());
+  std::vector<mpreal> buffer(4);
+  buffer[2] = valid;
+  auto duplicate = buffer;
+  EXPECT_TRUE(duplicate[0].is_exact());
+  EXPECT_EQ(duplicate[0], 0);
+  EXPECT_EQ(duplicate[2], 1);
+  buffer.resize(40);
+  EXPECT_EQ(buffer[2], 1);
+  EXPECT_TRUE(buffer[39].is_exact());
+  EXPECT_EQ(buffer[39], 0);
 }
 
 TEST(MpReal, ArithmeticIsEagerAndOwnsItsResult)
@@ -103,7 +162,7 @@ TEST(MpReal, AssignmentCopiesPrecisionAndMoveLeavesValidSource)
   EXPECT_EQ(destination, copy);
   auto moved = std::move(source);
   EXPECT_EQ(moved, copy);
-  EXPECT_EQ(source, 0);
+  EXPECT_FALSE(source.initialized());
   source = mpreal(7, Precision::bits(64));
   destination = std::move(source);
   EXPECT_EQ(destination, 7);
@@ -128,17 +187,75 @@ TEST(MpReal, CompoundArithmeticSupportsAliasingAndPreservesPrecision)
 
   auto low = Precision::bits(3);
   x = mpreal(1, low);
-  x += 0.14_mp; // 0.14 first rounds to 0.125; the sum is a tie that rounds to 1.
-  EXPECT_EQ(x, 1);
-  x -= 0.07_mp; // 0.07 first rounds to 0.0625; the difference rounds to 1.
-  EXPECT_EQ(x, 1);
-  x = mpreal("1.25", low);
-  x *= 1.1_mp; // 1.1 rounds to 1 before multiplication.
+  x += 0.14_mp; // Round 1.14 once, without first rounding the literal.
   EXPECT_EQ(x, 1.25_mp);
+  x -= 0.07_mp;
+  EXPECT_EQ(x, 1.25_mp);
+  x = mpreal("1.25", low);
+  x *= 1.1_mp; // 1.375 is a tie, rounded to the even significand.
+  EXPECT_EQ(x, 1.5_mp);
   x = mpreal(1, low);
   x /= 1.1_mp;
-  EXPECT_EQ(x, 1);
+  EXPECT_EQ(x, 0.875_mp);
   EXPECT_EQ(x.precision(), low);
+}
+
+TEST(MpReal, MixedBasicArithmeticRoundsTheResultOnce)
+{
+  for (auto bits : {3, 128})
+  {
+    auto p = Precision::bits(bits);
+    for (auto text : {"1", "-1", "5/4", "-3/2"})
+    {
+      exact_constant x(text);
+      mpreal a(x, p);
+      for (auto fraction : {"1/7", "9/8", "-19/13", "11/10", "1/10000000000000000000000000000000000000000"})
+      {
+        exact_constant q(fraction);
+        mpreal b(q);
+        EXPECT_EQ(a + b, mpreal(x + q, p));
+        EXPECT_EQ(b + a, mpreal(q + x, p));
+        EXPECT_EQ(a - b, mpreal(x - q, p));
+        EXPECT_EQ(b - a, mpreal(q - x, p));
+        EXPECT_EQ(a * b, mpreal(x * q, p));
+        EXPECT_EQ(b * a, mpreal(q * x, p));
+        EXPECT_EQ(a / b, mpreal(x / q, p));
+        EXPECT_EQ(b / a, mpreal(q / x, p));
+        auto c = b;
+        c -= a;
+        EXPECT_EQ(c, b - a);
+        EXPECT_EQ(c.precision(), p);
+        c = b;
+        c /= a;
+        EXPECT_EQ(c, b / a);
+        EXPECT_EQ(c.precision(), p);
+      }
+    }
+    auto epsilon = exact_constant("1/10000000000000000000000000000000000000000");
+    mpreal just_above_one(exact_constant{1} + epsilon);
+    EXPECT_EQ(just_above_one - mpreal(1, p), epsilon.at(p));
+    EXPECT_EQ(mpreal(1, p) - just_above_one, (-epsilon).at(p));
+  }
+}
+
+TEST(MpReal, MixedArithmeticRetainsExceptionalValuesAndSignedZeros)
+{
+  auto p = Precision::bits(80);
+  mpreal zero{}, one{1}, negative_zero("-0", p), negative_one(-1, p);
+  EXPECT_FALSE(signbit(one - mpreal(1, p)));
+  EXPECT_FALSE(signbit(zero - negative_zero));
+  EXPECT_TRUE(signbit(negative_zero - zero));
+  EXPECT_TRUE(signbit(zero / negative_one));
+  EXPECT_TRUE(signbit(zero * negative_one));
+  EXPECT_TRUE(isinf(one / negative_zero));
+  EXPECT_TRUE(signbit(one / negative_zero));
+  EXPECT_TRUE(isnan(zero / negative_zero));
+  mpreal inf("inf", p), nan("nan", p);
+  EXPECT_EQ(mpreal(exact_constant("1e10000")) / inf, 0);
+  EXPECT_TRUE(isnan(one / nan));
+  EXPECT_TRUE(isinf(inf + one));
+  EXPECT_TRUE(isnan(inf * zero));
+  EXPECT_TRUE(isinf(one / zero.at(p)));
 }
 
 TEST(MpReal, RoundNearestTiesToEven)
@@ -304,7 +421,7 @@ TEST(MpReal, ParsingAndRoundTripFormatting)
   for (auto text : {"", "abc", "1.2junk", "1.2.3", " 1", "1 ", ".", "1e"})
     EXPECT_THROW(mpreal(text, p), std::invalid_argument) << text;
   EXPECT_THROW(mpreal(std::string_view("1\0x", 3), p), std::invalid_argument);
-  for (auto text : {"", "+", "nan", "1/3", "1.2.3", "1e", "0x10", "1''2"})
+  for (auto text : {"", "+", "nan", "1/3/4", "1.2.3", "1e", "0x10", "1''2"})
     EXPECT_THROW((void)exact_constant(text), std::invalid_argument) << text;
   EXPECT_THROW(exact_constant("1e184467440737095516160"), std::out_of_range);
   EXPECT_THROW(exact_constant("1.0e-18446744073709551615"), std::out_of_range);
@@ -421,7 +538,7 @@ TEST(MpReal, ConcurrentTasksUseIndependentWorkingPrecisions)
     outputs.emplace_back(mpreal(p));
     scheduler.schedule([](WriteBuffer<mpreal> out, Precision p) static -> AsyncTask {
       auto const before = mpfr_get_default_prec();
-      co_await out = sqrt(mpreal(2, p));
+      co_await out = sqrt(mpreal{2}, p);
       EXPECT_EQ(mpfr_get_default_prec(), before);
     }(outputs.back().write(), p));
   }
@@ -495,10 +612,257 @@ TEST(MpReal, ElementaryFunctionsMatchIndependentDecimalReferences)
   {
     auto p = Precision::bits(bits);
     EXPECT_EQ(sqrt(mpreal(2, p)), mpreal(root_two, p));
+    EXPECT_EQ(sqrt(mpreal{2}, p), mpreal(root_two, p));
     EXPECT_EQ(exp(mpreal(1, p)), mpreal(e, p));
+    EXPECT_EQ(exp(mpreal{1}, p), mpreal(e, p));
     EXPECT_EQ(log(mpreal(2, p)), mpreal(log_two, p));
+    EXPECT_EQ(log(mpreal{2}, p), mpreal(log_two, p));
     auto angle = pi<mpreal>.at(p);
     EXPECT_LT(abs(sin(angle / 6) - 0.5_mp), 2 * epsilon(p));
     EXPECT_LT(abs(cos(angle / 3) - 0.5_mp), 2 * epsilon(p));
+  }
+}
+
+namespace
+{
+template <class T> T generic_sum(std::vector<T> const& input)
+{
+  T result{};
+  for (auto const& x : input)
+    result += x;
+  return result;
+}
+template <class T> T generic_product(std::vector<T> const& input)
+{
+  T result{1};
+  for (auto const& x : input)
+    result *= x;
+  return result;
+}
+} // namespace
+
+TEST(MpReal, ExactStateSupportsGenericConstructionAndArithmetic)
+{
+  auto exact = Precision::exact();
+  EXPECT_TRUE(exact.is_exact());
+  EXPECT_THROW(exact.bit_count(), std::logic_error);
+  mpreal zero{}, one{1}, two{2};
+  EXPECT_TRUE(zero.initialized());
+  EXPECT_EQ(zero.precision(), exact);
+  EXPECT_EQ(zero, 0);
+  auto third = one / mpreal{3};
+  EXPECT_TRUE(third.is_exact());
+  EXPECT_EQ(third.to_string(), "1/3");
+  EXPECT_EQ(third * 3, one);
+  EXPECT_EQ(mpreal(0.1_mp) + mpreal(0.2_mp), 0.3_mp);
+  EXPECT_EQ((third - one).to_string(), "-2/3");
+  EXPECT_EQ(abs(third - one).to_string(), "2/3");
+  EXPECT_EQ(conj(third), third);
+  EXPECT_TRUE(isfinite(third));
+  EXPECT_FALSE(isnan(third));
+  EXPECT_FALSE(isinf(third));
+  EXPECT_TRUE(signbit(-third));
+  EXPECT_EQ(generic_sum(std::vector<mpreal>{third, third, third}), one);
+  EXPECT_EQ(generic_product(std::vector<mpreal>{third, two, mpreal{3}}), two);
+  EXPECT_TRUE(generic_sum(std::vector<mpreal>{}).is_exact());
+  EXPECT_EQ(generic_sum(std::vector<double>{0.25, 0.75}), 1.0);
+  EXPECT_EQ(generic_product(std::vector<double>{2, 3}), 6.0);
+  auto copy = third;
+  third += third;
+  EXPECT_EQ(copy.to_string(), "1/3");
+  third *= third;
+  EXPECT_EQ(third.to_string(), "4/9");
+  third /= third;
+  EXPECT_EQ(third, 1);
+  third -= third;
+  EXPECT_EQ(third, 0);
+  EXPECT_THROW(copy / zero, std::domain_error);
+  EXPECT_THROW(copy /= zero, std::domain_error);
+  EXPECT_EQ(copy.to_string(), "1/3");
+}
+
+TEST(MpReal, ExactValuesAcquirePrecisionOnlyAtAnApproximationBoundary)
+{
+  auto p = Precision::bits(80), q = Precision::bits(256);
+  mpreal third = mpreal{1} / mpreal{3};
+  mpreal x(2, p);
+  EXPECT_EQ((third + x).precision(), p);
+  EXPECT_EQ((x + third).precision(), p);
+  EXPECT_EQ(third.at(p), mpreal(1, p) / 3);
+  EXPECT_NE(third, third.at(p)); // Exact comparison must not round the rational.
+  EXPECT_EQ(third <=> third.at(p), 1_mp / 3_mp <=> third.at(p));
+  auto sum = generic_sum(std::vector<mpreal>{mpreal{}, x, mpreal{3}});
+  EXPECT_EQ(sum, 5);
+  EXPECT_EQ(sum.precision(), p);
+  EXPECT_EQ((x - x).precision(), p); // An integer result remains approximate.
+  EXPECT_THROW(generic_sum(std::vector<mpreal>{x, mpreal(1, q)}), std::invalid_argument);
+  EXPECT_THROW(third.native_handle(), std::logic_error);
+  EXPECT_THROW(x.at(Precision::exact()), std::invalid_argument);
+  EXPECT_THROW(mpreal(0.1, Precision::exact()), std::logic_error);
+  EXPECT_THROW(sqrt(mpreal{2}), std::logic_error);
+  EXPECT_EQ(exp(mpreal{}), 1);
+  EXPECT_EQ(pow(mpreal{2}, mpreal{3}), 8);
+  EXPECT_THROW(pi<mpreal>.at(Precision::exact()), std::logic_error);
+  EXPECT_THROW(epsilon(Precision::exact()), std::logic_error);
+  EXPECT_EQ(sqrt(scalar_like(x, 2)), sqrt(mpreal(2, p)));
+  EXPECT_EQ(scalar_like(x, 0).precision(), p);
+  EXPECT_EQ(scalar_like(1.0, 2), 2.0);
+  EXPECT_EQ(scalar_like(1.0f, 2), 2.0f);
+  EXPECT_TRUE(scalar_like(third, 2).is_exact());
+  x = mpreal{1};
+  EXPECT_TRUE(x.is_exact());
+  EXPECT_EQ(format_real(third), "1/3");
+  std::vector<mpreal> states{mpreal{}, mpreal(1, p), mpreal(uninitialized)};
+  for (auto const& a : states)
+    for (auto const& b : states)
+    {
+      auto lhs = a, rhs = b;
+      lhs.swap(rhs);
+      EXPECT_EQ(lhs.initialized(), b.initialized());
+      EXPECT_EQ(rhs.initialized(), a.initialized());
+      if (lhs.initialized())
+      {
+        EXPECT_EQ(lhs.precision(), b.precision());
+      }
+      if (rhs.initialized())
+      {
+        EXPECT_EQ(rhs.precision(), a.precision());
+      }
+    }
+}
+
+TEST(MpReal, ExactRootsPowersAndIdentities)
+{
+  auto exact = Precision::exact();
+  EXPECT_EQ(sqrt(mpreal("4/9", exact)), mpreal("2/3", exact));
+  EXPECT_EQ(sqrt(mpreal{}), 0);
+  EXPECT_EQ(pow(mpreal{2}, mpreal{-3}), mpreal("1/8", exact));
+  EXPECT_EQ(pow(mpreal("-8/27", exact), mpreal("1/3", exact)), mpreal("-2/3", exact));
+  EXPECT_EQ(pow(mpreal{16}, mpreal("3/4", exact)), 8);
+  EXPECT_EQ(pow(mpreal{}, mpreal{}), 1);
+  EXPECT_THROW(pow(mpreal{}, mpreal{-1}), std::domain_error);
+  EXPECT_THROW(pow(mpreal{2}, mpreal("1/3", exact)), std::logic_error);
+  EXPECT_THROW(sqrt(mpreal{-1}), std::logic_error);
+  EXPECT_EQ(hypot(mpreal{3}, mpreal{4}), 5);
+  EXPECT_EQ(log(mpreal{1}), 0);
+  EXPECT_EQ(sin(mpreal{}), 0);
+  EXPECT_EQ(cos(mpreal{}), 1);
+  EXPECT_EQ(tan(mpreal{}), 0);
+  EXPECT_EQ(atan(mpreal{}), 0);
+  EXPECT_EQ(atan2(mpreal{}, mpreal{2}), 0);
+  EXPECT_TRUE(is_exact(sqrt(mpreal{4})));
+  EXPECT_FALSE(is_exact(sqrt(mpreal(4, Precision::bits(80)))));
+}
+
+TEST(MpReal, FractionsParseAndRoundTrip)
+{
+  auto exact = Precision::exact();
+  auto p = Precision::bits(100);
+  for (auto text : {"1/3", "-10/-15", "+4/-6", "0/9", "12345678901234567890/19"})
+  {
+    mpreal x(text, exact);
+    EXPECT_EQ(mpreal(x.to_string(), exact), x);
+    EXPECT_EQ(mpreal(text, p), x.at(p));
+    EXPECT_EQ(parse_real<mpreal>(x.to_string(), exact), x);
+  }
+  for (auto text : {"/3", "1/", "1//2", "1/2/3", "1.5/2", "1/2e3", "1 /2", "1/ 2", "1/+"})
+  {
+    EXPECT_THROW(mpreal(text, exact), std::invalid_argument) << text;
+    EXPECT_THROW(mpreal(text, p), std::invalid_argument) << text;
+  }
+  EXPECT_THROW(mpreal("1/0", exact), std::domain_error);
+  EXPECT_THROW(mpreal("0/0", p), std::domain_error);
+}
+
+TEST(MpReal, NativeConversionRoundsExactValuesExplicitly)
+{
+  static_assert(!std::convertible_to<mpreal, float>);
+  static_assert(!std::convertible_to<mpreal, double>);
+  static_assert(!std::convertible_to<mpreal, long double>);
+  auto exact = Precision::exact();
+  EXPECT_EQ(static_cast<double>(mpreal("1/3", exact)), 1.0 / 3.0);
+  EXPECT_EQ(static_cast<float>(mpreal("1/3", exact)), 1.0f / 3.0f);
+  EXPECT_EQ(static_cast<long double>(mpreal("1/3", exact)), 1.0L / 3.0L);
+  // Values immediately around a double midpoint force refinement beyond 69 bits.
+  auto half_ulp = pow(mpreal{2}, mpreal{-53});
+  auto tiny = pow(mpreal{2}, mpreal{-200});
+  EXPECT_EQ(static_cast<double>(mpreal{1} + half_ulp), 1.0);
+  EXPECT_EQ(static_cast<double>(mpreal{1} + half_ulp - tiny), 1.0);
+  EXPECT_EQ(static_cast<double>(mpreal{1} + half_ulp + tiny), std::nextafter(1.0, 2.0));
+  auto half_subnormal = pow(mpreal{2}, mpreal{-1075});
+  EXPECT_EQ(static_cast<double>(half_subnormal), 0.0);
+  EXPECT_EQ(static_cast<double>(half_subnormal * mpreal{3}), 2 * std::numeric_limits<double>::denorm_min());
+  auto epsilon = pow(mpreal{2}, mpreal{-1200});
+  EXPECT_EQ(static_cast<double>(half_subnormal + epsilon), std::numeric_limits<double>::denorm_min());
+  EXPECT_TRUE(std::signbit(static_cast<double>(-half_subnormal)));
+  EXPECT_EQ(static_cast<double>(pow(mpreal{2}, mpreal{1024})), std::numeric_limits<double>::infinity());
+  EXPECT_THROW((void)static_cast<double>(mpreal(uninitialized)), std::logic_error);
+}
+
+TEST(MpReal, GenericExactnessQueries)
+{
+  static_assert(is_exact(1));
+  static_assert(!is_exact(1.0));
+  static_assert(!numeric_limits<mpreal>::is_exact);
+  EXPECT_TRUE(is_exact(mpreal{}));
+  EXPECT_TRUE(is_exact(exact_constant("1/3")));
+  EXPECT_TRUE(is_exact(0.1_mp));
+  EXPECT_FALSE(is_exact(mpreal(1, Precision::bits(80))));
+  EXPECT_FALSE(is_exact(mpreal(uninitialized)));
+  EXPECT_FALSE(is_exact(complex<double>{1, 0}));
+}
+
+TEST(MpReal, ExplicitMathPrecisionEvaluatesExactInputs)
+{
+  auto p = Precision::bits(80);
+  using Unary = mpreal (*)(mpreal const&, Precision);
+  for (Unary function : {static_cast<Unary>(&uni20::abs), &uni20::sqrt, &uni20::exp, &uni20::log, &uni20::sin,
+                         &uni20::cos, &uni20::tan, &uni20::atan})
+  {
+    auto result = function(mpreal{1}, p);
+    EXPECT_EQ(result.precision(), p);
+    EXPECT_FALSE(result.is_exact());
+    EXPECT_THROW(function(mpreal{1}, Precision::exact()), std::logic_error);
+    EXPECT_THROW(function(mpreal(uninitialized), p), std::logic_error);
+  }
+  EXPECT_EQ(sqrt(mpreal{4}, p), 2);
+  EXPECT_FALSE(sqrt(mpreal{4}, p).is_exact());
+  EXPECT_EQ(exp(mpreal{}, p), 1);
+  EXPECT_EQ(log(mpreal{1}, p), 0);
+  EXPECT_EQ(sin(mpreal{}, p), 0);
+  EXPECT_EQ(cos(mpreal{}, p), 1);
+  EXPECT_EQ(tan(mpreal{}, p), 0);
+  EXPECT_EQ(atan(mpreal{}, p), 0);
+  EXPECT_EQ(abs(mpreal{-2}, p), 2);
+  EXPECT_TRUE(isnan(sqrt(mpreal{-1}, p)));
+}
+
+TEST(MpReal, ExplicitMathPrecisionConvertsInputsBeforeEvaluation)
+{
+  auto p = Precision::bits(2), high = Precision::bits(80);
+  mpreal x("32/5", Precision::exact());
+  // At two bits 6.4 first rounds to 6; sqrt(6) then rounds to 2.
+  // Rounding sqrt(6.4) directly would instead produce 3.
+  EXPECT_EQ(sqrt(x, p), 2);
+  EXPECT_EQ(sqrt(x.at(high)).at(p), 3);
+  EXPECT_TRUE(x.is_exact());
+  EXPECT_EQ(sqrt(x.at(high), p), 2);
+
+  mpreal a(3, Precision::bits(80)), b(4, Precision::bits(256));
+  EXPECT_THROW(hypot(a, b), std::invalid_argument);
+  EXPECT_EQ(hypot(a, b, high), 5);
+  EXPECT_EQ(pow(a, b, high), 81);
+  EXPECT_EQ(atan2(a, b, high), atan2(a, b.at(high)));
+  EXPECT_EQ(a.precision(), Precision::bits(80));
+  EXPECT_EQ(b.precision(), Precision::bits(256));
+  using Binary = mpreal (*)(mpreal const&, mpreal const&, Precision);
+  for (Binary function : {static_cast<Binary>(&uni20::hypot), &uni20::pow, &uni20::atan2})
+  {
+    auto result = function(mpreal{3}, mpreal{4}, high);
+    EXPECT_EQ(result.precision(), high);
+    EXPECT_FALSE(result.is_exact());
+    EXPECT_THROW(function(a, b, Precision::exact()), std::logic_error);
+    EXPECT_THROW(function(mpreal(uninitialized), b, high), std::logic_error);
+    EXPECT_THROW(function(a, mpreal(uninitialized), high), std::logic_error);
   }
 }

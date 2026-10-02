@@ -20,6 +20,7 @@
 #include <concepts>
 #include <cstddef>
 #include <ranges>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -40,6 +41,9 @@ template <class Storage>
 concept DefaultTensorStorage =
     (std::default_initializable<Storage> && requires(Storage& storage) { storage.resize(std::size_t{}); }) ||
     std::constructible_from<Storage, std::size_t> || std::constructible_from<Storage, size_type>;
+
+template <typename Tuple, std::size_t... I>
+constexpr bool integral_prefix(std::index_sequence<I...>) { return (std::integral<std::tuple_element_t<I, Tuple>> && ...); }
 
 } // namespace detail
 
@@ -208,6 +212,10 @@ class Tensor {
     explicit Tensor(InputTensor const& input)
         : Tensor(uninitialized, convert_tensor_extents<extents_type>(input.extents()))
     {
+#if UNI20_ENABLE_MPFR
+      if constexpr (has_runtime_precision_v<value_type> && requires { input.default_precision_if_set(); })
+        if (auto p = input.default_precision_if_set()) data_.default_precision(*p);
+#endif
       copy(*this, input);
     }
 
@@ -218,6 +226,53 @@ class Tensor {
       requires detail::DefaultTensorStorage<storage_type>
         : Tensor(internal_tag{}, make_payload(make_default_mapping(exts), std::move(accessor_factory)))
     {}
+
+#if UNI20_ENABLE_MPFR
+    /// \brief Construct actual zeros at the supplied default working precision.
+    explicit Tensor(extents_type const& exts, Precision p)
+      requires(has_runtime_precision_v<value_type> && std::same_as<storage_policy, HostStorage>)
+        : Tensor(internal_tag{}, make_precision_payload(exts, p, StorageInitialization::Zero))
+    {}
+
+    /// \brief Allocate unset scalar elements while retaining a default working precision.
+    explicit Tensor(uninitialized_t, extents_type const& exts, Precision p)
+      requires(has_runtime_precision_v<value_type> && std::same_as<storage_policy, HostStorage>)
+        : Tensor(internal_tag{}, make_precision_payload(exts, p, StorageInitialization::Uninitialized))
+    {}
+
+    /// \brief Construct a dynamically shaped tensor with a trailing Precision argument.
+    template <class... Args>
+      requires(has_runtime_precision_v<value_type> && std::same_as<storage_policy, HostStorage> &&
+               extents_type::rank_dynamic() == Rank && sizeof...(Args) == Rank + 1 &&
+               std::same_as<std::tuple_element_t<Rank, std::tuple<Args...>>, Precision> &&
+               detail::integral_prefix<std::tuple<Args...>>(std::make_index_sequence<Rank>{}))
+    explicit Tensor(Args... args)
+        : Tensor(precision_extents(std::tuple{args...}, std::make_index_sequence<Rank>{}),
+                 std::get<Rank>(std::tuple{args...}))
+    {}
+
+    template <class... Args>
+      requires(has_runtime_precision_v<value_type> && std::same_as<storage_policy, HostStorage> &&
+               extents_type::rank_dynamic() == Rank && sizeof...(Args) == Rank + 1 &&
+               std::same_as<std::tuple_element_t<Rank, std::tuple<Args...>>, Precision> &&
+               detail::integral_prefix<std::tuple<Args...>>(std::make_index_sequence<Rank>{}))
+    explicit Tensor(uninitialized_t, Args... args)
+        : Tensor(uninitialized, precision_extents(std::tuple{args...}, std::make_index_sequence<Rank>{}),
+                 std::get<Rank>(std::tuple{args...}))
+    {}
+
+    /// \brief Default working precision; individual elements may use other precisions.
+    Precision default_precision() const requires has_runtime_precision_v<value_type>
+    {
+      return data_.default_precision();
+    }
+    std::optional<Precision> default_precision_if_set() const noexcept requires has_runtime_precision_v<value_type>
+    {
+      return data_.default_precision_if_set();
+    }
+    /// \brief Change future initialization precision without converting stored values.
+    void default_precision(Precision p) requires has_runtime_precision_v<value_type> { data_.default_precision(p); }
+#endif
 
     /// \brief Allocate the requested tensor shape without numerical initialization.
     explicit Tensor(uninitialized_t, extents_type const& exts,
@@ -767,6 +822,23 @@ class Tensor {
         : mapping_(std::move(payload.mapping)), data_(std::move(payload.storage)),
           accessor_factory_(std::move(payload.accessor_factory))
     {}
+
+#if UNI20_ENABLE_MPFR
+    template <class Tuple, std::size_t... I>
+    static extents_type precision_extents(Tuple const& args, std::index_sequence<I...>)
+    {
+      return extents_type{static_cast<index_type>(std::get<I>(args))...};
+    }
+    static ctor_payload make_precision_payload(extents_type const& exts, Precision p,
+                                                StorageInitialization initialization)
+      requires(has_runtime_precision_v<value_type> && std::same_as<storage_policy, HostStorage>)
+    {
+      auto mapping = make_default_mapping(exts);
+      auto storage = storage_policy::template make_storage<element_type>(
+          static_cast<std::size_t>(mapping.required_span_size()), initialization, p);
+      return ctor_payload{std::move(mapping), std::move(storage), accessor_factory_type{}};
+    }
+#endif
 
     static ctor_payload make_payload(mapping_type mapping, accessor_factory_type accessor_factory,
                                      StorageInitialization initialization = StorageInitialization::Zero)

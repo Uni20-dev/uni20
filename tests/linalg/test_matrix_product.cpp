@@ -101,11 +101,33 @@ TEST(MatrixProductTest, GemmWithZeroBetaRetainsFixedOutputDispatchIdentity)
   lhs[0, 0] = 2.0;
   rhs[0, 0] = 3.0;
 
-  uni20::linalg::gemm(output, 1.0, lhs, rhs, 0.0);
+  uni20::linalg::gemm(output, 1, lhs, rhs, 0);
 
   ASSERT_EQ(events.size(), 1);
   EXPECT_EQ(events[0].operation, "gemm");
   EXPECT_DOUBLE_EQ((output[0, 0]), 6.0);
+}
+
+TEST(MatrixProductTest, GemmConvertsCoefficientsToTheOutputScalar)
+{
+  auto check = []<class Scalar>() {
+    uni20::DenseMatrix<Scalar> lhs(1, 1), rhs(1, 1), output(1, 1);
+    lhs[0, 0] = Scalar{2};
+    rhs[0, 0] = Scalar{3};
+    output[0, 0] = Scalar{4};
+
+    uni20::linalg::gemm(output, 2, lhs, rhs, 0.5f);
+    EXPECT_EQ((output[0, 0]), Scalar{14});
+
+    uni20::linalg::gemm(uni20::linalg::CpuReferenceBackend{}, output, 0.5f, lhs, rhs, 2);
+    EXPECT_EQ((output[0, 0]), Scalar{31});
+  };
+  check.operator()<float>();
+  check.operator()<double>();
+  check.operator()<long double>();
+  check.operator()<uni20::complex<float>>();
+  check.operator()<uni20::complex<double>>();
+  check.operator()<uni20::complex<long double>>();
 }
 
 TEST(MatrixProductTest, AddProductUsesFixedOutputAndExistingValues)

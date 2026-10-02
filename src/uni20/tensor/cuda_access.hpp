@@ -27,7 +27,7 @@ template <class Accessor> [[nodiscard]] constexpr auto lower_cuda_accessor(Acces
 
 template <class Real>
 [[nodiscard]] constexpr auto
-lower_cuda_accessor(conjugated_accessor<cuda::CudaPointerAccessor<uni20::complex<Real> const>> const&)
+lower_cuda_accessor(conjugated_accessor<cuda::CudaPointerAccessor<standard_complex<Real> const>> const&)
 {
   return cuda::CudaConjugatingPointerAccessor<Real>{};
 }

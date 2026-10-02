@@ -37,8 +37,8 @@ inline constexpr bool enable_uninitialized_storage =
     std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 template <typename Real>
-inline constexpr bool enable_uninitialized_storage<uni20::complex<Real>> =
-    std::is_trivially_destructible_v<uni20::complex<Real>>;
+inline constexpr bool enable_uninitialized_storage<uni20::detail::standard_complex<Real>> =
+    std::is_trivially_destructible_v<uni20::detail::standard_complex<Real>>;
 
 /// \brief Whether raw allocation may establish storage for `T` without construction.
 template <typename T>
