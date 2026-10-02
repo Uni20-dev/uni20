@@ -10,15 +10,6 @@
 namespace uni20::linalg::detail
 {
 
-#if UNI20_ENABLE_MPFR
-inline void require_solve_options(SolveOptions<mpreal> const& options)
-{
-  if (options.relative_pivot_tolerance)
-    ERROR_IF(!uni20::isfinite(*options.relative_pivot_tolerance) || *options.relative_pivot_tolerance < 0,
-             "solve requires a finite nonnegative relative pivot tolerance");
-}
-#endif
-
 template <class Matrix> bool solve_matrix_is_finite(Matrix const& matrix)
 {
   using scalar_type = typename Matrix::value_type;

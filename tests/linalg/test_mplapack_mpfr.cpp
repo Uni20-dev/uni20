@@ -429,10 +429,12 @@ TEST(MpfrLinalg, ExactInputsAndCoefficientsMaterializeAtTheOperationPrecision)
   DenseMatrix<mpreal> a(1, 1, exact), b(1, 1, exact), out(1, 1, p);
   a[0, 0] = mpreal{2};
   b[0, 0] = mpreal{6};
-  EXPECT_THROW(linalg::gemm(out, 1, a, b, 0), std::logic_error);
+  linalg::gemm(out, 1, a, b, 0);
+  EXPECT_EQ((out[0, 0]), 12);
+  EXPECT_TRUE((out[0, 0].is_exact()));
   EXPECT_THROW((void)linalg::solve(a, b), std::logic_error);
-  EXPECT_THROW(linalg::gemm(out, 1, a, b, 0, exact), std::logic_error);
-  EXPECT_EQ((out[0, 0]), 0);
+  linalg::gemm(out, 1, a, b, 0, exact);
+  EXPECT_TRUE((out[0, 0].is_exact()));
   linalg::gemm(out, 1, a, b, 0, p);
   EXPECT_EQ((out[0, 0]), 12);
   EXPECT_EQ((out[0, 0].precision()), p);
@@ -452,6 +454,23 @@ TEST(MpfrLinalg, ExactInputsAndCoefficientsMaterializeAtTheOperationPrecision)
   linalg::gemm(exact_output, 1, a, b, 1);
   EXPECT_EQ((exact_output[0, 0]), 12);
   EXPECT_EQ(exact_output.default_precision(), p);
+}
+
+TEST(MpfrLinalg, DefaultToleranceIsExactZeroAndExplicitRationalToleranceIsChecked)
+{
+  linalg::SolveOptions<mpreal> options;
+  EXPECT_TRUE(options.relative_pivot_tolerance.is_exact());
+  EXPECT_EQ(options.relative_pivot_tolerance, 0);
+  auto p = Precision::bits(128);
+  DenseMatrix<mpreal> a(2, 2, p), b(2, 1, p);
+  a[0, 0] = mpreal{1};
+  a[1, 1] = mpreal{exact_constant("1/100")};
+  options.relative_pivot_tolerance = mpreal{exact_constant("1/10")};
+  auto info = linalg::solve_inplace_with_info(a, b, options);
+  EXPECT_EQ(info.status, linalg::SolveStatus::small_pivot);
+  options.relative_pivot_tolerance = mpreal{-1};
+  EXPECT_DEATH(
+      { (void)linalg::solve_inplace_with_info(a, b, options); }, "finite nonnegative relative pivot tolerance");
 }
 
 TEST(MpfrLinalg, AsyncExactCoefficientsSupportGenericAccumulation)

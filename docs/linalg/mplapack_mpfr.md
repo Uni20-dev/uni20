@@ -45,9 +45,16 @@ auto y = uni20::linalg::solve(a, b, uni20::Precision::bits(400));
 
 Without an override, finite input construction defaults must match; an exact
 default is neutral. Missing defaults are errors, and element precision is not
-scanned for consistency. These numerical provider kernels require finite working
-precision: all-exact input defaults require an explicit override, unless a
-participating GEMM output supplies finite precision. Exact elements and exact
+scanned for consistency. MPLAPACK requires finite working precision. GEMM at
+`Precision::exact()` instead uses the reference CPU kernel: MPLAPACK declines
+the instance without reading or modifying elements, and normal dispatch falls
+through. Exact participating elements and coefficients then give an exact
+rational product. This also works with MPFR alone, without MPLAPACK or MPC;
+complex exact products require MPC for the scalar type.
+
+An all-exact solve requires an explicit finite override. A GEMM output with
+nonzero `beta` may supply finite precision through its construction default.
+In finite mode, exact elements and exact
 coefficients are rounded at that selected precision. `assign_product(output, a, b, p)`
 and `solve(a, b, p)` select explicit working precision. A successful owning result
 carries that default; writing through a structural view leaves the parent
@@ -63,7 +70,11 @@ construction defaults, and backend kernels do not mutate owner metadata.
 `gemm(output, alpha, a, b, beta[, p])` keeps the output's existing shape. With no
 override and nonzero `beta`, its default also participates in precision selection;
 exact defaults are neutral and differing finite defaults are rejected.
-All participating values, including coefficients, convert at the backend boundary.
+In finite mode, participating values, including coefficients, convert at the backend boundary.
+Exact mode uses ordinary scalar arithmetic without scanning or reclassifying
+elements. Defaults remain best-effort metadata: inserting approximate elements
+in a tensor with an exact default can produce approximate results or scalar
+precision errors. Selecting exact mode does not restore lost digits.
 Coefficients may be exact scalar values, integers or `_mp` literals; for example,
 `gemm(output, 1, a, b, 0)` needs no separately constructed scalar constants.
 Both synchronous and asynchronous interfaces constrain coefficient sources:
@@ -74,7 +85,9 @@ inner dimension, input elements are not numerically read. Shape requirements
 still apply. Output storage must not overlap either input.
 
 Every operation also accepts `MplapackMpfrBackend{}` as its first argument.
-When enabled, the host storage selector includes it automatically. Bare-mdspan
+When enabled, the host storage selector includes it automatically. An explicit
+MPLAPACK-only selector cannot execute exact GEMM; use the ordinary selector for
+CPU fallback. Bare-mdspan
 kernel dispatch needs an explicit trailing `Precision`, because mdspans do not
 carry tensor defaults. Host-readable transforming accessors are packed through
 logical element access; a conjugating view is not bypassed through its pointer.
@@ -92,10 +105,10 @@ auto info = solve_inplace_with_info(a_work, b_work, p,
         .relative_pivot_tolerance = uni20::mpreal("1e-70", p)});
 ```
 
-For `SolveOptions<mpreal>`, the tolerance is optional. Omission means exact zero
-pivots only; an explicitly supplied tolerance must be finite and nonnegative.
-The optional field avoids requiring a working precision merely to describe the
-default policy. Its value is converted to the operation precision before the
+`SolveOptions<mpreal>` uses the same value field as other real types. Its default
+is `mpreal{}`, an exact zero requiring no working precision, so the default policy
+rejects only exact zero pivots. A supplied tolerance must be finite and
+nonnegative. Its value is converted to the operation precision before the
 pivot comparison. Scale and magnitudes use `mpreal`, including for complex input.
 
 The LU factorization completes before pivot-threshold inspection. Exact singular

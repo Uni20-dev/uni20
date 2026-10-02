@@ -22,6 +22,7 @@ add_test_module(linalg
     test_cpu_strided_transform.cpp
     test_dispatch_diagnostics.cpp
     test_dense_ops_dispatch.cpp
+    test_exact_matrix_product.cpp
     test_linalg_gemv_cpu.cpp
     test_linear_solve.cpp
     test_matrix_norm.cpp

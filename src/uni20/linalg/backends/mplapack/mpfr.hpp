@@ -43,7 +43,7 @@ template <MutableRankedMdspecLike<2> C, mplapack_detail::RuntimeScalar S, Ranked
            std::same_as<typename B::value_type, S>
 consteval auto kernel_accepts_types(MplapackMpfrBackend, gemm_op const&, C&, S const&, A&, B&, S const&, Precision)
 {
-  return kernel_types_yes;
+  return kernel_types_maybe;
 }
 
 /// \brief Pack logical host values and execute GEMM at one explicit precision.
@@ -54,7 +54,7 @@ template <MutableRankedMdspecLike<2> C, mplapack_detail::RuntimeScalar S, Ranked
 KernelAttempt try_kernel(MplapackMpfrBackend, gemm_op const&, C& c, S const& alpha, A& a, B& b, S const& beta,
                          Precision p)
 {
-  (void)p.bit_count(); // Numerical provider kernels require finite working precision.
+  if (p.is_exact()) return KernelAttempt::unsupported_instance;
   ERROR_IF(a.extent(1) != b.extent(0) || c.extent(0) != a.extent(0) || c.extent(1) != b.extent(1),
            "GEMM operand shapes do not agree");
   if (c.extent(0) == 0 || c.extent(1) == 0) return KernelAttempt::success;
@@ -112,7 +112,7 @@ KernelAttempt try_kernel(MplapackMpfrBackend, linear_solve_op const&, A& a, B& b
     info.status = SolveStatus::nonfinite_result;
     return KernelAttempt::success;
   }
-  auto tolerance = options.relative_pivot_tolerance ? options.relative_pivot_tolerance->at(p) : mpreal(0, p);
+  auto tolerance = options.relative_pivot_tolerance.at(p);
   std::vector<std::size_t> pivots;
   auto singular = mplapack::getrf(a.extent(0), mplapack_detail::values(av), pivots, p);
   mplapack_detail::unpack(av, as);

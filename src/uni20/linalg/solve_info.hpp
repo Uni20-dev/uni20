@@ -45,7 +45,7 @@ struct SolveInfo
     [[nodiscard]] bool succeeded() const noexcept { return this->status == SolveStatus::success; }
 };
 
-/// \brief Native-real-precision pivot policy for a square linear solve.
+/// \brief Real-scalar pivot policy for a square linear solve.
 /// \details A nonzero pivot is rejected when its magnitude divided by the
 ///          maximum entry magnitude of the original coefficient matrix is at
 ///          most `relative_pivot_tolerance`. This is not a condition estimate.
@@ -59,13 +59,5 @@ template <uni20::Real Real> struct SolveOptions
     /// \brief Reject nonzero pivots at or below this fraction of the original maximum entry magnitude.
     Real relative_pivot_tolerance = Real{};
 };
-
-#if UNI20_ENABLE_MPFR
-/// \brief Runtime-precision pivot policy; an omitted tolerance means exact zero only.
-template <> struct SolveOptions<mpreal>
-{
-    std::optional<mpreal> relative_pivot_tolerance = {};
-};
-#endif
 
 } // namespace uni20::linalg

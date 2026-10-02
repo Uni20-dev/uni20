@@ -78,7 +78,8 @@ void gemm(OutputTensor&& output, Alpha alpha, LhsTensor const& lhs, RhsTensor co
 }
 
 #if UNI20_ENABLE_MPFR
-/// \brief Apply fixed-shape GEMM at explicit precision, converting all participating values at the backend boundary.
+/// \brief Apply fixed-shape GEMM at explicit precision, or exact scalar arithmetic in exact mode.
+/// \details A finite precision converts participating values at the backend boundary.
 template <KernelBackendSelector BackendSelector, MutableRankedTensorView<2> Output, class Alpha, class Beta,
           RankedTensorView<2> A, RankedTensorView<2> B>
   requires(has_runtime_precision_v<tensor_element_t<Output>> && OperationScalar<Alpha, tensor_element_t<Output>> &&

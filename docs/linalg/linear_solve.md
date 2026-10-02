@@ -7,7 +7,9 @@ right-hand sides. The scalar types must match.
 Optional `mpreal` and `complex<mpreal>` support uses the
 [MPLAPACK MPFR/MPC backend](mplapack_mpfr.md). Matching tensor defaults select
 working precision; a trailing `Precision` selects it explicitly. Its
-`SolveOptions<mpreal>` uses an optional tolerance, with omission meaning zero.
+`SolveOptions<mpreal>` defaults to exact zero in its ordinary tolerance value
+field; describing this policy needs no working precision. An all-exact solve
+still requires a finite operation precision.
 
 ## Choosing the failure policy
 

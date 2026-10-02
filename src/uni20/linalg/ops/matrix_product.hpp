@@ -21,16 +21,6 @@ namespace uni20::linalg
 {
 namespace detail
 {
-template <class Scalar, class A, class B> Scalar product_one(A const& a, B const& b)
-{
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<Scalar>)
-    return Scalar(mpreal(1, common_default_precision(a, b)));
-  else
-#endif
-    return Scalar{1};
-}
-
 template <class OutputTensor, class InputTensor>
 [[nodiscard]] constexpr bool is_obvious_tensor_alias(OutputTensor& output, InputTensor const& input) noexcept
 {
@@ -71,7 +61,7 @@ void add_product(BackendSelector&& selector, OutputTensor&& output, LhsTensor co
   auto const shape = detail::matrix_product_shape(lhs, rhs);
   uni20::require_output(output, shape);
   gemm(std::forward<BackendSelector>(selector), std::forward<OutputTensor>(output), alpha, lhs, rhs,
-       detail::product_one<uni20::tensor_element_t<OutputTensor>>(lhs, rhs));
+       uni20::tensor_element_t<OutputTensor>{1});
 }
 
 /// \brief Accumulate a matrix product using the operands' default backend selector.
@@ -85,8 +75,7 @@ void add_product(OutputTensor&& output, LhsTensor const& lhs, RhsTensor const& r
   auto const shape = detail::matrix_product_shape(lhs, rhs);
   uni20::require_output(output, shape);
   auto selector = select_backend(gemm_op{}, output, lhs, rhs);
-  gemm(selector, std::forward<OutputTensor>(output), alpha, lhs, rhs,
-       detail::product_one<uni20::tensor_element_t<OutputTensor>>(lhs, rhs));
+  gemm(selector, std::forward<OutputTensor>(output), alpha, lhs, rhs, uni20::tensor_element_t<OutputTensor>{1});
 }
 
 /// \brief Overwrite a resizable or already-compatible Tensor with a matrix product.
@@ -110,7 +99,7 @@ void assign_product(BackendSelector&& selector, OutputTensor&& output, LhsTensor
     auto p = common_default_precision(lhs, rhs);
     auto shape = detail::matrix_product_shape(lhs, rhs);
     prepare_output(output, shape, p);
-    gemm(std::forward<BackendSelector>(selector), output, alpha, lhs, rhs, tensor_element_t<OutputTensor>(p), p);
+    gemm(std::forward<BackendSelector>(selector), output, alpha, lhs, rhs, tensor_element_t<OutputTensor>{}, p);
   }
   else
 #endif
@@ -136,7 +125,7 @@ template <KernelBackendSelector BackendSelector, MutableRankedTensorView<2> Outp
 void assign_product(BackendSelector&& selector, Output&& output, A const& a, B const& b)
 {
   assign_product(std::forward<BackendSelector>(selector), std::forward<Output>(output), a, b,
-                 detail::product_one<tensor_element_t<Output>>(a, b));
+                 tensor_element_t<Output>{1});
 }
 
 /// \brief Overwrite with unit coefficient using storage-selected backends.
@@ -153,8 +142,7 @@ template <KernelBackendSelector BackendSelector, MutableRankedTensorView<2> Outp
   requires detail::CompatibleMatrixProductTensors<Output, A, B>
 void add_product(BackendSelector&& selector, Output&& output, A const& a, B const& b)
 {
-  add_product(std::forward<BackendSelector>(selector), std::forward<Output>(output), a, b,
-              detail::product_one<tensor_element_t<Output>>(a, b));
+  add_product(std::forward<BackendSelector>(selector), std::forward<Output>(output), a, b, tensor_element_t<Output>{1});
 }
 
 /// \brief Accumulate with unit coefficient using storage-selected backends.
@@ -175,7 +163,7 @@ void assign_product(BackendSelector&& selector, Output&& output, A const& a, B c
   detail::validate_matrix_product_aliasing(output, a, b);
   prepare_output(output, detail::matrix_product_shape(a, b), p);
   using S = tensor_element_t<Output>;
-  gemm(std::forward<BackendSelector>(selector), output, S(mpreal(1, p)), a, b, S(p), p);
+  gemm(std::forward<BackendSelector>(selector), output, S{1}, a, b, S{}, p);
 }
 
 /// \brief Overwrite at explicit precision using storage-selected backends.
