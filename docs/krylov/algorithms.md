@@ -21,7 +21,9 @@ backend for maintained matrix-free eigensolvers and exponential actions. CMake
 prefers a compatible installed MPLAPACK package and otherwise fetches the pinned
 3.0.0 release. Ordinary typed tests focus on the stable `s`, `d`, `c`, and `z`
 paths, while maintained `MplapackBinary128*` targets cover selected binary128
-stress cases. See [Krylov Precision Validation](precision_validation.md) for
+stress cases. The shared `NumericalKrylov/*` probes run the same small-gap and
+residual problems across supported precisions and explicitly report float80 and
+MPFR/MPC solver gaps. See [Krylov Precision Validation](precision_validation.md) for
 the test-level `f128` and `cf128` validation matrix.
 
 Dense provider and quarantined helper coverage is tracked separately in

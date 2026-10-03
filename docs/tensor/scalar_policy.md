@@ -394,3 +394,12 @@ returning an approximate result at that precision. Without an override, exact
 results remain exact where supported, and approximate operands supply the working
 precision. This distinction also applies to the real outputs of complex `abs`,
 `norm`, and `arg`.
+
+## Numerical validation
+
+Scalar support is validated per operation and backend using the
+[shared numerical precision cases](../development/numerical_testing.md).
+Float80 and finite MPFR/MPC values participate alongside float32/64/128; MPFR
+runs at both 128 and 256 bits. Unsupported algorithms and missing optional
+providers are reported explicitly. Passing scalar arithmetic or one backend's
+tests does not establish library-wide support for that scalar.

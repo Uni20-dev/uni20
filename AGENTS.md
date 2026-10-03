@@ -316,6 +316,17 @@ ctest --test-dir build --output-on-failure
 * Add or modify tests in `tests/<module>/`.
 * Register new tests using `add_test_module(...)` in the relevant CMakeLists.txt.
 * Keep tests deterministic; avoid random seeds without `REQUIRE_SEED`.
+* For scalar-generic numerical changes, use the shared cases in `tests/numerics/`
+  and follow `docs/development/numerical_testing.md`. Preserve tested precision
+  in inputs, tolerances, and error measurements. Record unsupported or unavailable
+  operation/scalar/backend combinations explicitly; do not silently filter them
+  out or treat a fallback as provider validation.
+* Before pushing changes to shared scalar traits, numeric limits, initialization,
+  or other widely included templates, complete an unfiltered build and test run
+  in the affected CI configurations, including examples, CLI, and bindings where
+  enabled. Targeted tests are iteration checks, not sufficient integration
+  evidence. Report configurations not exercised and separate skipped tests from
+  passing tests.
 
 ---
 
