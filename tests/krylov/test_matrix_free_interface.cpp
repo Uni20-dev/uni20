@@ -547,3 +547,27 @@ TEST(KrylovMatrixFreeInterface, NativeSolveCanBeReenteredFromMatvecCallback)
 }
 
 } // namespace
+
+#if UNI20_ENABLE_MPC
+TEST(KrylovMatrixFreeInterface, RitzRealityUsesRuntimePrecision)
+{
+  using namespace uni20;
+  using krylov::classify_ritz_reality;
+  using krylov::RitzReality;
+  for (auto p : {Precision::bits(80), Precision::bits(256)})
+  {
+    mpreal const one(1, p);
+    auto tol = sqrt(epsilon(p));
+    EXPECT_EQ(classify_ritz_reality(complex<mpreal>(one, tol / 2)), RitzReality::Real);
+    EXPECT_EQ(classify_ritz_reality(complex<mpreal>(one, 5 * tol)), RitzReality::Ambiguous);
+    EXPECT_EQ(classify_ritz_reality(complex<mpreal>(one, 20 * tol)), RitzReality::Complex);
+    EXPECT_EQ(classify_ritz_reality(complex<mpreal>(1), tol), RitzReality::Real);
+    EXPECT_EQ(classify_ritz_reality(complex<mpreal>(mpreal{1}, mpreal{1}), tol), RitzReality::Complex);
+  }
+  auto low = Precision::bits(80), high = Precision::bits(256);
+  complex<mpreal> theta(mpreal(1, high), mpreal("1e-20", high));
+  EXPECT_EQ(classify_ritz_reality(theta), RitzReality::Complex);
+  EXPECT_EQ(classify_ritz_reality(theta.at(low)), RitzReality::Real);
+  EXPECT_THROW(classify_ritz_reality(complex<mpreal>(1)), std::logic_error);
+}
+#endif

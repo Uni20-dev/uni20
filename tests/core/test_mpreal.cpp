@@ -40,7 +40,11 @@ static_assert(HasComplexSpelling<mpreal> && HasComplexCounterpart<mpreal>);
 static_assert(!HasComplexSpelling<mpreal> && !HasComplexCounterpart<mpreal>);
 #endif
 static_assert(HasComplexSpelling<double> && HasComplexCounterpart<double>);
-static_assert(!has_numeric_limits_v<mpreal>);
+static_assert(has_numeric_limits_v<mpreal>);
+template <class T>
+concept HasTypeEpsilon = requires { numeric_limits<T>::epsilon(); };
+static_assert(!HasTypeEpsilon<mpreal>);
+static_assert(!HasTypeEpsilon<mpreal const>);
 static_assert(std::same_as<decltype(std::declval<mpreal>() + std::declval<mpreal>()), mpreal>);
 constexpr auto literal = 0.123456789012345678901234567890123456789_mp;
 static_assert(literal.spelling() == "0.123456789012345678901234567890123456789");
@@ -865,4 +869,25 @@ TEST(MpReal, ExplicitMathPrecisionConvertsInputsBeforeEvaluation)
     EXPECT_THROW(function(mpreal(uninitialized), b, high), std::logic_error);
     EXPECT_THROW(function(a, mpreal(uninitialized), high), std::logic_error);
   }
+}
+
+TEST(MpReal, RuntimeNumericLimitsRequireFinitePrecision)
+{
+  using limits = numeric_limits<mpreal>;
+  for (auto p : {Precision::bits(80), Precision::bits(256)})
+  {
+    mpreal x(1, p);
+    auto eps = limits::epsilon(x);
+    EXPECT_EQ(eps.precision(), p);
+    EXPECT_EQ(eps, epsilon(p));
+    EXPECT_EQ(limits::epsilon(p), eps);
+    EXPECT_EQ(limits::digits(x), p.bit_count());
+    EXPECT_EQ(limits::digits(p), p.bit_count());
+    EXPECT_GT(x + eps, x);
+    EXPECT_EQ(x + eps / 2, x);
+  }
+  EXPECT_THROW(limits::epsilon(mpreal{}), std::logic_error);
+  EXPECT_THROW(limits::epsilon(Precision::exact()), std::logic_error);
+  EXPECT_THROW(limits::epsilon(mpreal(uninitialized)), std::logic_error);
+  EXPECT_THROW(limits::digits(mpreal{}), std::logic_error);
 }

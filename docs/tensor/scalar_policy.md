@@ -296,12 +296,13 @@ override. Complex values use the precision of their real component type.
 ## Numeric Limits
 
 Scalar-generic Uni20 algorithms should use `uni20::numeric_limits<T>` rather
-than naming `std::numeric_limits<T>` directly. The primary Uni20 template
-inherits from `std::numeric_limits<T>`, so built-in arithmetic types use the
-standard-library implementation without extra code.
+than naming `std::numeric_limits<T>` directly. The primary Uni20 template is
+undefined: there are no generic default values. A constrained specialization
+explicitly delegates native arithmetic types to their specialized standard-library
+limits. Every library scalar must supply its own Uni20 specialization; a standard
+specialization alone does not opt a library type into the Uni20 interface.
 
-For extension or library scalar types where the standard library does not
-provide complete limits, specialize `uni20::numeric_limits<T>`:
+For extension or library scalar types, specialize `uni20::numeric_limits<T>`:
 
 ```cpp
 namespace uni20
@@ -312,6 +313,7 @@ template <> struct numeric_limits<my_real>
     static constexpr int digits = /* ... */;
 
     static my_real epsilon();
+    static my_real epsilon(my_real const&); // Same value, for generic callers.
     static my_real min();
     static my_real max();
 };
@@ -321,6 +323,33 @@ template <> struct numeric_limits<my_real>
 Do not add specializations of `std::numeric_limits` for compiler fundamental
 extension types such as `__float128` or `_Float128`. Those are not
 user-defined types. Keep such support behind the Uni20 customization point.
+
+### Runtime precision
+
+`numeric_limits<mpreal>` separates fixed type properties (`radix`, `is_exact`,
+`is_integer`, etc.) from quantities requiring a working precision:
+
+```cpp
+auto p = Precision::bits(256);
+mpreal x("0.1", p);
+auto eps = numeric_limits<mpreal>::epsilon(x); // 2^(1 - 256), at 256 bits
+auto bits = numeric_limits<mpreal>::digits(x);
+auto same_eps = numeric_limits<mpreal>::epsilon(p);
+```
+
+Scalar-generic code can use `numeric_limits<Real>::epsilon(value)` for native
+real types as well. Their existing zero-argument, constexpr queries remain
+available. Runtime `digits(value)` and `digits(p)` apply to `mpreal`; native
+`digits` remains the usual compile-time constant.
+
+An exact or unset exemplar cannot supply finite working precision: these runtime
+queries throw rather than return zero or choose an ambient default. Pass a finite
+`Precision` explicitly when starting an approximate algorithm from exact inputs.
+`numeric_limits<mpreal>::epsilon()` is deleted, and other unsupported limits are
+absent. `has_numeric_limits_v` indicates a specialization exists, not that every
+query is available without a value. Generic algorithms requiring type-wide limits
+must constrain those particular queries. This prevents the unspecialized standard
+template's zero-valued fallback from silently becoming a convergence tolerance.
 
 ### Exactness queries
 

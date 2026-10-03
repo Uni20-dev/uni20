@@ -463,9 +463,18 @@ uni20::make_real_t<Scalar> norm_or_inner_product(Ops& ops, Vector const& x)
 /// \brief Default imaginary-part tolerance for deciding whether a real Arnoldi Ritz value is real.
 /// \tparam Scalar Real scalar type.
 /// \return A conservative scale multiplier derived from machine precision.
-template <uni20::Real Scalar> Scalar default_complex_pair_tolerance()
+template <uni20::Real Scalar>
+  requires requires { uni20::numeric_limits<Scalar>::epsilon(); }
+Scalar default_complex_pair_tolerance()
 {
   return detail::adl_sqrt(uni20::numeric_limits<Scalar>::epsilon());
+}
+
+/// \brief Default reality tolerance using the exemplar's working precision.
+/// \throws std::logic_error If a runtime-precision exemplar is exact or unset.
+template <uni20::Real Scalar> Scalar default_complex_pair_tolerance(Scalar const& exemplar)
+{
+  return detail::adl_sqrt(uni20::numeric_limits<Scalar>::epsilon(exemplar));
 }
 
 /// \brief Classify whether a complex Ritz value is numerically real.
@@ -480,7 +489,8 @@ template <uni20::Real Scalar> Scalar default_complex_pair_tolerance()
 /// \tparam C Complex scalar type deduced from the Ritz value.
 /// \param theta Ritz value to classify.
 /// \param tolerance Relative imaginary-part tolerance. If zero or negative, a
-///        machine-precision default is used.
+///        machine-precision default is used, derived from theta for runtime
+///        scalars. An exact theta requires an explicit finite-precision tolerance.
 /// \param scale Problem or projected-matrix scale. Values below one are raised
 ///        to one.
 /// \param ambiguity_factor Width of the ambiguous band above the real threshold.
@@ -491,7 +501,14 @@ RitzReality classify_ritz_reality(C theta, uni20::make_real_t<C> tolerance = uni
                                   uni20::make_real_t<C> ambiguity_factor = uni20::make_real_t<C>{10})
 {
   using Scalar = uni20::make_real_t<C>;
-  Scalar const effective_tolerance = tolerance > Scalar{} ? tolerance : default_complex_pair_tolerance<Scalar>();
+  Scalar const effective_tolerance = tolerance > Scalar{} ? tolerance : default_complex_pair_tolerance(theta.real());
+  if constexpr (requires {
+                  theta.is_exact();
+                  theta.at(effective_tolerance.precision());
+                })
+  {
+    if (theta.is_exact()) theta = theta.at(effective_tolerance.precision());
+  }
   Scalar const effective_scale = std::max({Scalar{1}, detail::adl_abs(theta), detail::adl_abs(scale)});
   Scalar const threshold = effective_tolerance * effective_scale;
   Scalar const imaginary = detail::adl_abs(theta.imag());

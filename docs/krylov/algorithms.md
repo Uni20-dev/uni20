@@ -423,3 +423,14 @@ final step tail estimate.
   Hermitian path does support adaptive relative tolerance for
   unitary/nonexpansive single-step actions.
 - Type-specific stress hardening for `s`, `d`, `c`, and `z` remains ongoing.
+
+### Runtime-precision Ritz classification
+
+The standalone `classify_ritz_reality(theta, ...)` helper accepts
+`complex<mpreal>`. Its automatic tolerance is `sqrt(epsilon(theta.real()))`, using
+the value's working precision. Exact inputs require an explicit positive,
+finite-precision tolerance; that precision also supplies approximate evaluation
+of their complex magnitude. `default_complex_pair_tolerance(exemplar)` exposes
+the same value-based policy. The zero-argument overload is available only for
+scalars with type-wide epsilon. This helper support does not imply MPFR support
+throughout the Krylov solvers.

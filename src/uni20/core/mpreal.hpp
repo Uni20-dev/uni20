@@ -262,6 +262,34 @@ class mpreal {
     std::variant<std::monostate, exact_constant, detail::mpfr_value> value_;
 };
 
+/// \brief Type properties and explicit runtime limits for exact-or-approximate reals.
+/// \details Precision-dependent queries require a finite Precision or an
+///          approximate exemplar. There is no type-wide epsilon or digit count.
+///          Unimplemented limits are intentionally absent, rather than inheriting
+///          the zero-valued defaults of an unspecialized std::numeric_limits.
+template <> struct numeric_limits<mpreal>
+{
+    static constexpr bool is_specialized = true;
+    static constexpr bool is_signed = true;
+    static constexpr bool is_integer = false;
+    static constexpr bool is_exact = false;
+    static constexpr bool is_bounded = false;
+    static constexpr bool is_iec559 = false;
+    static constexpr int radix = 2;
+    static constexpr bool has_infinity = true;
+    static constexpr bool has_quiet_NaN = true;
+
+    /// \brief Significand bits at a finite working precision.
+    static mpfr_prec_t digits(Precision p) { return p.bit_count(); }
+    static mpfr_prec_t digits(mpreal const& x) { return digits(x.precision()); }
+
+    /// \brief Spacing above one at a finite working precision.
+    /// \throws std::logic_error If the precision is exact or the exemplar is unset.
+    static mpreal epsilon(Precision p);
+    static mpreal epsilon(mpreal const& x) { return epsilon(x.precision()); }
+    static mpreal epsilon() = delete;
+};
+
 namespace detail
 {
 struct mpreal_access
@@ -584,6 +612,8 @@ inline mpreal epsilon(Precision precision)
   mpfr_set_ui_2exp(result.approximate(), 1, 1 - precision.bit_count(), MPFR_RNDN);
   return result;
 }
+
+inline mpreal numeric_limits<mpreal>::epsilon(Precision p) { return uni20::epsilon(p); }
 
 /// \brief Descriptor for pi, evaluated only when working precision is known.
 struct mp_pi_constant

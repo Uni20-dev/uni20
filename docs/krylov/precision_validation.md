@@ -224,3 +224,12 @@ exponential-action error indicators; see
 Lanczos time stepping, restart/error control, Al-Mohy/Higham-style norm
 estimation for the Taylor reference path, and broader matrix-free exponential
 stress tests remain future work.
+
+## Runtime-precision scalar helper coverage
+
+With `UNI20_ENABLE_MPC=ON`,
+`KrylovMatrixFreeInterface.RitzRealityUsesRuntimePrecision` checks the standalone
+Ritz-reality classifier at 80 and 256 bits, including all three classifications,
+precision-dependent classification of the same numerical value, and exact inputs
+with and without an explicit finite-precision tolerance. General MPFR/MPC Krylov
+solver support is not part of this validation.
