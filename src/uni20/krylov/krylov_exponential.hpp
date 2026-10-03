@@ -145,15 +145,15 @@ template <uni20::Real Scalar> void validate_krylov_exponential_params(KrylovExpo
   {
     throw std::invalid_argument("Krylov exponential requires a non-negative minimum_krylov_dimension");
   }
-  if (params.relative_tolerance < Scalar{} || !detail::adl_isfinite(params.relative_tolerance))
+  if (params.relative_tolerance < Scalar{} || !uni20::isfinite(params.relative_tolerance))
   {
     throw std::invalid_argument("Krylov exponential requires a finite non-negative relative_tolerance");
   }
-  if (params.estimate_safety_factor < Scalar{1} || !detail::adl_isfinite(params.estimate_safety_factor))
+  if (params.estimate_safety_factor < Scalar{1} || !uni20::isfinite(params.estimate_safety_factor))
   {
     throw std::invalid_argument("Krylov exponential requires estimate_safety_factor >= 1");
   }
-  if (params.breakdown_tolerance < Scalar{} || !detail::adl_isfinite(params.breakdown_tolerance))
+  if (params.breakdown_tolerance < Scalar{} || !uni20::isfinite(params.breakdown_tolerance))
   {
     throw std::invalid_argument("Krylov exponential requires a finite non-negative breakdown_tolerance");
   }
@@ -180,7 +180,7 @@ template <uni20::Real Scalar>
     return Scalar{};
   }
   Scalar const target = params.relative_tolerance * initial_norm;
-  if (!detail::adl_isfinite(target))
+  if (!uni20::isfinite(target))
   {
     throw std::overflow_error("Krylov exponential relative tolerance target overflowed");
   }
@@ -213,8 +213,8 @@ template <uni20::Real Real, typename TimeScalar> uni20::complex<Real> exponentia
 template <uni20::Real Real, typename TimeScalar> bool hermitian_time_is_unitary(TimeScalar time)
 {
   uni20::complex<Real> const complex_time = exponential_time_as_complex<Real>(time);
-  Real const magnitude = static_cast<Real>(detail::adl_abs(complex_time));
-  Real const real_part = static_cast<Real>(detail::adl_abs(detail::adl_real(complex_time)));
+  Real const magnitude = static_cast<Real>(uni20::math::abs(complex_time));
+  Real const real_part = static_cast<Real>(uni20::math::abs(uni20::math::real(complex_time)));
   Real const tolerance = Real{100} * uni20::numeric_limits<Real>::epsilon() * std::max(Real{1}, magnitude);
   return real_part <= tolerance;
 }
@@ -285,19 +285,19 @@ void record_exponential_basis_orthogonality(Ops& ops, HermitianExponentialProjec
       Scalar const entry = ops.inner_product(projection.basis[row], projection.basis[col]);
       if (row == col)
       {
-        Real const error = static_cast<Real>(detail::adl_abs(entry - Scalar{1}));
+        Real const error = static_cast<Real>(uni20::math::abs(entry - Scalar{1}));
         projection.basis_max_diag_error = std::max(projection.basis_max_diag_error, error);
         frobenius_squared += error * error;
       }
       else
       {
-        Real const magnitude = static_cast<Real>(detail::adl_abs(entry));
+        Real const magnitude = static_cast<Real>(uni20::math::abs(entry));
         projection.basis_max_offdiag = std::max(projection.basis_max_offdiag, magnitude);
         frobenius_squared += Real{2} * magnitude * magnitude;
       }
     }
   }
-  projection.basis_frobenius_error = static_cast<Real>(detail::adl_sqrt(frobenius_squared));
+  projection.basis_frobenius_error = static_cast<Real>(uni20::math::sqrt(frobenius_squared));
 }
 
 template <uni20::RealOrComplex Scalar, typename Vector, KrylovMatrixFreeOperator<Vector, Scalar> Ops,
@@ -456,7 +456,7 @@ uni20::make_real_t<Scalar> endpoint_defect_estimate(uni20::make_real_t<Scalar> r
   {
     return uni20::make_real_t<Scalar>{};
   }
-  return residual_norm * static_cast<uni20::make_real_t<Scalar>>(detail::adl_abs(coefficients.back()));
+  return residual_norm * static_cast<uni20::make_real_t<Scalar>>(uni20::math::abs(coefficients.back()));
 }
 
 template <uni20::Real Real>
@@ -469,7 +469,7 @@ uni20::complex<Real> projected_defect_delta(TridiagonalEigensystem<Real> const& 
   for (std::size_t col = 0; col < dimension; ++col)
   {
     Real const weight = eigensystem.eigenvectors[dimension - 1, col] * eigensystem.eigenvectors[0, col];
-    result += Complex{weight, Real{}} * detail::adl_exp(time * (theta * eigensystem.eigenvalues[col]));
+    result += Complex{weight, Real{}} * uni20::math::exp(time * (theta * eigensystem.eigenvalues[col]));
   }
   return result;
 }
@@ -488,7 +488,7 @@ Real hermitian_projected_defect_integral_estimate(uni20::DenseMatrix<Real> const
   }
 
   uni20::complex<Real> const complex_time = exponential_time_as_complex<Real>(time);
-  Real const time_magnitude = static_cast<Real>(detail::adl_abs(complex_time));
+  Real const time_magnitude = static_cast<Real>(uni20::math::abs(complex_time));
   if (time_magnitude == Real{})
   {
     return Real{};
@@ -519,14 +519,14 @@ Real hermitian_projected_defect_integral_estimate(uni20::DenseMatrix<Real> const
   constexpr int panel_count = 1024;
   static_assert(panel_count % 2 == 0);
 
-  Real weighted_sum = static_cast<Real>(detail::adl_abs(projected_defect_delta(eigensystem, complex_time, Real{}))) +
-                      static_cast<Real>(detail::adl_abs(projected_defect_delta(eigensystem, complex_time, Real{1})));
+  Real weighted_sum = static_cast<Real>(uni20::math::abs(projected_defect_delta(eigensystem, complex_time, Real{}))) +
+                      static_cast<Real>(uni20::math::abs(projected_defect_delta(eigensystem, complex_time, Real{1})));
   for (int panel = 1; panel < panel_count; ++panel)
   {
     Real const theta = static_cast<Real>(panel) / static_cast<Real>(panel_count);
     Real const weight = panel % 2 == 0 ? Real{2} : Real{4};
     weighted_sum +=
-        weight * static_cast<Real>(detail::adl_abs(projected_defect_delta(eigensystem, complex_time, theta)));
+        weight * static_cast<Real>(uni20::math::abs(projected_defect_delta(eigensystem, complex_time, theta)));
   }
 
   Real const integral = weighted_sum / (Real{3} * static_cast<Real>(panel_count));

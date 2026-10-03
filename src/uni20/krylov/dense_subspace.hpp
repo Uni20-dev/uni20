@@ -119,9 +119,9 @@ std::vector<RealSchurBlock<Scalar>> real_schur_blocks(std::vector<uni20::detail:
     {
       throw std::runtime_error("LAPACK gees returned an incomplete complex Schur block");
     }
-    if (detail::adl_abs(eigenvalues[index + 1] - std::conj(eigenvalues[index])) >
+    if (uni20::math::abs(eigenvalues[index + 1] - std::conj(eigenvalues[index])) >
         Scalar{100} * uni20::numeric_limits<Scalar>::epsilon() *
-            std::max(Scalar{1}, std::max(detail::adl_abs(eigenvalues[index]), detail::adl_abs(eigenvalues[index + 1]))))
+            std::max(Scalar{1}, std::max(uni20::math::abs(eigenvalues[index]), uni20::math::abs(eigenvalues[index + 1]))))
     {
       throw std::runtime_error("LAPACK gees returned a non-adjacent complex conjugate Schur block");
     }

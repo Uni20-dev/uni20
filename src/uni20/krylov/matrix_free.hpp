@@ -1,7 +1,7 @@
 #pragma once
 
 #include <uni20/core/scalar_concepts.hpp>
-#include <uni20/krylov/detail_math.hpp>
+#include <uni20/core/math.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -455,8 +455,8 @@ uni20::make_real_t<Scalar> norm_or_inner_product(Ops& ops, Vector const& x)
   else
   {
     Scalar const norm_squared = ops.inner_product(x, x);
-    RealScalar const real_norm_squared = static_cast<RealScalar>(detail::adl_real(norm_squared));
-    return real_norm_squared > RealScalar{} ? detail::adl_sqrt(real_norm_squared) : RealScalar{};
+    RealScalar const real_norm_squared = static_cast<RealScalar>(uni20::math::real(norm_squared));
+    return real_norm_squared > RealScalar{} ? uni20::math::sqrt(real_norm_squared) : RealScalar{};
   }
 }
 
@@ -467,14 +467,14 @@ template <uni20::Real Scalar>
   requires requires { uni20::numeric_limits<Scalar>::epsilon(); }
 Scalar default_complex_pair_tolerance()
 {
-  return detail::adl_sqrt(uni20::numeric_limits<Scalar>::epsilon());
+  return uni20::math::sqrt(uni20::numeric_limits<Scalar>::epsilon());
 }
 
 /// \brief Default reality tolerance using the exemplar's working precision.
 /// \throws std::logic_error If a runtime-precision exemplar is exact or unset.
 template <uni20::Real Scalar> Scalar default_complex_pair_tolerance(Scalar const& exemplar)
 {
-  return detail::adl_sqrt(uni20::numeric_limits<Scalar>::epsilon(exemplar));
+  return uni20::math::sqrt(uni20::numeric_limits<Scalar>::epsilon(exemplar));
 }
 
 /// \brief Classify whether a complex Ritz value is numerically real.
@@ -509,9 +509,9 @@ RitzReality classify_ritz_reality(C theta, uni20::make_real_t<C> tolerance = uni
   {
     if (theta.is_exact()) theta = theta.at(effective_tolerance.precision());
   }
-  Scalar const effective_scale = std::max({Scalar{1}, detail::adl_abs(theta), detail::adl_abs(scale)});
+  Scalar const effective_scale = std::max({Scalar{1}, uni20::math::abs(theta), uni20::math::abs(scale)});
   Scalar const threshold = effective_tolerance * effective_scale;
-  Scalar const imaginary = detail::adl_abs(theta.imag());
+  Scalar const imaginary = uni20::math::abs(theta.imag());
   if (imaginary <= threshold)
   {
     return RitzReality::Real;

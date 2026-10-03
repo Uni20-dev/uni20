@@ -154,6 +154,10 @@ pre-populate the CMake FetchContent sources instead.
   delegates to `std::numeric_limits<T>` for ordinary arithmetic types and is the
   project customization point for extension or library scalar types with
   missing/incomplete standard-library limits.
+* Use `uni20::math` from `core/math.hpp` for scalar-generic host math where the
+  operation is provided, and `uni20::isfinite` for finite-value classification.
+  Keep scalar-specific ADL overloads in their scalar layer; do not duplicate
+  subsystem-private `adl_*` wrappers. See `docs/tensor/scalar_math_design.md`.
 
 ---
 

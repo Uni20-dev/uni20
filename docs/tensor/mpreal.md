@@ -173,7 +173,7 @@ constexpr auto decimal = 0.12345678901234567890123456789_mp;
 auto exact = 0.1_mp + 0.2_mp;      // Owning exact_constant equal to 3/10.
 auto third = 1_mp / 3_mp;          // Owning exact_constant equal to 1/3.
 auto a = exact.at(p);             // Round once to p.
-auto b = x + third;               // Round third to x's precision, then add.
+auto b = x + third;               // Add exact third, then round at x's precision.
 ```
 
 The `_mp` literal records source characters without conversion through a machine

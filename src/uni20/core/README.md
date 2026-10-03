@@ -13,7 +13,7 @@ layers such as tensor, linalg, backend, async, or symmetry.
   scalar precisions.
 - `numeric_limits.hpp`: Uni20 numeric-limits customization point for generic
   scalar algorithms.
-- `math.hpp`: small scalar math helpers.
+- `math.hpp`: shared `uni20::math` dispatch and scalar classification/construction helpers.
 - `buildinfo.hpp.in`: generated build/environment metadata.
 - `dummy.*`: minimal target source used to keep build targets well-formed where
   needed.

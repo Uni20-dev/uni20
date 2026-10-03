@@ -60,4 +60,38 @@ TYPED_TEST(NumericalScalar, ReciprocalAccuracyImprovesWithPrecision)
   }
 #endif
 }
+
+TYPED_TEST(NumericalScalar, MathDispatchRetainsWorkingPrecision)
+{
+  using C = TypeParam;
+  this->RecordProperty("backend", "scalar_math");
+  if constexpr (!C::available)
+    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
+  else
+  {
+    using R = typename C::real_type;
+    using S = typename C::scalar_type;
+    R const one = C::real(1), zero = C::real(0), gap = C::gap();
+    S const expected = C::scalar(one + gap, C::is_complex ? one / C::real(2) : zero);
+    auto root = uni20::math::sqrt(S(expected * expected));
+    static_assert(std::same_as<decltype(root), S>);
+    expect_error_at_most(root, expected, C::real(4) * C::epsilon());
+    C::expect_precision(root);
+    auto magnitude = uni20::math::abs(C::scalar(one + gap, zero));
+    static_assert(std::same_as<decltype(magnitude), R>);
+    expect_equal(magnitude, R(one + gap));
+    C::expect_precision(magnitude);
+    // These exact identities cover the other shared transcendental dispatches.
+    expect_equal(uni20::math::exp(C::scalar(0)), C::scalar(1));
+    expect_equal(uni20::math::sin(C::scalar(0)), C::scalar(0));
+    expect_equal(uni20::math::cos(C::scalar(0)), C::scalar(1));
+    expect_error_at_most(uni20::math::pow(C::scalar(2), C::scalar(3)), C::scalar(8), C::real(32) * C::epsilon());
+    if constexpr (!C::runtime)
+    {
+      expect_equal(uni20::math::log2(C::real(8)), C::real(3));
+      expect_equal(uni20::math::ceil(C::real(3) / C::real(2)), C::real(2));
+      expect_equal(uni20::math::ldexp(one + gap, -3), R((one + gap) / C::real(8)));
+    }
+  }
+}
 } // namespace uni20::test

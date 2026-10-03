@@ -8,9 +8,11 @@
 #if UNI20_ENABLE_MPC
 #include "mpcomplex.hpp"
 #endif
+#include <cmath>
 #include <complex>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 
 namespace uni20
 {
@@ -182,5 +184,186 @@ template <Scalar S, class Value>
   else
     return S(value);
 }
+
+namespace detail::scalar_math
+{
+template <class T>
+concept native_argument = std::integral<T> || std::same_as<T, float> || std::same_as<T, double> ||
+                          std::same_as<T, long double>
+#if UNI20_HAS_FLOAT128
+                          || std::same_as<T, uni20::float128>
+#endif
+    ;
+
+// A missing extension overload must not be filled by a narrower native type.
+// Integer promotion follows the selected standard operation.
+template <class Result, class Arg> consteval bool preserves_real_precision()
+{
+  if constexpr (!Real<Arg>)
+    return true;
+  else if constexpr (Real<Result>)
+    return numeric_limits<Result>::digits >= numeric_limits<Arg>::digits &&
+           numeric_limits<Result>::max_exponent >= numeric_limits<Arg>::max_exponent;
+  else
+    return false;
+}
+
+// The deleted exact-match fallback rejects conversion-only classes, even when
+// an associated namespace supplies standard floating overloads. Actual scalar
+// overloads (including constrained templates and hidden friends) outrank it.
+#define UNI20_SCALAR_MATH_ADL(NAME)                                                                            \
+  namespace NAME##_adl                                                                                       \
+  {                                                                                                         \
+  template <class... Args> void NAME(Args const&...) = delete;                                                 \
+  template <class... Args>                                                                                   \
+  constexpr auto call(Args const&... args) noexcept(noexcept(NAME(args...))) -> decltype(NAME(args...))        \
+  {                                                                                                         \
+    return NAME(args...);                                                                                    \
+  }                                                                                                         \
+  }
+
+#define UNI20_SCALAR_MATH_DISPATCH(NAME)                                                                      \
+  UNI20_SCALAR_MATH_ADL(NAME)                                                                                 \
+  struct NAME##_fn                                                                                           \
+  {                                                                                                         \
+      template <class... Args>                                                                               \
+      constexpr auto operator()(Args const&... args) const                                                    \
+          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                 \
+      {                                                                                                     \
+        return NAME##_adl::call(args...);                                                                     \
+      }                                                                                                     \
+      template <class... Args>                                                                               \
+        requires((native_argument<Args> && ...) &&                                                           \
+                 !requires(Args const&... args) { NAME##_adl::call(args...); })                                \
+      constexpr auto operator()(Args const&... args) const                                                    \
+          noexcept(noexcept(std::NAME(args...))) -> decltype(std::NAME(args...))                               \
+        requires((preserves_real_precision<decltype(std::NAME(args...)), Args>()) && ...)                     \
+      {                                                                                                     \
+        return std::NAME(args...);                                                                            \
+      }                                                                                                     \
+  };
+
+UNI20_SCALAR_MATH_DISPATCH(abs)
+UNI20_SCALAR_MATH_DISPATCH(sqrt)
+UNI20_SCALAR_MATH_DISPATCH(pow)
+UNI20_SCALAR_MATH_DISPATCH(exp)
+UNI20_SCALAR_MATH_DISPATCH(log)
+UNI20_SCALAR_MATH_DISPATCH(log2)
+UNI20_SCALAR_MATH_DISPATCH(sin)
+UNI20_SCALAR_MATH_DISPATCH(cos)
+UNI20_SCALAR_MATH_DISPATCH(ceil)
+UNI20_SCALAR_MATH_DISPATCH(ldexp)
+#undef UNI20_SCALAR_MATH_DISPATCH
+
+UNI20_SCALAR_MATH_ADL(real)
+UNI20_SCALAR_MATH_ADL(imag)
+UNI20_SCALAR_MATH_ADL(conj)
+#undef UNI20_SCALAR_MATH_ADL
+
+struct real_fn
+{
+    template <class T>
+      requires(Real<T> || std::integral<T>)
+    constexpr T operator()(T const& value) const
+    {
+      if constexpr (std::integral<T>) return value;
+      else return uni20::conj(value);
+    }
+    template <class T>
+      requires(!Real<T> && !std::integral<T>)
+    constexpr auto operator()(T const& value) const
+        noexcept(noexcept(std::remove_cvref_t<decltype(real_adl::call(value))>(real_adl::call(value))))
+        -> std::remove_cvref_t<decltype(real_adl::call(value))>
+      requires std::constructible_from<std::remove_cvref_t<decltype(real_adl::call(value))>,
+                                       decltype(real_adl::call(value))>
+    {
+      return std::remove_cvref_t<decltype(real_adl::call(value))>(real_adl::call(value));
+    }
+};
+
+struct imag_fn
+{
+    template <class T>
+      requires(Real<T> || std::integral<T>)
+    constexpr T operator()(T const& value) const
+    {
+      if constexpr (native_argument<T>) return T{};
+      else return uni20::scalar_like(value, 0);
+    }
+    template <class T>
+      requires(!Real<T> && !std::integral<T>)
+    constexpr auto operator()(T const& value) const
+        noexcept(noexcept(std::remove_cvref_t<decltype(imag_adl::call(value))>(imag_adl::call(value))))
+        -> std::remove_cvref_t<decltype(imag_adl::call(value))>
+      requires std::constructible_from<std::remove_cvref_t<decltype(imag_adl::call(value))>,
+                                       decltype(imag_adl::call(value))>
+    {
+      return std::remove_cvref_t<decltype(imag_adl::call(value))>(imag_adl::call(value));
+    }
+};
+
+struct conj_fn
+{
+    template <class T>
+      requires(Real<T> || std::integral<T>)
+    constexpr T operator()(T const& value) const
+    {
+      if constexpr (std::integral<T>) return value;
+      else return uni20::conj(value);
+    }
+    template <class T>
+      requires(!Real<T> && !std::integral<T>)
+    constexpr auto operator()(T const& value) const
+        noexcept(noexcept(conj_adl::call(value))) -> decltype(conj_adl::call(value))
+    {
+      return conj_adl::call(value);
+    }
+};
+} // namespace detail::scalar_math
+
+/// \brief Shared scalar math with native overloads and class-specific ADL customization.
+/// \details Arguments are read through const references. Unsupported calls are constrained out;
+///          class scalars cannot obtain support merely by converting to a native floating type.
+///          Scalar overloads retain their exactness and precision rules, including trailing Precision
+///          arguments where supported. This interface currently targets host execution.
+namespace math
+{
+/// \brief Absolute value or complex magnitude, preserving the selected scalar implementation.
+inline constexpr detail::scalar_math::abs_fn abs{};
+/// \brief Square root; exact inputs requiring approximation need an explicit finite precision.
+inline constexpr detail::scalar_math::sqrt_fn sqrt{};
+/// \brief Power with the selected scalar's domain, exactness and precision rules.
+inline constexpr detail::scalar_math::pow_fn pow{};
+/// \brief Natural exponential with scalar-specific precision handling.
+inline constexpr detail::scalar_math::exp_fn exp{};
+/// \brief Natural logarithm with scalar-specific precision handling.
+inline constexpr detail::scalar_math::log_fn log{};
+/// \brief Base-two logarithm where supplied by the scalar implementation.
+inline constexpr detail::scalar_math::log2_fn log2{};
+/// \brief Sine with scalar-specific precision handling.
+inline constexpr detail::scalar_math::sin_fn sin{};
+/// \brief Cosine with scalar-specific precision handling.
+inline constexpr detail::scalar_math::cos_fn cos{};
+/// \brief Least integral value not less than the argument, in the scalar's result type.
+inline constexpr detail::scalar_math::ceil_fn ceil{};
+/// \brief Multiply by a power of two using the scalar's exponent interface.
+inline constexpr detail::scalar_math::ldexp_fn ldexp{};
+/// \brief Read the real component by value; real and integral scalars retain their type.
+inline constexpr detail::scalar_math::real_fn real{};
+/// \brief Read the imaginary component by value; real zero retains the input's type and precision.
+inline constexpr detail::scalar_math::imag_fn imag{};
+/// \brief Complex conjugation; real and integral values retain their type.
+inline constexpr detail::scalar_math::conj_fn conj{};
+
+/// \brief Square the magnitude, evaluating the scalar absolute value once.
+/// \details This does not provide overflow scaling or extra working precision.
+template <class T>
+  requires requires(T const& value) { math::abs(value) * math::abs(value); }
+auto abs_squared(T const& value)
+{
+  auto const magnitude = math::abs(value);
+  return magnitude * magnitude;
+}
+} // namespace math
 
 } // namespace uni20

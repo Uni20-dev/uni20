@@ -54,6 +54,12 @@ integer ratios; casting a double literal does not create higher-precision data.
 
 ## First operation families
 
+Scalar math dispatch uses the same real/complex precision cases. A near-one
+square-root problem and a magnitude retaining an increment beyond the preceding
+precision detect narrowing in the callable interface. Core tests separately
+exercise ADL lookup, unsupported types and exact/explicit-precision semantics;
+these mechanism tests do not replace the numerical precision cases.
+
 The `uni20_numerical_precision_tests` target currently covers:
 
 | Family | Evidence |

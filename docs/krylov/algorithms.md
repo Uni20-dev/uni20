@@ -31,6 +31,11 @@ Dense provider and quarantined helper coverage is tracked separately in
 
 ## Matrix-Free Boundary
 
+Host scalar calculations use the shared
+[`uni20::math` interface](../tensor/scalar_math_design.md) and `uni20::isfinite`.
+This keeps ADL and extension-precision handling in core; it does not expand the
+projected-solver scalar/backend coverage listed here.
+
 Native Krylov solvers operate through a matrix-free interface. The Krylov layer
 does not inspect vector storage and assumes only vector allocation, copy,
 `axpy`, scaling, zeroing, norm, inner product, and `matvec` operations. The

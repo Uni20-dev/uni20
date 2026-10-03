@@ -236,6 +236,17 @@ through algorithms.
 
 ## Scalar Math
 
+Use the callable operations in `uni20::math` from `<uni20/core/math.hpp>` for
+scalar-generic host math, such as `math::sqrt`, `math::abs` and `math::exp`.
+They dispatch to native or class-specific ADL overloads without a fallback
+conversion of unfamiliar classes to `double`. Native real results cannot narrow
+their operands' precision. `math::real` and `math::imag` read components by value;
+real and integral scalars retain their type, and imaginary zero retains runtime
+precision. Scalar exactness and explicit `Precision` rules are unchanged.
+See [shared scalar math dispatch](scalar_math_design.md) for the operation list,
+extension contract and host-execution boundary. Do not duplicate subsystem-private
+`adl_*` helpers for these operations.
+
 Scalar-generic code should use `uni20::isfinite(x)` instead of directly calling
 `std::isfinite(x)` when `x` may be a Uni20 scalar. Integers are always finite,
 real scalars are checked for NaN and positive/negative infinity through

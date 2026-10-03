@@ -636,11 +636,11 @@ Scalar symmetric_matrix_one_norm(detail::ColumnMajorLapackMatrix<Scalar> const& 
     {
       if (triangle == MatrixFill::Upper)
       {
-        column_sum += row <= col ? detail::adl_abs(matrix[row, col]) : detail::adl_abs(matrix[col, row]);
+        column_sum += row <= col ? uni20::math::abs(matrix[row, col]) : uni20::math::abs(matrix[col, row]);
       }
       else
       {
-        column_sum += row >= col ? detail::adl_abs(matrix[row, col]) : detail::adl_abs(matrix[col, row]);
+        column_sum += row >= col ? uni20::math::abs(matrix[row, col]) : uni20::math::abs(matrix[col, row]);
       }
     }
     norm = std::max(norm, column_sum);
@@ -1191,14 +1191,14 @@ Scalar real_general_tridiagonal_one_norm(RealGeneralTridiagonalMatrix<Scalar> co
   Scalar norm{};
   for (std::size_t col = 0; col < order; ++col)
   {
-    Scalar column_sum = detail::adl_abs(matrix.diagonal[col]);
+    Scalar column_sum = uni20::math::abs(matrix.diagonal[col]);
     if (col > 0)
     {
-      column_sum += detail::adl_abs(matrix.upper_diagonal[col - 1]);
+      column_sum += uni20::math::abs(matrix.upper_diagonal[col - 1]);
     }
     if (col + 1 < order)
     {
-      column_sum += detail::adl_abs(matrix.lower_diagonal[col]);
+      column_sum += uni20::math::abs(matrix.lower_diagonal[col]);
     }
     norm = std::max(norm, column_sum);
   }
@@ -1979,7 +1979,7 @@ Scalar real_symmetric_positive_definite_band_one_norm(RealSymmetricPositiveDefin
       std::size_t const first_row = col > matrix.bandwidth ? col - matrix.bandwidth : 0;
       for (std::size_t row = first_row; row <= col; ++row)
       {
-        Scalar const magnitude = detail::adl_abs(matrix.storage[matrix.bandwidth + row - col, col]);
+        Scalar const magnitude = uni20::math::abs(matrix.storage[matrix.bandwidth + row - col, col]);
         column_sums[col] += magnitude;
         if (row != col)
         {
@@ -1992,7 +1992,7 @@ Scalar real_symmetric_positive_definite_band_one_norm(RealSymmetricPositiveDefin
       std::size_t const last_row = std::min(matrix.order - 1, col + matrix.bandwidth);
       for (std::size_t row = col; row <= last_row; ++row)
       {
-        Scalar const magnitude = detail::adl_abs(matrix.storage[row - col, col]);
+        Scalar const magnitude = uni20::math::abs(matrix.storage[row - col, col]);
         column_sums[col] += magnitude;
         if (row != col)
         {
@@ -2337,14 +2337,14 @@ Scalar real_symmetric_positive_definite_tridiagonal_one_norm(
   Scalar norm{};
   for (std::size_t col = 0; col < order; ++col)
   {
-    Scalar column_sum = detail::adl_abs(matrix.diagonal[col]);
+    Scalar column_sum = uni20::math::abs(matrix.diagonal[col]);
     if (col > 0)
     {
-      column_sum += detail::adl_abs(matrix.offdiagonal[col - 1]);
+      column_sum += uni20::math::abs(matrix.offdiagonal[col - 1]);
     }
     if (col + 1 < order)
     {
-      column_sum += detail::adl_abs(matrix.offdiagonal[col]);
+      column_sum += uni20::math::abs(matrix.offdiagonal[col]);
     }
     norm = std::max(norm, column_sum);
   }
@@ -6853,8 +6853,8 @@ RealSchurRightEigenvectors<Scalar> real_schur_right_eigenvectors(RealSchurDecomp
       throw std::runtime_error("LAPACK trevc returned an incomplete complex eigenvector pair");
     }
     auto const next_eigenvalue = decomposition.eigenvalues[col + 1];
-    Scalar const scale = std::max(Scalar{1}, std::max(detail::adl_abs(eigenvalue), detail::adl_abs(next_eigenvalue)));
-    if (detail::adl_abs(next_eigenvalue - std::conj(eigenvalue)) >
+    Scalar const scale = std::max(Scalar{1}, std::max(uni20::math::abs(eigenvalue), uni20::math::abs(next_eigenvalue)));
+    if (uni20::math::abs(next_eigenvalue - std::conj(eigenvalue)) >
         Scalar{100} * uni20::numeric_limits<Scalar>::epsilon() * scale)
     {
       throw std::runtime_error("LAPACK trevc returned a non-adjacent complex eigenvector pair");
@@ -7728,8 +7728,8 @@ real_generalized_schur_right_eigenvectors(RealGeneralizedSchurDecomposition<Real
       throw std::runtime_error("LAPACK tgevc returned an incomplete complex eigenvector pair");
     }
     auto const next_eigenvalue = decomposition.eigenvalues[col + 1];
-    Real const scale = std::max(Real{1}, std::max(detail::adl_abs(eigenvalue), detail::adl_abs(next_eigenvalue)));
-    if (detail::adl_abs(next_eigenvalue - std::conj(eigenvalue)) >
+    Real const scale = std::max(Real{1}, std::max(uni20::math::abs(eigenvalue), uni20::math::abs(next_eigenvalue)));
+    if (uni20::math::abs(next_eigenvalue - std::conj(eigenvalue)) >
         Real{100} * uni20::numeric_limits<Real>::epsilon() * scale)
     {
       throw std::runtime_error("LAPACK tgevc returned a non-adjacent complex eigenvector pair");
