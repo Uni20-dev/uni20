@@ -279,6 +279,36 @@ struct mpcomplex_access
         return mpcomplex(ar - br, ai - bi, p);
       else
       {
+        if (!mpreal_access::can_expand_rational(ar) || !mpreal_access::can_expand_rational(ai) ||
+            !mpreal_access::can_expand_rational(br) || !mpreal_access::can_expand_rational(bi))
+        {
+          auto xr = mpreal_access::stored_scaled(ar), xi = mpreal_access::stored_scaled(ai);
+          auto yr = mpreal_access::stored_scaled(br), yi = mpreal_access::stored_scaled(bi);
+          auto rr = xr * yr, ii = xi * yi, ri = xr * yi, ir = xi * yr;
+          mpcomplex result(p);
+          if constexpr (Operation == mpc_mul)
+          {
+            scaled_rational_ratio({rr, -ii, {exact_constant{1}, 0}, {}}).round_to(mpc_realref(result.approximate()));
+            scaled_rational_ratio({ri, ir, {exact_constant{1}, 0}, {}}).round_to(mpc_imagref(result.approximate()));
+          }
+          else
+          {
+            auto dr = yr * yr, di = yi * yi;
+            scaled_rational_ratio({rr, ii, dr, di}).round_to(mpc_realref(result.approximate()));
+            scaled_rational_ratio({ir, -ri, dr, di}).round_to(mpc_imagref(result.approximate()));
+          }
+          // Cancellation produces +0. Two zero products preserve the same sign
+          // rules as the ordinary rational path; underflow signs stay intact.
+          bool const rr_negative = signbit(ar) != signbit(br), ii_negative = signbit(ai) != signbit(bi);
+          bool const ri_negative = signbit(ar) != signbit(bi), ir_negative = signbit(ai) != signbit(br);
+          if (rr.coefficient == 0 && ii.coefficient == 0)
+            mpfr_set_zero(mpc_realref(result.approximate()),
+                          (rr_negative && (Operation == mpc_mul ? !ii_negative : ii_negative)) ? -1 : 1);
+          if (ri.coefficient == 0 && ir.coefficient == 0)
+            mpfr_set_zero(mpc_imagref(result.approximate()),
+                          (ir_negative && (Operation == mpc_mul ? ri_negative : !ri_negative)) ? -1 : 1);
+          return result;
+        }
         auto xr = mpreal_access::stored_rational(ar), xi = mpreal_access::stored_rational(ai);
         auto yr = mpreal_access::stored_rational(br), yi = mpreal_access::stored_rational(bi);
         // Form each component exactly before its single final rounding. Keep

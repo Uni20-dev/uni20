@@ -364,7 +364,12 @@ parsing and explicit native conversions are described in [mpreal](mpreal.md).
 Mixed exact/approximate basic arithmetic retains exact operands until rounding
 the result to the finite operand's precision. Finite `+`, `-`, `*` and `/`
 results are correctly rounded (per component for complex values); division
-requires a nonzero divisor for this statement. Two approximate operands still
+requires a nonzero divisor for this statement. Mixed complex multiplication and
+division, and exact-real/approximate-real division, keep large binary exponents
+separate from rational coefficients. The large-exponent path uses exact scaled
+comparisons to select the rounded result, including cancellation and ties;
+temporary integer storage scales with significand and rational sizes rather than
+the numerical exponent. Ordinary-sized exponents use direct rational arithmetic. Two approximate operands still
 require matching precision. Approximation-driven algorithms must obtain finite
 working precision explicitly or from their inputs; an all-exact state supplies
 no approximation budget.

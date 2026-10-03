@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/scaled_rational.hpp"
 #include "exact_constant.hpp"
 #include "scalar_traits.hpp"
 #include <memory>
@@ -294,6 +295,21 @@ namespace detail
 {
 struct mpreal_access
 {
+    static bool can_expand_rational(mpreal const& x)
+    {
+      if (x.is_exact() || mpfr_zero_p(x.native_handle())) return true;
+      auto bound = std::max<mpfr_prec_t>(4096, mpfr_get_prec(x.native_handle()));
+      auto exponent = mpfr_get_exp(x.native_handle());
+      return exponent >= -bound && exponent <= bound;
+    }
+    static scaled_rational stored_scaled(mpreal const& x)
+    {
+      if (x.is_exact()) return {x.exact_value(), 0};
+      scaled_rational result;
+      if (!mpfr_zero_p(x.native_handle()))
+        result.exponent = mpfr_get_z_2exp(mpq_numref(result.coefficient.value_), x.native_handle());
+      return result;
+    }
     // Internal arithmetic representation of a finite stored value. This does
     // not reclassify the user's approximation as an exact scalar.
     static exact_constant stored_rational(mpreal const& x)
@@ -339,7 +355,12 @@ struct mpreal_access
         if (!a.is_exact())
           mpfr_div_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
         else if (mpfr_number_p(real.native_handle()) && !mpfr_zero_p(real.native_handle()) && rational != 0)
-          result = mpreal(rational / stored_rational(real), p);
+        {
+          if (can_expand_rational(real))
+            result = mpreal(rational / stored_rational(real), p);
+          else
+            scaled_rational_ratio({stored_scaled(a), {}, stored_scaled(b), {}}).round_to(result.approximate());
+        }
         else
         {
           // Only signs and zero matter here. Do not overflow/underflow q while
