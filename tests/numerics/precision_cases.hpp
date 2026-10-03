@@ -111,8 +111,7 @@ template <PrecisionKind Kind, bool IsComplex> struct CaseInfo
     static constexpr bool projected_lapack =
         Kind == PrecisionKind::float32 || Kind == PrecisionKind::float64 || Kind == PrecisionKind::float128;
     // GEMM/solve provider coverage can grow independently of projected solvers.
-    static constexpr bool native_dense_provider =
-        Kind == PrecisionKind::float32 || Kind == PrecisionKind::float64 || Kind == PrecisionKind::float128;
+    static constexpr bool binary80_provider = Kind == PrecisionKind::float80;
 
     static std::string name()
     {

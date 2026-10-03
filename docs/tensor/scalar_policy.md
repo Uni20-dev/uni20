@@ -178,8 +178,10 @@ without having BLAS or LAPACK coverage in the current build.
 In particular, `float80` and `complex<float80>` reuse the native `long double`
 scalar and generic CPU paths where supported. The optional
 [MPLAPACK binary80 adapter](../linalg/mplapack_binary80.md) adds GEMM, square
-solves and reusable LU through `MplapackBinary80Backend`. It keeps provider
-`_Float64x` types private and converts by value. This limited coverage does not
+solves and reusable LU through `MplapackBinary80Backend`. Complex provider LU
+requires its scalar to be `long double`; distinct `_Float64x` complex division
+is unsafe, so default complex solves use the CPU path instead. The adapter keeps
+provider types private and converts by value. This limited coverage does not
 make these types satisfy the broad `Blas*`/`Lapack*` traits or add GPU support. Runtime precision
 visitors instantiate every configured scalar: clients requiring LAPACK must
 guard those instantiations with the relevant capability concept and reject

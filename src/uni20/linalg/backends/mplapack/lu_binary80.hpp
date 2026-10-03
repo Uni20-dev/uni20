@@ -7,7 +7,7 @@ namespace uni20::linalg
 {
 /// \brief Accept logical host workspaces for native binary80 LU.
 template <MutableRankedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80Scalar<typename A::value_type>
+  requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
 consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_factor_op const&, A&, std::span<std::size_t>,
                                     SolveInfo&, SolveOptions<float80> const&)
 {
@@ -16,7 +16,7 @@ consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_factor_op const&
 
 /// \brief Convert values at the backend boundary and compute portable owning factors.
 template <MutableRankedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80Scalar<typename A::value_type>
+  requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
 KernelAttempt try_kernel(MplapackBinary80Backend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
                          SolveInfo& info, SolveOptions<float80> const& options)
 {
@@ -49,7 +49,7 @@ KernelAttempt try_kernel(MplapackBinary80Backend, lu_factor_op const&, A& a, std
 /// \brief Accept read-only binary80 factors and logical host RHS elements.
 template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostReadableMdspec<A> && HostWritableMdspec<B> &&
-           mplapack_binary80_detail::Binary80Scalar<typename A::value_type> &&
+           mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
 consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_solve_op const&, A&, std::span<std::size_t const>, B&,
                                     SolveInfo&)
@@ -61,7 +61,7 @@ consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_solve_op const&,
 /// \pre Factors and pivots describe a successful LU and do not overlap the RHS.
 template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostReadableMdspec<A> && HostWritableMdspec<B> &&
-           mplapack_binary80_detail::Binary80Scalar<typename A::value_type> &&
+           mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
 KernelAttempt try_kernel(MplapackBinary80Backend, lu_solve_op const&, A& a, std::span<std::size_t const> pivots, B& b,
                          SolveInfo& info)

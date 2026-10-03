@@ -1,7 +1,8 @@
 # MPLAPACK binary80 adapter
 
-`UNI20_ENABLE_MPLAPACK_BINARY80=ON` enables real and complex binary80 GEMM,
-square solves, [reusable LU and logarithmic determinants](lu.md):
+`UNI20_ENABLE_MPLAPACK_BINARY80=ON` enables real and complex binary80 GEMM
+and real square solves, [reusable LU and logarithmic determinants](lu.md).
+Complex LU/solve provider support depends on the provider type, as described below:
 
 ```sh
 cmake -S . -B build_codex/mplapack_binary80 \
@@ -31,7 +32,23 @@ It accepts logical host GEMM operands, including conjugating accessors, and
 preserves BLAS zero-coefficient no-read semantics. Native CPU paths remain
 available through ordinary dispatch fallback or explicit selection.
 
-The initial provider coverage is `Rgemm`, `Cgemm`, `Rgetrf`, `Cgetrf`, `Rgetrs`
-and `Cgetrs`. It does not make `float80` satisfy the broad `BlasReal` or
+The unconditional provider coverage is `Rgemm`, `Cgemm`, `Rgetrf` and `Rgetrs`.
+`Cgetrf` and `Cgetrs` are enabled only when the provider uses `long double`
+(`UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU=1`). With MPLAPACK 3.0.0 and GCC 13,
+the distinct `_Float64x` uses generic standard-library complex division, which
+squares the denominator without scaling. For example, factoring
+`[[s,s],[s,2s]]` with `s=1e3000L` reports success but gives an incorrect
+multiplier and a log determinant wrong by `log(2)`. Solving a one-element
+system with diagonal `1e4000L` can similarly return zero for a representable
+nonzero solution. This is a provider arithmetic defect, not conversion loss.
+
+Uni20 therefore declines complex LU/solve for that provider type, before any
+workspace is changed. Default dispatch selects the native CPU implementation;
+explicit `MplapackBinary80Backend{}` selection reports unsupported. Complex GEMM
+remains enabled. The precision coverage report distinguishes the unsupported
+provider cells from the passing CPU cases. A future provider fix requires its
+own validation before this restriction can be relaxed.
+
+This adapter does not make `float80` satisfy the broad `BlasReal` or
 `LapackReal` concepts, and does not extend projected Krylov solvers, SVD,
 eigensystems or GPU coverage. Those require their own provider wiring and tests.

@@ -161,6 +161,20 @@ TEST(Lu, RuntimePrecisionAndComplex)
   EXPECT_LT(abs(cd.phase.real() - mpreal("0.6", p)), mpreal("1e-150", p));
   EXPECT_LT(abs(cd.log_absolute - log(mpreal{5}, p)), mpreal("1e-150", p));
 }
+
+TEST(Lu, SingularComplexRuntimeDeterminantRetainsPrecision)
+{
+  auto p = Precision::bits(256);
+  DenseMatrix<complex<mpreal>> a(2, 2, p);
+  a[0, 0] = complex<mpreal>(mpreal{1}, mpreal{1}, p);
+  auto d = slogdet_with_info(MplapackMpfrBackend{}, a);
+  ASSERT_TRUE(d.value);
+  EXPECT_EQ(d.info.status, SolveStatus::singular);
+  EXPECT_EQ(d.value->phase, complex<mpreal>(0, p));
+  EXPECT_EQ(d.value->phase.precision(), p);
+  EXPECT_EQ(d.value->log_absolute.precision(), p);
+  EXPECT_EQ(d.value->log_absolute, mpreal("-inf", p));
+}
 #endif
 
 TEST(Lu, NativePrecisionsExtremeProductsAndConjugation)

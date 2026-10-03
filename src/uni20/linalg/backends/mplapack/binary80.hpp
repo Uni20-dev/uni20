@@ -16,6 +16,12 @@ namespace mplapack_binary80_detail
 template <class T>
 concept Binary80Scalar = std::same_as<T, float80> || std::same_as<T, complex160>;
 
+// GEMM needs no complex division. LU requires the validated native provider
+// specialization; otherwise ordinary dispatch can select the CPU backend.
+template <class T>
+concept Binary80LuScalar =
+    std::same_as<T, float80> || (UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU != 0 && std::same_as<T, complex160>);
+
 template <class Span> auto pack(Span const& span, bool read = true)
 {
   using S = typename Span::value_type;
@@ -129,7 +135,7 @@ KernelAttempt try_kernel(MplapackBinary80Backend backend, assign_product_op cons
 /// \brief Accept mutable host operands for a binary80 LU solve.
 template <MutableRankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostWritableMdspec<A> && HostWritableMdspec<B> &&
-           mplapack_binary80_detail::Binary80Scalar<typename A::value_type> &&
+           mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
 consteval auto kernel_accepts_types(MplapackBinary80Backend, linear_solve_op const&, A&, B&, SolveInfo&,
                                     SolveOptions<float80> const&)
@@ -140,7 +146,7 @@ consteval auto kernel_accepts_types(MplapackBinary80Backend, linear_solve_op con
 /// \brief Convert workspaces at the boundary and report LU solve diagnostics without double-precision intermediates.
 template <MutableRankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostWritableMdspec<A> && HostWritableMdspec<B> &&
-           mplapack_binary80_detail::Binary80Scalar<typename A::value_type> &&
+           mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
 KernelAttempt try_kernel(MplapackBinary80Backend, linear_solve_op const&, A& a, B& b, SolveInfo& info,
                          SolveOptions<float80> const& options)
@@ -168,8 +174,7 @@ KernelAttempt try_kernel(MplapackBinary80Backend, linear_solve_op const&, A& a, 
   {
     for (std::size_t i = 0; i < std::size_t(a.extent(0)); ++i)
     {
-      using std::abs;
-      auto magnitude = abs(av[i, i]);
+      auto magnitude = math::abs(av[i, i]);
       if (!uni20::isfinite(magnitude))
       {
         info.status = SolveStatus::nonfinite_result;

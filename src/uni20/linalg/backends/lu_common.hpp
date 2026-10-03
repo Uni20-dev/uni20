@@ -16,19 +16,17 @@ template <Real R> struct LuMagnitude
 
 template <RealOrComplex S> auto lu_magnitude(S const& value)
 {
-  using std::abs;
-  using std::sqrt;
   using R = make_real_t<S>;
-  R scale = abs(uni20::real(value));
+  R scale = math::abs(uni20::real(value));
   R unit = scalar_like(scale, 1);
   if constexpr (Complex<S>)
   {
-    R other = abs(uni20::imag(value));
+    R other = math::abs(uni20::imag(value));
     if (other > scale) std::swap(other, scale);
     if (scale != 0)
     {
       auto ratio = other / scale;
-      unit = sqrt(unit + ratio * ratio);
+      unit = math::sqrt(unit + ratio * ratio);
     }
   }
   return LuMagnitude<R>{std::move(scale), std::move(unit)};

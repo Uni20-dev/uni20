@@ -145,6 +145,7 @@ if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR OR UNI20_ENABLE_MPLAPACK_
 endif()
 set(UNI20_HAS_FLOAT128 OFF)
 set(UNI20_FLOAT128_PROVIDER_MPLAPACK OFF)
+set(UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU OFF)
 # Native x87 extended precision is a scalar capability, not a BLAS/LAPACK
 # provider. Probe numerical properties rather than padded object size, and do
 # not run a target executable (this also works in cross builds).
@@ -169,7 +170,8 @@ if(NOT UNI20_ENABLE_MPLAPACK AND NOT UNI20_ENABLE_MPLAPACK_MPFR AND NOT UNI20_EN
       UNI20_MPLAPACK_VERSION
       UNI20_DETECTED_MPLAPACK
       UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE
-      UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
+      UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE
+      UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE)
     unset(${_uni20_disabled_mplapack_cache_var} CACHE)
   endforeach()
 endif()
@@ -638,11 +640,26 @@ if(NOT UNI20_DOCS_WEB)
           Cgetrf(1, 1, &z, 1, &pivot, info);
         }
       ]=] UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
+      # Generic std::complex<_Float64x> division can square its denominator,
+      # overflowing or underflowing on otherwise representable LU problems.
+      # Only enable complex LU for the native long-double specialization.
+      # This is a compile-time capability check, including for cross builds.
+      unset(UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE CACHE)
+      check_cxx_source_compiles([=[
+        #include <type_traits>
+        #include <mpblas_binary80.h>
+        static_assert(std::is_same_v<mplapack_binary80_t, long double>);
+        int main() {}
+      ]=] UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE)
     endblock()
     if(NOT UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
       message(FATAL_ERROR "MPLAPACK binary80 headers must support native long double value conversion and real/complex LU")
     endif()
+    set(UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU ${UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE})
     message(STATUS "MPLAPACK binary80 backend enabled (${UNI20_MPLAPACK_SOURCE})")
+    if(NOT UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU)
+      message(STATUS "MPLAPACK binary80 complex LU disabled: provider scalar is not native long double; default complex LU uses CPU")
+    endif()
   endif()
 
   uni20_add_dependency(

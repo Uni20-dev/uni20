@@ -31,16 +31,13 @@ namespace detail
 {
 template <RealOrComplex S, class... P> LogDeterminant<S> zero_determinant(P... precision)
 {
-  using std::log;
   auto zero = lu_scalar<S>(0, precision...);
-  return {.phase = zero, .log_absolute = log(uni20::real(zero))};
+  return {.phase = zero, .log_absolute = math::log(uni20::real(zero))};
 }
 
 template <RealOrComplex S, class... P>
 LogDeterminantResult<S> reduce_log_determinant(LuFactorization<S> const& factor, P... precision)
 {
-  using std::abs;
-  using std::log;
   auto phase = lu_scalar<S>(1, precision...);
   auto sum = uni20::real(lu_scalar<S>(0, precision...));
   auto correction = sum;
@@ -49,10 +46,10 @@ LogDeterminantResult<S> reduce_log_determinant(LuFactorization<S> const& factor,
   {
     auto diagonal = a[k, k];
     auto magnitude = lu_magnitude(diagonal);
-    auto term = log(magnitude.scale) + log(magnitude.unit);
+    auto term = math::log(magnitude.scale) + math::log(magnitude.unit);
     // Neumaier reduction retains small contributions when logarithms cancel.
     auto next = sum + term;
-    if (abs(sum) >= abs(term))
+    if (math::abs(sum) >= math::abs(term))
       correction += (sum - next) + term;
     else
       correction += (term - next) + sum;
