@@ -9,6 +9,8 @@ optional multiprecision support, and linear-algebra design background.
   outputs, matrix norms, destructive eigensystems, and Schur block reordering.
 - [Square Linear Solves](linear_solve.md) describes strict and recoverable
   frontends, pivot policy, workspace ownership, and backend diagnostics.
+- [Reusable LU and Logarithmic Determinants](lu.md) describes owning factors,
+  repeated solves and signed or complex-phase log determinants.
 - [Mdspan Linear Algebra Dispatch](mdspan_dispatch.md) tracks implemented
   operation-tag vertical slices and the remaining dense-operation sequence.
 - [BLAS/LAPACK Mdspan Wrappers](blas_lapack_wrappers.md) describes the

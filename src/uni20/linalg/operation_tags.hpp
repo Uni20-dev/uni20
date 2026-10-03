@@ -137,6 +137,20 @@ struct linear_solve_op
     static constexpr std::string_view name = "linear_solve";
 };
 
+/// \brief Fixed-output packed LU factorization with zero-based row-swap pivots.
+/// \details Numerical failure writes SolveInfo and completes dispatch; declines
+///          preserve the matrix, pivots and diagnostics.
+struct lu_factor_op
+{
+    static constexpr std::string_view name = "lu_factor";
+};
+
+/// \brief Solve using read-only packed LU factors, overwriting an existing RHS.
+struct lu_solve_op
+{
+    static constexpr std::string_view name = "lu_solve";
+};
+
 /// \brief Reduced dense real QR factorization operation tag.
 /// \details Backends overwrite an input work matrix and return `Q` with shape
 ///          `m x min(m,n)` and `R` with shape `min(m,n) x n`.

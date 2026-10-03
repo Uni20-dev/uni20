@@ -70,6 +70,9 @@ if(TARGET uni20_backend_blas)
   uni20_add_example(blas_example linalg/blas_example.cpp fmt::fmt uni20_backend_blas)
 endif()
 
+uni20_add_example(lu_log_determinant_example linalg/lu_log_determinant_example.cpp uni20_linalg)
+add_test(NAME LuLogDeterminantExample COMMAND lu_log_determinant_example)
+
 uni20_add_example(kernel_dispatch_example linalg/kernel_dispatch_example.cpp fmt::fmt uni20_linalg)
 uni20_add_example(kernel_dispatch_error_example linalg/kernel_dispatch_error_example.cpp fmt::fmt uni20_linalg)
 if(TARGET uni20_backend_blas)
