@@ -61,8 +61,12 @@ template <typename T> inline constexpr bool is_real_v = is_real_t<std::remove_cv
 template <typename T> struct is_complex_t : std::false_type
 {};
 
-template <typename T> struct is_complex_t<uni20::complex<T>> : std::true_type
+template <typename T> struct is_complex_t<detail::standard_complex<T>> : std::true_type
 {};
+#if UNI20_ENABLE_MPC
+template <> struct is_complex_t<mpcomplex> : std::true_type
+{};
+#endif
 
 /// \brief Convenience alias that exposes the value of \c is_complex_t.
 /// \tparam T Type to inspect.
@@ -183,7 +187,7 @@ struct make_complex<T>
     using type = uni20::complex<T>;
 };
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_ENABLE_MPFR && !UNI20_ENABLE_MPC
 // No standard-complex fallback for the pending MPC scalar family.
 template <> struct make_complex<mpreal>;
 #endif

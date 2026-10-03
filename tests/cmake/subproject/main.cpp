@@ -15,11 +15,13 @@ static_assert(sizeof(uni20::blas_int) == (UNI20_ILP64 ? 8 : 4));
 int main()
 {
 #if UNI20_ENABLE_MPFR
-  using namespace uni20::literals;
-  auto p = uni20::Precision::bits(256);
-  auto x = (0.1_mp + 0.2_mp).at(p);
-  if (x != uni20::mpreal("0.3", p) || uni20::sqrt(uni20::mpreal(4, p)) != 2)
-    return 6;
+  {
+    using namespace uni20::literals;
+    auto p = uni20::Precision::bits(256);
+    auto x = (0.1_mp + 0.2_mp).at(p);
+    if (x != uni20::mpreal("0.3", p) || uni20::sqrt(uni20::mpreal(4, p)) != 2)
+      return 6;
+  }
 #endif
   // Exercise an out-of-line common-library function, not just its headers.
   if (terminal::is_a_terminal(nullptr))
@@ -40,17 +42,19 @@ int main()
 #endif
 
 #if UNI20_HAS_FLOAT128
-  static_assert(uni20::numeric_limits<uni20::float128>::digits == 113);
-  using std::abs;
-  using std::atan;
-  using std::tan;
-  uni20::float128 const x = uni20::float128{1} / uni20::float128{3};
-  auto const error = abs(tan(atan(x)) - x);
-  if (error > uni20::float128{8} * uni20::numeric_limits<uni20::float128>::epsilon())
-    return 2;
-  uni20::float128 values[] = {1, 2};
-  if (Rdot(2, values, 1, values, 1) != uni20::float128{5})
-    return 3;
+  {
+    static_assert(uni20::numeric_limits<uni20::float128>::digits == 113);
+    using std::abs;
+    using std::atan;
+    using std::tan;
+    uni20::float128 const x = uni20::float128{1} / uni20::float128{3};
+    auto const error = abs(tan(atan(x)) - x);
+    if (error > uni20::float128{8} * uni20::numeric_limits<uni20::float128>::epsilon())
+      return 2;
+    uni20::float128 values[] = {1, 2};
+    if (Rdot(2, values, 1, values, 1) != uni20::float128{5})
+      return 3;
+  }
 #endif
   return 0;
 }

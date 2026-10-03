@@ -1,6 +1,10 @@
 #pragma once
 
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/core/scalar_concepts.hpp>
+#if UNI20_ENABLE_MPFR
+#include <uni20/core/mpreal.hpp>
+#endif
 
 #include <cstddef>
 #include <optional>
@@ -41,7 +45,7 @@ struct SolveInfo
     [[nodiscard]] bool succeeded() const noexcept { return this->status == SolveStatus::success; }
 };
 
-/// \brief Native-real-precision pivot policy for a square linear solve.
+/// \brief Real-scalar pivot policy for a square linear solve.
 /// \details A nonzero pivot is rejected when its magnitude divided by the
 ///          maximum entry magnitude of the original coefficient matrix is at
 ///          most `relative_pivot_tolerance`. This is not a condition estimate.

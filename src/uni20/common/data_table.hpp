@@ -50,6 +50,16 @@ concept integer =
     std::same_as<T, unsigned short> || std::same_as<T, int> || std::same_as<T, unsigned int> || std::same_as<T, long> ||
     std::same_as<T, unsigned long> || std::same_as<T, long long> || std::same_as<T, unsigned long long>;
 
+// Table schemas and metadata conversions require fixed limits and a lossless
+// formatter. Real<T> alone also admits runtime-precision and third-party scalars.
+template <typename T>
+concept supported_real = std::same_as<T, float> || std::same_as<T, double> || std::same_as<T, long double>
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
+                         || std::same_as<T, uni20::float128>
+#endif
+    ;
+
 template <typename To, typename From> consteval bool accepts()
 {
   using F = std::remove_cvref_t<From>;
@@ -159,10 +169,13 @@ template <Real T> std::string real_text(T value, scalar_format_options options)
 
 /// \brief Types retained directly by data tables, without numerical narrowing or text conversion.
 /// \details Optional string columns are excluded until their delimited null encoding is specified.
+///          Real columns require a supported fixed-precision representation; mpreal and other
+///          extension scalars need explicit schema, parsing and export support before admission.
 template <typename T>
 concept DataTableValue =
     std::same_as<T, std::remove_cvref_t<T>> &&
-    (data_table_detail::integer<data_table_detail::value_type<T>> || Real<data_table_detail::value_type<T>> ||
+    (data_table_detail::integer<data_table_detail::value_type<T>> ||
+     data_table_detail::supported_real<data_table_detail::value_type<T>> ||
      std::same_as<data_table_detail::value_type<T>, bool> ||
      data_table_detail::half_integer<data_table_detail::value_type<T>> || std::same_as<T, std::string>);
 

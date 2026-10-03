@@ -23,8 +23,12 @@ copies borrowed text. `get<T>()` requires the exact declared type; `as<T>()`
 performs a checked conversion or parses a complete text token directly as `T`.
 Integers and half-integers reject narrowing overflow; real conversion permits
 rounding but rejects finite overflow. Floating-point values never implicitly
-round to integers or half-integers. The supported vocabulary matches data tables;
-optional strings, vectors and arbitrary object types are not included.
+round to integers or half-integers. The supported vocabulary matches
+[data tables](data_tables.md): real fields have supported fixed precision.
+Runtime-precision `mpreal` and optional `mpreal` are rejected at construction and
+conversion, pending an explicit parsing/precision/export contract. Applications
+can use `format_real` to publish them deliberately as text. Optional strings,
+vectors and arbitrary object types are not included.
 
 A `metadata_document` orders groups and fields. Field IDs are globally unique
 within the document and use the data-column identifier grammar. Labels, units,

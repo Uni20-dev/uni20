@@ -199,7 +199,8 @@ template <StridedMdspanLike Span, std::integral... Extents>
 /// \brief Tensor-level descriptor owning a reshaped mdspan and backend selector.
 /// \details The descriptor aliases the same element storage as its source.
 ///          Mutability follows the preserved source accessor.
-template <MdspanLike Mdspan, class StoragePolicy, class BackendSelector> class ReshapedTensor {
+template <MdspanLike Mdspan, class StoragePolicy, class BackendSelector>
+class ReshapedTensor : public detail::precision_default<typename Mdspan::value_type> {
   public:
     using mdspan_type = Mdspan;
     using storage_policy = StoragePolicy;
@@ -299,6 +300,23 @@ class IndirectReshapedTensorView {
       CHECK(tensor_ != nullptr);
     }
 
+#if UNI20_ENABLE_MPFR
+    /// \brief Read the parent's current default precision without converting elements.
+    /// \pre The parent is constructed and readable, including its async epoch when applicable.
+    [[nodiscard]] Precision default_precision() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision();
+    }
+
+    /// \brief Read the parent's optional default under the same access rules as its values.
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const
+      requires has_runtime_precision_v<tensor_element_t<Tensor>>
+    {
+      return this->base().default_precision_if_set();
+    }
+#endif
+
     /// \brief Return the source storage's backend selector.
     [[nodiscard]] constexpr decltype(auto) backend_selector() const { return this->base().backend_selector(); }
 
@@ -376,18 +394,29 @@ template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::
   requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
 [[nodiscard]] auto make_tensor_reshape_view(Tensor&& tensor, Extents... requested_extents)
 {
-  auto span = make_reshape_view<LayoutPolicy>(tensor.mdspan(), requested_extents...);
-  using span_type = decltype(span);
-  using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
-  using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
-  return ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()};
+  if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>)
+  {
+    // Retain the parent so later default changes are visible without a metadata cache.
+    return IndirectReshapedTensorView<std::remove_reference_t<Tensor>, LayoutPolicy, Extents...>{tensor,
+                                                                                            requested_extents...};
+  }
+  else
+  {
+    auto span = make_reshape_view<LayoutPolicy>(tensor.mdspan(), requested_extents...);
+    using span_type = decltype(span);
+    using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
+    using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
+    return ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()};
+  }
 }
 
 } // namespace detail
 
 /// \brief Return a tensor-level no-copy reshape preserving a canonical source layout.
 /// \details Rvalue tensors are rejected because the returned descriptor does
-///          not extend the lifetime of addressable source storage.
+///          not extend the lifetime of addressable source storage. Runtime-precision
+///          views also retain a reference to the parent tensor to inherit its
+///          default, so that parent object must outlive the view.
 template <ImmediateTensorView Tensor, std::integral... Extents>
   requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor> &&
            detail::CanonicalReshapeLayout<typename immediate_tensor_mdspan_t<Tensor>::layout_type>)

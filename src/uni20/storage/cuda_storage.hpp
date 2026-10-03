@@ -102,7 +102,8 @@ inline constexpr bool has_zero_object_representation_v = [] {
 }();
 
 template <class Real>
-inline constexpr bool has_zero_object_representation_v<uni20::complex<Real>> = has_zero_object_representation_v<Real>;
+inline constexpr bool has_zero_object_representation_v<uni20::detail::standard_complex<Real>> =
+    has_zero_object_representation_v<Real>;
 
 template <class Descriptor> struct IsCudaBufferView : std::false_type
 {};

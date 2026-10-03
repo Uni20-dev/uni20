@@ -6,6 +6,7 @@
 #pragma once
 
 #include <uni20/common/trace.hpp>
+#include <uni20/core/numeric_limits.hpp>
 
 #include <charconv>
 #include <cmath>
@@ -271,6 +272,38 @@ template <std::signed_integral T> class basic_half_int {
     }
 
     T twice_ = 0;
+};
+
+/// \brief Exact representation properties and range of a half-integer scalar.
+/// \details The doubled representation has `digits` binary value bits. Range
+///          queries return half-integers, without passing through floating point.
+///          Floating-point quantities such as epsilon and exponent bounds are
+///          intentionally absent; this is not a floating-point format.
+template <std::signed_integral T> struct numeric_limits<basic_half_int<T>>
+{
+    static constexpr bool is_specialized = true;
+    static constexpr bool is_signed = true;
+    static constexpr bool is_integer = false;
+    static constexpr bool is_exact = true;
+    static constexpr bool is_bounded = true;
+    static constexpr bool is_iec559 = false;
+    static constexpr int radix = 2;
+    static constexpr int digits = numeric_limits<T>::digits;
+    static constexpr bool has_infinity = false;
+    static constexpr bool has_quiet_NaN = false;
+    static constexpr bool has_signaling_NaN = false;
+
+    /// \brief Most negative representable half-integer.
+    static constexpr basic_half_int<T> lowest() noexcept
+    {
+      return {numeric_limits<T>::lowest(), typename basic_half_int<T>::twice_tag{}};
+    }
+
+    /// \brief Greatest representable half-integer.
+    static constexpr basic_half_int<T> max() noexcept
+    {
+      return {numeric_limits<T>::max(), typename basic_half_int<T>::twice_tag{}};
+    }
 };
 
 /// \brief Default half-integer type used by Uni20.

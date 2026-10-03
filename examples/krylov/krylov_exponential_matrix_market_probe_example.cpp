@@ -907,7 +907,7 @@ template <typename Real> [[nodiscard]] std::string format_real(Real value)
   return presentation::format_real(value, full_precision_numeric_format());
 }
 
-template <typename Real> [[nodiscard]] std::string format_complex(uni20::complex<Real> value)
+template <uni20::Complex C> [[nodiscard]] std::string format_complex(C value)
 {
   return presentation::format_complex(value, full_precision_numeric_format());
 }

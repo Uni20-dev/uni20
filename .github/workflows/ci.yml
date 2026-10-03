@@ -128,7 +128,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   ubuntu-mplapack-binary128:
-    name: Ubuntu MPLAPACK Binary128
+    name: Ubuntu MPLAPACK Binary128 and MPFR
     runs-on: ubuntu-24.04
 
     env:
@@ -148,7 +148,10 @@ jobs:
             g++ \
             libopenblas-dev \
             liblapack-dev \
-            libgtest-dev
+            libgtest-dev \
+            libgmp-dev \
+            libmpfr-dev \
+            libmpc-dev
 
       - name: Configure
         run: |
@@ -160,6 +163,9 @@ jobs:
             -DUNI20_BUILD_ASM=OFF \
             -DUNI20_BUILD_PYTHON=OFF \
             -DUNI20_ENABLE_MPLAPACK=ON \
+            -DUNI20_ENABLE_MPFR=ON \
+            -DUNI20_ENABLE_MPC=ON \
+            -DUNI20_ENABLE_MPLAPACK_MPFR=ON \
             -DUNI20_BUILD_CLI=ON \
             -DUNI20_USE_SYSTEM_MPLAPACK=OFF \
             -DUNI20_USE_SYSTEM_TBB=OFF \
@@ -167,20 +173,28 @@ jobs:
             -DUNI20_USE_SYSTEM_GTEST=ON \
             -DUNI20_FETCHCONTENT_SOURCE=OFF
 
-      - name: Build binary128 validation targets
-        run: |
-          cmake --build build --parallel 2 --target \
-            uni20_mplapack_binary128_tests \
-            uni20_linalg_mplapack_binary128_tests \
-            uni20_krylov_mplapack_binary128_tests \
-            uni20_cli_tests \
-            presentation_cli_example \
-            spin_half_heisenberg_dmrg_example
+      - name: Build all targets with optional scalar providers
+        run: cmake --build build --parallel 2
 
-      - name: Test binary128 provider, CLI and DMRG paths
+      - name: Test complete provider-enabled suite
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Test numerical precision matrix
         run: |
-          ctest --test-dir build --output-on-failure \
-            -R "MplapackBinary128|SpinHalfHeisenbergDmrg.*Float128|^Cli"
+          build/tests/numerics/uni20_numerical_precision_tests --gtest_output=xml:build/precision.xml
+
+      - name: Report numerical precision coverage
+        if: always()
+        run: python3 scripts/report-numerical-precision.py build/precision.xml --output build/precision.md
+
+      - name: Upload numerical precision coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: numerical-precision-mplapack
+          path: |
+            build/precision.xml
+            build/precision.md
 
   ubuntu-clang-debug:
     name: Ubuntu Clang 19 Debug
@@ -213,7 +227,8 @@ jobs:
             libbenchmark-dev \
             libgtest-dev \
             libgmp-dev \
-            libmpfr-dev
+            libmpfr-dev \
+            libmpc-dev
 
       - name: Use current CMake 4.x
         run: |
@@ -228,6 +243,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DUNI20_BUILD_CLI=ON \
             -DUNI20_ENABLE_MPFR=ON \
+            -DUNI20_ENABLE_MPC=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \

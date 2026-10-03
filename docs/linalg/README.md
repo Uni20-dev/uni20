@@ -18,6 +18,8 @@ optional multiprecision support, and linear-algebra design background.
   survey separately from Krylov algorithm behavior.
 - [MPLAPACK Binary128](mplapack_binary128.md) is the build and validation guide
   for optional binary128 provider support.
+- [MPLAPACK MPFR/MPC](mplapack_mpfr.md) covers explicit-precision matrix products,
+  LU solves, tensor defaults and per-call provider context in async execution.
 - [Tensor Contraction](tensor_contraction.md) defines the fixed-output dense
   contraction contract, current CPU reference path, and backend strategy
   hierarchy.

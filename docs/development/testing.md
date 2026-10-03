@@ -12,6 +12,35 @@ uni20 testing uses:
 
 Tests live in `tests/` and are organized by module.
 
+Scalar-generic numerical changes use the shared cases and evidence requirements
+in [Numerical precision validation](numerical_testing.md). A type compiling or
+an aggregate suite passing does not certify every operation at that precision.
+
+Register tests for configured features and applicable supported combinations.
+Keep known coverage gaps in the numerical coverage report, and fail when
+expected support is missing. Reserve runtime skips for conditions such as
+unavailable hardware topology; a fully configured build should otherwise run
+all its registered tests.
+
+## Integration checks before pushing
+
+Changes to shared scalar traits, numeric limits, initialization, or other widely
+included templates need complete builds and unfiltered CTest runs in the affected
+CI configurations. Building only the new numerical tests can miss failures in
+storage, formatting, CLI examples, and Python bindings that consume those same
+headers. Keep examples, CLI, and bindings enabled wherever the corresponding CI
+job enables them. A successful targeted run is useful during development but is
+not a replacement for this integration check.
+
+For cross-cutting scalar changes, cover the GCC Debug and Release configurations,
+Clang Debug, and the optional MPLAPACK configuration when affected. Include the
+MPFR-disabled, MPFR-only, and MPFR/MPC combinations used by those jobs. Run an
+unfiltered `cmake --build <build-dir>` before `ctest --test-dir <build-dir>
+--output-on-failure`; test discovery after a partial build is not evidence that
+the entire suite built. Record compiler/configuration details, actual failures,
+and skip counts, and identify unavailable configurations explicitly. Do not claim
+GPU, MPI, or macOS validation from a Linux CPU run.
+
 ## Test Layout
 
 Current test modules include:
@@ -25,6 +54,7 @@ Current test modules include:
 - `tests/krylov`
 - `tests/linalg`
 - `tests/mdspan`
+- `tests/numerics` (shared real/complex precision and backend matrix)
 - `tests/tensor`
 - `tests/python` (only when `UNI20_BUILD_PYTHON=ON`)
 

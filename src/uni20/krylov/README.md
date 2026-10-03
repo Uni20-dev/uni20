@@ -30,8 +30,6 @@ norms and inner products.
   prototype callers.
 - `block_tensor_vector.hpp`: exact-structure BlockTensor vector algebra and an
   owned-callable matrix-free operator adapter.
-- `detail_math.hpp`: ADL-enabled scalar math helpers used by precision-generic
-  Krylov code.
 
 ## Design Notes
 

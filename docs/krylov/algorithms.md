@@ -21,13 +21,20 @@ backend for maintained matrix-free eigensolvers and exponential actions. CMake
 prefers a compatible installed MPLAPACK package and otherwise fetches the pinned
 3.0.0 release. Ordinary typed tests focus on the stable `s`, `d`, `c`, and `z`
 paths, while maintained `MplapackBinary128*` targets cover selected binary128
-stress cases. See [Krylov Precision Validation](precision_validation.md) for
+stress cases. The shared `NumericalKrylov/*` probes run the same small-gap and
+residual problems across supported precisions and explicitly report float80 and
+MPFR/MPC solver gaps. See [Krylov Precision Validation](precision_validation.md) for
 the test-level `f128` and `cf128` validation matrix.
 
 Dense provider and quarantined helper coverage is tracked separately in
 [Dense BLAS/LAPACK Wrapper Coverage](../linalg/dense_blas_lapack_coverage.md).
 
 ## Matrix-Free Boundary
+
+Host scalar calculations use the shared
+[`uni20::math` interface](../tensor/scalar_math_design.md) and `uni20::isfinite`.
+This keeps ADL and extension-precision handling in core; it does not expand the
+projected-solver scalar/backend coverage listed here.
 
 Native Krylov solvers operate through a matrix-free interface. The Krylov layer
 does not inspect vector storage and assumes only vector allocation, copy,
@@ -137,6 +144,11 @@ Real nonsymmetric solves classify selected Ritz values with
 accepts only numerically real selected eigenpairs. Complex-pair handling in real
 vector output remains an interface design point; complex arithmetic is the
 available path when complex eigenpairs are required.
+
+`classify_ritz_reality(theta)` deduces the complex scalar from the Ritz value;
+`extract_complex_arnoldi_ritz(factorization)` deduces it from the factorization.
+Both calls allow the real-valued tolerance and scale arguments to be omitted.
+When specifying a template argument explicitly, use the complex scalar type.
 
 ### Krylov Exponential Actions
 
@@ -418,3 +430,14 @@ final step tail estimate.
   Hermitian path does support adaptive relative tolerance for
   unitary/nonexpansive single-step actions.
 - Type-specific stress hardening for `s`, `d`, `c`, and `z` remains ongoing.
+
+### Runtime-precision Ritz classification
+
+The standalone `classify_ritz_reality(theta, ...)` helper accepts
+`complex<mpreal>`. Its automatic tolerance is `sqrt(epsilon(theta.real()))`, using
+the value's working precision. Exact inputs require an explicit positive,
+finite-precision tolerance; that precision also supplies approximate evaluation
+of their complex magnitude. `default_complex_pair_tolerance(exemplar)` exposes
+the same value-based policy. The zero-argument overload is available only for
+scalars with type-wide epsilon. This helper support does not imply MPFR support
+throughout the Krylov solvers.

@@ -102,7 +102,7 @@ template <uni20::LapackReal Real> uni20::complex<Real> generalized_eigenvalue(Re
 }
 
 template <uni20::LapackReal Scalar>
-std::vector<RealSchurBlock<Scalar>> real_schur_blocks(std::vector<uni20::complex<Scalar>> const& eigenvalues)
+std::vector<RealSchurBlock<Scalar>> real_schur_blocks(std::vector<uni20::detail::standard_complex<Scalar>> const& eigenvalues)
 {
   std::vector<RealSchurBlock<Scalar>> blocks;
   for (std::size_t index = 0; index < eigenvalues.size();)
@@ -119,9 +119,9 @@ std::vector<RealSchurBlock<Scalar>> real_schur_blocks(std::vector<uni20::complex
     {
       throw std::runtime_error("LAPACK gees returned an incomplete complex Schur block");
     }
-    if (detail::adl_abs(eigenvalues[index + 1] - std::conj(eigenvalues[index])) >
+    if (uni20::math::abs(eigenvalues[index + 1] - std::conj(eigenvalues[index])) >
         Scalar{100} * uni20::numeric_limits<Scalar>::epsilon() *
-            std::max(Scalar{1}, std::max(detail::adl_abs(eigenvalues[index]), detail::adl_abs(eigenvalues[index + 1]))))
+            std::max(Scalar{1}, std::max(uni20::math::abs(eigenvalues[index]), uni20::math::abs(eigenvalues[index + 1]))))
     {
       throw std::runtime_error("LAPACK gees returned a non-adjacent complex conjugate Schur block");
     }
@@ -432,7 +432,7 @@ RealSchurDecomposition<Scalar> real_hessenberg_schur(uni20::DenseMatrix<Scalar> 
 /// \param compute_vectors Whether to compute Schur vectors.
 /// \return Complex Schur form, optional Schur vectors, and eigenvalues.
 template <uni20::LapackReal Real>
-RightComplexSchurDecomposition<Real> complex_schur_layout_right(RightMatrix<uni20::complex<Real>> matrix,
+RightComplexSchurDecomposition<Real> complex_schur_layout_right(RightMatrix<uni20::detail::standard_complex<Real>> matrix,
                                                                 bool compute_vectors)
 {
   if (matrix.rows() != matrix.cols())
@@ -467,7 +467,7 @@ RightComplexSchurDecomposition<Real> complex_schur_layout_right(RightMatrix<uni2
 /// \param compute_vectors Whether to compute Schur vectors.
 /// \return Complex Schur form, optional Schur vectors, and eigenvalues.
 template <uni20::LapackReal Real>
-ComplexSchurDecomposition<Real> complex_schur(uni20::DenseMatrix<uni20::complex<Real>> matrix, bool compute_vectors)
+ComplexSchurDecomposition<Real> complex_schur(uni20::DenseMatrix<uni20::detail::standard_complex<Real>> matrix, bool compute_vectors)
 {
   using Complex = uni20::complex<Real>;
   ComplexSchurDecomposition<Real> result;
@@ -734,7 +734,7 @@ RealNonsymmetricEigensystem<Real> real_nonsymmetric_eigensystem(uni20::DenseMatr
 ///         and reciprocal condition estimates.
 
 template <uni20::LapackReal Real>
-ComplexNonsymmetricEigensystem<Real> complex_nonsymmetric_eigensystem(uni20::DenseMatrix<uni20::complex<Real>> matrix,
+ComplexNonsymmetricEigensystem<Real> complex_nonsymmetric_eigensystem(uni20::DenseMatrix<uni20::detail::standard_complex<Real>> matrix,
                                                                       bool compute_right_vectors)
 {
   if (matrix.rows() != matrix.cols())

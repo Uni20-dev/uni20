@@ -2,12 +2,36 @@
 
 Optional [arbitrary-precision real scalars](mpreal.md) use `uni20::mpreal`
 with explicit runtime `Precision` when `UNI20_ENABLE_MPFR=ON`. This first
-slice provides scalar arithmetic and exact constants; arbitrary-precision
-complex, tensor allocation, and dense backend integration are not yet supplied.
-Unlike the fixed-precision types below, `mpreal` has no default constructor or
-type-only numerical limits. Its `Real` trait does not imply BLAS/LAPACK support.
-`complex<mpreal>` and `make_complex_t<mpreal>` are rejected until the MPC
-implementation is available; they do not fall back to `std::complex<mpreal>`.
+layer provides scalar arithmetic and exact constants. `UNI20_ENABLE_MPC=ON`
+additionally supplies MPC-backed `complex<mpreal>` and `make_complex_t<mpreal>`;
+these names are unavailable in a real-only build. Default-constructed MPFR/MPC
+scalars are exact zero; explicit `uninitialized` supplies an unset placeholder.
+They hold exact rationals until finite working precision is supplied. Their
+precision cannot be described by type-only numerical limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
+allocation and dense backend integration are separate from scalar support.
+`UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a narrowly scoped
+[matrix-product and LU-solve backend](../linalg/mplapack_mpfr.md), without extending
+the type-only `LapackScalar` concepts or generic Krylov support.
+
+`uni20::complex<T>` selects the appropriate owning scalar type. Existing native
+real types retain exact `std::complex<T>` type identity. Generic complex APIs
+should deduce the complex type directly (`template <Complex C>`) and obtain its
+real type through `make_real_t<C>`; deduction through the selecting alias is not
+supported, including in partial specializations or nested container parameters.
+Tests should exercise deduction without explicit template arguments or optional
+real-valued arguments that could mask this limitation. Internal adaptations
+specifically for the standard-library family use `detail::standard_complex<T>`,
+including its fixed-precision LAPACK ABI and CUDA storage/execution adapters.
+MPC component access returns owning real values; setters convert to the existing
+complex precision. Do not reinterpret an MPC value as adjacent C++ real objects.
+
+Runtime-precision host tensors take a trailing `Precision` and carry a construction
+default independently of their elements. Parent-backed structural views inherit
+that default, resolving it within the readable parent epoch for async aliases;
+changing a default never converts stored values. Use `at_precision(tensor, p)` for
+explicit bulk conversion. Fixed-precision storage and views have no corresponding
+runtime state. See [tensor construction defaults](mpreal.md#tensor-construction-defaults)
+for output allocation and view metadata semantics.
 
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
@@ -57,10 +81,9 @@ pinned 3.0.0 release with only its binary128 backend enabled. See [MPLAPACK
 Binary128 Setup](../linalg/mplapack_binary128.md) for dependency selection,
 optional system-package, and validation commands.
 
-`uni20::complex<T>` is intentionally a type alias to `std::complex<T>`, not a
-replacement class. This keeps standard-library ABI, layout expectations, and
-interop behavior unchanged while giving Uni20 a single project-level spelling
-for complex scalars.
+For native real types, `uni20::complex<T>` retains standard-library ABI, layout
+and interoperability. The MPC specialization has its own representation and
+must be explicitly converted at provider boundaries.
 
 Owning Tensor shape construction initializes stored numerical elements to zero.
 `uni20::uninitialized` explicitly requests storage whose values must be supplied
@@ -213,6 +236,17 @@ through algorithms.
 
 ## Scalar Math
 
+Use the callable operations in `uni20::math` from `<uni20/core/math.hpp>` for
+scalar-generic host math, such as `math::sqrt`, `math::abs` and `math::exp`.
+They dispatch to native or class-specific ADL overloads without a fallback
+conversion of unfamiliar classes to `double`. Native real results cannot narrow
+their operands' precision. `math::real` and `math::imag` read components by value;
+real and integral scalars retain their type, and imaginary zero retains runtime
+precision. Scalar exactness and explicit `Precision` rules are unchanged.
+See [shared scalar math dispatch](scalar_math_design.md) for the operation list,
+extension contract and host-execution boundary. Do not duplicate subsystem-private
+`adl_*` helpers for these operations.
+
 Scalar-generic code should use `uni20::isfinite(x)` instead of directly calling
 `std::isfinite(x)` when `x` may be a Uni20 scalar. Integers are always finite,
 real scalars are checked for NaN and positive/negative infinity through
@@ -264,6 +298,13 @@ types satisfying Uni20's `Real` and `Complex` concepts, including
 Native `float80` uses the existing `long double` parsing, formatting, and
 presentation precision policy; no conversion through `double` is involved.
 
+Scalar formatting support does not imply typed table or metadata support.
+`presentation::DataTableValue` admits supported fixed-precision real types;
+`mpreal` and optional `mpreal` are rejected by table schemas and `metadata_value`
+construction/conversion until runtime-precision parsing and export contracts are
+defined. `format_real(mpreal)` remains available for explicit textual output.
+See [typed data tables](../diagnostics/data_tables.md) for the supported types.
+
 Trace precision is independently configurable for float32, float64, and
 float128 values. The global environment variables are
 `UNI20_FP_PRECISION_FLOAT32`, `UNI20_FP_PRECISION_FLOAT64`, and
@@ -273,12 +314,27 @@ override. Complex values use the precision of their real component type.
 ## Numeric Limits
 
 Scalar-generic Uni20 algorithms should use `uni20::numeric_limits<T>` rather
-than naming `std::numeric_limits<T>` directly. The primary Uni20 template
-inherits from `std::numeric_limits<T>`, so built-in arithmetic types use the
-standard-library implementation without extra code.
+than naming `std::numeric_limits<T>` directly. The primary Uni20 template is
+undefined: there are no generic default values. A constrained specialization
+explicitly delegates native arithmetic types to their specialized standard-library
+limits. Every library scalar must supply its own Uni20 specialization; a standard
+specialization alone does not opt a library type into the Uni20 interface.
 
-For extension or library scalar types where the standard library does not
-provide complete limits, specialize `uni20::numeric_limits<T>`:
+Half-integer limits are defined by `common/half_int.hpp`:
+`numeric_limits<basic_half_int<T>>` describes an exact, bounded, signed scalar
+with radix 2 and the value-bit count of its doubled integer representation.
+`is_integer` is false because values may have a fractional half. `lowest()` and
+`max()` return exact half-integer endpoints. Infinity and NaN capabilities are
+false; epsilon, floating-point exponent bounds, and an ambiguous `min()` query
+are not provided. `uni20::is_exact(half_int_value)` consequently returns true.
+
+Generic code must establish the numeric category before querying its limits.
+An ordinary `&&` expression does not prevent template instantiation of its
+right-hand side. Use nested `if constexpr` branches or constraints, and probe
+optional quantities with `requires`. In particular, storage initialization must
+not instantiate numeric limits for strings or other nonnumeric element types.
+
+For extension or library scalar types, specialize `uni20::numeric_limits<T>`:
 
 ```cpp
 namespace uni20
@@ -289,6 +345,7 @@ template <> struct numeric_limits<my_real>
     static constexpr int digits = /* ... */;
 
     static my_real epsilon();
+    static my_real epsilon(my_real const&); // Same value, for generic callers.
     static my_real min();
     static my_real max();
 };
@@ -298,3 +355,69 @@ template <> struct numeric_limits<my_real>
 Do not add specializations of `std::numeric_limits` for compiler fundamental
 extension types such as `__float128` or `_Float128`. Those are not
 user-defined types. Keep such support behind the Uni20 customization point.
+
+### Runtime precision
+
+`numeric_limits<mpreal>` separates fixed type properties (`radix`, `is_exact`,
+`is_integer`, etc.) from quantities requiring a working precision:
+
+```cpp
+auto p = Precision::bits(256);
+mpreal x("0.1", p);
+auto eps = numeric_limits<mpreal>::epsilon(x); // 2^(1 - 256), at 256 bits
+auto bits = numeric_limits<mpreal>::digits(x);
+auto same_eps = numeric_limits<mpreal>::epsilon(p);
+```
+
+Scalar-generic code can use `numeric_limits<Real>::epsilon(value)` for native
+real types as well. Their existing zero-argument, constexpr queries remain
+available. Runtime `digits(value)` and `digits(p)` apply to `mpreal`; native
+`digits` remains the usual compile-time constant.
+
+An exact or unset exemplar cannot supply finite working precision: these runtime
+queries throw rather than return zero or choose an ambient default. Pass a finite
+`Precision` explicitly when starting an approximate algorithm from exact inputs.
+`numeric_limits<mpreal>::epsilon()` is deleted, and other unsupported limits are
+absent. `has_numeric_limits_v` indicates a specialization exists, not that every
+query is available without a value. Generic algorithms requiring type-wide limits
+must constrain those particular queries. This prevents the unspecialized standard
+template's zero-valued fallback from silently becoming a convergence tolerance.
+
+### Exactness queries
+
+`uni20::is_exact(value)` queries the active arithmetic state of `mpreal`,
+`complex<mpreal>` and `exact_constant`, and the static exactness of ordinary scalar
+types. It returns false for an unset runtime scalar. `numeric_limits<T>::is_exact`
+remains a compile-time type property; it cannot describe the changing state of an
+individual `mpreal`. Ordinary integers are exact, while native floating values
+are approximate even when numerically integral. Exact rational roots, powers,
+parsing and explicit native conversions are described in [mpreal](mpreal.md).
+
+Mixed exact/approximate basic arithmetic retains exact operands until rounding
+the result to the finite operand's precision. Finite `+`, `-`, `*` and `/`
+results are correctly rounded (per component for complex values); division
+requires a nonzero divisor for this statement. Mixed complex multiplication and
+division, and exact-real/approximate-real division, keep large binary exponents
+separate from rational coefficients. The large-exponent path uses exact scaled
+comparisons to select the rounded result, including cancellation and ties;
+temporary integer storage scales with significand and rational sizes rather than
+the numerical exponent. Ordinary-sized exponents use direct rational arithmetic. Two approximate operands still
+require matching precision. Approximation-driven algorithms must obtain finite
+working precision explicitly or from their inputs; an all-exact state supplies
+no approximation budget.
+
+Runtime-precision real and complex math functions accept a trailing finite
+`Precision`: they convert each input to that precision, then evaluate, always
+returning an approximate result at that precision. Without an override, exact
+results remain exact where supported, and approximate operands supply the working
+precision. This distinction also applies to the real outputs of complex `abs`,
+`norm`, and `arg`.
+
+## Numerical validation
+
+Scalar support is validated per operation and backend using the
+[shared numerical precision cases](../development/numerical_testing.md).
+Float80 and finite MPFR/MPC values participate alongside float32/64/128; MPFR
+runs at both 128 and 256 bits. Unsupported algorithms and missing optional
+providers are reported explicitly. Passing scalar arithmetic or one backend's
+tests does not establish library-wide support for that scalar.

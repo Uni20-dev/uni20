@@ -1,3 +1,4 @@
+#include <uni20/core/math.hpp>
 #include <uni20/linalg/backends/cpu/matrix_exponential.hpp>
 #include <uni20/linalg/ops/linear_solve.hpp>
 #include <uni20/linalg/ops/matrix_norm.hpp>
@@ -31,54 +32,6 @@ constexpr std::array<double, 5> kThetaBounds{
 template <typename Scalar, typename Integer> constexpr Scalar exact_integer(Integer value)
 {
   return static_cast<Scalar>(value);
-}
-
-template <typename T> auto adl_abs(T const& value)
-{
-  using std::abs;
-  return abs(value);
-}
-
-template <typename T> auto adl_sqrt(T const& value)
-{
-  using std::sqrt;
-  return sqrt(value);
-}
-
-template <typename T> auto adl_log2(T const& value)
-{
-  using std::log2;
-  return log2(value);
-}
-
-template <typename T, typename Exponent> auto adl_pow(T const& value, Exponent const& exponent)
-{
-  using std::pow;
-  return pow(value, exponent);
-}
-
-template <typename T> auto adl_sin(T const& value)
-{
-  using std::sin;
-  return sin(value);
-}
-
-template <typename T> bool adl_isfinite(T const& value)
-{
-  using std::isfinite;
-  return isfinite(value);
-}
-
-template <typename T> auto adl_ceil(T const& value)
-{
-  using std::ceil;
-  return ceil(value);
-}
-
-template <typename T> auto adl_ldexp(T const& value, int exponent)
-{
-  using std::ldexp;
-  return ldexp(value, exponent);
 }
 
 template <typename Scalar> uni20::DenseMatrix<Scalar> make_identity(std::size_t order)
@@ -283,13 +236,13 @@ int compute_scaling_exponent(uni20::DenseMatrix<Scalar> const& A4, uni20::DenseM
 
   Real const norm4 = matrix_one_norm(A4);
   Real const norm6 = matrix_one_norm(A6);
-  if (!adl_isfinite(norm4) || !adl_isfinite(norm6))
+  if (!uni20::isfinite(norm4) || !uni20::isfinite(norm6))
   {
     throw std::overflow_error("matrix powers overflowed while computing matrix_exponential scaling");
   }
 
-  Real const d4 = adl_pow(norm4, Real{0.25});
-  Real const d6 = adl_pow(norm6, Real{1} / Real{6});
+  Real const d4 = uni20::math::pow(norm4, Real{0.25});
+  Real const d6 = uni20::math::pow(norm6, Real{1} / Real{6});
   Real const eta = std::max(d4, d6);
   if (eta == Real{})
   {
@@ -302,12 +255,12 @@ int compute_scaling_exponent(uni20::DenseMatrix<Scalar> const& A4, uni20::DenseM
     return 0;
   }
 
-  Real const exponent = adl_log2(ratio);
+  Real const exponent = uni20::math::log2(ratio);
   if (exponent <= Real{})
   {
     return 0;
   }
-  return static_cast<int>(adl_ceil(exponent));
+  return static_cast<int>(uni20::math::ceil(exponent));
 }
 
 template <typename Scalar> uni20::make_real_t<Scalar> entry_abs_log2_upper_bound(Scalar const& value)
@@ -316,9 +269,9 @@ template <typename Scalar> uni20::make_real_t<Scalar> entry_abs_log2_upper_bound
 
   if constexpr (uni20::Complex<Scalar>)
   {
-    Real const real = adl_abs(value.real());
-    Real const imag = adl_abs(value.imag());
-    if (!adl_isfinite(real) || !adl_isfinite(imag))
+    Real const real = uni20::math::abs(value.real());
+    Real const imag = uni20::math::abs(value.imag());
+    if (!uni20::isfinite(real) || !uni20::isfinite(imag))
     {
       throw std::overflow_error("matrix_exponential requires finite matrix entries");
     }
@@ -331,13 +284,13 @@ template <typename Scalar> uni20::make_real_t<Scalar> entry_abs_log2_upper_bound
 
     Real const real_scaled = real / component;
     Real const imag_scaled = imag / component;
-    Real const factor = adl_sqrt(real_scaled * real_scaled + imag_scaled * imag_scaled);
-    return adl_log2(component) + adl_log2(factor);
+    Real const factor = uni20::math::sqrt(real_scaled * real_scaled + imag_scaled * imag_scaled);
+    return uni20::math::log2(component) + uni20::math::log2(factor);
   }
   else
   {
-    Real const magnitude = adl_abs(value);
-    if (!adl_isfinite(magnitude))
+    Real const magnitude = uni20::math::abs(value);
+    if (!uni20::isfinite(magnitude))
     {
       throw std::overflow_error("matrix_exponential requires finite matrix entries");
     }
@@ -345,7 +298,7 @@ template <typename Scalar> uni20::make_real_t<Scalar> entry_abs_log2_upper_bound
     {
       return -uni20::numeric_limits<Real>::infinity();
     }
-    return adl_log2(magnitude);
+    return uni20::math::log2(magnitude);
   }
 }
 
@@ -373,13 +326,13 @@ template <typename Scalar> int compute_prescaling_exponent(uni20::DenseMatrix<Sc
 
   Real const dimension = std::max(Real{1}, static_cast<Real>(A.rows()));
   Real const safe_power_log2 =
-      Real{-1} + (adl_log2(uni20::numeric_limits<Real>::max()) / Real{6}) - adl_log2(dimension);
+      Real{-1} + (uni20::math::log2(uni20::numeric_limits<Real>::max()) / Real{6}) - uni20::math::log2(dimension);
   Real const exponent = max_entry_log2 - safe_power_log2;
   if (exponent <= Real{})
   {
     return 0;
   }
-  return static_cast<int>(adl_ceil(exponent));
+  return static_cast<int>(uni20::math::ceil(exponent));
 }
 
 template <typename Scalar> bool has_real_entries(uni20::DenseMatrix<Scalar> const& A)
@@ -437,10 +390,10 @@ template <typename Scalar> void validate_finite_entries(uni20::DenseMatrix<Scala
     {
       if constexpr (uni20::Complex<Scalar>)
       {
-        if (!adl_isfinite(A[row, col].real()) || !adl_isfinite(A[row, col].imag()))
+        if (!uni20::isfinite(A[row, col].real()) || !uni20::isfinite(A[row, col].imag()))
           throw std::overflow_error("matrix_exponential requires finite matrix entries");
       }
-      else if (!adl_isfinite(A[row, col]))
+      else if (!uni20::isfinite(A[row, col]))
       {
         throw std::overflow_error("matrix_exponential requires finite matrix entries");
       }
@@ -468,13 +421,13 @@ bool try_real_skew_symmetric_3x3_matrix_exponential(uni20::DenseMatrix<Scalar> c
   Real const x = -real_value(A[1, 2]);
   Real const y = real_value(A[0, 2]);
   Real const z = -real_value(A[0, 1]);
-  Real const max_component = std::max({adl_abs(x), adl_abs(y), adl_abs(z)});
+  Real const max_component = std::max({uni20::math::abs(x), uni20::math::abs(y), uni20::math::abs(z)});
   if (max_component == Real{})
   {
     result = make_identity<Scalar>(3);
     return true;
   }
-  if (!adl_isfinite(max_component))
+  if (!uni20::isfinite(max_component))
   {
     throw std::overflow_error("matrix_exponential requires finite matrix entries");
   }
@@ -482,9 +435,9 @@ bool try_real_skew_symmetric_3x3_matrix_exponential(uni20::DenseMatrix<Scalar> c
   Real const x_scaled = x / max_component;
   Real const y_scaled = y / max_component;
   Real const z_scaled = z / max_component;
-  Real const norm_scaled = adl_sqrt(x_scaled * x_scaled + y_scaled * y_scaled + z_scaled * z_scaled);
+  Real const norm_scaled = uni20::math::sqrt(x_scaled * x_scaled + y_scaled * y_scaled + z_scaled * z_scaled);
   Real const theta = max_component * norm_scaled;
-  if (!adl_isfinite(theta))
+  if (!uni20::isfinite(theta))
   {
     return false;
   }
@@ -502,8 +455,8 @@ bool try_real_skew_symmetric_3x3_matrix_exponential(uni20::DenseMatrix<Scalar> c
   K[2, 1] = Scalar(ux);
 
   Real const half_theta = theta / Real{2};
-  Real const sin_half_theta = adl_sin(half_theta);
-  Real const sine = adl_sin(theta);
+  Real const sin_half_theta = uni20::math::sin(half_theta);
+  Real const sine = uni20::math::sin(theta);
   Real const one_minus_cosine = Real{2} * sin_half_theta * sin_half_theta;
   uni20::DenseMatrix<Scalar> const K2 = multiply(K, K);
   result = add(add(make_identity<Scalar>(3), scale(K, sine)), scale(K2, one_minus_cosine));
@@ -562,7 +515,7 @@ uni20::DenseMatrix<Scalar> matrix_exponential_scaled(uni20::DenseMatrix<Scalar> 
   int const prescaling = detail::compute_prescaling_exponent(A);
   if (prescaling != 0)
   {
-    Real const prescale = adl_ldexp(Real{1}, -prescaling);
+    Real const prescale = uni20::math::ldexp(Real{1}, -prescaling);
     A = scale(std::move(A), prescale);
   }
 
@@ -584,7 +537,7 @@ uni20::DenseMatrix<Scalar> matrix_exponential_scaled(uni20::DenseMatrix<Scalar> 
   }
   else
   {
-    Real const scale_real = adl_ldexp(Real{1}, -additional_scaling);
+    Real const scale_real = uni20::math::ldexp(Real{1}, -additional_scaling);
     Real const scale_sq = scale_real * scale_real;
     Real const scale_pow4 = scale_sq * scale_sq;
     Real const scale_pow6 = scale_pow4 * scale_sq;

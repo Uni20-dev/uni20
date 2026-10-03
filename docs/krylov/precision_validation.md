@@ -153,6 +153,19 @@ This table records the ordinary default-build coverage for `s`, `d`, `c`, and
 `DenseHostVectorOps` also has compile-time `KrylovMatrixFreeOperator` assertions
 for `s`, `d`, `c`, and `z`.
 
+## Shared precision probes
+
+The [numerical precision matrix](../development/numerical_testing.md) now runs
+common gap, residual, and accuracy probes across float32/64/80/128 and MPFR at
+128/256 bits, with real and complex cases. Unavailable configurations and
+unsupported operations remain visible in the coverage report with reasons;
+they are not registered as executable tests. Missing expected probes fail
+the registry check or report instead of becoming skips.
+`NumericalKrylov/*` covers projected tridiagonal eigensystems, Lanczos, Arnoldi,
+and Hermitian exponential action for the supported native and binary128 types.
+Float80 and MPFR/MPC end-to-end Krylov support remains unsupported; runtime
+Ritz-reality helper tests do not certify those solvers.
+
 ## Optional MPLAPACK Binary128 Coverage
 
 This table records the `UNI20_ENABLE_MPLAPACK=ON` probes. The entries are not
@@ -173,21 +186,21 @@ that provider/helper inventory.
 | --- | --- | --- | --- |
 | Scalar aliases, numeric limits, scalar concepts, and scalar I/O | yes | yes | `MplapackBinary128Test.Uni20NumericLimitsSeesBackendScalar`, `Uni20ScalarConceptsSeeBackendScalar`, `Uni20ScalarIo*` |
 | MPBLAS wrapper surface | yes | yes | `MplapackBinary128Test.LinksMpblasTransitively`, `Uni20BlasWrappersPreserveBinary128OnlyIncrements` |
-| Dense one-norm and linear solve through CPU helpers | yes | n/a | `MplapackBinary128CpuOpsTest.MatrixOneNormPreservesBinary128Precision`, `SolveAcceptsPivotsBelowDoubleMinimum` |
-| Tensor reductions through the CPU reference backend | yes | no | `MplapackBinary128CpuOpsTest.TensorReductionsPreserveBinary128Values` |
+| Dense one-norm and linear solve through CPU helpers | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuMatrixOneNormRetainsIncrement`, `SolvePreservesExtendedExponentRange` |
+| Tensor reductions through the CPU reference backend | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuReductionsRetainIncrement` |
 | Dense matrix exponential prescaling | yes | no | `MplapackBinary128CpuOpsTest.MatrixExponentialPrescalesWithinBinary128` |
 | Exact Tensor SVD | yes | yes | `MplapackBinary128CpuOpsTest.ExactSvdPreservesRealAndComplexBinary128Values`, `AsyncSvdTest.SupportsConfiguredFloat128Backend` |
 | Reduced Tensor QR and LQ | yes | n/a | `MplapackBinary128CpuOpsTest.ReducedQrAndLqPreserveBinary128Values` |
 | BlockTensor SVD and finite two-site DMRG | yes | yes | `SpinHalfHeisenbergDmrgFloat128Example`, `SpinHalfHeisenbergDmrgComplexFloat128Example`; the analytic four-site energy check requires fp128 agreement beyond double precision. |
 | Broad dense projected real helper inventory | regression | n/a | Quarantined API inventory exercised by `MplapackBinary128DenseSubspaceTest.*`. |
 | Dense projected complex eigensystem and Schur helper inventory | n/a | regression | Quarantined API inventory exercised by `MplapackBinary128DenseSubspaceTest.*`. |
-| Symmetric tridiagonal projected eigensystem | yes | n/a | `MplapackBinary128KrylovSolversTest.TridiagonalProjectionResolvesGapBelowDoublePrecision` |
-| Symmetric/Hermitian Lanczos, full projection | yes | no | `MplapackBinary128KrylovSolversTest.SymmetricLanczosResolvesDiagonalGapBelowDoublePrecision` |
+| Symmetric tridiagonal projected eigensystem | yes | n/a | `NumericalKrylov/RealFloat128.ProjectedTridiagonalResolvesGap` |
+| Symmetric/Hermitian Lanczos, full projection | yes | yes | `NumericalKrylov/{Real,Complex}Float128.LanczosResolvesGapAndResidual` |
 | Real nonsymmetric projected Schur kernels | yes | n/a | `MplapackBinary128KrylovSolversTest.RealSchurAndReorderUseBinary128ProjectedLAPACK`, `RealHessenbergSchurUsesBinary128ProjectedLAPACK` |
 | Real nonsymmetric Arnoldi, full projection | yes | n/a | `MplapackBinary128KrylovSolversTest.RealArnoldiResolvesTriangularGapBelowDoublePrecision` |
 | Complex nonsymmetric projected Schur kernels | n/a | yes | `MplapackBinary128KrylovSolversTest.ComplexSchurAndReorderUseBinary128ProjectedLAPACK` |
-| Complex nonsymmetric Arnoldi, full projection | n/a | yes | `MplapackBinary128KrylovSolversTest.ComplexArnoldiResolvesComplexGapBelowDoublePrecision` |
-| Hermitian Krylov exponential action, fixed subspace | yes | no | `MplapackBinary128KrylovSolversTest.HermitianExponentialActionPreservesBinary128OnlyIncrement` |
+| Complex nonsymmetric Arnoldi, full projection | n/a | yes | `NumericalKrylov/ComplexFloat128.ArnoldiResolvesGap` |
+| Hermitian Krylov exponential action, fixed subspace | yes | yes | `NumericalKrylov/{Real,Complex}Float128.ExponentialActionRetainsIncrement` |
 
 `no` in this optional table means no dedicated binary128 probe exists yet. It
 does not necessarily mean the templated implementation cannot instantiate once
@@ -224,3 +237,12 @@ exponential-action error indicators; see
 Lanczos time stepping, restart/error control, Al-Mohy/Higham-style norm
 estimation for the Taylor reference path, and broader matrix-free exponential
 stress tests remain future work.
+
+## Runtime-precision scalar helper coverage
+
+With `UNI20_ENABLE_MPC=ON`,
+`KrylovMatrixFreeInterface.RitzRealityUsesRuntimePrecision` checks the standalone
+Ritz-reality classifier at 80 and 256 bits, including all three classifications,
+precision-dependent classification of the same numerical value, and exact inputs
+with and without an explicit finite-precision tolerance. General MPFR/MPC Krylov
+solver support is not part of this validation.

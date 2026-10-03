@@ -12,6 +12,7 @@
 #include "generated.hpp"
 #include "mdspec_tensor_view.hpp"
 #include "output.hpp"
+#include "precision.hpp"
 #include "reshape.hpp"
 
 #if UNI20_BACKEND_CUDA

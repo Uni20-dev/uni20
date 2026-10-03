@@ -17,6 +17,8 @@ front-end operation semantics.
   values, layout-aware materialization, and reshape behavior.
 - [Scalar Policy](scalar_policy.md) defines Uni20 scalar spellings, concepts,
   promotion boundaries, numeric limits, and optional binary128 behavior.
+- [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`
+  interface, ADL customization, native precision and component-value semantics.
 
 ## Background Design
 

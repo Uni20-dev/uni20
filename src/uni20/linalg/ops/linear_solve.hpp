@@ -16,6 +16,9 @@
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/tensor.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include <uni20/linalg/backends/mplapack/mpfr.hpp>
+#endif
 
 #include <concepts>
 #include <type_traits>
@@ -38,7 +41,38 @@ void require_linear_solve_shape(CoefficientTensor const& coefficients, RhsTensor
   ERROR_IF(coefficients.extent(0) != right_hand_sides.extent(0),
            "solve coefficient and right-hand-side row counts do not agree");
 }
+
+inline void require_solve_success(SolveInfo const& info)
+{
+  ERROR_IF(info.status == SolveStatus::singular, "found a singular matrix in solve");
+  ERROR_IF(info.status == SolveStatus::nonfinite_input, "nonfinite input in solve");
+  ERROR_IF(!info.succeeded(), "nonfinite result or rejected pivot in solve");
+}
 } // namespace detail
+
+#if UNI20_ENABLE_MPFR
+/// \brief Solve in place at an explicit operation precision, independent of workspace defaults.
+/// \details The backend converts values at p. A successful nonempty solve records
+///          p on owning workspaces; views and empty no-ops preserve existing defaults.
+template <KernelBackendSelector BackendSelector, class A, class B>
+  requires detail::CompatibleLinearSolveTensors<A, B> && has_runtime_precision_v<tensor_element_t<A>>
+[[nodiscard]] SolveInfo solve_inplace_with_info(BackendSelector&& selector, A&& a, B&& b, Precision p,
+                                                SolveOptions<mpreal> const& options = {})
+{
+  detail::require_linear_solve_shape(a, b);
+  detail::require_solve_options(options);
+  auto ad = mdspec_of(a);
+  auto bd = mdspec_of(b);
+  SolveInfo info;
+  dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, ad, bd, info, options, p);
+  if (info.succeeded() && a.extent(0) != 0 && b.extent(1) != 0)
+  {
+    uni20::detail::record_output_precision(a, p);
+    uni20::detail::record_output_precision(b, p);
+  }
+  return info;
+}
+#endif
 
 /// \brief Solve in destructive workspaces and return numerical diagnostics.
 /// \details The solution is valid only on success. On numerical failure either
@@ -59,14 +93,26 @@ template <KernelBackendSelector BackendSelector, class CoefficientTensor, class 
     BackendSelector&& selector, CoefficientTensor&& coefficients, RhsTensor&& right_hand_sides,
     SolveOptions<uni20::make_real_t<uni20::tensor_element_t<CoefficientTensor>>> const& options = {})
 {
-  detail::require_linear_solve_shape(coefficients, right_hand_sides);
-  detail::require_solve_options(options);
-  auto coefficient_descriptor = uni20::mdspec_of(coefficients);
-  auto rhs_descriptor = uni20::mdspec_of(right_hand_sides);
-  SolveInfo info;
-  dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, coefficient_descriptor, rhs_descriptor,
-                  info, options);
-  return info;
+#if UNI20_ENABLE_MPFR
+  if constexpr (has_runtime_precision_v<tensor_element_t<CoefficientTensor>>)
+  {
+    auto p = common_default_precision(coefficients, right_hand_sides);
+    return solve_inplace_with_info(std::forward<BackendSelector>(selector),
+                                   std::forward<CoefficientTensor>(coefficients),
+                                   std::forward<RhsTensor>(right_hand_sides), p, options);
+  }
+  else
+#endif
+  {
+    detail::require_linear_solve_shape(coefficients, right_hand_sides);
+    detail::require_solve_options(options);
+    auto coefficient_descriptor = uni20::mdspec_of(coefficients);
+    auto rhs_descriptor = uni20::mdspec_of(right_hand_sides);
+    SolveInfo info;
+    dispatch_kernel(std::forward<BackendSelector>(selector), linear_solve_op{}, coefficient_descriptor, rhs_descriptor,
+                    info, options);
+    return info;
+  }
 }
 
 /// \brief Return numerical solve diagnostics using storage-selected backends.
@@ -98,9 +144,7 @@ void solve_inplace(BackendSelector&& selector, CoefficientTensor&& coefficients,
   auto const info =
       solve_inplace_with_info(std::forward<BackendSelector>(selector), std::forward<CoefficientTensor>(coefficients),
                               std::forward<RhsTensor>(right_hand_sides));
-  ERROR_IF(info.status == SolveStatus::singular, "found a singular matrix in solve");
-  ERROR_IF(info.status == SolveStatus::nonfinite_input, "nonfinite input in solve");
-  ERROR_IF(!info.succeeded(), "nonfinite result or rejected pivot in solve");
+  detail::require_solve_success(info);
 }
 
 /// \brief Solve a general system in destructive workspaces using storage policy.
@@ -143,5 +187,41 @@ template <uni20::RankedTensorView<2> CoefficientTensor, uni20::RankedTensorView<
   solve_inplace(selector, coefficient_work, solution);
   return solution;
 }
+
+#if UNI20_ENABLE_MPFR
+/// \brief Solve at explicit precision using storage-selected backends.
+template <class A, class B>
+  requires detail::CompatibleLinearSolveTensors<A, B> && has_runtime_precision_v<tensor_element_t<A>>
+[[nodiscard]] SolveInfo solve_inplace_with_info(A&& a, B&& b, Precision p, SolveOptions<mpreal> const& options = {})
+{
+  auto selector = select_backend(linear_solve_op{}, a, b);
+  return solve_inplace_with_info(selector, std::forward<A>(a), std::forward<B>(b), p, options);
+}
+
+/// \brief Preserve inputs and solve at p, converting values at the backend boundary.
+template <KernelBackendSelector BackendSelector, RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(BackendSelector&& selector, A const& a, B const& b, Precision p)
+{
+  detail::require_linear_solve_shape(a, b);
+  auto aw = make_tensor<ColumnMajor>(a);
+  auto bw = make_tensor<ColumnMajor>(b);
+  auto info = solve_inplace_with_info(std::forward<BackendSelector>(selector), aw, bw, p);
+  detail::require_solve_success(info);
+  // A newly produced result carries p even when the solve has no elements.
+  uni20::detail::record_output_precision(bw, p);
+  return bw;
+}
+
+/// \brief Preserve inputs and solve at p using storage-selected backends.
+template <RankedTensorView<2> A, RankedTensorView<2> B>
+  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
+[[nodiscard]] auto solve(A const& a, B const& b, Precision p)
+{
+  using work_type = decltype(make_tensor<ColumnMajor>(b));
+  auto selector = select_backend_for<work_type, work_type>(linear_solve_op{});
+  return solve(selector, a, b, p);
+}
+#endif
 
 } // namespace uni20::linalg

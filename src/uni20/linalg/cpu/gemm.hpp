@@ -7,6 +7,7 @@
  */
 
 #include <uni20/common/trace.hpp>
+#include <uni20/core/runtime_precision.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/mdspan/concepts.hpp>
 

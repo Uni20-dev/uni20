@@ -52,6 +52,8 @@ foreach(target IN ITEMS uni20 uni20_deps uni20_common uni20_core uni20_linalg)
   endif()
 endforeach()
 add_executable(consumer main.cpp)
+# This fixture uses headers only and does not need a C++ module scanner.
+set_property(TARGET consumer PROPERTY CXX_SCAN_FOR_MODULES OFF)
 target_link_libraries(consumer PRIVATE uni20_common)
 if(cli_case STREQUAL "parent")
   target_link_libraries(consumer PRIVATE uni20_cli)

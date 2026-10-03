@@ -143,14 +143,21 @@ pre-populate the CMake FetchContent sources instead.
 * Uni20 uses the Kokkos reference `mdspan` implementation, in namespace `stdex::`.
 * Uni20 uses square brackets `[]` for multi-dimensional indexing of tensors. **Do not** define `MDSPAN_USE_PAREN_OPERATOR`, use `[]` instead. This may mean adding brackets when code like `[a,b]` is used in a macro invocation, especially in TRACE and gtest macros.
 * Spell complex scalar types as `uni20::complex<T>` in Uni20 code, tests,
-  examples, and docs. `uni20::complex<T>` is intentionally an alias to
-  `std::complex<T>`, not a wrapper. Direct `std::complex<T>` spellings should
-  be limited to the alias definition, explicit alias tests/docs, or narrow
-  external interop boundaries.
+  examples, and docs. Native real types retain `std::complex<T>` identity;
+  `complex<mpreal>` selects the MPC-backed owning scalar when enabled. Deduce
+  generic complex value types directly through `Complex C`, since the selecting
+  alias is not a deduction surface. Direct `std::complex<T>` spellings should
+  be limited to the native alias definition, explicit alias tests/docs, or
+  narrow external interop boundaries. Internal standard-family adapters may
+  use `detail::standard_complex<T>` where real-type deduction is required.
 * Use `uni20::numeric_limits<T>` in scalar-generic Uni20 algorithms. It
   delegates to `std::numeric_limits<T>` for ordinary arithmetic types and is the
   project customization point for extension or library scalar types with
   missing/incomplete standard-library limits.
+* Use `uni20::math` from `core/math.hpp` for scalar-generic host math where the
+  operation is provided, and `uni20::isfinite` for finite-value classification.
+  Keep scalar-specific ADL overloads in their scalar layer; do not duplicate
+  subsystem-private `adl_*` wrappers. See `docs/tensor/scalar_math_design.md`.
 
 ---
 
@@ -313,6 +320,20 @@ ctest --test-dir build --output-on-failure
 * Add or modify tests in `tests/<module>/`.
 * Register new tests using `add_test_module(...)` in the relevant CMakeLists.txt.
 * Keep tests deterministic; avoid random seeds without `REQUIRE_SEED`.
+* For scalar-generic numerical changes, use the shared cases in `tests/numerics/`
+  and follow `docs/development/numerical_testing.md`. Preserve tested precision
+  in inputs, tolerances, and error measurements. Record unsupported, unavailable,
+  and inapplicable operation/scalar/backend combinations in the coverage report;
+  register executable tests only for configured, supported combinations. Missing
+  expected support must fail compilation or testing, not remove a test. Reserve
+  runtime skips for runtime conditions such as unavailable hardware topology.
+  Do not treat a fallback as provider validation.
+* Before pushing changes to shared scalar traits, numeric limits, initialization,
+  or other widely included templates, complete an unfiltered build and test run
+  in the affected CI configurations, including examples, CLI, and bindings where
+  enabled. Targeted tests are iteration checks, not sufficient integration
+  evidence. Report configurations not exercised and separate skipped tests from
+  passing tests.
 
 ---
 

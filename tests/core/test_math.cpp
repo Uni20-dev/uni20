@@ -32,3 +32,11 @@ TEST(MathTest, IsFiniteHandlesComplexScalars)
   EXPECT_FALSE(uni20::isfinite(uni20::complex<double>{1.0, -inf}));
   EXPECT_FALSE(uni20::isfinite(uni20::complex<double>{nan, 1.0}));
 }
+
+TEST(MathTest, ExactnessIsAValueQueryWithStaticFallback)
+{
+  static_assert(uni20::is_exact(42));
+  static_assert(uni20::is_exact(true));
+  static_assert(!uni20::is_exact(1.0));
+  EXPECT_FALSE(uni20::is_exact(uni20::complex<double>{1, 0}));
+}

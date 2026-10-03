@@ -39,7 +39,7 @@ with retention disabled. `data_table<Ts...>::make_row(...)` performs the same
 checked conversion as `append` without requiring retained history.
 
 Supported columns are the standard signed/unsigned integer storage types,
-`bool`, Uni20 `Real` types, `basic_half_int<T>`, `std::string`, and optional
+`bool`, the fixed-precision real types listed below, `basic_half_int<T>`, `std::string`, and optional
 numeric/boolean/half-integer values. Plain character types, borrowed string
 views, optional strings and complex values are not column types. String views
 are accepted as insertion inputs and copied; null C string pointers are rejected.
@@ -49,9 +49,14 @@ identifiers and invalid display precisions throw `std::invalid_argument`.
 Identifiers follow `[A-Za-z_][A-Za-z0-9_]*`.
 
 Real output supports `float`, `double`, `long double`, and the MPLAPACK native
-`_Float128` provider of `uni20::float128`. Other extension providers require a
-lossless formatter before their tables can be rendered/exported; those writer
-instantiations fail at compile time instead of narrowing through `long double`.
+`_Float128` provider of `uni20::float128`. `DataTableValue` rejects other real
+types, including `mpreal` and `std::optional<mpreal>`, at schema construction.
+The same boundary applies to `metadata_value` construction and conversion.
+Being a Uni20 `Real` does not by itself provide table support: runtime precision
+needs a schema for per-value precision and exact rationals, explicit parsing and
+conversion precision, and matching export support. Until that contract is added,
+applications can explicitly format such values into string columns or metadata;
+these remain text rather than typed numeric data.
 Formatting is locale independent, including the native binary128 C-library path,
 which temporarily selects the C numeric locale for the calling thread only.
 

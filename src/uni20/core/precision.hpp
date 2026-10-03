@@ -13,10 +13,14 @@
 namespace uni20
 {
 
-/// \brief Explicit binary working precision for arbitrary-precision scalars.
+/// \brief Exact arithmetic or an explicit binary working precision.
 /// \details This value never changes an MPFR default or thread-local setting.
 class Precision {
   public:
+    /// \brief No approximation has been selected; rational arithmetic remains exact.
+    static constexpr Precision exact() noexcept { return Precision(0); }
+    constexpr bool is_exact() const noexcept { return bits_ == 0; }
+
     /// \brief Select a significand size, checked against MPFR's supported range.
     static Precision bits(mpfr_prec_t count)
     {
@@ -40,13 +44,28 @@ class Precision {
     }
 
     /// \brief Number of binary significand bits.
-    mpfr_prec_t bit_count() const noexcept { return bits_; }
-    auto operator<=>(Precision const&) const = default;
+    /// \throws std::logic_error If this precision denotes exact arithmetic.
+    mpfr_prec_t bit_count() const
+    {
+      if (this->is_exact())
+        throw std::logic_error("exact arithmetic requires an explicit finite working precision here");
+      return bits_;
+    }
+    bool operator==(Precision const&) const = default;
 
   private:
     friend class mpreal;
-    explicit Precision(mpfr_prec_t bits) : bits_(bits) {}
+    explicit constexpr Precision(mpfr_prec_t bits) : bits_(bits) {}
     mpfr_prec_t bits_;
 };
+
+/// \brief Combine precisions, treating exact values as neutral and rejecting unequal finite precisions.
+inline Precision common_precision(Precision a, Precision b)
+{
+  if (a.is_exact()) return b;
+  if (b.is_exact()) return a;
+  if (a != b) throw std::invalid_argument("mixed precisions require explicit conversion");
+  return a;
+}
 
 } // namespace uni20

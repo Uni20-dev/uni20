@@ -15,6 +15,13 @@
 namespace uni20::linalg
 {
 
+/// \brief Serial MPLAPACK backend with per-invocation MPFR/MPC working precision.
+struct MplapackMpfrBackend
+{
+    static constexpr std::string_view name = "mplapack_mpfr";
+    friend constexpr bool operator==(MplapackMpfrBackend const&, MplapackMpfrBackend const&) = default;
+};
+
 /// \brief Backend value for configured dense LAPACK kernels.
 struct LapackBackend
 {

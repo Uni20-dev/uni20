@@ -71,7 +71,8 @@ template <uni20::MutableRankedMdspecLike<2> OutputMdspan, uni20::Scalar Scalar, 
 consteval auto kernel_accepts_types(CpuReferenceBackend const&, gemm_op const&, OutputMdspan&, Scalar const&,
                                     LhsMdspan&, RhsMdspan&, Scalar const&)
 {
-  if constexpr (detail::cpu_gemm_mdspan_types_compatible<OutputMdspan, Scalar, LhsMdspan, RhsMdspan>())
+  if constexpr (!has_runtime_precision_v<Scalar> &&
+                detail::cpu_gemm_mdspan_types_compatible<OutputMdspan, Scalar, LhsMdspan, RhsMdspan>())
     return kernel_types_yes;
   else
     return kernel_types_no;
@@ -87,6 +88,32 @@ KernelAttempt try_kernel(CpuReferenceBackend, gemm_op const&, OutputMdspan& outp
   return detail::try_cpu_gemm(output, alpha, lhs, rhs, beta);
 }
 
+#if UNI20_ENABLE_MPFR
+/// \brief Consider runtime-precision scalars for exact CPU GEMM.
+/// \details Finite operation precisions require a backend that explicitly converts its inputs.
+template <MutableRankedMdspecLike<2> C, Scalar S, RankedMdspecLike<2> A, RankedMdspecLike<2> B>
+  requires has_runtime_precision_v<S> && detail::HostGemmMdspanAccess<C, A, B>
+consteval auto kernel_accepts_types(CpuReferenceBackend, gemm_op const&, C&, S const&, A&, B&, S const&, Precision)
+{
+  if constexpr (detail::cpu_gemm_mdspan_types_compatible<C, S, A, B>())
+    return kernel_types_maybe;
+  else
+    return kernel_types_no;
+}
+
+/// \brief Execute exact-mode GEMM with ordinary scalar arithmetic, declining finite precision without mutation.
+/// \details Exact participating elements and coefficients yield exact results. Construction defaults
+///          are best-effort metadata; this path does not scan or reclassify stored approximations.
+template <MutableRankedMdspecLike<2> C, Scalar S, RankedMdspecLike<2> A, RankedMdspecLike<2> B>
+  requires has_runtime_precision_v<S> && detail::HostGemmMdspanAccess<C, A, B>
+KernelAttempt try_kernel(CpuReferenceBackend, gemm_op const&, C& c, S const& alpha, A& a, B& b, S const& beta,
+                         Precision p)
+{
+  if (!p.is_exact()) return KernelAttempt::unsupported_instance;
+  return detail::try_cpu_gemm(c, alpha, a, b, beta);
+}
+#endif
+
 /// \brief Report eligibility for replaceable-output host tensor matrix products.
 template <uni20::MutableRankedTensorView<2> OutputTensor, uni20::Scalar Scalar, uni20::RankedMdspecLike<2> LhsMdspan,
           uni20::RankedMdspecLike<2> RhsMdspan>
@@ -94,7 +121,8 @@ template <uni20::MutableRankedTensorView<2> OutputTensor, uni20::Scalar Scalar, 
 consteval auto kernel_accepts_types(CpuReferenceBackend const&, assign_product_op const&, OutputTensor&, Scalar const&,
                                     LhsMdspan&, RhsMdspan&)
 {
-  if constexpr (detail::cpu_assign_product_types_compatible<OutputTensor, Scalar, LhsMdspan, RhsMdspan>())
+  if constexpr (!has_runtime_precision_v<Scalar> &&
+                detail::cpu_assign_product_types_compatible<OutputTensor, Scalar, LhsMdspan, RhsMdspan>())
     return kernel_types_yes;
   else
     return kernel_types_no;
@@ -120,7 +148,8 @@ template <uni20::MutableRankedTensorView<2> OutputTensor, uni20::Scalar Scalar, 
 consteval auto kernel_accepts_types(CpuReferenceBackend const&, assign_product_op const&,
                                     async::shared_storage<OutputTensor>&, Scalar const&, LhsMdspan&, RhsMdspan&)
 {
-  if constexpr (detail::cpu_assign_product_types_compatible<OutputTensor, Scalar, LhsMdspan, RhsMdspan>())
+  if constexpr (!has_runtime_precision_v<Scalar> &&
+                detail::cpu_assign_product_types_compatible<OutputTensor, Scalar, LhsMdspan, RhsMdspan>())
     return kernel_types_yes;
   else
     return kernel_types_no;
