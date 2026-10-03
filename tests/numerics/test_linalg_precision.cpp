@@ -1,4 +1,4 @@
-#include "precision_cases.hpp"
+#include "precision_registry.hpp"
 #include <uni20/linalg/ops/linear_solve.hpp>
 #include <uni20/linalg/ops/matrix_norm.hpp>
 #include <uni20/linalg/ops/matrix_product.hpp>
@@ -6,51 +6,38 @@
 
 namespace uni20::test
 {
-template <class C> using NumericalLinalg = PrecisionTest<C>;
-TYPED_TEST_SUITE(NumericalLinalg, PrecisionCases, PrecisionCaseNames);
-
-TYPED_TEST(NumericalLinalg, CpuMatrixOneNormRetainsIncrement)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuMatrixOneNormRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_reference");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else
-  {
-    auto a = C::matrix(2, 2);
-    // Imaginary entries exercise complex magnitude without irrational oracles.
-    a[0, 0] = C::scalar(C::real(1) + C::gap(), C::real(0));
-    a[1, 0] = C::is_complex ? C::scalar(0, 1) : C::scalar(1);
-    auto norm = linalg::matrix_norm_host(linalg::CpuReferenceBackend{}, a, linalg::MatrixNorm::One);
-    EXPECT_EQ(norm, C::real(2) + C::gap());
-    C::expect_precision(norm);
-  }
+  auto a = C::matrix(2, 2);
+  // Imaginary entries exercise complex magnitude without irrational oracles.
+  a[0, 0] = C::scalar(C::real(1) + C::gap(), C::real(0));
+  a[1, 0] = C::is_complex ? C::scalar(0, 1) : C::scalar(1);
+  auto norm = linalg::matrix_norm_host(linalg::CpuReferenceBackend{}, a, linalg::MatrixNorm::One);
+  EXPECT_EQ(norm, C::real(2) + C::gap());
+  C::expect_precision(norm);
 }
 
-TYPED_TEST(NumericalLinalg, CpuReductionsRetainIncrement)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuReductionsRetainIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_reference");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else
-  {
-    auto a = C::matrix(2, 1), b = C::matrix(2, 1);
-    a[0, 0] = C::scalar(C::real(1) + C::gap(), C::real(1));
-    a[1, 0] = C::scalar(1, -1);
-    b[0, 0] = C::scalar(1);
-    b[1, 0] = C::scalar(2);
-    auto sum = sum_host(linalg::CpuReferenceBackend{}, a);
-    auto inner = inner_product_host(linalg::CpuReferenceBackend{}, a, b);
-    expect_equal(sum, C::scalar(C::real(2) + C::gap(), C::real(0)));
-    expect_equal(inner, C::scalar(C::real(3) + C::gap(), C::real(1)));
-    auto norm = norm_host(linalg::CpuReferenceBackend{}, a);
-    auto squared = (C::real(1) + C::gap()) * (C::real(1) + C::gap()) + C::real(C::is_complex ? 3 : 1);
-    expect_error_at_most(norm * norm, squared, C::real(16) * C::epsilon());
-    C::expect_precision(sum);
-    C::expect_precision(inner);
-    C::expect_precision(norm);
-  }
+  auto a = C::matrix(2, 1), b = C::matrix(2, 1);
+  a[0, 0] = C::scalar(C::real(1) + C::gap(), C::real(1));
+  a[1, 0] = C::scalar(1, -1);
+  b[0, 0] = C::scalar(1);
+  b[1, 0] = C::scalar(2);
+  auto sum = sum_host(linalg::CpuReferenceBackend{}, a);
+  auto inner = inner_product_host(linalg::CpuReferenceBackend{}, a, b);
+  expect_equal(sum, C::scalar(C::real(2) + C::gap(), C::real(0)));
+  expect_equal(inner, C::scalar(C::real(3) + C::gap(), C::real(1)));
+  auto norm = norm_host(linalg::CpuReferenceBackend{}, a);
+  auto squared = (C::real(1) + C::gap()) * (C::real(1) + C::gap()) + C::real(C::is_complex ? 3 : 1);
+  expect_error_at_most(norm * norm, squared, C::real(16) * C::epsilon());
+  C::expect_precision(sum);
+  C::expect_precision(inner);
+  C::expect_precision(norm);
 }
 
 template <class C, class Backend> void check_product(Backend backend)
@@ -69,36 +56,23 @@ template <class C, class Backend> void check_product(Backend backend)
   C::expect_precision(out[0, 0]);
 }
 
-TYPED_TEST(NumericalLinalg, CpuGemmRetainsIncrement)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuGemmRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_reference");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else if constexpr (C::runtime)
-    GTEST_SKIP() << "unsupported: CPU GEMM handles exact mode only for runtime scalars";
-  else
-    check_product<C>(linalg::CpuReferenceBackend{});
+  check_product<C>(linalg::CpuReferenceBackend{});
 }
 
-TYPED_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
+UNI20_PRECISION_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "blas_or_mplapack");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else if constexpr (C::runtime)
-  {
 #if UNI20_ENABLE_MPLAPACK_MPFR
+  if constexpr (C::runtime)
     check_product<C>(linalg::MplapackMpfrBackend{});
-#else
-    GTEST_SKIP() << "unavailable: configure UNI20_ENABLE_MPLAPACK_MPFR";
-#endif
-  }
-  else if constexpr (C::native_dense_provider)
-    check_product<C>(linalg::BlasBackend{});
   else
-    GTEST_SKIP() << "unsupported: float80 provider not wired on this branch";
+#endif
+    check_product<C>(linalg::BlasBackend{});
 }
 
 template <class C, class Backend> void check_solve(Backend backend, bool exponent_range)
@@ -122,55 +96,34 @@ template <class C, class Backend> void check_solve(Backend backend, bool exponen
                          typename C::scalar_type(b[i, 0] / C::scalar(scale, C::real(0))), C::real(64) * C::epsilon());
 }
 
-TYPED_TEST(NumericalLinalg, CpuSolveResolvesSmallGap)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuSolveResolvesSmallGap)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_reference");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else if constexpr (C::runtime)
-    GTEST_SKIP() << "unsupported: CPU solve declines runtime-precision scalars";
-  else
-    check_solve<C>(linalg::CpuReferenceBackend{}, false);
+  check_solve<C>(linalg::CpuReferenceBackend{}, false);
 }
 
-TYPED_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
+UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "lapack_or_mplapack");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else if constexpr (C::runtime)
-  {
 #if UNI20_ENABLE_MPLAPACK_MPFR
+  if constexpr (C::runtime)
     check_solve<C>(linalg::MplapackMpfrBackend{}, false);
-#else
-    GTEST_SKIP() << "unavailable: configure UNI20_ENABLE_MPLAPACK_MPFR";
-#endif
-  }
-  else if constexpr (C::native_dense_provider)
-    check_solve<C>(linalg::LapackBackend{}, false);
   else
-    GTEST_SKIP() << "unsupported: float80 provider not wired on this branch";
+#endif
+    check_solve<C>(linalg::LapackBackend{}, false);
 }
 
-TYPED_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
+UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-  if constexpr (!C::available)
-    GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-  else if constexpr (!C::runtime && C::digits() <= 53)
-    GTEST_SKIP() << "not_applicable: this probe requires a wider exponent range than double";
-  else if constexpr (C::runtime)
-  {
 #if UNI20_ENABLE_MPLAPACK_MPFR
+  if constexpr (C::runtime)
     check_solve<C>(linalg::MplapackMpfrBackend{}, true);
-#else
-    GTEST_SKIP() << "unavailable: configure UNI20_ENABLE_MPLAPACK_MPFR";
-#endif
-  }
   else
+#endif
     check_solve<C>(linalg::CpuReferenceBackend{}, true);
 }
 
@@ -199,25 +152,17 @@ template <class C, class Backend> void check_solve_accuracy(Backend backend)
 }
 #endif
 
-TYPED_TEST(NumericalLinalg, SolveAccuracyImprovesWithPrecision)
+#if UNI20_ENABLE_MPFR
+UNI20_PRECISION_TEST(NumericalLinalg, SolveAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-  if constexpr (!C::available) GTEST_SKIP() << "unavailable: scalar dependency or native format not configured";
-#if !UNI20_ENABLE_MPFR
-  else
-    GTEST_SKIP() << "unavailable: MPFR required for independent 512-bit error measurement";
-#else
-  else if constexpr (C::runtime)
-  {
 #if UNI20_ENABLE_MPLAPACK_MPFR
+  if constexpr (C::runtime)
     check_solve_accuracy<C>(linalg::MplapackMpfrBackend{});
-#else
-    GTEST_SKIP() << "unavailable: configure UNI20_ENABLE_MPLAPACK_MPFR";
-#endif
-  }
   else
-    check_solve_accuracy<C>(linalg::CpuReferenceBackend{});
 #endif
+    check_solve_accuracy<C>(linalg::CpuReferenceBackend{});
 }
+#endif
 } // namespace uni20::test

@@ -121,8 +121,8 @@ template <PrecisionKind Kind, bool IsComplex> struct CaseInfo
     }
 };
 
-// Keep unavailable cases in the registry. Omitting a provider must produce a
-// visible skipped cell, not make a precision quietly disappear from coverage.
+// Keep unavailable cases in the coverage registry. They appear in the report,
+// while only configured, applicable probes become executable tests.
 template <PrecisionKind Kind, bool IsComplex> struct PrecisionCase : CaseInfo<Kind, IsComplex>
 {
     static constexpr bool available = false;
@@ -165,11 +165,6 @@ using PrecisionCases =
                    PrecisionCase<PrecisionKind::float128, false>, PrecisionCase<PrecisionKind::float128, true>,
                    PrecisionCase<PrecisionKind::mp128, false>, PrecisionCase<PrecisionKind::mp128, true>,
                    PrecisionCase<PrecisionKind::mp256, false>, PrecisionCase<PrecisionKind::mp256, true>>;
-
-struct PrecisionCaseNames
-{
-    template <class C> static std::string GetName(int) { return C::name(); }
-};
 
 template <class C> class PrecisionTest : public testing::Test {
   protected:

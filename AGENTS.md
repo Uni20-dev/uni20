@@ -322,9 +322,12 @@ ctest --test-dir build --output-on-failure
 * Keep tests deterministic; avoid random seeds without `REQUIRE_SEED`.
 * For scalar-generic numerical changes, use the shared cases in `tests/numerics/`
   and follow `docs/development/numerical_testing.md`. Preserve tested precision
-  in inputs, tolerances, and error measurements. Record unsupported or unavailable
-  operation/scalar/backend combinations explicitly; do not silently filter them
-  out or treat a fallback as provider validation.
+  in inputs, tolerances, and error measurements. Record unsupported, unavailable,
+  and inapplicable operation/scalar/backend combinations in the coverage report;
+  register executable tests only for configured, supported combinations. Missing
+  expected support must fail compilation or testing, not remove a test. Reserve
+  runtime skips for runtime conditions such as unavailable hardware topology.
+  Do not treat a fallback as provider validation.
 * Before pushing changes to shared scalar traits, numeric limits, initialization,
   or other widely included templates, complete an unfiltered build and test run
   in the affected CI configurations, including examples, CLI, and bindings where

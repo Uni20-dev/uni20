@@ -8,19 +8,28 @@ necessary for layouts, status reporting, restarts, and exceptional inputs.
 
 ## Shared cases
 
-`precision_cases.hpp` registers real and complex cases for float32, float64,
+`precision_cases.hpp` describes real and complex cases for float32, float64,
 float80, float128, and `mpreal` at 128 and 256 bits. Both MPFR cases use the same
 C++ scalar type. Values, tensor defaults, epsilon queries, and error comparisons
 are constructed in that case's precision. MPFR exact arithmetic has separate
 tests: passing an exact rational identity does not demonstrate finite-precision
 behavior.
 
-All twelve cases remain registered when optional dependencies are disabled.
-Google Test reports missing configurations explicitly. Expected GEMM/solve and
-projected LAPACK coverage are declared separately in the test registry, rather
-than derived from the production concepts: accidentally removing a supported scalar must fail instead
-of silently shortening the tested type list. Update that declaration and the
-operation-specific expectations when adding support.
+All twelve cases remain in the coverage matrix when optional dependencies are
+disabled. `precision_registry.hpp` declares which operation/scalar/backend
+combinations are configured and supported. Only those combinations become
+executable Google Tests. Unsupported, unavailable, and mathematically
+inapplicable combinations appear in the coverage report, without creating
+skipped tests or counting as passes.
+
+The expectations are independent of production concepts: accidentally removing
+a supported implementation must fail compilation or its numerical test instead
+of shortening the tested type list. `NumericalCoverage.RegisteredProbesMatchDeclaredMatrix`
+also checks that every expected probe is registered exactly once and exports the
+full declared matrix into the test XML. Update the registry and operation-specific
+expectations when adding support. A fully configured build should run all its
+registered tests; reserve runtime skips for conditions discovered during execution,
+such as a multi-NUMA-node test on a machine with only one visible NUMA node.
 
 Float128 means a 113-bit significand, not MPLAPACK's fallback alias to a narrower
 `long double`. That alias mode is reported as unavailable for this case.
@@ -115,11 +124,14 @@ python3 scripts/report-numerical-precision.py \
   --output build_codex/<configuration>/precision.md
 ```
 
-The report distinguishes `passed`, `failed`, `unsupported`, `unavailable`, and
-`not_applicable`. Unknown skips and unexecuted entries are errors. A filtered
-XML file reports only that subset; use an unfiltered execution for the full
-matrix. Missing optional dependencies never count as passes. CI runs the matrix
-in ordinary configurations and saves XML/Markdown artifacts in the MPLAPACK job.
+The report joins the declared matrix to actual results and distinguishes
+`passed`, `failed`, `unsupported`, `unavailable`, and `not_applicable`. A missing,
+unexecuted, or skipped expected probe is an error, as is an undeclared probe.
+Use an unfiltered execution: a filtered XML file cannot stand in for complete
+coverage. Missing optional dependencies never count as passes. The coverage
+report retains the unsupported combinations even in a build with no skipped
+tests. CI runs the matrix in ordinary configurations and saves XML/Markdown
+artifacts in the MPLAPACK job.
 
 ## Certification boundaries and remaining work
 
@@ -140,5 +152,5 @@ numerical subsystem. In the current implementation:
   completed matrix cells.
 
 New numerical operations should join these cases as they are implemented.
-Keep operation-specific unsupported reasons explicit, and replace a skip with
-the same mathematical test when that combination becomes supported.
+Keep operation-specific unsupported reasons explicit in the registry. When a
+combination gains support, enable the same mathematical probe for it.

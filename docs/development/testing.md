@@ -16,6 +16,12 @@ Scalar-generic numerical changes use the shared cases and evidence requirements
 in [Numerical precision validation](numerical_testing.md). A type compiling or
 an aggregate suite passing does not certify every operation at that precision.
 
+Register tests for configured features and applicable supported combinations.
+Keep known coverage gaps in the numerical coverage report, and fail when
+expected support is missing. Reserve runtime skips for conditions such as
+unavailable hardware topology; a fully configured build should otherwise run
+all its registered tests.
+
 ## Integration checks before pushing
 
 Changes to shared scalar traits, numeric limits, initialization, or other widely

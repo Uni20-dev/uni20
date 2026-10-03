@@ -158,7 +158,9 @@ for `s`, `d`, `c`, and `z`.
 The [numerical precision matrix](../development/numerical_testing.md) now runs
 common gap, residual, and accuracy probes across float32/64/80/128 and MPFR at
 128/256 bits, with real and complex cases. Unavailable configurations and
-unsupported operations remain visible as skipped tests with reasons.
+unsupported operations remain visible in the coverage report with reasons;
+they are not registered as executable tests. Missing expected probes fail
+the registry check or report instead of becoming skips.
 `NumericalKrylov/*` covers projected tridiagonal eigensystems, Lanczos, Arnoldi,
 and Hermitian exponential action for the supported native and binary128 types.
 Float80 and MPFR/MPC end-to-end Krylov support remains unsupported; runtime

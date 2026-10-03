@@ -116,9 +116,9 @@ TEST(Initialization, UnsupportedZeroRejectsNonassignableTrivialElements)
   EXPECT_THROW((uni20::HostBuffer<ConstToken>(1, StorageInitialization::Zero)), std::invalid_argument);
 }
 
+#if UNI20_FILL_UNINITIALIZED_SNAN
 TEST(Initialization, DiagnosticFillPreservesSignalingBits)
 {
-#if UNI20_FILL_UNINITIALIZED_SNAN
   static_assert(uni20::detail::has_signaling_nan_v<double>);
   static_assert(uni20::detail::has_signaling_nan_v<uni20::complex<double>>);
   static_assert(!uni20::detail::has_signaling_nan_v<int>);
@@ -135,10 +135,8 @@ TEST(Initialization, DiagnosticFillPreservesSignalingBits)
   std::memcpy(components.data(), complex.get(), sizeof(components));
   for (auto bits : components)
     EXPECT_EQ(bits, expected);
-#else
-  GTEST_SKIP() << "Signaling NaN filling is disabled for this configuration";
-#endif
 }
+#endif
 
 TEST(Initialization, OverwritingUninitializedStorageDefinesValues)
 {
