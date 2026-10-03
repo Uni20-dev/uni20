@@ -287,6 +287,13 @@ types satisfying Uni20's `Real` and `Complex` concepts, including
 Native `float80` uses the existing `long double` parsing, formatting, and
 presentation precision policy; no conversion through `double` is involved.
 
+Scalar formatting support does not imply typed table or metadata support.
+`presentation::DataTableValue` admits supported fixed-precision real types;
+`mpreal` and optional `mpreal` are rejected by table schemas and `metadata_value`
+construction/conversion until runtime-precision parsing and export contracts are
+defined. `format_real(mpreal)` remains available for explicit textual output.
+See [typed data tables](../diagnostics/data_tables.md) for the supported types.
+
 Trace precision is independently configurable for float32, float64, and
 float128 values. The global environment variables are
 `UNI20_FP_PRECISION_FLOAT32`, `UNI20_FP_PRECISION_FLOAT64`, and

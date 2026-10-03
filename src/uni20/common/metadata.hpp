@@ -61,6 +61,8 @@ template <typename T> T parse(std::string_view text)
 
 /// \brief An immutable owned value that retains its native scalar and optional type.
 /// \details Copies share immutable storage. Text views and C strings are copied on entry.
+///          Supported types follow presentation::DataTableValue, including its fixed-precision
+///          real boundary. Runtime-precision values require a separate conversion/export contract.
 class metadata_value {
   public:
     template <presentation::DataTableValue T>

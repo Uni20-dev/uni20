@@ -8,6 +8,15 @@
 
 using namespace uni20;
 
+#if UNI20_ENABLE_MPFR
+template <typename T>
+concept CanConvertMetadata = requires(metadata_value const& value) { value.template as<T>(); };
+static_assert(!std::constructible_from<metadata_value, mpreal>);
+static_assert(!std::constructible_from<metadata_value, std::optional<mpreal>>);
+static_assert(!CanConvertMetadata<mpreal>);
+static_assert(!CanConvertMetadata<std::optional<mpreal>>);
+#endif
+
 TEST(Metadata, OwnsTextAndRetainsNativeTypes)
 {
   std::string text = "original";
