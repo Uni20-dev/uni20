@@ -1,7 +1,7 @@
 # tests/core/CMakeLists.txt
 
 if(UNI20_ENABLE_MPFR)
-  add_test_module(mpfr SOURCES test_mpreal.cpp LIBS uni20_core uni20_async TBB::tbb)
+  add_test_module(mpfr SOURCES test_mpreal.cpp test_exact_constant.cpp LIBS uni20_core uni20_async TBB::tbb)
 endif()
 
 if(UNI20_ENABLE_MPC)

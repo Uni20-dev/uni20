@@ -75,7 +75,12 @@ class mpreal {
         value_.emplace<detail::mpfr_value>(p);
     }
     /// \brief Retain an exact rational without rounding.
-    explicit mpreal(exact_constant value) : value_(std::move(value)) {}
+    /// \throws std::logic_error If the source is unset.
+    explicit mpreal(exact_constant value) : mpreal(uninitialized)
+    {
+      (void)value.native_handle();
+      value_.emplace<exact_constant>(std::move(value));
+    }
     explicit mpreal(decimal_literal value) : mpreal(exact_constant(value)) {}
     template <std::integral I>
       requires(!std::same_as<I, bool>)
@@ -101,10 +106,11 @@ class mpreal {
     }
     mpreal(exact_constant const& value, Precision p) : mpreal(p)
     {
+      auto rational = value.native_handle();
       if (p.is_exact())
         value_ = value;
       else
-        mpfr_set_q(this->approximate(), value.native_handle(), MPFR_RNDN);
+        mpfr_set_q(this->approximate(), rational, MPFR_RNDN);
     }
     mpreal(decimal_literal value, Precision p) : mpreal(exact_constant(value), p) {}
     template <std::integral I>

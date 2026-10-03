@@ -324,10 +324,10 @@ user-defined types. Keep such support behind the Uni20 customization point.
 
 ### Exactness queries
 
-`uni20::is_exact(value)` queries the active arithmetic state of `mpreal` and
-`complex<mpreal>`, and the static exactness of ordinary scalar types. It returns
-false for an unset runtime scalar. `numeric_limits<T>::is_exact` remains a
-compile-time type property; it cannot describe the changing state of an
+`uni20::is_exact(value)` queries the active arithmetic state of `mpreal`,
+`complex<mpreal>` and `exact_constant`, and the static exactness of ordinary scalar
+types. It returns false for an unset runtime scalar. `numeric_limits<T>::is_exact`
+remains a compile-time type property; it cannot describe the changing state of an
 individual `mpreal`. Ordinary integers are exact, while native floating values
 are approximate even when numerically integral. Exact rational roots, powers,
 parsing and explicit native conversions are described in [mpreal](mpreal.md).

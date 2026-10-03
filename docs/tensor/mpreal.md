@@ -181,6 +181,14 @@ float. Its descriptor can be `constexpr`; operations on descriptors materialize
 owning GMP rationals at runtime. `exact_constant` accepts decimal or integer-fraction text for runtime
 input and formats as a reduced numerator/denominator, or an integer.
 
+Default construction of `exact_constant` produces zero. Move construction transfers
+the payload without allocating and leaves the source unset; `initialized()` and
+`is_exact()` then return false. Copying, moving, swapping and assignment support
+unset states, and self-move assignment preserves the value. Numerical use of an
+unset constant, including conversion to `mpreal`, throws `std::logic_error` until
+it is assigned a value again. Moving an exact `mpreal` likewise requires no GMP
+allocation.
+
 Precisionless operations are unary signs, addition, subtraction, multiplication,
 division, and exact comparisons. Division by zero throws `std::domain_error`.
 There is no symbolic expression tree. Decimal point and decimal exponent notation

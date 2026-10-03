@@ -289,7 +289,7 @@ TEST(MpReal, ExactRationalArithmeticAndLiteralDigits)
   EXPECT_EQ(owned_sum, 0.2_mp);
   auto moved = std::move(owned_sum);
   EXPECT_EQ(moved, 0.2_mp);
-  EXPECT_EQ(owned_sum, 0_mp);
+  EXPECT_FALSE(owned_sum.initialized());
 }
 
 TEST(MpReal, ParenthesesDetermineTheRoundingBoundary)
