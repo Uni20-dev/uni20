@@ -102,13 +102,20 @@ class metadata_value {
           if constexpr (dt::accepts<T, U>())
             if (auto p = std::any_cast<U>(&scalar))
             {
-              if constexpr (Real<T> && Real<U>)
-                if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
-                              (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
-                               uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
-                  if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
-                                              *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
-                    throw std::out_of_range("real conversion overflow");
+              // T belongs to the enclosing template, U to this generic lambda.
+              // Discard non-real destinations before inspecting their limits.
+              if constexpr (Real<T>)
+              {
+                if constexpr (Real<U>)
+                {
+                  if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
+                                (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
+                                 uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
+                    if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
+                                                *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
+                      throw std::out_of_range("real conversion overflow");
+                }
+              }
               auto converted = dt::convert<T>(*p);
               result = std::move(converted);
             }

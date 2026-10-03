@@ -1,6 +1,7 @@
 #pragma once
 
 #include "memory_diagnostics.hpp"
+#include <uni20/core/numeric_limits.hpp>
 #include <uni20/core/scalar_traits.hpp>
 
 #include <algorithm>
@@ -87,11 +88,16 @@ template <typename T>
 inline constexpr bool has_signaling_nan_v = [] {
   if constexpr (is_complex_v<T>)
   {
-    return uni20::numeric_limits<typename T::value_type>::has_signaling_NaN;
+    return has_signaling_nan_v<typename T::value_type>;
+  }
+  else if constexpr (is_real_v<T>)
+  {
+    // A numeric specialization need not implement every optional capability.
+    return requires { requires uni20::numeric_limits<T>::has_signaling_NaN; };
   }
   else
   {
-    return is_real_v<T> && uni20::numeric_limits<T>::has_signaling_NaN;
+    return false;
   }
 }();
 

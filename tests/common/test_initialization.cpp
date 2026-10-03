@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <uni20/common/aligned_buffer.hpp>
+#include <uni20/core/math.hpp>
 #include <uni20/storage/host_storage.hpp>
 
 #include <array>
@@ -12,6 +13,21 @@
 namespace
 {
 using uni20::StorageInitialization;
+
+TEST(Initialization, SignalingNaNCapabilityDoesNotRequireGenericLimits)
+{
+  static_assert(uni20::detail::has_signaling_nan_v<double>);
+  static_assert(uni20::detail::has_signaling_nan_v<uni20::complex<double>>);
+  static_assert(!uni20::detail::has_signaling_nan_v<int>);
+  static_assert(!uni20::detail::has_signaling_nan_v<std::string>);
+  static_assert(!uni20::detail::has_signaling_nan_v<std::unique_ptr<int>>);
+#if UNI20_ENABLE_MPFR
+  static_assert(!uni20::detail::has_signaling_nan_v<uni20::mpreal>);
+#if UNI20_ENABLE_MPC
+  static_assert(!uni20::detail::has_signaling_nan_v<uni20::complex<uni20::mpreal>>);
+#endif
+#endif
+}
 
 TEST(Initialization, ZeroMeansNumericalZero)
 {

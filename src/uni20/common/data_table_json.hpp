@@ -48,8 +48,13 @@ template <typename T> void write_json_value(json_output& out, T const& value)
     write_json_string(out.stream, value);
   else if constexpr (Real<T>)
     write_json_string(out.stream, cell_text(value, {}, true));
-  else if constexpr (integer<T> && uni20::numeric_limits<T>::digits > 53)
-    write_json_string(out.stream, cell_text(value, {}, true));
+  else if constexpr (integer<T>)
+  {
+    if constexpr (uni20::numeric_limits<T>::digits > 53)
+      write_json_string(out.stream, cell_text(value, {}, true));
+    else
+      out << cell_text(value, {}, true);
+  }
   else
     out << cell_text(value, {}, true);
 }

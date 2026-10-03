@@ -302,6 +302,20 @@ explicitly delegates native arithmetic types to their specialized standard-libra
 limits. Every library scalar must supply its own Uni20 specialization; a standard
 specialization alone does not opt a library type into the Uni20 interface.
 
+Half-integer limits are defined by `common/half_int.hpp`:
+`numeric_limits<basic_half_int<T>>` describes an exact, bounded, signed scalar
+with radix 2 and the value-bit count of its doubled integer representation.
+`is_integer` is false because values may have a fractional half. `lowest()` and
+`max()` return exact half-integer endpoints. Infinity and NaN capabilities are
+false; epsilon, floating-point exponent bounds, and an ambiguous `min()` query
+are not provided. `uni20::is_exact(half_int_value)` consequently returns true.
+
+Generic code must establish the numeric category before querying its limits.
+An ordinary `&&` expression does not prevent template instantiation of its
+right-hand side. Use nested `if constexpr` branches or constraints, and probe
+optional quantities with `requires`. In particular, storage initialization must
+not instantiate numeric limits for strings or other nonnumeric element types.
+
 For extension or library scalar types, specialize `uni20::numeric_limits<T>`:
 
 ```cpp
