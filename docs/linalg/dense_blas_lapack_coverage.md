@@ -25,6 +25,10 @@ arrays. These support dispatched matrix products, square solves and reusable
 and `complex<mpreal>`. They do not imply arbitrary-precision coverage of the
 other routines in this inventory or of the projected Krylov path.
 
+The optional [binary80 adapter](mplapack_binary80.md) covers the same six
+provider routines for `float80` and `complex160`. It does not extend the broad
+BLAS/LAPACK scalar traits or the remaining inventory below.
+
 CUDA provider coverage is currently narrower: cuBLAS `S/D/C/ZGEMM`, conjugate
 dot products, and Euclidean norms have checked provider wrappers and a
 Tensor-facing `CublasBackend`. Ordinary

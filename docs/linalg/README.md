@@ -18,6 +18,8 @@ optional multiprecision support, and linear-algebra design background.
 - [Dense BLAS/LAPACK Wrapper Coverage](dense_blas_lapack_coverage.md) inventories
   active dispatched dependencies and the quarantined experimental wrapper
   survey separately from Krylov algorithm behavior.
+- [MPLAPACK Binary80](mplapack_binary80.md) covers native extended-precision
+  GEMM, square solves and reusable LU.
 - [MPLAPACK Binary128](mplapack_binary128.md) is the build and validation guide
   for optional binary128 provider support.
 - [MPLAPACK MPFR/MPC](mplapack_mpfr.md) covers explicit-precision matrix products,

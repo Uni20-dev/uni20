@@ -1,5 +1,9 @@
 add_test_module(lu SOURCES test_lu.cpp LIBS uni20_linalg)
 
+if(UNI20_ENABLE_MPLAPACK_BINARY80)
+  add_test_module(linalg_binary80 SOURCES test_mplapack_binary80.cpp LIBS uni20_linalg uni20_async)
+endif()
+
 if(UNI20_ENABLE_MPLAPACK_MPFR)
   add_test_module(linalg_mpfr SOURCES test_mplapack_mpfr.cpp LIBS uni20_linalg uni20_async TBB::tbb)
 endif()

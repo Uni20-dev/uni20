@@ -133,6 +133,7 @@ operations select from the materialized host workspace:
 | --- | --- | --- |
 | `CpuReferenceBackend` | native real/complex, including configured float80/float128 | Accessor-respecting partial-pivot LU and triangular substitution. |
 | `LapackBackend` | native LAPACK scalars; optional binary128 | GETRF and GETRS with direct compatible storage. |
+| `MplapackBinary80Backend` | float80 and complex160 | Optional binary80 provider via value-preserving conversion. |
 | `MplapackMpfrBackend` | mpreal and complex&lt;mpreal&gt; | Optional finite-precision MPFR/MPC GETRF and GETRS. |
 
 Providers may be mixed between factorization and reuse when their scalar

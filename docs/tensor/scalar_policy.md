@@ -54,8 +54,9 @@ The canonical real aliases are:
 `uni20::float80` has 64 significand bits (about 19 decimal digits) and the x87
 extended exponent range. CMake automatically detects the native `long double`
 format from its numerical limits; it does not infer precision from `sizeof`.
-An fp80 object can occupy 12 or 16 bytes because of padding. No provider,
-software emulation, or silent substitution is added: on platforms where
+An fp80 object can occupy 12 or 16 bytes because of padding. `complex160` aliases
+`complex<float80>` under the same availability guard. There is no software
+emulation or silent substitution: on platforms where
 `long double` is binary64 or binary128, `UNI20_HAS_FLOAT80=0` and the alias is
 absent. Ordinary `long double` remains a valid Uni20 real scalar on all those
 platforms. Guard direct references to `uni20::float80` with `UNI20_HAS_FLOAT80`.
@@ -174,9 +175,12 @@ must itself be the scalar value.
 matters for extension scalar types: a type can be a valid Uni20 real scalar
 without having BLAS or LAPACK coverage in the current build.
 
-In particular, `float80` and `complex<float80>` do **not** acquire BLAS, LAPACK,
-or GPU provider coverage. They reuse the existing native `long double` scalar
-and generic CPU paths where the operation supports them. Runtime precision
+In particular, `float80` and `complex<float80>` reuse the native `long double`
+scalar and generic CPU paths where supported. The optional
+[MPLAPACK binary80 adapter](../linalg/mplapack_binary80.md) adds GEMM, square
+solves and reusable LU through `MplapackBinary80Backend`. It keeps provider
+`_Float64x` types private and converts by value. This limited coverage does not
+make these types satisfy the broad `Blas*`/`Lapack*` traits or add GPU support. Runtime precision
 visitors instantiate every configured scalar: clients requiring LAPACK must
 guard those instantiations with the relevant capability concept and reject
 unsupported requests, rather than silently narrowing. Native fp80 availability

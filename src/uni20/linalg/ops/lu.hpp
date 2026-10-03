@@ -7,6 +7,9 @@
 
 #include <uni20/linalg/backends/cpu/lu.hpp>
 #include <uni20/linalg/backends/lapack/lu.hpp>
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+#include <uni20/linalg/backends/mplapack/lu_binary80.hpp>
+#endif
 #if UNI20_ENABLE_MPLAPACK_MPFR
 #include <uni20/linalg/backends/mplapack/lu.hpp>
 #endif

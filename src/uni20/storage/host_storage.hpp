@@ -350,12 +350,18 @@ struct HostStorage
 
 #if UNI20_BACKEND_BLAS
     using backend_selector_type = linalg::backend_list<
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+        linalg::MplapackBinary80Backend,
+#endif
 #if UNI20_ENABLE_MPLAPACK_MPFR
         linalg::MplapackMpfrBackend,
 #endif
         linalg::LapackBackend, linalg::BlasBackend, linalg::CpuReferenceBackend>;
 #else
     using backend_selector_type = linalg::backend_list<
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+        linalg::MplapackBinary80Backend,
+#endif
 #if UNI20_ENABLE_MPLAPACK_MPFR
         linalg::MplapackMpfrBackend,
 #endif
@@ -366,6 +372,9 @@ struct HostStorage
     [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
     {
       return backend_selector_type{
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+          linalg::MplapackBinary80Backend{},
+#endif
 #if UNI20_ENABLE_MPLAPACK_MPFR
           linalg::MplapackMpfrBackend{},
 #endif
