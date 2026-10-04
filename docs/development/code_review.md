@@ -105,6 +105,12 @@ irrelevant when that is not obvious.
 
 ## Tensor, Mdspan, and Backend Checklist
 
+- Trace initialization through the actual constructor or allocation path.
+  Ordinary numerical Tensor shape construction initializes to zero; partial
+  population is valid. The tag-first `uninitialized` API and low-level raw
+  buffers have different contracts. Check the
+  [initialization contract](../tensor/creation_and_reshape.md#owning-tensor-initialization)
+  before reporting an uninitialized read or requesting an extra fill.
 - Does the mdspan accessor change value semantics?
 - Is direct pointer access permitted by the accessor, rather than merely by a
   pointer-shaped data handle?

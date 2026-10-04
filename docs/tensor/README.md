@@ -13,8 +13,9 @@ front-end operation semantics.
 - [Scalar Tensors, Host Scalars, and Storage Transfer](scalar_tensors_and_transfer.md)
   separates rank-zero Tensor results, host control-flow values, and future
   device migration.
-- [Generated Tensors and Reshape](creation_and_reshape.md) defines generated
-  values, layout-aware materialization, and reshape behavior.
+- [Construction, Initialization, Generated Values, and Reshape](creation_and_reshape.md)
+  defines default zero-initialization, the explicit `uninitialized` API,
+  generated values, layout-aware materialization, and reshape behavior.
 - [Scalar Policy](scalar_policy.md) defines Uni20 scalar spellings, concepts,
   promotion boundaries, numeric limits, and optional binary128 behavior.
 - [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`

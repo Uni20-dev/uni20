@@ -10,6 +10,15 @@ CUDA storage. Other host element types are value-initialized; CUDA zero
 initialization requires a supported numerical representation. A custom accessor
 still interprets stored values according to its own semantics.
 
+This is an API guarantee. Partially populating an ordinary numerical tensor is
+valid: every untouched stored element remains zero.
+
+| Construction | Initial stored numerical values |
+| --- | --- |
+| `DenseMatrix<T>(rows, cols)` for fixed-precision numeric `T` | Zero, including native complex types. |
+| `DenseMatrix<T>(rows, cols, p)` for `mpreal` or `complex<mpreal>` | Actual zeros at precision `p`. |
+| `DenseMatrix<T>(uninitialized, rows, cols)` (with trailing `p` when required) | Unspecified native values or unset runtime-precision scalars; write before reading. |
+
 ```cpp
 uni20::DenseMatrix<double> diagonal(2, 2);
 diagonal[0, 0] = 3.0;
@@ -24,6 +33,13 @@ available with explicit extents, mapping builders, strides, storage contexts,
 and placement. Each element must receive a value before that value is consumed.
 The tag does not bypass required construction or destruction of nontrivial
 objects. It does not change the Tensor type or add runtime initialization state.
+
+The tensor layer passes `StorageInitialization::Zero` or `Uninitialized` to its
+storage factory. Low-level `HostBuffer(size)` and `CudaBuffer(size)` allocation
+does not promise numerical zeros; do not infer Tensor construction behavior from
+those raw-buffer APIs. Initialization tests live in
+[`test_tensor_initialization.cpp`](../../tests/tensor/test_tensor_initialization.cpp)
+and [`test_tensor_precision.cpp`](../../tests/tensor/test_tensor_precision.cpp).
 
 Positive-rank default construction remains empty and allocation-free. Default
 rank-zero construction allocates its one element and initializes it to zero;
