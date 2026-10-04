@@ -13,6 +13,7 @@ struct Number
     int value;
     friend constexpr Number sqrt(Number x) noexcept { return {x.value + 100}; }
     friend constexpr Number abs(Number x) noexcept { return {x.value < 0 ? -x.value : x.value}; }
+    friend constexpr Number expm1(Number x) noexcept { return {x.value + 400}; }
     friend Number exp(Number) { throw std::domain_error("custom exponential"); }
 };
 template <class Tag> struct TemplatedNumber
@@ -56,6 +57,21 @@ namespace
 namespace m = uni20::math;
 using scalar_math_test::Number;
 static_assert(m::sqrt(Number{1}).value == 101);
+static_assert(m::expm1(Number{1}).value == 401);
+
+template <class... Functions> consteval bool elementary_signatures(Functions...)
+{
+  return ((std::invocable<Functions, float> && std::invocable<Functions, double> &&
+           std::invocable<Functions, long double> &&
+           !std::invocable<Functions, scalar_math_test::Unsupported> &&
+           !std::invocable<Functions, scalar_math_test::ConversionOnly<std::true_type>> &&
+           !std::invocable<Functions, double, double>) && ...);
+}
+static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log1p, m::cbrt, m::asin, m::acos,
+                                    m::tan, m::atan, m::sinh, m::cosh, m::tanh, m::asinh, m::acosh, m::atanh));
+static_assert(std::invocable<decltype(m::atan2), double, double>);
+static_assert(std::invocable<decltype(m::hypot), double, double>);
+static_assert(!std::invocable<decltype(m::hypot), scalar_math_test::ConversionOnly<std::true_type>, double>);
 static_assert(m::sqrt(scalar_math_test::TemplatedNumber<void>{1}).value == 201);
 static_assert(m::sqrt(uni20::MathAdlTestNumber{1}).value == 301);
 static_assert(noexcept(m::sqrt(Number{1})));
@@ -107,7 +123,7 @@ TEST(ScalarMath, ExactAndExplicitPrecisionContracts)
   using uni20::mpreal;
   using uni20::Precision;
   static_assert(!std::invocable<decltype(m::sqrt), double, Precision>);
-  static_assert(!std::invocable<decltype(m::log2), mpreal>);
+  static_assert(std::invocable<decltype(m::log2), mpreal>);
   EXPECT_TRUE(m::sqrt(mpreal{4}).is_exact());
   EXPECT_EQ(m::sqrt(mpreal{4}), 2);
   EXPECT_EQ(m::pow(mpreal{2}, mpreal{-3}), mpreal("1/8", Precision::exact()));

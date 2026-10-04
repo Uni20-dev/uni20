@@ -371,6 +371,26 @@ struct mpreal_access
       }
       return result;
     }
+    // For rational x and base 2 or 10, a rational logarithm is an integer.
+    // Check numerator and denominator independently without any floating conversion.
+    static mpreal exact_logarithm(exact_constant const& x, unsigned long base)
+    {
+      auto q = x.native_handle();
+      if (mpq_sgn(q) > 0)
+      {
+        mp_integer factor, remainder;
+        mpz_set_ui(factor.value, base);
+        auto numerator_power = mpz_remove(remainder.value, mpq_numref(q), factor.value);
+        if (mpz_cmp_ui(remainder.value, 1) == 0)
+        {
+          auto denominator_power = mpz_remove(remainder.value, mpq_denref(q), factor.value);
+          if (mpz_cmp_ui(remainder.value, 1) == 0)
+            return mpreal(exact_constant(numerator_power) - exact_constant(denominator_power));
+        }
+      }
+      throw std::logic_error("mpreal: logarithm requires finite working precision");
+    }
+
     // Explicit operation precision means convert the inputs, then evaluate.
     template <auto Operation> static mpreal apply(mpreal const& x, Precision p)
     {
@@ -394,18 +414,32 @@ struct mpreal_access
           return mpreal(x.exact_value() < 0 ? -x.exact_value() : x.exact_value());
         else if constexpr (Operation == mpfr_sqrt)
           return mpreal(uni20::sqrt(x.exact_value()));
+        else if constexpr (Operation == mpfr_cbrt)
+        {
+          if (auto root = rational_root(x.exact_value(), 3)) return mpreal(*root);
+          throw std::logic_error("mpreal: cube root requires finite working precision");
+        }
+        else if constexpr (Operation == mpfr_exp2)
+          return mpreal(uni20::pow(exact_constant{2}, x.exact_value()));
+        else if constexpr (Operation == mpfr_log2)
+          return exact_logarithm(x.exact_value(), 2);
+        else if constexpr (Operation == mpfr_log10)
+          return exact_logarithm(x.exact_value(), 10);
         else
         {
           auto const& q = x.exact_value();
-          if constexpr (Operation == mpfr_exp || Operation == mpfr_cos)
+          if constexpr (Operation == mpfr_exp || Operation == mpfr_cos || Operation == mpfr_cosh)
           {
             if (q == 0) return mpreal{1};
           }
-          else if constexpr (Operation == mpfr_log)
+          else if constexpr (Operation == mpfr_log || Operation == mpfr_acos || Operation == mpfr_acosh)
           {
             if (q == 1) return mpreal{};
           }
-          else if constexpr (Operation == mpfr_sin || Operation == mpfr_tan || Operation == mpfr_atan)
+          else if constexpr (Operation == mpfr_sin || Operation == mpfr_tan || Operation == mpfr_atan ||
+                             Operation == mpfr_expm1 || Operation == mpfr_log1p || Operation == mpfr_asin ||
+                             Operation == mpfr_sinh || Operation == mpfr_tanh || Operation == mpfr_asinh ||
+                             Operation == mpfr_atanh)
           {
             if (q == 0) return mpreal{};
           }
@@ -623,6 +657,104 @@ inline mpreal pow(mpreal const& x, mpreal const& y, Precision p)
 {
   return detail::mpreal_access::apply<mpfr_pow>(x, y, p);
 }
+
+/// \brief Real cube root, including negative arguments; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal cbrt(mpreal const& x) { return detail::mpreal_access::apply<mpfr_cbrt>(x); }
+/// \brief Evaluate `cbrt(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal cbrt(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_cbrt>(x, p); }
+
+/// \brief Base-two exponential; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal exp2(mpreal const& x) { return detail::mpreal_access::apply<mpfr_exp2>(x); }
+/// \brief Evaluate `exp2(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal exp2(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_exp2>(x, p); }
+
+/// \brief Exponential minus one without cancellation; retain input precision or exact zero.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal expm1(mpreal const& x) { return detail::mpreal_access::apply<mpfr_expm1>(x); }
+/// \brief Evaluate `expm1(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal expm1(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_expm1>(x, p); }
+
+/// \brief Base-two logarithm; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal log2(mpreal const& x) { return detail::mpreal_access::apply<mpfr_log2>(x); }
+/// \brief Evaluate `log2(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal log2(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_log2>(x, p); }
+
+/// \brief Base-ten logarithm; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal log10(mpreal const& x) { return detail::mpreal_access::apply<mpfr_log10>(x); }
+/// \brief Evaluate `log10(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal log10(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_log10>(x, p); }
+
+/// \brief Logarithm of one plus x without cancellation; retain input precision or exact zero.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal log1p(mpreal const& x) { return detail::mpreal_access::apply<mpfr_log1p>(x); }
+/// \brief Evaluate `log1p(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal log1p(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_log1p>(x, p); }
+
+/// \brief Inverse sine in radians; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal asin(mpreal const& x) { return detail::mpreal_access::apply<mpfr_asin>(x); }
+/// \brief Evaluate `asin(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal asin(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_asin>(x, p); }
+
+/// \brief Inverse cosine in radians; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal acos(mpreal const& x) { return detail::mpreal_access::apply<mpfr_acos>(x); }
+/// \brief Evaluate `acos(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal acos(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_acos>(x, p); }
+
+/// \brief Hyperbolic sine; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal sinh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_sinh>(x); }
+/// \brief Evaluate `sinh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal sinh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_sinh>(x, p); }
+
+/// \brief Hyperbolic cosine; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal cosh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_cosh>(x); }
+/// \brief Evaluate `cosh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal cosh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_cosh>(x, p); }
+
+/// \brief Hyperbolic tangent; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal tanh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_tanh>(x); }
+/// \brief Evaluate `tanh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal tanh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_tanh>(x, p); }
+
+/// \brief Inverse hyperbolic sine; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal asinh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_asinh>(x); }
+/// \brief Evaluate `asinh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal asinh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_asinh>(x, p); }
+
+/// \brief Inverse hyperbolic cosine; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal acosh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_acosh>(x); }
+/// \brief Evaluate `acosh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal acosh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_acosh>(x, p); }
+
+/// \brief Inverse hyperbolic tangent; retain input precision or a supported exact result.
+/// \throws std::logic_error If an exact input requires approximation, or x is unset.
+inline mpreal atanh(mpreal const& x) { return detail::mpreal_access::apply<mpfr_atanh>(x); }
+/// \brief Evaluate `atanh(x.at(p))`, returning an approximation at finite precision p.
+/// \throws std::logic_error If p is exact or x is unset.
+inline mpreal atanh(mpreal const& x, Precision p) { return detail::mpreal_access::apply<mpfr_atanh>(x, p); }
 
 /// \brief Spacing above one for a specified binary working precision.
 inline mpreal epsilon(Precision precision)

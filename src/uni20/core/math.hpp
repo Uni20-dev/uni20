@@ -253,6 +253,23 @@ UNI20_SCALAR_MATH_DISPATCH(sin)
 UNI20_SCALAR_MATH_DISPATCH(cos)
 UNI20_SCALAR_MATH_DISPATCH(ceil)
 UNI20_SCALAR_MATH_DISPATCH(ldexp)
+UNI20_SCALAR_MATH_DISPATCH(cbrt)
+UNI20_SCALAR_MATH_DISPATCH(exp2)
+UNI20_SCALAR_MATH_DISPATCH(expm1)
+UNI20_SCALAR_MATH_DISPATCH(log10)
+UNI20_SCALAR_MATH_DISPATCH(log1p)
+UNI20_SCALAR_MATH_DISPATCH(asin)
+UNI20_SCALAR_MATH_DISPATCH(acos)
+UNI20_SCALAR_MATH_DISPATCH(sinh)
+UNI20_SCALAR_MATH_DISPATCH(cosh)
+UNI20_SCALAR_MATH_DISPATCH(tanh)
+UNI20_SCALAR_MATH_DISPATCH(asinh)
+UNI20_SCALAR_MATH_DISPATCH(acosh)
+UNI20_SCALAR_MATH_DISPATCH(atanh)
+UNI20_SCALAR_MATH_DISPATCH(tan)
+UNI20_SCALAR_MATH_DISPATCH(atan)
+UNI20_SCALAR_MATH_DISPATCH(atan2)
+UNI20_SCALAR_MATH_DISPATCH(hypot)
 #undef UNI20_SCALAR_MATH_DISPATCH
 
 UNI20_SCALAR_MATH_ADL(real)
@@ -344,6 +361,40 @@ inline constexpr detail::scalar_math::log2_fn log2{};
 inline constexpr detail::scalar_math::sin_fn sin{};
 /// \brief Cosine with scalar-specific precision handling.
 inline constexpr detail::scalar_math::cos_fn cos{};
+/// \brief Real cube root, including negative arguments.
+inline constexpr detail::scalar_math::cbrt_fn cbrt{};
+/// \brief Base-two exponential.
+inline constexpr detail::scalar_math::exp2_fn exp2{};
+/// \brief Natural exponential minus one, evaluated without subtractive cancellation.
+inline constexpr detail::scalar_math::expm1_fn expm1{};
+/// \brief Base-ten logarithm.
+inline constexpr detail::scalar_math::log10_fn log10{};
+/// \brief Natural logarithm of one plus the argument, retaining small increments.
+inline constexpr detail::scalar_math::log1p_fn log1p{};
+/// \brief Inverse sine in radians.
+inline constexpr detail::scalar_math::asin_fn asin{};
+/// \brief Inverse cosine in radians.
+inline constexpr detail::scalar_math::acos_fn acos{};
+/// \brief Hyperbolic sine.
+inline constexpr detail::scalar_math::sinh_fn sinh{};
+/// \brief Hyperbolic cosine.
+inline constexpr detail::scalar_math::cosh_fn cosh{};
+/// \brief Hyperbolic tangent.
+inline constexpr detail::scalar_math::tanh_fn tanh{};
+/// \brief Inverse hyperbolic sine.
+inline constexpr detail::scalar_math::asinh_fn asinh{};
+/// \brief Inverse hyperbolic cosine.
+inline constexpr detail::scalar_math::acosh_fn acosh{};
+/// \brief Inverse hyperbolic tangent.
+inline constexpr detail::scalar_math::atanh_fn atanh{};
+/// \brief Tangent in radians.
+inline constexpr detail::scalar_math::tan_fn tan{};
+/// \brief Inverse tangent in radians.
+inline constexpr detail::scalar_math::atan_fn atan{};
+/// \brief Quadrant-aware inverse tangent of y/x in radians.
+inline constexpr detail::scalar_math::atan2_fn atan2{};
+/// \brief Euclidean length with scalar-specific overflow and underflow handling.
+inline constexpr detail::scalar_math::hypot_fn hypot{};
 /// \brief Least integral value not less than the argument, in the scalar's result type.
 inline constexpr detail::scalar_math::ceil_fn ceil{};
 /// \brief Multiply by a power of two using the scalar's exponent interface.
