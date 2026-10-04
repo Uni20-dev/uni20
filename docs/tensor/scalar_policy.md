@@ -424,7 +424,10 @@ Runtime-precision real and complex math functions accept a trailing finite
 returning an approximate result at that precision. Without an override, exact
 results remain exact where supported, and approximate operands supply the working
 precision. This distinction also applies to the real outputs of complex `abs`,
-`norm`, and `arg`.
+`norm`, and `arg`. Real `expm1`/`log1p` use dedicated provider routines;
+new elementary functions follow the same exact/finite-precision distinction.
+See the [real operation and exact-result tables](mpreal.md) and
+[remaining coverage plan](scalar_math_coverage_plan.md).
 
 ## Numerical validation
 

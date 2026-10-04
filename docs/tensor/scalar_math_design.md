@@ -22,7 +22,11 @@ providing a name does not synthesize a missing scalar operation.
 
 | Operations | Contract |
 | --- | --- |
-| `abs`, `sqrt`, `pow`, `exp`, `log`, `log2`, `sin`, `cos`, `ceil`, `ldexp` | Select the native or ADL scalar implementation, retaining its result type and numerical semantics |
+| `abs`, `sqrt`, `cbrt`, `pow`, `hypot` | Magnitude, roots and powers with the scalar implementation's domain and precision rules |
+| `exp`, `exp2`, `expm1`, `log`, `log2`, `log10`, `log1p` | Exponentials and logarithms; dedicated small-argument operations avoid cancellation |
+| `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2` | Trigonometric functions in radians |
+| `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` | Hyperbolic functions |
+| `ceil`, `ldexp` | Native rounding and power-of-two scaling; MPFR overloads remain planned |
 | `real`, `imag` | Read components by value, never expose mutable component references; real/integral values retain their type, and imaginary zero retains runtime precision |
 | `conj` | Conjugate complex values; preserve the type of real and integral values |
 
@@ -77,7 +81,7 @@ precision argument.
 
 For example, `math::sqrt(mpreal{4})` returns exact two;
 `math::sqrt(mpreal{2})` throws; and `math::sqrt(mpreal{2}, p)` approximates at `p`.
-`math::sqrt(2.0, p)` is not a supported call. MPFR supplies no `log2`, `ceil` or
+`math::sqrt(2.0, p)` is not a supported call. Uni20 supplies no MPFR `ceil` or
 `ldexp` scalar overload in the current implementation, so these calls with
 `mpreal` are also rejected rather than converted to a native float.
 
@@ -114,3 +118,8 @@ precision contract and an independent numerical check. Before using the facade
 in device execution, add the applicable host/device annotations and an actual
 CUDA compilation probe; annotation alone does not establish device-callability.
 MPFR/MPC scalar implementations remain host-only.
+
+The [scalar math coverage plan](scalar_math_coverage_plan.md) tracks remaining
+arithmetic, decomposition, classification, constants and special functions.
+The elementary expansion covers real scalars; existing native complex and MPC
+operations remain available only where those implementations provide overloads.

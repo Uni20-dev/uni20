@@ -74,6 +74,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Family | Evidence |
 | --- | --- |
 | Scalar epsilon and arithmetic | Runtime epsilon, retained increment, complex reciprocal accuracy |
+| Real elementary math | Small-argument `expm1`/`log1p` with cancellation negative controls; inverse identities retaining increments; error improvement against independent 512-bit series |
 | CPU matrix one-norm and tensor reductions | Retained increment, conjugating inner product, squared-norm identity |
 | CPU and provider GEMM | Analytic real/complex products with an increment near each precision's resolution |
 | CPU and provider square solve | Nearly singular dyadic system with analytic solution, independent scalar residual |

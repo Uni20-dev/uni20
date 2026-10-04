@@ -75,8 +75,20 @@ exponents whose real root is rational: `pow(16, 3/4)` is exactly 8. For negative
 bases, exact rational powers use the real root when the denominator is odd.
 This differs from approximate MPFR `pow`, where a noninteger approximate exponent
 on a negative base produces NaN. Zero to the zeroth power is one.
-Exact identities include `exp(0)`, `log(1)`, `sin(0)`, `cos(0)`, `tan(0)`, `atan(0)`
-and `atan2(0, positive)`. These rules never reclassify approximate operands as exact.
+`cbrt` preserves rational perfect cubes, including negative inputs;
+`exp2` preserves rational powers of two. `log2` and `log10` return exact integers
+when the rational input is an integer power of their base, including reciprocal
+powers: `log2(1/8)` is exactly -3. These checks use integer arithmetic, without
+first approximating the input.
+
+Exact elementary identities are:
+
+| Result | Exact-input cases |
+| --- | --- |
+| Zero | `log(1)`, `log2(1)`, `log10(1)`, `log1p(0)`, `expm1(0)`, `sin(0)`, `tan(0)`, `asin(0)`, `acos(1)`, `atan(0)`, `atan2(0, positive)`, `sinh(0)`, `tanh(0)`, `asinh(0)`, `acosh(1)`, `atanh(0)` |
+| One | `exp(0)`, `exp2(0)`, `cos(0)`, `cosh(0)` |
+
+These rules never reclassify approximate operands as exact.
 
 Exact division by zero and negative powers of zero throw `std::domain_error`.
 Approximate division retains MPFR's infinity/NaN behavior. Exact arithmetic can
@@ -237,10 +249,19 @@ previously rounded approximation. It supports arithmetic with an existing
 `mpreal`; precisionless combinations involving pi are unsupported. This slice
 supplies `pi<mpreal>`, not a generic replacement for `std::numbers`.
 
-The scalar math functions include `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`,
-`tan`, `atan`, `atan2`, `hypot`, and `pow`. Each accepts an optional trailing
-`Precision`. Without it, the exact-result rules above apply; approximate operands
-supply working precision, and differing finite precisions are rejected.
+The following real scalar functions are also available through
+[`uni20::math`](scalar_math_design.md) for generic algorithms:
+
+| Family | Functions |
+| --- | --- |
+| Magnitude, powers and roots | `abs`, `sqrt`, `cbrt`, `pow`, `hypot` |
+| Exponentials and logarithms | `exp`, `exp2`, `expm1`, `log`, `log2`, `log10`, `log1p` |
+| Trigonometry (radians) | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2` |
+| Hyperbolic functions | `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
+
+Each accepts an optional trailing `Precision`. Without it, the exact-result
+rules above apply; approximate operands supply working precision, and differing
+finite precisions are rejected.
 
 An explicit finite `p` requests **input conversion followed by evaluation**:
 `f(x, p)` means `f(x.at(p))`, and `f(x, y, p)` means
@@ -262,6 +283,30 @@ expression. For example, at two bits `sqrt(mpreal{6.4_mp}, p)` first rounds 6.4
 to 6, then rounds its square root to 2. Evaluating the original square root and
 rounding only the final result would produce 3. Approximate paths retain MPFR's
 exceptional-value rules: `sqrt(mpreal{-1}, p)` yields NaN.
+
+`expm1` and `log1p` call the dedicated MPFR routines. Use them for small
+arguments: `exp(x)-1` and `log(1+x)` can lose the entire result even at the
+chosen precision. Hyperbolic functions likewise call their MPFR routines.
+For approximate real inputs, `asin`/`acos` outside [-1, 1], `acosh` below 1,
+`atanh` outside [-1, 1], and `log1p` below -1 return NaN. `atanh(±1)` gives
+signed infinity, and `log1p(-1)` gives negative infinity. `cbrt` has a real
+negative branch. `expm1`, `log1p`, `cbrt`, `asin`, `sinh`, `tanh`, `asinh` and
+`atanh` preserve approximate negative zero. Exact zero has no sign.
+
+```cpp
+#include <uni20/core/math.hpp>
+auto small = mpreal("1e-100", p);
+auto stable_exp = uni20::math::expm1(small); // Retains the small nonzero result.
+auto stable_log = uni20::math::log1p(small);
+auto exact_cube_root = uni20::math::cbrt(mpreal{-8}); // Exact -2.
+auto finite_asinh = uni20::math::asinh(mpreal{1}, p);
+```
+
+Run `mpreal_elementary_example` for a comparison of naive and stable formulas
+using the same generic code with `double` and `mpreal`.
+
+The [coverage plan](scalar_math_coverage_plan.md) records remaining utility and
+special functions. This real expansion does not add corresponding MPC overloads.
 
 Approximate real arithmetic follows MPFR's infinity/NaN behavior: real division by zero can
 produce infinity or NaN, and `sqrt` of a negative value produces NaN. This differs

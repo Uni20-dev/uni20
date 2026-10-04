@@ -67,11 +67,102 @@ UNI20_PRECISION_TEST(NumericalScalar, MathDispatchRetainsWorkingPrecision)
   expect_equal(uni20::math::sin(C::scalar(0)), C::scalar(0));
   expect_equal(uni20::math::cos(C::scalar(0)), C::scalar(1));
   expect_error_at_most(uni20::math::pow(C::scalar(2), C::scalar(3)), C::scalar(8), C::real(32) * C::epsilon());
+  expect_equal(uni20::math::log2(C::real(8)), C::real(3));
   if constexpr (!C::runtime)
   {
-    expect_equal(uni20::math::log2(C::real(8)), C::real(3));
     expect_equal(uni20::math::ceil(C::real(3) / C::real(2)), C::real(2));
     expect_equal(uni20::math::ldexp(one + gap, -3), R((one + gap) / C::real(8)));
   }
 }
+
+UNI20_PRECISION_TEST(NumericalScalar, ElementarySmallArguments)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  R const one = C::real(1);
+  for (int sign : {-1, 1})
+  {
+    R const x = C::real(sign) * C::power_of_two(-C::digits() - 2);
+    // At this scale both true results round to x. The naive compositions
+    // lose the entire result, even when evaluated at the tested precision.
+    expect_equal(R(one + x), one);
+    expect_equal(R(math::exp(x) - one), C::real(0));
+    auto exponential = math::expm1(x);
+    auto logarithm = math::log1p(x);
+    static_assert(std::same_as<decltype(exponential), R>);
+    static_assert(std::same_as<decltype(logarithm), R>);
+    expect_equal(exponential, x);
+    expect_equal(logarithm, x);
+    C::expect_precision(exponential);
+    C::expect_precision(logarithm);
+  }
+}
+
+UNI20_PRECISION_TEST(NumericalScalar, ElementaryRetainsWorkingPrecision)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  R const one = C::real(1), two = C::real(2);
+  R const x = one / two + C::gap(), tolerance = C::epsilon() * C::real(8);
+  auto check = [&](auto result, R expected) {
+    static_assert(std::same_as<decltype(result), R>);
+    expect_error_at_most(result, expected, tolerance);
+    C::expect_precision(result);
+  };
+  // The retained increment exceeds the error allowance; evaluating these
+  // identities after narrowing the input cannot pass at higher precisions.
+  check(math::cbrt(R(-x * x * x)), R(-x));
+  check(math::exp2(math::log2(x)), x);
+  check(math::pow(C::real(10), math::log10(x)), x);
+  check(math::sin(math::asin(x)), x);
+  check(math::cos(math::acos(x)), x);
+  check(math::tan(math::atan(x)), x);
+  check(math::sinh(math::asinh(x)), x);
+  check(math::cosh(math::acosh(R(one + x))), R(one + x));
+  check(math::tanh(math::atanh(x)), x);
+  check(math::tan(math::atan2(x, one)), x);
+  check(math::hypot(R(C::real(3) * x), R(C::real(4) * x)), R(C::real(5) * x));
+}
+
+#if UNI20_ENABLE_MPFR
+UNI20_PRECISION_TEST(NumericalScalar, ElementaryAccuracyImprovesWithPrecision)
+{
+  using C = TypeParam;
+  this->RecordProperty("backend", "scalar_math");
+  auto reference_precision = Precision::bits(512);
+  auto x = mpreal(1, reference_precision) / 4;
+  mpreal exponential(0, reference_precision), logarithm(0, reference_precision);
+  mpreal exponential_term(1, reference_precision), power(1, reference_precision);
+  // Independent series at x=1/4. After 300 terms the logarithm tail is
+  // below 2^-600; 512-bit accumulation error is negligible for these probes.
+  for (int k = 1; k <= 300; ++k)
+  {
+    exponential_term *= x;
+    exponential_term /= k;
+    exponential += exponential_term;
+    power *= x;
+    logarithm += (k % 2 == 1 ? power : -power) / k;
+  }
+  constexpr int bits = C::digits();
+  constexpr int previous = bits <= 24    ? 12
+                           : bits <= 53  ? 24
+                           : bits <= 64  ? 53
+                           : bits <= 113 ? 64
+                           : bits <= 128 ? 113
+                                         : 128;
+  auto argument = C::real(1) / C::real(4);
+  auto check = [&](auto result, mpreal const& reference) {
+    C::expect_precision(result);
+    auto error = abs(widen(result) - reference);
+    auto lower_error = abs(reference.at(Precision::bits(previous)).at(reference_precision) - reference);
+    EXPECT_GT(error, 0);
+    EXPECT_LE(error, widen(C::epsilon()) * abs(reference));
+    EXPECT_LT(error * 16, lower_error);
+  };
+  check(math::expm1(argument), exponential);
+  check(math::log1p(argument), logarithm);
+}
+#endif
 } // namespace uni20::test

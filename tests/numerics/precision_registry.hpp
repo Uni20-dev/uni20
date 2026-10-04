@@ -12,6 +12,9 @@ enum class PrecisionProbe
   EpsilonAndRetainedIncrement,
   ReciprocalAccuracyImprovesWithPrecision,
   MathDispatchRetainsWorkingPrecision,
+  ElementaryRetainsWorkingPrecision,
+  ElementarySmallArguments,
+  ElementaryAccuracyImprovesWithPrecision,
   CpuMatrixOneNormRetainsIncrement,
   CpuReductionsRetainIncrement,
   CpuGemmRetainsIncrement,
@@ -46,6 +49,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "EpsilonAndRetainedIncrement", "scalar"},
     ProbeDescription{"NumericalScalar", "ReciprocalAccuracyImprovesWithPrecision", "scalar"},
     ProbeDescription{"NumericalScalar", "MathDispatchRetainsWorkingPrecision", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ElementaryRetainsWorkingPrecision", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ElementarySmallArguments", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ElementaryAccuracyImprovesWithPrecision", "scalar_math"},
     ProbeDescription{"NumericalLinalg", "CpuMatrixOneNormRetainsIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuReductionsRetainIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuGemmRetainsIncrement", "cpu_reference"},
@@ -102,8 +108,13 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       if (provider && probe != ProviderGemmRetainsIncrement)
         return {"unsupported", "provider complex division is unsafe with distinct _Float64x"};
 #endif
+    if constexpr (C::is_complex)
+      if (probe == ElementaryRetainsWorkingPrecision || probe == ElementarySmallArguments ||
+          probe == ElementaryAccuracyImprovesWithPrecision)
+        return {"not_applicable", "elementary expansion covers real scalars"};
     switch (probe)
     {
+      case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:
       case SolveAccuracyImprovesWithPrecision:
       case CpuLuAccuracyImprovesWithPrecision:

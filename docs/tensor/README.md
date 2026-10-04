@@ -21,6 +21,11 @@ front-end operation semantics.
 - [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`
   interface, ADL customization, native precision and component-value semantics.
 
+## Coverage Plans
+
+- [Scalar Math Coverage](scalar_math_coverage_plan.md) tracks elementary functions,
+  exact-aware utilities, special functions and provider-version decisions.
+
 ## Background Design
 
 - [Tensor Dispatch and View Semantics Draft](dispatch_and_view_semantics_draft.md)

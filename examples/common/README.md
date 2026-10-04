@@ -2,6 +2,10 @@
 
 - `buildinfo_example.cpp` renders configured compiler, provider, feature, and
   environment metadata through the presentation layer.
+- `mpreal_elementary_example.cpp` compares cancellation-prone formulas with
+  `expm1` and `log1p` using one generic function for `double` and `mpreal`, then
+  shows exact rational results and an explicit-precision hyperbolic function.
+  It requires `UNI20_ENABLE_MPFR=ON` and exits normally.
 - `gtest_floating_eq_example.cpp` demonstrates real and complex ULP-aware
   GoogleTest assertions. It intentionally contains failing tests and should
   exit nonzero.
