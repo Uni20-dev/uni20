@@ -21,6 +21,7 @@
 #endif
 
 #include <cstddef>
+#include <type_traits>
 
 namespace uni20
 {
@@ -66,8 +67,10 @@ using DenseMatrix = Tensor<ElementType, 2, HostStorage, LayoutPolicy>;
 ///          particular resource set. `mdspec()` exposes a
 ///          `cuda::CudaBufferView` descriptor, mapping, and eventual pointer
 ///          accessor. It does not resolve a usable data handle or perform
-///          host/device transfer.
+///          host/device transfer. Elements must be trivially copyable; owning
+///          MPFR/MPC scalars require host storage.
 template <typename ElementType, std::size_t Rank, typename LayoutPolicy = ColumnMajor>
+  requires std::is_trivially_copyable_v<ElementType>
 using CudaTensor = Tensor<ElementType, Rank, CudaStorage, LayoutPolicy>;
 
 /// \brief Owning column-major matrix in CUDA device storage.

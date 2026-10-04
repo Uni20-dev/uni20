@@ -23,7 +23,9 @@ namespace uni20::cuda
 /// \details Persistent storage remains `uni20::complex<Real>`. Device reads and
 ///          writes use `cuda::std::complex<Real>` without treating the two
 ///          complex class types as alias-compatible objects.
-template <class Real> class CudaComplexReference {
+template <class Real>
+  requires std::is_trivially_copyable_v<uni20::complex<Real>>
+class CudaComplexReference {
   public:
     using logical_type = uni20::complex<Real>;
     using execution_type = ::cuda::std::complex<Real>;
@@ -71,7 +73,10 @@ template <class Real> class CudaComplexReference {
 /// \details Indexed access applies the mapped offset and returns an element
 ///          reference. The accessor must be evaluated only in an execution
 ///          domain where the leased CUDA pointer is directly accessible.
-template <class ElementType> struct CudaPointerAccessor
+///          Persistent elements must be trivially copyable, including borrowed views.
+template <class ElementType>
+  requires std::is_trivially_copyable_v<ElementType>
+struct CudaPointerAccessor
 {
     using element_type = ElementType;
     using data_handle_type = element_type*;
@@ -160,7 +165,9 @@ struct CudaConjugate
 };
 
 /// \brief Read-only CUDA accessor that conjugates persistent complex storage.
-template <class Real> struct CudaConjugatingPointerAccessor
+template <class Real>
+  requires std::is_trivially_copyable_v<uni20::complex<Real>>
+struct CudaConjugatingPointerAccessor
 {
     using element_type = uni20::complex<Real> const;
     using data_handle_type = element_type*;

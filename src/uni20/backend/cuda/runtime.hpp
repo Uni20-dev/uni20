@@ -17,6 +17,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -28,7 +29,9 @@ namespace uni20::cuda
 class Completion;
 class DeviceResources;
 class StreamPool;
-template <typename T> class CudaBuffer;
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+class CudaBuffer;
 
 namespace detail
 {
@@ -294,7 +297,9 @@ class DeviceResources {
     std::unordered_map<std::type_index, std::unique_ptr<ProviderResourceBase>> provider_resources_;
     std::atomic<std::size_t> live_allocation_count_ = 0;
 
-    template <typename> friend class CudaBuffer;
+    template <typename T>
+      requires std::is_trivially_copyable_v<T>
+    friend class CudaBuffer;
     template <typename> friend class detail::CudaAllocation;
 };
 

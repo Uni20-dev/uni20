@@ -270,11 +270,21 @@ from exact rational division, whose result must remain rational. `isfinite`,
 unordered. MPFR exponent bounds and exception flags retain the underlying
 library's semantics; Uni20 does not change these settings.
 
-`mpreal` models Uni20's `Real` concept, but type-only numerical limits cannot
-supply its runtime precision. `has_numeric_limits_v<mpreal>` is false; algorithms
-must use explicit/value-derived precision and `epsilon(p)` rather than
-`numeric_limits<mpreal>::epsilon()`. Existing generic algorithms may need further
-adaptation for constants, allocation, and precision before accepting this scalar.
+`mpreal` models Uni20's `Real` concept and has a `uni20::numeric_limits`
+specialization, so `has_numeric_limits_v<mpreal>` is true. Precision-dependent
+queries require an exemplar or explicit precision: use
+`numeric_limits<mpreal>::epsilon(x)` or `numeric_limits<mpreal>::epsilon(p)`,
+and similarly `digits(x)` or `digits(p)`. The zero-argument `epsilon()` is
+deleted; exact or unset exemplars cannot supply finite working precision.
+The trait indicates that a specialization exists, not that type-only limits
+are available. Existing generic algorithms may need further adaptation for
+constants, allocation, and precision before accepting this scalar. See the
+[runtime numeric-limits contract](scalar_policy.md#runtime-precision).
+
+`mpreal` and `complex<mpreal>` own host-side GMP/MPFR/MPC state and cannot be
+stored in `CudaBuffer`, `CudaTensor` or `CudaMatrix`. CUDA buffers and accessors
+require trivially copyable elements; these owning scalars are rejected at
+compile time. Convert explicitly to a supported native scalar before transfer.
 
 ## Complex scalars
 
