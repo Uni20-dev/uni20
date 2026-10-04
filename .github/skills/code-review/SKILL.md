@@ -17,6 +17,9 @@ relevant subsystem documents:
 
 - Scalar aliases, complex deduction and runtime precision:
   [scalar policy](../../../docs/tensor/scalar_policy.md).
+- Tensor shape construction, default zero-initialization and the explicit
+  `uninitialized` API:
+  [initialization contract](../../../docs/tensor/creation_and_reshape.md#owning-tensor-initialization).
 - Numerical test oracles, precision retention and backend coverage:
   [numerical validation](../../../docs/development/numerical_testing.md).
 - Dense linalg ownership, layouts, diagnostics and async support:

@@ -135,15 +135,17 @@ if(NOT UNI20_ENABLE_MPFR)
   unset(UNI20_MPFR_HAS_TLS CACHE)
 endif()
 option(UNI20_ENABLE_MPLAPACK      "Enable the optional MPLAPACK binary128 backend" OFF)
+option(UNI20_ENABLE_MPLAPACK_BINARY80 "Enable MPLAPACK for native x87 extended precision" OFF)
 option(UNI20_ENABLE_MPLAPACK_MPFR "Enable the optional MPLAPACK MPFR/MPC backend" OFF)
 if(UNI20_ENABLE_MPLAPACK_MPFR AND NOT UNI20_ENABLE_MPC)
   message(FATAL_ERROR "UNI20_ENABLE_MPLAPACK_MPFR requires UNI20_ENABLE_MPFR=ON and UNI20_ENABLE_MPC=ON")
 endif()
-if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR)
+if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR OR UNI20_ENABLE_MPLAPACK_BINARY80)
   uni20_dependency_option(UNI20_USE_SYSTEM_MPLAPACK "MPLAPACK library" AUTO)
 endif()
 set(UNI20_HAS_FLOAT128 OFF)
 set(UNI20_FLOAT128_PROVIDER_MPLAPACK OFF)
+set(UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU OFF)
 # Native x87 extended precision is a scalar capability, not a BLAS/LAPACK
 # provider. Probe numerical properties rather than padded object size, and do
 # not run a target executable (this also works in cross builds).
@@ -157,14 +159,19 @@ check_cxx_source_compiles([=[
   int main() {}
 ]=] UNI20_NATIVE_FLOAT80)
 set(UNI20_HAS_FLOAT80 ${UNI20_NATIVE_FLOAT80})
-if(NOT UNI20_ENABLE_MPLAPACK AND NOT UNI20_ENABLE_MPLAPACK_MPFR)
+if(UNI20_ENABLE_MPLAPACK_BINARY80 AND NOT UNI20_HAS_FLOAT80)
+  message(FATAL_ERROR "MPLAPACK binary80 requires native x87 long double (UNI20_HAS_FLOAT80)")
+endif()
+if(NOT UNI20_ENABLE_MPLAPACK AND NOT UNI20_ENABLE_MPLAPACK_MPFR AND NOT UNI20_ENABLE_MPLAPACK_BINARY80)
   foreach(_uni20_disabled_mplapack_cache_var IN ITEMS
       UNI20_MPLAPACK_DIR
       UNI20_MPLAPACK_SOURCE
       UNI20_MPLAPACK_TARGET
       UNI20_MPLAPACK_VERSION
       UNI20_DETECTED_MPLAPACK
-      UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE)
+      UNI20_MPLAPACK_BINARY128_HEADERS_COMPATIBLE
+      UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE
+      UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE)
     unset(${_uni20_disabled_mplapack_cache_var} CACHE)
   endforeach()
 endif()
@@ -215,6 +222,7 @@ if(UNI20_DOCS_WEB)
   set(UNI20_BUILD_ASM OFF CACHE BOOL "Build stand-alone assembly dumps for snippets in asm/" FORCE)
   set(UNI20_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA backend support" FORCE)
   set(UNI20_ENABLE_MPLAPACK OFF CACHE BOOL "Enable the optional MPLAPACK binary128 backend" FORCE)
+  set(UNI20_ENABLE_MPLAPACK_BINARY80 OFF CACHE BOOL "Enable MPLAPACK binary80" FORCE)
   set(UNI20_ENABLE_MPLAPACK_MPFR OFF CACHE BOOL "Enable the optional MPLAPACK MPFR/MPC backend" FORCE)
 endif()
 
@@ -477,10 +485,13 @@ if(NOT UNI20_DOCS_WEB)
     endif()
   endif()
 
-  if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR)
+  if(UNI20_ENABLE_MPLAPACK OR UNI20_ENABLE_MPLAPACK_MPFR OR UNI20_ENABLE_MPLAPACK_BINARY80)
     set(_uni20_mplapack_components "")
     if(UNI20_ENABLE_MPLAPACK)
       list(APPEND _uni20_mplapack_components binary128)
+    endif()
+    if(UNI20_ENABLE_MPLAPACK_BINARY80)
+      list(APPEND _uni20_mplapack_components binary80)
     endif()
     if(UNI20_ENABLE_MPLAPACK_MPFR)
       list(APPEND _uni20_mplapack_components mpfr)
@@ -498,6 +509,7 @@ if(NOT UNI20_DOCS_WEB)
         "MPLAPACK_CXX_EXTENSIONS=ON"
         "MPLAPACK_ENABLE_BINARY128=${UNI20_ENABLE_MPLAPACK}"
         "MPLAPACK_ENABLE_MPFR=${UNI20_ENABLE_MPLAPACK_MPFR}"
+        "MPLAPACK_ENABLE_BINARY80=${UNI20_ENABLE_MPLAPACK_BINARY80}"
         "MPLAPACK_ENABLE_OPT=OFF"
         "MPLAPACK_ENABLE_CUDA=OFF"
         "MPLAPACK_ENABLE_OPENCL=OFF"
@@ -506,7 +518,6 @@ if(NOT UNI20_DOCS_WEB)
         "MPLAPACK_ENABLE_GMP=OFF"
         "MPLAPACK_ENABLE_QD=OFF"
         "MPLAPACK_ENABLE_DD=OFF"
-        "MPLAPACK_ENABLE_BINARY80=OFF"
         "MPLAPACK_BUILD_EXAMPLES=OFF"
         "MPLAPACK_BUILD_TESTS=OFF"
         "MPLAPACK_BUILD_BENCHMARKS=OFF"
@@ -517,6 +528,12 @@ if(NOT UNI20_DOCS_WEB)
       endif()
       if(UNI20_MPLAPACK_SOURCE STREQUAL "fetched")
         relax_warnings(mplapack::mplapack_${_uni20_component})
+        if(_uni20_component STREQUAL "binary80" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+          # Upstream uses the GNU f64x literal suffix in its arithmetic limits.
+          # -Wno-error alone does not override our inherited -pedantic-errors.
+          get_target_property(_uni20_binary80_target mplapack::mplapack_binary80 ALIASED_TARGET)
+          target_compile_options(${_uni20_binary80_target} PRIVATE -Wno-error=pedantic)
+        endif()
       endif()
     endforeach()
   endif()
@@ -584,6 +601,65 @@ if(NOT UNI20_DOCS_WEB)
     set(UNI20_HAS_FLOAT128 ON)
     set(UNI20_FLOAT128_PROVIDER_MPLAPACK ON)
     message(STATUS "MPLAPACK binary128 backend enabled (${UNI20_MPLAPACK_SOURCE})")
+  endif()
+
+  if(UNI20_ENABLE_MPLAPACK_BINARY80)
+    include(CheckCXXSourceCompiles)
+    block(SCOPE_FOR VARIABLES)
+      set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+      if(UNI20_MPLAPACK_SOURCE STREQUAL "fetched")
+        get_target_property(_target mplapack::mplapack_binary80 ALIASED_TARGET)
+        get_target_property(_source ${_target} SOURCE_DIR)
+        get_target_property(_binary ${_target} BINARY_DIR)
+        set(CMAKE_REQUIRED_DEFINITIONS -DMPLAPACK_BUILD_WITH_BINARY80)
+        set(CMAKE_REQUIRED_INCLUDES "${_binary}/include" "${_source}/include")
+      else()
+        set(CMAKE_REQUIRED_LIBRARIES mplapack::mplapack_binary80)
+      endif()
+      unset(UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE CACHE)
+      check_cxx_source_compiles([=[
+        #include <complex>
+        #include <limits>
+        #include <mpblas_binary80.h>
+        #include <mplapack_binary80.h>
+        #if MPLAPACK_BINARY80_MODE == MPLAPACK_BINARY80_MODE_FLOAT64X
+        static_assert(__FLT64X_MANT_DIG__ == 64 && __FLT64X_MAX_EXP__ == 16384);
+        #elif MPLAPACK_BINARY80_MODE == MPLAPACK_BINARY80_MODE_LDBL80
+        static_assert(std::numeric_limits<long double>::digits == 64 &&
+                      std::numeric_limits<long double>::max_exponent == 16384);
+        #else
+        #error "Unsupported MPLAPACK binary80 scalar format"
+        #endif
+        int main() {
+          mplapack_binary80_t a = static_cast<mplapack_binary80_t>(1);
+          std::complex<mplapack_binary80_t> z{a, a};
+          long double round_trip = static_cast<long double>(a);
+          a = static_cast<mplapack_binary80_t>(round_trip);
+          mplapackint pivot = 0, info = 0;
+          Rgetrf(1, 1, &a, 1, &pivot, info);
+          Cgetrf(1, 1, &z, 1, &pivot, info);
+        }
+      ]=] UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
+      # Generic std::complex<_Float64x> division can square its denominator,
+      # overflowing or underflowing on otherwise representable LU problems.
+      # Only enable complex LU for the native long-double specialization.
+      # This is a compile-time capability check, including for cross builds.
+      unset(UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE CACHE)
+      check_cxx_source_compiles([=[
+        #include <type_traits>
+        #include <mpblas_binary80.h>
+        static_assert(std::is_same_v<mplapack_binary80_t, long double>);
+        int main() {}
+      ]=] UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE)
+    endblock()
+    if(NOT UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
+      message(FATAL_ERROR "MPLAPACK binary80 headers must support native long double value conversion and real/complex LU")
+    endif()
+    set(UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU ${UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE})
+    message(STATUS "MPLAPACK binary80 backend enabled (${UNI20_MPLAPACK_SOURCE})")
+    if(NOT UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU)
+      message(STATUS "MPLAPACK binary80 complex LU disabled: provider scalar is not native long double; default complex LU uses CPU")
+    endif()
   endif()
 
   uni20_add_dependency(

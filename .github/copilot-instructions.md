@@ -17,6 +17,14 @@ standard-complex identity, but selects an MPC-backed scalar for `mpreal` when
 enabled. Scalar-generic code uses `uni20::numeric_limits<T>`; runtime-precision
 quantities need an exemplar or an explicit precision.
 
+Ordinary owning Tensor shape constructors zero-initialize numerical elements.
+Partially populating `DenseMatrix<T>(rows, cols)` is valid; untouched entries
+remain zero. Runtime-precision constructors create zeros at the supplied
+precision. Use the explicit tag-first `uninitialized` constructor for overwrite
+storage. Check the [initialization contract](../docs/tensor/creation_and_reshape.md#owning-tensor-initialization)
+and actual constructor before reporting an uninitialized read or requesting
+redundant fills; low-level raw-buffer allocation follows a different contract.
+
 For reviews:
 
 - Prioritize numerical correctness, ownership, async causality, accessor

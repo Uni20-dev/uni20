@@ -12,10 +12,10 @@
 namespace uni20::linalg
 {
 
-/// \brief Numerical outcome of a square linear solve, independent of backend dispatch.
+/// \brief Numerical outcome of a square solve, LU factorization or log-determinant.
 enum class SolveStatus
 {
-  /// \brief A finite solution was produced, or the problem was an empty no-op.
+  /// \brief Finite output was produced, or the problem was an empty no-op.
   success,
   /// \brief An exactly zero elimination pivot was found.
   singular,
@@ -23,16 +23,20 @@ enum class SolveStatus
   small_pivot,
   /// \brief An input coefficient or RHS component was nonfinite; both workspaces are preserved.
   nonfinite_input,
-  /// \brief A factor, solution, or required magnitude became nonfinite during arithmetic.
+  /// \brief A factor, solution, reduction, or required magnitude became nonfinite.
   nonfinite_result
 };
 
-/// \brief Diagnostics written by a completed solve attempt, including numerical failure.
+/// \brief Diagnostics written by a completed numerical attempt, independent of dispatch.
 /// \details Success provides no residual bound or conditioning guarantee. Except
 ///          for nonfinite input, a failed attempt may have modified either
-///          workspace; only success makes the RHS workspace a solution.
-///          Zero-order systems and zero-column RHS matrices succeed without
-///          inspecting values. These diagnostics do not represent dispatch declines.
+///          workspace in a destructive one-shot solve; only success makes the RHS
+///          workspace a solution. An owning LuFactorization stays unchanged on RHS failure.
+///          For solves, zero-order systems and zero-column RHS matrices succeed without
+///          inspecting values. LU always examines a nonempty matrix, even without
+///          a RHS; success provides reusable factors. A singular log-determinant
+///          has the conventional zero value despite its nonsuccess status.
+///          These diagnostics do not represent dispatch declines.
 struct SolveInfo
 {
     SolveStatus status = SolveStatus::success;
@@ -41,7 +45,7 @@ struct SolveInfo
     ///          classification can differ between backends.
     std::optional<std::size_t> pivot = {};
 
-    /// \brief Report whether the attempt produced a finite solution or completed an empty no-op.
+    /// \brief Report successful completion of the numerical operation.
     [[nodiscard]] bool succeeded() const noexcept { return this->status == SolveStatus::success; }
 };
 

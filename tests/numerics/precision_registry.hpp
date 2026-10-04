@@ -20,6 +20,14 @@ enum class PrecisionProbe
   ProviderSolveResolvesSmallGap,
   SolvePreservesExtendedExponentRange,
   SolveAccuracyImprovesWithPrecision,
+  CpuLuResolvesSmallGap,
+  ProviderLuResolvesSmallGap,
+  CpuLuAccuracyImprovesWithPrecision,
+  ProviderLuAccuracyImprovesWithPrecision,
+  CpuLogDeterminantRetainsPrecision,
+  ProviderLogDeterminantRetainsPrecision,
+  CpuLogDeterminantPreservesExtendedExponentRange,
+  ProviderLogDeterminantPreservesExtendedExponentRange,
   ProjectedTridiagonalResolvesGap,
   LanczosResolvesGapAndResidual,
   ArnoldiResolvesGap,
@@ -46,6 +54,14 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalLinalg", "ProviderSolveResolvesSmallGap", "lapack_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "SolvePreservesExtendedExponentRange", "cpu_or_mplapack_mpfr"},
     ProbeDescription{"NumericalLinalg", "SolveAccuracyImprovesWithPrecision", "cpu_or_mplapack_mpfr"},
+    ProbeDescription{"NumericalLinalg", "CpuLuResolvesSmallGap", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderLuResolvesSmallGap", "lapack_or_mplapack"},
+    ProbeDescription{"NumericalLinalg", "CpuLuAccuracyImprovesWithPrecision", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderLuAccuracyImprovesWithPrecision", "lapack_or_mplapack"},
+    ProbeDescription{"NumericalLinalg", "CpuLogDeterminantRetainsPrecision", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderLogDeterminantRetainsPrecision", "lapack_or_mplapack"},
+    ProbeDescription{"NumericalLinalg", "CpuLogDeterminantPreservesExtendedExponentRange", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderLogDeterminantPreservesExtendedExponentRange", "lapack_or_mplapack"},
     ProbeDescription{"NumericalKrylov", "ProjectedTridiagonalResolvesGap", "projected_lapack"},
     ProbeDescription{"NumericalKrylov", "LanczosResolvesGapAndResidual", "native_krylov_projected_lapack"},
     ProbeDescription{"NumericalKrylov", "ArnoldiResolvesGap", "native_krylov_projected_lapack"},
@@ -67,10 +83,31 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
   else
   {
     using enum PrecisionProbe;
+    bool const cpu_lu = probe == CpuLuResolvesSmallGap || probe == CpuLuAccuracyImprovesWithPrecision ||
+                        probe == CpuLogDeterminantRetainsPrecision ||
+                        probe == CpuLogDeterminantPreservesExtendedExponentRange;
+    [[maybe_unused]] bool const provider =
+        probe == ProviderGemmRetainsIncrement || probe == ProviderSolveResolvesSmallGap ||
+        probe == ProviderLuResolvesSmallGap || probe == ProviderLuAccuracyImprovesWithPrecision ||
+        probe == ProviderLogDeterminantRetainsPrecision ||
+        probe == ProviderLogDeterminantPreservesExtendedExponentRange;
+    if constexpr (C::runtime)
+      if (cpu_lu) return {"unsupported", "CPU LU declines runtime-precision scalars"};
+#if !UNI20_ENABLE_MPLAPACK_BINARY80
+    if constexpr (C::binary80_provider)
+      if (provider) return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_BINARY80"};
+#endif
+#if UNI20_ENABLE_MPLAPACK_BINARY80 && !UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+    if constexpr (C::binary80_provider && C::is_complex)
+      if (provider && probe != ProviderGemmRetainsIncrement)
+        return {"unsupported", "provider complex division is unsafe with distinct _Float64x"};
+#endif
     switch (probe)
     {
       case ReciprocalAccuracyImprovesWithPrecision:
       case SolveAccuracyImprovesWithPrecision:
+      case CpuLuAccuracyImprovesWithPrecision:
+      case ProviderLuAccuracyImprovesWithPrecision:
 #if !UNI20_ENABLE_MPFR
         return {"unavailable", "MPFR required for independent 512-bit error measurement"};
 #endif
@@ -81,12 +118,9 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case CpuSolveResolvesSmallGap:
         if constexpr (C::runtime) return {"unsupported", "CPU solve declines runtime-precision scalars"};
         break;
-      case ProviderGemmRetainsIncrement:
-      case ProviderSolveResolvesSmallGap:
-        if constexpr (!C::runtime && !C::native_dense_provider)
-          return {"unsupported", "float80 provider not wired on this branch"};
-        break;
       case SolvePreservesExtendedExponentRange:
+      case CpuLogDeterminantPreservesExtendedExponentRange:
+      case ProviderLogDeterminantPreservesExtendedExponentRange:
         if constexpr (!C::runtime)
           if constexpr (numeric_limits<typename C::real_type>::max_exponent <= 1024)
             return {"not_applicable", "this probe requires a wider exponent range than double"};
@@ -106,8 +140,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     }
 #if !UNI20_ENABLE_MPLAPACK_MPFR
     if constexpr (C::runtime)
-      if (probe == ProviderGemmRetainsIncrement || probe == ProviderSolveResolvesSmallGap ||
-          probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision)
+      if (provider || probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision)
         return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_MPFR"};
 #endif
     return {};

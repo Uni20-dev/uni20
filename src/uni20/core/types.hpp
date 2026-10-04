@@ -71,6 +71,10 @@ template <typename Real> using complex = typename detail::complex_type<Real>::ty
 
 using complex64 = complex<float>;
 using complex128 = complex<double>;
+#if UNI20_HAS_FLOAT80
+/// \brief Complex scalar with two native x87 extended-precision components.
+using complex160 = complex<float80>;
+#endif
 
 using cfloat = complex<float>;
 using cdouble = complex<double>;

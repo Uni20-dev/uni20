@@ -22,6 +22,13 @@ struct MplapackMpfrBackend
     friend constexpr bool operator==(MplapackMpfrBackend const&, MplapackMpfrBackend const&) = default;
 };
 
+/// \brief MPLAPACK binary80 GEMM and LU adapters for native x87 scalars.
+struct MplapackBinary80Backend
+{
+    static constexpr std::string_view name = "mplapack_binary80";
+    friend constexpr bool operator==(MplapackBinary80Backend const&, MplapackBinary80Backend const&) = default;
+};
+
 /// \brief Backend value for configured dense LAPACK kernels.
 struct LapackBackend
 {

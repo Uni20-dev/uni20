@@ -2,7 +2,8 @@
 
 The optional CPU backend connects `mpreal` and `complex<mpreal>` tensors to
 MPLAPACK's serial MPFR/MPC routines. It currently supports GEMM and general square
-solves using LU factorization. It does not extend the native LAPACK scalar traits,
+solves using LU factorization, including [owning reusable LU and log determinants](lu.md).
+It does not extend the native LAPACK scalar traits,
 Krylov support, other factorization APIs, or GPU arithmetic.
 
 ## Configuration
@@ -119,7 +120,9 @@ conditioning or accuracy; evaluate a residual separately when needed.
 
 The destructive coefficient workspace contains backend-dependent factorization
 data. It is not a public reusable LU object. The adapter's `getrf` and `getrs`
-leaves use reusable zero-based pivot vectors internally.
+leaves use reusable zero-based pivot vectors internally. The separate
+`lu_factor` frontend publishes an owning, read-only factor object for repeated
+`lu_solve` and `slogdet` calls at the factor precision.
 
 Successful nonempty in-place solves record the selected working precision on
 owning workspaces, whether selected explicitly or inferred from their defaults.

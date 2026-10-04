@@ -20,9 +20,16 @@ backends.
 
 The optional [MPFR/MPC backend](mplapack_mpfr.md) adds `Rgemm`, `Cgemm`,
 `Rgetrf`, `Cgetrf`, `Rgetrs` and `Cgetrs` through explicit-precision provider
-arrays. These support dispatched matrix products and square solves for `mpreal`
+arrays. These support dispatched matrix products, square solves and reusable
+[LU/log determinants](lu.md) for `mpreal`
 and `complex<mpreal>`. They do not imply arbitrary-precision coverage of the
 other routines in this inventory or of the projected Krylov path.
+
+The optional [binary80 adapter](mplapack_binary80.md) covers real and complex
+GEMM and real LU/solve. Complex `Cgetrf`/`Cgetrs` require a `long double` provider;
+they are disabled for distinct `_Float64x` because its generic complex division
+can silently overflow. This does not extend the broad BLAS/LAPACK scalar traits
+or the remaining inventory below.
 
 CUDA provider coverage is currently narrower: cuBLAS `S/D/C/ZGEMM`, conjugate
 dot products, and Euclidean norms have checked provider wrappers and a
@@ -90,7 +97,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense real refined linear solve | yes | yes | n/a | n/a | Dense projected utility solve through LAPACK `getrf`/`getrs` followed by `gerfs`, returning forward/backward error estimates. |
 | Dense real expert linear solve | yes | yes | n/a | n/a | Dense projected utility solve through LAPACK `gesvx`, returning condition estimates, forward/backward error bounds, equilibration, and condition diagnostics. |
 | Dense real equilibration | yes | yes | n/a | n/a | Dense projected row/column scaling diagnostics through LAPACK `geequ`. |
-| Dense LU factorization and solve | yes | yes | yes | yes | Dense projected reusable LU solve through LAPACK `getrf`/`getrs`. |
+| Dense LU factorization and solve | yes | yes | yes | yes | Active `lu_factor_op`/`lu_solve_op` dispatch exposes owning reusable LU through LAPACK `getrf`/`getrs`, with a CPU reference fallback. `slogdet` reduces these factors without forming the determinant product; see [LU](lu.md). |
 | Dense real general-band factorization and solve | yes | yes | n/a | n/a | Dense projected reusable general-band LU solve through LAPACK `gbtrf`/`gbtrs`. |
 | Dense real general-band refined solve | yes | yes | n/a | n/a | Dense projected general-band solve through LAPACK `gbtrf`/`gbtrs` followed by `gbrfs`, returning forward/backward error estimates. |
 | Dense real general-band expert solve | yes | yes | n/a | n/a | Dense projected general-band expert solve with condition and forward/backward error diagnostics through LAPACK `gbsvx`. |

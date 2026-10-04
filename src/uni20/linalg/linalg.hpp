@@ -7,6 +7,8 @@
 #include <uni20/linalg/ops/gemm.hpp>
 #include <uni20/linalg/ops/gemv.hpp>
 #include <uni20/linalg/ops/linear_solve.hpp>
+#include <uni20/linalg/ops/lu.hpp>
+#include <uni20/linalg/ops/slogdet.hpp>
 #include <uni20/linalg/ops/lq.hpp>
 #include <uni20/linalg/ops/matrix_exponential.hpp>
 #include <uni20/linalg/ops/matrix_norm.hpp>

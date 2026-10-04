@@ -13,6 +13,9 @@
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/output.hpp>
 #include <uni20/tensor/precision.hpp>
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+#include <uni20/linalg/backends/mplapack/binary80.hpp>
+#endif
 #if UNI20_ENABLE_MPLAPACK_MPFR
 #include <uni20/linalg/backends/mplapack/mpfr.hpp>
 #endif

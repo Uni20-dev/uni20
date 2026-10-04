@@ -13,6 +13,13 @@ review-specific reminders for recurring false positives.
   mdspan-style indexing. Do not request `operator()` overloads or replacements
   for compatibility with older C++ standards.
 - Do not suggest defining `MDSPAN_USE_PAREN_OPERATOR`.
+- Ordinary owning Tensor shape construction zero-initializes numerical elements,
+  including native complex values and runtime-precision values at the supplied
+  precision. Partial population of `DenseMatrix<T>(rows, cols)` is valid.
+  `DenseMatrix<T>(uninitialized, rows, cols)` explicitly requests values to be
+  supplied before reading. Verify the actual construction path before alleging
+  an uninitialized read; raw-buffer allocation follows a different contract.
+  See [tensor initialization](docs/tensor/creation_and_reshape.md#owning-tensor-initialization).
 - Uni20 spells complex scalar types as `uni20::complex<T>` in project code,
   tests, examples, and docs. Native real types retain `std::complex<T>` identity;
   `complex<mpreal>` selects the MPC-backed owning scalar when enabled. Deduce

@@ -118,3 +118,7 @@ Diagnostics follow the ordinary output-by-reference kernel convention.
 
 Least squares, rank-revealing solves, condition estimates, and iterative
 refinement are separate future work, not options hidden in this square solve.
+
+For repeated right-hand sides and logarithmic determinants, use the separate
+[owning LU factorization](lu.md) API. It guarantees reusable packed factors;
+the destructive coefficient workspace of `solve_inplace` does not.

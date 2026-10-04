@@ -78,6 +78,8 @@ The `uni20_numerical_precision_tests` target currently covers:
 | CPU and provider GEMM | Analytic real/complex products with an increment near each precision's resolution |
 | CPU and provider square solve | Nearly singular dyadic system with analytic solution, independent scalar residual |
 | Solve accuracy | Well-conditioned system with exact rational solution, compared with a 512-bit oracle |
+| CPU and provider reusable LU | Small-gap system, multiple RHS columns and repeated solves; rational solution against a 512-bit oracle |
+| CPU and provider log determinant | Near-one magnitude with an independent analytic logarithm bound; nontrivial complex phase; extended exponent range |
 | Extended-range solve | System scaled by `2^-1200`, independent of the small-gap test |
 | Projected tridiagonal eigensystem | Analytic closely spaced eigenvalues |
 | Lanczos | Closely spaced eigenvalues and analytic componentwise eigenvector residuals |
@@ -87,6 +89,10 @@ The `uni20_numerical_precision_tests` target currently covers:
 The shared gap is `2^(8-p)` for a `p`-bit significand. Tolerances scale with the
 case's epsilon and are smaller than the gap. Narrowing controls verify that the
 gap disappears in a lower native format for the higher-precision cases.
+Log-determinant range probes additionally factor a non-diagonal matrix scaled
+by `2^±1200` and `2^±12000`: its exact LU factors remain representable, but
+unscaled complex division can overflow or underflow internally. This exercises
+elimination as well as the logarithmic reduction.
 
 For the non-dyadic reciprocal and solve fixtures, the oracle transfers each
 computed binary value exactly to 512-bit MPFR. It compares the error with both
@@ -138,10 +144,16 @@ artifacts in the MPLAPACK job.
 This is the first shared test matrix, not complete certification of every
 numerical subsystem. In the current implementation:
 
-- Float80 CPU arithmetic, reductions, GEMM, and solve have shared precision
-  probes. Float80 BLAS/LAPACK provider integration is separate work.
+- Float80 CPU arithmetic, reductions, GEMM, solve, reusable LU and log
+  determinants have shared probes. The optional binary80 provider runs the same
+  GEMM, solve and LU/log-determinant probes. Its complex LU/solve cells are
+  explicitly unsupported when the provider uses distinct `_Float64x`, whose
+  generic complex division can silently overflow; default dispatch uses the CPU
+  implementation, but that fallback does not count as provider validation.
 - MPFR/MPC CPU matrix norms and reductions have shared probes. Their CPU GEMM
-  kernel accepts exact mode only; finite-precision GEMM and solve use MPLAPACK.
+  kernel accepts exact mode only; finite-precision GEMM, solve and reusable
+  LU/log determinants use MPLAPACK. LU probes inspect factor, solution and
+  determinant precision at both 128 and 256 bits.
 - Float80 and MPFR/MPC projected LAPACK wrappers and end-to-end Krylov solvers
   remain unsupported here. Helper-level runtime epsilon tests do not establish
   Lanczos, Arnoldi, or exponential-action support.

@@ -16,5 +16,19 @@ Follow [AGENTS.md](../AGENTS.md) and the
 - Existing Windows-specific branches, upstream dependency support, and
   synthetic Windows test fixtures do not establish native Windows support.
 
+## Tensor Initialization
+
+Ordinary owning Tensor shape constructors, including `DenseMatrix<T>(rows, cols)`,
+zero-initialize numerical elements. Diagonal-only population is valid; untouched
+elements remain zero. The trailing-precision form for `mpreal` and
+`complex<mpreal>` creates zeros at that precision. To request uninitialized Tensor
+shape construction, use the tag-first API, for example `DenseMatrix<T>(uninitialized, rows, cols)`.
+Low-level raw-buffer allocation has a different contract.
+
+Check the current [initialization contract](../docs/tensor/creation_and_reshape.md#owning-tensor-initialization)
+before reporting uninitialized reads or suggesting a zero-fill. A previous
+review's claim that DenseMatrix construction leaves garbage is not the current
+API contract.
+
 For each finding, identify a reachable failure under the documented contract.
 Check the language or build-tool semantics before proposing a fix.

@@ -163,6 +163,7 @@ jobs:
             -DUNI20_BUILD_ASM=OFF \
             -DUNI20_BUILD_PYTHON=OFF \
             -DUNI20_ENABLE_MPLAPACK=ON \
+            -DUNI20_ENABLE_MPLAPACK_BINARY80=ON \
             -DUNI20_ENABLE_MPFR=ON \
             -DUNI20_ENABLE_MPC=ON \
             -DUNI20_ENABLE_MPLAPACK_MPFR=ON \

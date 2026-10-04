@@ -311,6 +311,29 @@ that accessor silently changes the mathematical operation.
 
 ---
 
+### 3.7 Tensor Initialization
+
+* Ordinary owning Tensor shape constructors initialize stored numerical elements
+  to zero. `DenseMatrix<T>(rows, cols)` therefore permits diagonal-only or other
+  partial population; untouched elements remain zero. This includes native real
+  and complex scalars. Runtime-precision constructors such as
+  `DenseMatrix<complex<mpreal>>(rows, cols, p)` create actual zeros at `p`.
+* Use the tag-first API `DenseMatrix<T>(uninitialized, rows, cols)` when values
+  will be supplied later. Every element must receive a value before it is read.
+  The tag preserves required object lifetimes; runtime-precision scalars use
+  unset placeholders on this path.
+* Distinguish Tensor construction from raw storage allocation. The low-level
+  `HostBuffer(size)` and `CudaBuffer(size)` APIs have allocation-only contracts;
+  they do not determine the initialization policy of an owning Tensor.
+* In reviews, trace the actual constructor or output-allocation path before
+  reporting uninitialized reads. Do not require redundant zero-fills after
+  ordinary numerical shape construction. See the canonical
+  [initialization contract](docs/tensor/creation_and_reshape.md#owning-tensor-initialization)
+  and the tests in `tests/tensor/test_tensor_initialization.cpp` and
+  `tests/tensor/test_tensor_precision.cpp`.
+
+---
+
 ## 4. Testing
 
 ```bash

@@ -72,6 +72,11 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
     check_product<C>(linalg::MplapackMpfrBackend{});
   else
 #endif
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+      if constexpr (C::binary80_provider)
+    check_product<C>(linalg::MplapackBinary80Backend{});
+  else
+#endif
     check_product<C>(linalg::BlasBackend{});
 }
 
@@ -110,6 +115,11 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
 #if UNI20_ENABLE_MPLAPACK_MPFR
   if constexpr (C::runtime)
     check_solve<C>(linalg::MplapackMpfrBackend{}, false);
+  else
+#endif
+#if UNI20_ENABLE_MPLAPACK_BINARY80
+      if constexpr (C::binary80_provider)
+    check_solve<C>(linalg::MplapackBinary80Backend{}, false);
   else
 #endif
     check_solve<C>(linalg::LapackBackend{}, false);
