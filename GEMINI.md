@@ -32,8 +32,15 @@ review-specific reminders for recurring false positives.
 - Scalar-generic host math uses `uni20::math` from `core/math.hpp`, including
   `math::abs`, `math::sqrt` and `math::abs_squared`. Its dispatch deliberately
   preserves ADL for class scalars and rejects conversion-only fallbacks.
-  Classification uses `uni20::isfinite`. See the
+  Real classification is available through `uni20::math`; the root-level
+  `uni20::isfinite` also supports complex values. See the
   [scalar math contract](docs/tensor/scalar_math_design.md).
+- The dispatcher's `core/detail/native_math.hpp` adapter is constrained to
+  native floating types and intentionally calls `std::` functions directly.
+  `mplapack_binary128_t` is a fundamental-type alias, not a class; naming it
+  `uni20::float128` does not enable ADL. Class scalars take the separate ADL
+  path. Verify the actual constraints and alias before reporting a lookup
+  defect. See the [Gemini scalar review guidance](.gemini/styleguide.md#scalar-math-and-adl).
 
 ## Krylov Review Notes
 
@@ -56,3 +63,5 @@ review-specific reminders for recurring false positives.
 Focus on correctness, numerical stability, missing tests, thread/reentrancy
 issues, scalar-generic behavior, and documentation drift. Avoid compatibility
 suggestions that contradict the C++23 and indexing policies above.
+Consolidate repeated instances of one root cause into one finding with the
+affected sites and a concrete failing call, rather than one comment per site.
