@@ -25,7 +25,9 @@
 namespace uni20::cuda
 {
 
-template <typename T = std::byte> class CudaBuffer;
+template <typename T = std::byte>
+  requires std::is_trivially_copyable_v<T>
+class CudaBuffer;
 template <typename T> class ReadAccess;
 template <typename T> class WriteAccess;
 template <typename T> class BlockingReadAccess;
@@ -213,8 +215,11 @@ template <typename T> class CudaAllocation {
 /// \details A buffer may own an entire CUDA allocation or one statically
 ///          disjoint region of a shared allocation. Each logical buffer has an
 ///          independent access ledger. Raw device pointers are exposed only
-///          through scoped access objects.
-template <typename T> class CudaBuffer {
+///          through scoped access objects. Elements must be trivially copyable:
+///          allocations and bytewise transfers do not manage host-side owners.
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+class CudaBuffer {
   public:
     static_assert(std::is_object_v<T>, "CUDA buffers require an object element type");
     static_assert(!std::is_const_v<T>, "CUDA buffers own mutable storage; constness belongs on read guards");
@@ -699,7 +704,9 @@ template <typename T> class CudaBuffer {
 /// \details Construction validates the disjoint ranges once. Each child owns
 ///          an independent completion ledger while sharing the physical
 ///          allocation and device resources with its siblings.
-template <typename T> class PartitionedCudaBuffer {
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+class PartitionedCudaBuffer {
   public:
     using element_type = T;
     using buffer_type = CudaBuffer<T>;
@@ -1184,12 +1191,14 @@ class AccessCompletion {
 };
 
 template <typename T>
+  requires std::is_trivially_copyable_v<T>
 auto PartitionedCudaBuffer<T>::read_synchronized_with(Stream const& stream) const -> PartitionedReadAccess<T>
 {
   return PartitionedReadAccess<T>{*this, stream};
 }
 
 template <typename T>
+  requires std::is_trivially_copyable_v<T>
 auto PartitionedCudaBuffer<T>::write_synchronized_with(Stream const& stream) -> PartitionedWriteAccess<T>
 {
   return PartitionedWriteAccess<T>{*this, stream};
@@ -1387,12 +1396,16 @@ template <typename T> class OwningReadAccess {
     friend class CudaBuffer<T>;
 };
 
-template <typename T> OwningReadAccess<T> CudaBuffer<T>::into_blocking_read_access() &&
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+OwningReadAccess<T> CudaBuffer<T>::into_blocking_read_access() &&
 {
   return OwningReadAccess<T>{std::move(*this)};
 }
 
-template <typename T> OwningReadAccess<T> CudaBuffer<T>::into_read_synchronized_with(Stream const& stream) &&
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+OwningReadAccess<T> CudaBuffer<T>::into_read_synchronized_with(Stream const& stream) &&
 {
   return OwningReadAccess<T>{std::move(*this), stream};
 }

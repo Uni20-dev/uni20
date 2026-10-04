@@ -127,6 +127,13 @@ Project code, tests, examples, and documentation should use
 relationship to `std::complex<T>`, or they are at a narrow external interop
 boundary that must name the standard-library type.
 
+CUDA buffers and pointer accessors require trivially copyable element types.
+This excludes owning `mpreal` and `complex<mpreal>` objects from device storage
+and bytewise host/device transfers, including uninitialized allocation. Convert
+them explicitly to a supported native scalar before transfer. Trivial
+copyability is a representation requirement, not a claim that device arithmetic
+or a provider kernel exists for every admitted type.
+
 CUDA execution does not change the logical or persistent scalar type.
 `CudaTensor<uni20::complex<T>>` stores the same `uni20::complex<T>` objects as
 the corresponding host tensor. CUDA accessors load and store their guaranteed
