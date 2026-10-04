@@ -36,6 +36,11 @@ providing a name does not synthesize a missing scalar operation.
 | `isfinite`, `isnan`, `isinf`, `signbit` | Real classification with boolean results |
 | `real`, `imag` | Read components by value, never expose mutable component references; real/integral values retain their type, and imaginary zero retains runtime precision |
 | `conj` | Conjugate complex values; preserve the type of real and integral values |
+| `tgamma`, `erf`, `erfc` | Native or MPFR provider evaluation |
+| `lgamma`, `lgamma_sign`, `digamma`, `beta`, `upper_gamma`, `zeta`, `expint`, `dilog_real`, `bessel_j`, `bessel_y`, `airy_ai`, `agm`, `factorial` | MPFR special functions; native implementations deferred |
+| `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | MPFR base-ten and cancellation-safe extensions |
+| `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR pi-scaled trigonometry and inverse functions |
+| `sec`, `csc`, `cot`, `sech`, `csch`, `coth`, `compound` | MPFR reciprocal functions and compound integer powers |
 
 `abs_squared(x)` is a composed function: compute `abs(x)` once and square it.
 It adds neither overflow scaling nor extra precision. The root-level
@@ -43,6 +48,9 @@ It adds neither overflow scaling nor extra precision. The root-level
 classification entries cover real scalars.
 Mutable component access through the existing root-level helpers is separate
 from the value-reading `math::real` and `math::imag` interface.
+
+See [MPFR special functions and extensions](mpreal_special_functions.md) for
+argument order, named results, domains and exact/finite precision contracts.
 
 The interface currently targets host execution. Scalar-math support does not
 imply a BLAS/LAPACK provider, a projected Krylov solver, or CUDA support.
@@ -66,6 +74,9 @@ adapter for Uni20 result shapes and nonstandard operations. For real
 arguments, the result's significand and maximum exponent range must be at least
 as wide as every real operand's; a missing extension overload cannot be filled
 by narrowing. Integer promotions follow the selected standard operation.
+Native float32/64/80/128 operations do not use MPFR adapters. A function without
+a selected native implementation remains unavailable for those types even
+when MPFR is enabled; adding its native implementation is separate work.
 For example, `sqrt(4)` returns `double`, whereas `abs(-4)` returns `int`.
 `real`, `imag` and `conj` follow their explicit type-preserving rules above.
 `copysign` and `nextafter` deliberately retain the first operand's type; sign

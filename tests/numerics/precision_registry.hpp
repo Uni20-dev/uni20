@@ -19,6 +19,10 @@ enum class PrecisionProbe
   FusedArithmeticRoundsOnce,
   UtilitiesBoundarySemantics,
   UtilityAccuracyImprovesWithPrecision,
+  StandardSpecialAccuracy,
+  MpfrSpecialIdentities,
+  MpfrSpecialAccuracy,
+  MpfrExtensionsStableArithmetic,
   CpuMatrixOneNormRetainsIncrement,
   CpuReductionsRetainIncrement,
   CpuGemmRetainsIncrement,
@@ -60,6 +64,10 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "FusedArithmeticRoundsOnce", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UtilitiesBoundarySemantics", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UtilityAccuracyImprovesWithPrecision", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "StandardSpecialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "MpfrSpecialIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "MpfrSpecialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "MpfrExtensionsStableArithmetic", "scalar_math"},
     ProbeDescription{"NumericalLinalg", "CpuMatrixOneNormRetainsIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuReductionsRetainIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuGemmRetainsIncrement", "cpu_reference"},
@@ -122,8 +130,17 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
+    if (probe == StandardSpecialAccuracy || probe == MpfrSpecialIdentities ||
+        probe == MpfrSpecialAccuracy || probe == MpfrExtensionsStableArithmetic)
+    {
+      if constexpr (C::is_complex) return {"not_applicable", "special-function expansion covers real scalars"};
+      if constexpr (!C::runtime)
+        if (probe != StandardSpecialAccuracy)
+          return {"unsupported", "native implementation deferred; no MPFR adapter for native types"};
+    }
     switch (probe)
     {
+      case StandardSpecialAccuracy:
       case UtilityAccuracyImprovesWithPrecision:
       case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:

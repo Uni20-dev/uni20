@@ -431,9 +431,14 @@ when given an explicit precision: this covers integer powers/roots, integer
 rounding, fused arithmetic, extrema, remainders, decomposition and binary
 scaling. Sign sources and neighbor directions do not supply result precision;
 adjacent-value operations require a finite grid. Paired trig/hyperbolic
-functions retain the elementary input-conversion contract.
+functions retain the elementary input-conversion contract. MPFR special functions
+and pi-scaled/small-argument extensions use that same contract, except that
+`compound` is an arithmetic utility and rounds the result. Missing native
+implementations remain unavailable; enabling MPFR does not add MPFR adapters
+for float32/64/80/128.
 See the [real operation and exact-result tables](mpreal.md) and
-[remaining coverage plan](scalar_math_coverage_plan.md).
+[coverage plan](scalar_math_coverage_plan.md), and
+[special-function contracts](mpreal_special_functions.md).
 
 ## Numerical validation
 

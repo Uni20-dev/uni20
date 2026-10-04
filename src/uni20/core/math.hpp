@@ -255,6 +255,20 @@ template <class Result, class Arg> consteval bool preserves_components()
 // These operations explicitly retain the first argument's type, or return an
 // integer property. Their native implementations constrain each operand.
 template <class Result, class Arg> consteval bool utility_result() { return true; }
+// Provider-only functions have no native fallback. Availability is determined
+// solely by an actual overload in the scalar's associated namespace.
+#define UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(NAME)                                                             \
+  UNI20_SCALAR_MATH_ADL(NAME)                                                                                \
+  struct NAME##_fn                                                                                          \
+  {                                                                                                        \
+      template <class... Args>                                                                              \
+      constexpr auto operator()(Args const&... args) const                                                   \
+          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                \
+      {                                                                                                    \
+        return NAME##_adl::call(args...);                                                                    \
+      }                                                                                                    \
+  };
+
 #define UNI20_SCALAR_MATH_DISPATCH_POLICY(NAME, CHECK) UNI20_SCALAR_MATH_DISPATCH_TO(NAME, std, CHECK)
 #define UNI20_SCALAR_MATH_DISPATCH(NAME) UNI20_SCALAR_MATH_DISPATCH_POLICY(NAME, preserves_real_precision)
 
@@ -312,6 +326,42 @@ UNI20_SCALAR_MATH_DISPATCH_TO(copysign, native_math, utility_result)
 UNI20_SCALAR_MATH_DISPATCH_TO(nextafter, native_math, utility_result)
 UNI20_SCALAR_MATH_DISPATCH_TO(next_up, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(next_down, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH(tgamma)
+UNI20_SCALAR_MATH_DISPATCH(erf)
+UNI20_SCALAR_MATH_DISPATCH(erfc)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(lgamma)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(digamma)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(beta)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(zeta)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(expint)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(dilog_real)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(bessel_j)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(bessel_y)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(agm)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(factorial)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(lgamma_sign)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp2m1)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10m1)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log2p1)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log10p1)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sinpi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(cospi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(tanpi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(asinpi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(acospi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(atanpi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sec)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csc)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(cot)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sech)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csch)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(coth)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(atan2pi)
+UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(compound)
+#undef UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY
 #undef UNI20_SCALAR_MATH_DISPATCH_TO
 #undef UNI20_SCALAR_MATH_DISPATCH_POLICY
 #undef UNI20_SCALAR_MATH_DISPATCH
@@ -497,6 +547,78 @@ inline constexpr detail::scalar_math::fmax_fn fmax{};
 inline constexpr detail::scalar_math::fmod_fn fmod{};
 /// \brief Remainder using the nearest-even integer quotient.
 inline constexpr detail::scalar_math::remainder_fn remainder{};
+/// \brief Real Gamma function.
+inline constexpr detail::scalar_math::tgamma_fn tgamma{};
+/// \brief Logarithm of the absolute Gamma function.
+inline constexpr detail::scalar_math::lgamma_fn lgamma{};
+/// \brief Log-absolute-Gamma and its sign as owning values.
+inline constexpr detail::scalar_math::lgamma_sign_fn lgamma_sign{};
+/// \brief Logarithmic derivative of Gamma.
+inline constexpr detail::scalar_math::digamma_fn digamma{};
+/// \brief Real Beta function.
+inline constexpr detail::scalar_math::beta_fn beta{};
+/// \brief Upper incomplete Gamma, with shape and lower integration endpoint.
+inline constexpr detail::scalar_math::upper_gamma_fn upper_gamma{};
+/// \brief Real error function.
+inline constexpr detail::scalar_math::erf_fn erf{};
+/// \brief Complementary error function without subtractive cancellation.
+inline constexpr detail::scalar_math::erfc_fn erfc{};
+/// \brief Riemann zeta function.
+inline constexpr detail::scalar_math::zeta_fn zeta{};
+/// \brief Real principal-value exponential integral Ei.
+inline constexpr detail::scalar_math::expint_fn expint{};
+/// \brief Real part of the dilogarithm.
+inline constexpr detail::scalar_math::dilog_real_fn dilog_real{};
+/// \brief Integer-order Bessel function of the first kind, with order first.
+inline constexpr detail::scalar_math::bessel_j_fn bessel_j{};
+/// \brief Integer-order Bessel function of the second kind, with order first.
+inline constexpr detail::scalar_math::bessel_y_fn bessel_y{};
+/// \brief Real Airy Ai, within the selected provider limitations.
+inline constexpr detail::scalar_math::airy_ai_fn airy_ai{};
+/// \brief Nonnegative arithmetic-geometric mean.
+inline constexpr detail::scalar_math::agm_fn agm{};
+/// \brief Nonnegative integer factorial at an explicit arithmetic state.
+inline constexpr detail::scalar_math::factorial_fn factorial{};
+
+/// \brief Base-ten exponential.
+inline constexpr detail::scalar_math::exp10_fn exp10{};
+/// \brief Two to the power x minus one, using the cancellation-safe provider.
+inline constexpr detail::scalar_math::exp2m1_fn exp2m1{};
+/// \brief Ten to the power x minus one, using the cancellation-safe provider.
+inline constexpr detail::scalar_math::exp10m1_fn exp10m1{};
+/// \brief Base-two logarithm of one plus x, without rounding the sum first.
+inline constexpr detail::scalar_math::log2p1_fn log2p1{};
+/// \brief Base-ten logarithm of one plus x, without rounding the sum first.
+inline constexpr detail::scalar_math::log10p1_fn log10p1{};
+/// \brief Sine of pi times x, with provider argument reduction.
+inline constexpr detail::scalar_math::sinpi_fn sinpi{};
+/// \brief Cosine of pi times x, with provider argument reduction.
+inline constexpr detail::scalar_math::cospi_fn cospi{};
+/// \brief Tangent of pi times x, with provider argument reduction.
+inline constexpr detail::scalar_math::tanpi_fn tanpi{};
+/// \brief Principal arcsine divided by pi.
+inline constexpr detail::scalar_math::asinpi_fn asinpi{};
+/// \brief Principal arccosine divided by pi.
+inline constexpr detail::scalar_math::acospi_fn acospi{};
+/// \brief Principal arctangent divided by pi.
+inline constexpr detail::scalar_math::atanpi_fn atanpi{};
+/// \brief Reciprocal cosine, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::sec_fn sec{};
+/// \brief Reciprocal sine, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::csc_fn csc{};
+/// \brief Reciprocal tangent, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::cot_fn cot{};
+/// \brief Reciprocal hyperbolic cosine, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::sech_fn sech{};
+/// \brief Reciprocal hyperbolic sine, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::csch_fn csch{};
+/// \brief Reciprocal hyperbolic tangent, evaluated directly by MPFR.
+inline constexpr detail::scalar_math::coth_fn coth{};
+/// \brief Quadrant-aware arctangent divided by pi.
+inline constexpr detail::scalar_math::atan2pi_fn atan2pi{};
+/// \brief Integer power of one plus x, without rounding the sum first.
+inline constexpr detail::scalar_math::compound_fn compound{};
+
 /// \brief Read the real component by value; real and integral scalars retain their type.
 inline constexpr detail::scalar_math::real_fn real{};
 /// \brief Read the imaginary component by value; real zero retains the input's type and precision.

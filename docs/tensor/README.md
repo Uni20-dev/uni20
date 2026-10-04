@@ -23,6 +23,8 @@ front-end operation semantics.
 
 ## Coverage Plans
 
+- [MPFR Special Functions](mpreal_special_functions.md) documents domains, exact
+  results, constants and stable elementary extensions.
 - [Scalar Math Coverage](scalar_math_coverage_plan.md) tracks elementary functions,
   exact-aware utilities, special functions and provider-version decisions.
 

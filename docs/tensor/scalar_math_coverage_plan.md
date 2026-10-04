@@ -35,8 +35,9 @@ establish a complex branch convention or implementation.
   zero has no sign; finite-precision zero can have one. Unset values are errors.
 - Native float32/64, supported float80 and float128 must retain their precision.
   A missing native or extension overload is unsupported, never a narrowing
-  conversion. A nonstandard name needs a native implementation decision before
-  it is advertised as precision-generic.
+  conversion or an adapter through MPFR. Missing native implementations are
+  deferred to separate work. A nonstandard name needs a native implementation
+  decision before it is advertised as precision-generic.
 - Use eager owning values. No expression templates, implicit ambient precision,
   or new tensor/kernel dispatch rules are required for this scalar work.
 
@@ -108,9 +109,15 @@ the neighbors of zero and infinity. Native formats retain their own limits.
 
 ## 3. Real special functions and constants
 
-Status: planned provider wrappers with documented domains. Start with small,
-useful families and leave unavailable native operations constrained out until
-an appropriate native provider is chosen.
+Status: implemented for `mpreal`, with exact-state, domain and numerical
+precision tests. See [MPFR special functions](mpreal_special_functions.md) for
+the contracts. Native float32/64/80/128 functions use native implementations,
+never an adapter through MPFR. Functions
+without a selected native implementation remain constrained out for those types,
+even when MPFR is enabled. Implementing those missing native providers is a
+separate follow-up, outside this change's scope; their `mpreal` overloads remain
+in scope. Shared precision tests must distinguish these unavailable native
+operations from the operations supported at every configured real precision.
 
 | Family | Target surface |
 | --- | --- |
@@ -127,29 +134,28 @@ rather than changing that meaning for negative Gamma. Name and document the
 dilogarithm API. Document provider limitations and behavior at domain boundaries;
 wrapping a provider is not a guarantee over a wider domain.
 
-Constants should follow the precision-aware descriptor approach already used by
-pi. Keep symbolic constants separate from exact rationals, and require finite
-precision for irrational values. Decide factorial's exact-rational behavior
-alongside its integer-source and resource limits.
+Constants use precision-aware descriptors: `pi`, `log_two`, `euler_gamma` and
+`catalan`. They require finite precision and remain separate from exact
+rationals. `factorial(n,p)` explicitly selects exact or finite arithmetic; its
+integer-source checks and exact-storage costs are documented.
 
 ## 4. Nonstandard elementary extensions
 
-Status: planned. These can be interleaved with stage 3 according to consumer
-need. Some have been available in MPFR for years, others require newer versions.
+Status: implemented for `mpreal` using MPFR 4.2 routines. Native implementations
+remain deferred, with their unavailable signatures tested explicitly.
 
-- `exp10`, with an explicit native/float128 provider or documented algorithm.
+- `exp10`.
 - `sinpi`, `cospi`, `tanpi`, and pi-scaled inverse trigonometric functions.
 - `log2p1`, `log10p1`, `exp2m1`, `exp10m1`, and `compound` for `(1+x)^n`.
-- Lower priority: `sec`, `csc`, `cot`, `sech`, `csch`, `coth`.
+- `sec`, `csc`, `cot`, `sech`, `csch`, `coth`.
 
-Check each routine against the supported MPFR version. Keep capability checks
-centralized in configuration, or make a deliberate minimum-version change;
-do not introduce a header that unconditionally requires newer symbols while
-CMake advertises an older minimum. Native support needs its own accurate implementation
-or provider. Merely multiplying a rounded pi into the argument is not an
-adequate replacement for a pi-scaled function's argument reduction contract.
+These routines fit the MPFR 4.2 minimum introduced by stage 2. Native support
+needs its own accurate implementation or provider. Multiplying a rounded pi
+into the argument is not an adequate replacement for a pi-scaled function's argument reduction contract.
 Likewise, do not replace the small-argument functions with cancellation-prone
-compositions.
+compositions. `compound` rounds the result from the original input, matching
+the arithmetic-utility contract; the other extensions use explicit input
+conversion when a precision override is supplied.
 
 ## Verification and completion criteria
 

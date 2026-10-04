@@ -784,25 +784,30 @@ inline mpreal epsilon(Precision precision)
 
 inline mpreal numeric_limits<mpreal>::epsilon(Precision p) { return uni20::epsilon(p); }
 
-/// \brief Descriptor for pi, evaluated only when working precision is known.
-struct mp_pi_constant
+namespace detail
 {
-    mpreal at(Precision precision) const { return detail::mpreal_access::constant<mpfr_const_pi>(precision); }
+template <auto Provider> struct mp_constant
+{
+    mpreal at(Precision p) const { return mpreal_access::constant<Provider>(p); }
+    friend mpreal operator+(mpreal const& x, mp_constant c) { return x + c.at(x.precision()); }
+    friend mpreal operator-(mpreal const& x, mp_constant c) { return x - c.at(x.precision()); }
+    friend mpreal operator*(mpreal const& x, mp_constant c) { return x * c.at(x.precision()); }
+    friend mpreal operator/(mpreal const& x, mp_constant c) { return x / c.at(x.precision()); }
+    friend mpreal operator+(mp_constant c, mpreal const& x) { return c.at(x.precision()) + x; }
+    friend mpreal operator-(mp_constant c, mpreal const& x) { return c.at(x.precision()) - x; }
+    friend mpreal operator*(mp_constant c, mpreal const& x) { return c.at(x.precision()) * x; }
+    friend mpreal operator/(mp_constant c, mpreal const& x) { return c.at(x.precision()) / x; }
 };
+} // namespace detail
 
-template <typename Real> struct pi_constant;
-template <> struct pi_constant<mpreal> : mp_pi_constant
-{};
-/// \brief Precision-aware pi descriptor; this slice supplies the mpreal specialization.
-template <typename Real> inline constexpr pi_constant<Real> pi{};
-inline mpreal operator+(mpreal const& x, mp_pi_constant c) { return x + c.at(x.precision()); }
-inline mpreal operator-(mpreal const& x, mp_pi_constant c) { return x - c.at(x.precision()); }
-inline mpreal operator*(mpreal const& x, mp_pi_constant c) { return x * c.at(x.precision()); }
-inline mpreal operator/(mpreal const& x, mp_pi_constant c) { return x / c.at(x.precision()); }
-inline mpreal operator+(mp_pi_constant c, mpreal const& x) { return c.at(x.precision()) + x; }
-inline mpreal operator-(mp_pi_constant c, mpreal const& x) { return c.at(x.precision()) - x; }
-inline mpreal operator*(mp_pi_constant c, mpreal const& x) { return c.at(x.precision()) * x; }
-inline mpreal operator/(mp_pi_constant c, mpreal const& x) { return c.at(x.precision()) / x; }
+/// \brief Precision-aware pi descriptor, evaluated by .at(p) or an approximate operand.
+template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_pi> pi{};
+/// \brief Precision-aware natural logarithm of two; finite precision is required.
+template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_log2> log_two{};
+/// \brief Precision-aware Euler-Mascheroni constant; finite precision is required.
+template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_euler> euler_gamma{};
+/// \brief Precision-aware Catalan constant; finite precision is required.
+template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_catalan> catalan{};
 
 /// \brief Stream the round-trip decimal representation, independent of stream precision.
 inline std::ostream& operator<<(std::ostream& os, mpreal const& value) { return os << value.to_string(); }
@@ -811,3 +816,7 @@ inline std::ostream& operator<<(std::ostream& os, exact_constant const& value) {
 } // namespace uni20
 
 #include "mpreal_functions.hpp"
+
+#include "mpreal_special.hpp"
+
+#include "mpreal_extensions.hpp"

@@ -6,6 +6,9 @@
   `expm1` and `log1p` using one generic function for `double` and `mpreal`, then
   shows exact rational results and an explicit-precision hyperbolic function.
   It requires `UNI20_ENABLE_MPFR=ON` and exits normally.
+- `mpreal_special_example.cpp` explains exact special-function values, log-Gamma
+  signs, cancellation-safe extensions, pi-scaled argument reduction, compound
+  result rounding and precision-aware constants. It requires MPFR and exits normally.
 - `gtest_floating_eq_example.cpp` demonstrates real and complex ULP-aware
   GoogleTest assertions. It intentionally contains failing tests and should
   exit nonzero.

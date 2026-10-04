@@ -305,8 +305,11 @@ auto finite_asinh = uni20::math::asinh(mpreal{1}, p);
 Run `mpreal_elementary_example` for a comparison of naive and stable formulas
 using the same generic code with `double` and `mpreal`.
 
-The [coverage plan](scalar_math_coverage_plan.md) records the special-function
-and nonstandard elementary extensions. This real expansion does not add corresponding MPC overloads.
+The [special-function and extension guide](mpreal_special_functions.md) covers
+Gamma, error functions, Bessel functions, zeta, real Li2, Airy Ai, constants,
+pi-scaled trigonometry, stable base-two/base-ten operations and `compound`.
+The [coverage plan](scalar_math_coverage_plan.md) records implementation status
+and deferred native support. This real expansion adds no MPC overloads.
 
 Approximate real arithmetic follows MPFR's infinity/NaN behavior: real division by zero can
 produce infinity or NaN, and `sqrt` of a negative value produces NaN. This differs

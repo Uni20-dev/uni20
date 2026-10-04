@@ -716,4 +716,36 @@ template <detail::MathInteger I> inline mpreal rootn(mpreal const& x, I degree, 
   return detail::integer_root_value(x, detail::math_integer(degree), p);
 }
 
+namespace detail
+{
+inline mpreal compound_value(mpreal const& x, std::int64_t n, Precision p)
+{
+  (void)x.precision();
+  if (x.is_exact())
+  {
+    if (x < -1)
+    {
+      if (p.is_exact()) throw std::domain_error("compound requires x >= -1");
+      return mpreal("nan", p);
+    }
+    return integer_power_value(mpreal(x.exact_value() + exact_constant{1}), n, p);
+  }
+  static_assert(sizeof(long) >= sizeof(std::int64_t));
+  return mpreal_access::finite_result(
+      p, [&](mpfr_ptr out) { mpfr_compound_si(out, x.native_handle(), static_cast<long>(n), MPFR_RNDN); });
+}
+} // namespace detail
+/// \brief Compute (1+x)^n without rounding the sum first, for x >= -1.
+/// \details The integer exponent is checked against the signed 64-bit domain.
+///          Exact inputs retain rational results. Approximate inputs use MPFR.
+template <detail::MathInteger I> inline mpreal compound(mpreal const& x, I n)
+{
+  return detail::compound_value(x, detail::math_integer(n), x.precision());
+}
+/// \brief Round the compound result from the original input to finite precision p.
+template <detail::MathInteger I> inline mpreal compound(mpreal const& x, I n, Precision p)
+{
+  (void)p.bit_count();
+  return detail::compound_value(x, detail::math_integer(n), p);
+}
 } // namespace uni20
