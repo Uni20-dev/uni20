@@ -157,7 +157,9 @@ namespace uni20
 ///          remains operation-local. Direct Tensor operations may block during
 ///          admission. `Async<Tensor>` operations use coroutine-aware dispatch
 ///          when a backend provides it, while retaining the same storage and
-///          mdspec representation.
+///          mdspec representation. Elements must be trivially copyable; owning
+///          MPFR/MPC scalars require host storage. This representation requirement
+///          does not imply that a CUDA kernel supports arithmetic on the type.
 struct CudaStorage
 {
     /// \brief Byte alignment guaranteed by CUDA runtime device allocations.
