@@ -140,3 +140,9 @@ Providers may be mixed between factorization and reuse when their scalar
 coverage permits it. Backend kernels consume the same packed factors and
 zero-based pivot convention. Direct `lu_solve_op` dispatch requires already
 successful factors; it does not rescan their numerical invariants on every solve.
+
+The CPU factorization kernel also accepts direct row-major and strided workspaces.
+For strided mappings, its trailing-submatrix update places the smaller-stride
+axis in the inner loop; mappings without stride information put rows in the inner
+loop. This affects traversal only: accesses still go through the supplied
+accessor, and owning factors returned by `lu_factor` remain column-major.

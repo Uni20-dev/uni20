@@ -249,6 +249,68 @@ TEST(Lu, DirectDeclineAndStridedCpuFactors)
   EXPECT_NEAR((rhs[1, 0]), 2, 1e-14);
 }
 
+TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
+{
+  auto check = [](auto a) {
+    using S = typename decltype(a)::value_type;
+    using R = make_real_t<S>;
+    S original[3][3];
+    double values[3][3] = {{1, 1, 1}, {2, 2, 3}, {3, 4, 5}};
+    for (std::size_t i = 0; i < 3; ++i)
+      for (std::size_t j = 0; j < 3; ++j)
+      {
+        S value = S(values[i][j]);
+        if constexpr (Complex<S>) value.imag(double(i) - double(j));
+        original[i][j] = a[i, j] = value;
+      }
+    std::size_t pivots[3];
+    SolveInfo info;
+    ASSERT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<R>{}),
+              KernelAttempt::success);
+    ASSERT_TRUE(info.succeeded());
+    for (std::size_t k = 0; k < 3; ++k)
+      for (std::size_t j = 0; j < 3; ++j)
+        std::swap(original[k][j], original[pivots[k]][j]);
+    // Reconstruct P*A from L and U rather than comparing two loop implementations.
+    for (std::size_t i = 0; i < 3; ++i)
+      for (std::size_t j = 0; j < 3; ++j)
+      {
+        S product{};
+        for (std::size_t k = 0; k < 3; ++k)
+          product += (i == k ? S{1} : (i > k ? a[i, k] : S{})) * (k <= j ? a[k, j] : S{});
+        EXPECT_LE(math::abs(product - original[i][j]), R{256} * numeric_limits<R>::epsilon());
+      }
+
+    // A finite input whose first trailing update overflows must report failure
+    // in either traversal, including complex arithmetic and padded mappings.
+    for (std::size_t i = 0; i < 3; ++i)
+      for (std::size_t j = 0; j < 3; ++j)
+        a[i, j] = S(i == j ? 1 : 0);
+    a[1, 0] = S{1};
+    a[0, 1] = S(numeric_limits<R>::max());
+    a[1, 1] = S(-numeric_limits<R>::max());
+    EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<R>{}),
+              KernelAttempt::success);
+    EXPECT_EQ(info.status, SolveStatus::nonfinite_result);
+  };
+  auto layouts = [&]<class S>() {
+    DenseMatrix<S, ColumnMajor> column_major(3, 3);
+    DenseMatrix<S, RowMajor> row_major(3, 3);
+    check(column_major.mdspan());
+    check(row_major.mdspan());
+    using E = stdex::dextents<std::size_t, 2>;
+    S storage[27]{};
+    for (auto strides : {std::array<std::size_t, 2>{2, 11}, std::array<std::size_t, 2>{11, 2}})
+    {
+      stdex::mdspan<S, E, stdex::layout_stride> padded(
+          storage, stdex::layout_stride::mapping<E>(E(3, 3), strides));
+      check(padded);
+    }
+  };
+  layouts.template operator()<double>();
+  layouts.template operator()<complex<double>>();
+}
+
 namespace
 {
 struct UnexpectedLuBackend

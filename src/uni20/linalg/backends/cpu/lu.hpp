@@ -36,6 +36,19 @@ KernelAttempt try_kernel(CpuReferenceBackend, lu_factor_op const&, A& a, std::sp
   }
   auto scale = detail::lu_input_scale(s, R{});
   auto n = pivots.size();
+  // Public factors are column-major; direct kernel callers may supply other layouts.
+  bool rows_inner = true;
+  if constexpr (StridedMdspanLike<decltype(s)>) rows_inner = s.stride(0) <= s.stride(1);
+  auto update_entry = [&](std::size_t i, std::size_t j, S const& multiplier, S const& upper) {
+    S value = S(s[i, j]) - multiplier * upper;
+    if (!uni20::isfinite(value))
+    {
+      info.status = SolveStatus::nonfinite_result;
+      return false;
+    }
+    s[i, j] = value;
+    return true;
+  };
   for (std::size_t k = 0; k < n; ++k)
   {
     auto magnitude = detail::lu_magnitude(S(s[k, k]));
@@ -66,15 +79,23 @@ KernelAttempt try_kernel(CpuReferenceBackend, lu_factor_op const&, A& a, std::sp
         return KernelAttempt::success;
       }
       s[i, k] = multiplier;
+    }
+    if (rows_inner)
+    {
       for (std::size_t j = k + 1; j < n; ++j)
       {
-        S value = S(s[i, j]) - multiplier * S(s[k, j]);
-        if (!uni20::isfinite(value))
-        {
-          info.status = SolveStatus::nonfinite_result;
-          return KernelAttempt::success;
-        }
-        s[i, j] = value;
+        S upper = s[k, j];
+        for (std::size_t i = k + 1; i < n; ++i)
+          if (!update_entry(i, j, S(s[i, k]), upper)) return KernelAttempt::success;
+      }
+    }
+    else
+    {
+      for (std::size_t i = k + 1; i < n; ++i)
+      {
+        S multiplier = s[i, k];
+        for (std::size_t j = k + 1; j < n; ++j)
+          if (!update_entry(i, j, multiplier, S(s[k, j]))) return KernelAttempt::success;
       }
     }
   }
