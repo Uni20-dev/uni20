@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/native_math.hpp"
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
 #if UNI20_ENABLE_MPFR
@@ -222,26 +223,40 @@ template <class Result, class Arg> consteval bool preserves_real_precision()
   }                                                                                                         \
   }
 
-#define UNI20_SCALAR_MATH_DISPATCH(NAME)                                                                      \
-  UNI20_SCALAR_MATH_ADL(NAME)                                                                                 \
-  struct NAME##_fn                                                                                           \
+#define UNI20_SCALAR_MATH_DISPATCH_TO(NAME, NATIVE, RESULT_CHECK)                                           \
+  UNI20_SCALAR_MATH_ADL(NAME)                                                                               \
+  struct NAME##_fn                                                                                          \
   {                                                                                                         \
-      template <class... Args>                                                                               \
-      constexpr auto operator()(Args const&... args) const                                                    \
-          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                 \
+      template <class... Args>                                                                              \
+      constexpr auto operator()(Args const&... args) const                                                  \
+          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))              \
       {                                                                                                     \
-        return NAME##_adl::call(args...);                                                                     \
+        return NAME##_adl::call(args...);                                                                   \
       }                                                                                                     \
-      template <class... Args>                                                                               \
-        requires((native_argument<Args> && ...) &&                                                           \
-                 !requires(Args const&... args) { NAME##_adl::call(args...); })                                \
-      constexpr auto operator()(Args const&... args) const                                                    \
-          noexcept(noexcept(std::NAME(args...))) -> decltype(std::NAME(args...))                               \
-        requires((preserves_real_precision<decltype(std::NAME(args...)), Args>()) && ...)                     \
+      template <class... Args>                                                                              \
+        requires((native_argument<Args> && ...) &&                                                          \
+                 !requires(Args const&... args) { NAME##_adl::call(args...); })                             \
+      constexpr auto operator()(Args const&... args) const                                                  \
+          noexcept(noexcept(NATIVE::NAME(args...))) -> decltype(NATIVE::NAME(args...))                      \
+        requires((RESULT_CHECK<decltype(NATIVE::NAME(args...)), Args>()) && ...)                            \
       {                                                                                                     \
-        return std::NAME(args...);                                                                            \
+        return NATIVE::NAME(args...);                                                                       \
       }                                                                                                     \
   };
+
+template <class Result, class Arg> consteval bool predicate_result()
+{
+  return std::same_as<Result, bool>;
+}
+template <class Result, class Arg> consteval bool preserves_components()
+{
+  return preserves_real_precision<typename Result::value_type, Arg>();
+}
+// These operations explicitly retain the first argument's type, or return an
+// integer property. Their native implementations constrain each operand.
+template <class Result, class Arg> consteval bool utility_result() { return true; }
+#define UNI20_SCALAR_MATH_DISPATCH_POLICY(NAME, CHECK) UNI20_SCALAR_MATH_DISPATCH_TO(NAME, std, CHECK)
+#define UNI20_SCALAR_MATH_DISPATCH(NAME) UNI20_SCALAR_MATH_DISPATCH_POLICY(NAME, preserves_real_precision)
 
 UNI20_SCALAR_MATH_DISPATCH(abs)
 UNI20_SCALAR_MATH_DISPATCH(sqrt)
@@ -252,7 +267,7 @@ UNI20_SCALAR_MATH_DISPATCH(log2)
 UNI20_SCALAR_MATH_DISPATCH(sin)
 UNI20_SCALAR_MATH_DISPATCH(cos)
 UNI20_SCALAR_MATH_DISPATCH(ceil)
-UNI20_SCALAR_MATH_DISPATCH(ldexp)
+UNI20_SCALAR_MATH_DISPATCH_TO(ldexp, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH(cbrt)
 UNI20_SCALAR_MATH_DISPATCH(exp2)
 UNI20_SCALAR_MATH_DISPATCH(expm1)
@@ -270,6 +285,35 @@ UNI20_SCALAR_MATH_DISPATCH(tan)
 UNI20_SCALAR_MATH_DISPATCH(atan)
 UNI20_SCALAR_MATH_DISPATCH(atan2)
 UNI20_SCALAR_MATH_DISPATCH(hypot)
+UNI20_SCALAR_MATH_DISPATCH(floor)
+UNI20_SCALAR_MATH_DISPATCH(trunc)
+UNI20_SCALAR_MATH_DISPATCH(round)
+UNI20_SCALAR_MATH_DISPATCH_POLICY(isfinite, predicate_result)
+UNI20_SCALAR_MATH_DISPATCH_POLICY(isnan, predicate_result)
+UNI20_SCALAR_MATH_DISPATCH_POLICY(isinf, predicate_result)
+UNI20_SCALAR_MATH_DISPATCH_POLICY(signbit, predicate_result)
+UNI20_SCALAR_MATH_DISPATCH(fma)
+UNI20_SCALAR_MATH_DISPATCH(fdim)
+UNI20_SCALAR_MATH_DISPATCH_TO(fmin, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(fmax, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH(fmod)
+UNI20_SCALAR_MATH_DISPATCH(remainder)
+UNI20_SCALAR_MATH_DISPATCH_TO(round_even, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(pown, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(rootn, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(scalbn, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(frexp, native_math, preserves_components)
+UNI20_SCALAR_MATH_DISPATCH_TO(modf, native_math, preserves_components)
+UNI20_SCALAR_MATH_DISPATCH_TO(remquo, native_math, preserves_components)
+UNI20_SCALAR_MATH_DISPATCH_TO(sincos, native_math, preserves_components)
+UNI20_SCALAR_MATH_DISPATCH_TO(sinhcosh, native_math, preserves_components)
+UNI20_SCALAR_MATH_DISPATCH_TO(ilogb, native_math, utility_result)
+UNI20_SCALAR_MATH_DISPATCH_TO(copysign, native_math, utility_result)
+UNI20_SCALAR_MATH_DISPATCH_TO(nextafter, native_math, utility_result)
+UNI20_SCALAR_MATH_DISPATCH_TO(next_up, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(next_down, native_math, preserves_real_precision)
+#undef UNI20_SCALAR_MATH_DISPATCH_TO
+#undef UNI20_SCALAR_MATH_DISPATCH_POLICY
 #undef UNI20_SCALAR_MATH_DISPATCH
 
 UNI20_SCALAR_MATH_ADL(real)
@@ -399,6 +443,60 @@ inline constexpr detail::scalar_math::hypot_fn hypot{};
 inline constexpr detail::scalar_math::ceil_fn ceil{};
 /// \brief Multiply by a power of two using the scalar's exponent interface.
 inline constexpr detail::scalar_math::ldexp_fn ldexp{};
+/// \brief Round toward negative infinity.
+inline constexpr detail::scalar_math::floor_fn floor{};
+/// \brief Round toward zero.
+inline constexpr detail::scalar_math::trunc_fn trunc{};
+/// \brief Round to nearest integer with ties away from zero.
+inline constexpr detail::scalar_math::round_fn round{};
+/// \brief Whether a real scalar is finite.
+inline constexpr detail::scalar_math::isfinite_fn isfinite{};
+/// \brief Whether a real scalar is NaN.
+inline constexpr detail::scalar_math::isnan_fn isnan{};
+/// \brief Whether a real scalar is infinite.
+inline constexpr detail::scalar_math::isinf_fn isinf{};
+/// \brief Inspect the sign, including approximate negative zero.
+inline constexpr detail::scalar_math::signbit_fn signbit{};
+/// \brief Nearest integer with ties to even.
+inline constexpr detail::scalar_math::round_even_fn round_even{};
+/// \brief Integer power with scalar-specific rounding.
+inline constexpr detail::scalar_math::pown_fn pown{};
+/// \brief Real integer-order root; negative orders give reciprocal roots.
+inline constexpr detail::scalar_math::rootn_fn rootn{};
+/// \brief Binary scaling with a signed 64-bit exponent.
+inline constexpr detail::scalar_math::scalbn_fn scalbn{};
+/// \brief Binary fraction and exponent as an owning result.
+inline constexpr detail::scalar_math::frexp_fn frexp{};
+/// \brief Signed fractional and integral parts as an owning result.
+inline constexpr detail::scalar_math::modf_fn modf{};
+/// \brief Nearest-even remainder and signed low three quotient bits.
+inline constexpr detail::scalar_math::remquo_fn remquo{};
+/// \brief Sine and cosine at one input.
+inline constexpr detail::scalar_math::sincos_fn sincos{};
+/// \brief Hyperbolic sine and cosine at one input.
+inline constexpr detail::scalar_math::sinhcosh_fn sinhcosh{};
+/// \brief Binary exponent of a finite nonzero value; throws otherwise.
+inline constexpr detail::scalar_math::ilogb_fn ilogb{};
+/// \brief Copy the sign while retaining the magnitude operand type and precision.
+inline constexpr detail::scalar_math::copysign_fn copysign{};
+/// \brief Adjacent value on the first operand grid toward the direction operand.
+inline constexpr detail::scalar_math::nextafter_fn nextafter{};
+/// \brief Adjacent value toward positive infinity.
+inline constexpr detail::scalar_math::next_up_fn next_up{};
+/// \brief Adjacent value toward negative infinity.
+inline constexpr detail::scalar_math::next_down_fn next_down{};
+/// \brief Fused multiplication and addition with one final rounding.
+inline constexpr detail::scalar_math::fma_fn fma{};
+/// \brief Positive difference, preserving NaN propagation.
+inline constexpr detail::scalar_math::fdim_fn fdim{};
+/// \brief Minimum, preferring the numeric operand over a NaN.
+inline constexpr detail::scalar_math::fmin_fn fmin{};
+/// \brief Maximum, preferring the numeric operand over a NaN.
+inline constexpr detail::scalar_math::fmax_fn fmax{};
+/// \brief Remainder using a quotient truncated toward zero.
+inline constexpr detail::scalar_math::fmod_fn fmod{};
+/// \brief Remainder using the nearest-even integer quotient.
+inline constexpr detail::scalar_math::remainder_fn remainder{};
 /// \brief Read the real component by value; real and integral scalars retain their type.
 inline constexpr detail::scalar_math::real_fn real{};
 /// \brief Read the imaginary component by value; real zero retains the input's type and precision.

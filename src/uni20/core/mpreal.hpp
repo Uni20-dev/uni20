@@ -295,6 +295,22 @@ namespace detail
 {
 struct mpreal_access
 {
+    // Construct results without exposing mutable provider handles on the scalar.
+    template <class F> static mpreal finite_result(Precision p, F&& operation)
+    {
+      (void)p.bit_count();
+      mpreal result(p);
+      operation(result.approximate());
+      return result;
+    }
+    template <class F> static exact_constant rational_result(F&& operation)
+    {
+      exact_constant result;
+      operation(result.value_);
+      mpq_canonicalize(result.value_);
+      return result;
+    }
+
     static bool can_expand_rational(mpreal const& x)
     {
       if (x.is_exact() || mpfr_zero_p(x.native_handle())) return true;
@@ -793,3 +809,5 @@ inline std::ostream& operator<<(std::ostream& os, mpreal const& value) { return 
 inline std::ostream& operator<<(std::ostream& os, exact_constant const& value) { return os << value.to_string(); }
 
 } // namespace uni20
+
+#include "mpreal_functions.hpp"

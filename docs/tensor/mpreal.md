@@ -20,7 +20,7 @@ cmake --build build_codex/mpfr --target uni20_mpfr_tests mpreal_example
 ctest --test-dir build_codex/mpfr --output-on-failure -R 'MpReal'
 ```
 
-MPFR 4.1 or newer and a thread-safe MPFR build are required. There is no
+MPFR 4.2 or newer and a thread-safe MPFR build are required. There is no
 source-download fallback. `CMAKE_PREFIX_PATH` supports a non-system prefix;
 individual paths can be supplied through `UNI20_GMP_INCLUDE_DIR`,
 `UNI20_GMP_LIBRARY`, `UNI20_MPFR_INCLUDE_DIR`, and `UNI20_MPFR_LIBRARY`.
@@ -305,8 +305,8 @@ auto finite_asinh = uni20::math::asinh(mpreal{1}, p);
 Run `mpreal_elementary_example` for a comparison of naive and stable formulas
 using the same generic code with `double` and `mpreal`.
 
-The [coverage plan](scalar_math_coverage_plan.md) records remaining utility and
-special functions. This real expansion does not add corresponding MPC overloads.
+The [coverage plan](scalar_math_coverage_plan.md) records the special-function
+and nonstandard elementary extensions. This real expansion does not add corresponding MPC overloads.
 
 Approximate real arithmetic follows MPFR's infinity/NaN behavior: real division by zero can
 produce infinity or NaN, and `sqrt` of a negative value produces NaN. This differs
@@ -330,6 +330,121 @@ constants, allocation, and precision before accepting this scalar. See the
 stored in `CudaBuffer`, `CudaTensor` or `CudaMatrix`. CUDA buffers and accessors
 require trivially copyable elements; these owning scalars are rejected at
 compile time. Convert explicitly to a supported native scalar before transfer.
+
+## Arithmetic and numerical utilities
+
+These real operations are available both as scalar overloads and through
+`uni20::math`. Without an explicit precision, exact inputs retain exact results
+where possible; a finite operand supplies the result precision. Multiple finite
+numerical operands must match, except for sign sources and neighbor directions.
+All operations reject unset operands.
+
+| Family | Operations | Result |
+| --- | --- | --- |
+| Integer powers/roots | `pown(x,n)`, `rootn(x,n)` | Real scalar; negative orders mean reciprocal powers/roots |
+| Integer rounding | `floor`, `ceil`, `trunc`, `round`, `round_even` | Real scalar, not an integer carrier; `round` breaks ties away, `round_even` to even |
+| Fused arithmetic | `fma(a,b,c)` | `a*b+c`, with one final rounding, including mixed rational operands |
+| Selection/sign | `fdim`, `fmin`, `fmax`, `copysign` | Positive difference, minimum, maximum, or magnitude with a new sign |
+| Remainders | `fmod(a,b)`, `remainder(a,b)`, `remquo(a,b)` | Truncating or nearest-even quotient rule; `remquo` returns `{remainder, quotient}` |
+| Decomposition | `frexp(x)`, `modf(x)`, `ilogb(x)` | `{fraction, exponent}`, `{fraction, integer}`, or a signed 64-bit exponent |
+| Binary scaling | `ldexp(x,n)`, `scalbn(x,n)` | `x * 2^n`; these are identical for Uni20's binary formats |
+| Paired evaluation | `sincos(x)`, `sinhcosh(x)` | `{sin, cos}` or `{sinh, cosh}`, owning components at the same precision |
+| Adjacent values | `nextafter(x,direction)`, `next_up(x)`, `next_down(x)` | Adjacent value on the first operand's finite grid |
+| Classification | `isfinite`, `isnan`, `isinf`, `signbit` | `bool`; exact rationals are finite, and exact zero has no negative sign |
+
+The named result types live in `<uni20/core/math_results.hpp>`. Their real fields
+own their values; no provider output pointers or borrowed components escape.
+
+### Result precision and exact arithmetic
+
+An optional trailing finite `Precision` on rounding, fused arithmetic,
+selection/sign, remainders, decomposition, scaling and integer powers/roots
+**rounds the result from the original operands**. It does not round inputs
+first. This differs deliberately from the elementary-function input-conversion
+contract above. For example:
+
+```cpp
+namespace m = uni20::math;
+auto p = Precision::bits(3);
+mpreal third("1/3", Precision::exact());
+auto zero = m::fma(third, mpreal(3,p), mpreal(-1,p)); // Exactly zero, stored at p.
+auto other = m::fma(third.at(p), mpreal(3,p), mpreal(-1,p)); // Nonzero.
+auto integer = m::floor(mpreal("1023/1024", Precision::exact()), p); // Zero.
+// Rounding the input to p first would produce one, and floor would then be one.
+```
+
+For `floor` and its relatives there are two distinct steps: determine the
+mathematical integer, then represent that integer at the result precision using
+nearest-even rounding. Thus `ceil(9217/1024, Precision::bits(2))` produces 8:
+the mathematical ceiling is 10, which is halfway between 8 and 12 at two bits.
+It is not a directed rounding of the original input onto the floating grid.
+`modf(x,p)` determines both parts first and rounds each independently; its
+rounded fraction can consequently reach magnitude one. `frexp(x,p)` instead
+renormalizes a rounded fraction of magnitude one and increments the exponent.
+
+`pown` and `rootn` accept ordinary integer types whose values fit signed 64 bits;
+`bool` and floating orders are unsupported, and out-of-range unsigned values
+throw `std::out_of_range`. Zero exponent gives one. A zeroth root is an error
+for exact evaluation and NaN for finite evaluation. Exact powers and rational
+perfect roots remain exact; other roots require precision. Even-order roots of
+negative values have no real result and give NaN at finite precision. Zero to a
+negative power/order gives infinity at finite precision and a domain error in
+exact arithmetic.
+
+MPFR integer powers and roots round once. Exact non-dyadic arguments use directed
+bounds until both bounds select the same rounded result; rational perfect roots
+and dyadic power results are handled separately to resolve exact ties. This
+path requires the rational argument (after inversion for a negative power) to
+lie within MPFR's configured exponent range; it throws `std::overflow_error`
+otherwise. It never changes that range. Exact arithmetic may allocate large
+numerators or denominators; requesting an exact enormous power or binary shift
+is a request to construct that rational value.
+
+`fmod` uses quotient truncation toward zero; `remainder` and `remquo` round the
+quotient to the nearest integer, with ties to even. The latter's `quotient`
+is the signed low **three** bits of that integer, in [-7,7], not the full
+quotient. Remainders keep the dividend's sign when zero at finite precision.
+Finite arithmetic with a zero divisor or nonfinite dividend gives NaN and zero
+quotient bits; an infinite divisor returns the dividend. All-exact division by
+zero throws. Mixed rational remainders and fused arithmetic keep large binary
+exponents separate from their coefficients rather than expanding enormous
+powers of two.
+
+`frexp` uses `x = fraction * 2^exponent`, with a nonzero finite fraction of
+magnitude in [1/2,1). Zero and nonfinite values are returned as the fraction with
+exponent zero. `ilogb` returns the exponent of the leading binary digit
+(`frexp(x).exponent - 1`) and throws `std::domain_error` for zero, infinity or
+NaN. Unlike decomposition and scaling, exponent extraction has no precision
+argument. Classification also has no precision argument.
+
+`fmin`/`fmax` prefer the numeric operand to a NaN. If both inputs are zero,
+`fmin` prefers negative zero and `fmax` positive zero. `fdim(a,b)` returns
+positive zero when `a <= b`, otherwise `a-b`; a NaN input propagates.
+`copysign` retains the magnitude's exactness/precision and takes only the sign
+from its second argument. An exact zero cannot acquire a negative sign.
+
+### Paired functions and adjacent values
+
+`sincos` and `sinhcosh` follow their elementary components' input-conversion
+contract: an explicit precision converts the input first. Approximate evaluation
+uses MPFR's paired routine. Exact zero gives exact `{0,1}`; other exact inputs
+need finite precision.
+
+Adjacent values are different: exact rationals have no successor. The first
+operand must be approximate, or a trailing finite `Precision` must select a
+grid by rounding it first. The direction remains unrounded and may have any
+precision. Equal zeros return the direction's sign. NaN propagates; stepping
+outward from infinity leaves it infinite, while stepping inward gives the
+largest finite value of that sign on the selected grid.
+
+MPFR has no subnormals. The neighbors of zero are determined by MPFR's current
+minimum exponent, and those of infinity by its maximum exponent. Native
+floating types retain their native subnormals and exponent limits. Precision
+alone sets the significand size, not an independent exponent range. Uni20 does
+not change MPFR's exponent range or ambient rounding mode.
+
+Run `mpreal_utilities_example` for result-rounding, exact decomposition and
+mixed-precision direction examples.
 
 ## Complex scalars
 

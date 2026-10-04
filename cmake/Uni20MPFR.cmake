@@ -24,18 +24,19 @@ function(uni20_find_mpfr)
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles([=[
     #include <mpfr.h>
-    #if MPFR_VERSION < MPFR_VERSION_NUM(4, 1, 0)
-    #error Uni20 requires MPFR 4.1 or newer
+    #if MPFR_VERSION < MPFR_VERSION_NUM(4, 2, 0)
+    #error Uni20 requires MPFR 4.2 or newer
     #endif
     int main() {
       mpq_t q; mpq_init(q); mpq_set_ui(q, 1, 3);
       mpfr_t x; mpfr_init2(x, 256); mpfr_set_q(x, q, MPFR_RNDN);
+      mpfr_rootn_si(x, x, -3, MPFR_RNDN);
       mpfr_clear(x); mpq_clear(q);
       return 0;
     }
   ]=] UNI20_MPFR_LINKS)
   if(NOT UNI20_MPFR_LINKS)
-    message(FATAL_ERROR "Cannot compile and link MPFR >= 4.1 with GMP; check the selected headers and libraries.")
+    message(FATAL_ERROR "Cannot compile and link MPFR >= 4.2 with GMP; check the selected headers and libraries.")
   endif()
   if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
     unset(UNI20_MPFR_HAS_TLS CACHE)

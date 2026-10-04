@@ -165,4 +165,154 @@ UNI20_PRECISION_TEST(NumericalScalar, ElementaryAccuracyImprovesWithPrecision)
   check(math::log1p(argument), logarithm);
 }
 #endif
+
+UNI20_PRECISION_TEST(NumericalScalar, UtilitiesRetainWorkingPrecision)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  auto zero = C::real(0), one = C::real(1), two = C::real(2);
+  R x = one + C::gap();
+  auto binary = math::frexp(x);
+  static_assert(std::same_as<decltype(binary.fraction), R>);
+  expect_equal(math::ldexp(binary.fraction, binary.exponent), x);
+  C::expect_precision(binary.fraction);
+  auto parts = math::modf(x);
+  expect_equal(parts.fraction, C::gap());
+  expect_equal(parts.integer, one);
+  C::expect_precision(parts.fraction);
+  auto remainder = math::remquo(x, one);
+  expect_equal(remainder.remainder, C::gap());
+  EXPECT_EQ(remainder.quotient, 1);
+  expect_equal(math::fmod(x, one), C::gap());
+  expect_equal(math::remainder(x, one), C::gap());
+  expect_equal(math::fdim(x, one), C::gap());
+  expect_equal(math::fmin(x, one), one);
+  expect_equal(math::fmax(x, one), x);
+  expect_equal(math::round_even(R(C::real(5) / two)), two);
+  expect_equal(math::round(R(C::real(5) / two)), C::real(3));
+  expect_equal(math::floor(x), one);
+  expect_equal(math::ceil(x), two);
+  expect_equal(math::trunc(R(-x)), R(-one));
+  expect_equal(math::scalbn(x, -3), R(x / C::real(8)));
+  expect_equal(math::next_up(one), R(one + C::epsilon()));
+  expect_equal(math::next_down(one), R(one - C::epsilon() / two));
+  expect_equal(math::nextafter(one, x), R(one + C::epsilon()));
+  expect_equal(math::copysign(x, R(-one)), R(-x));
+  EXPECT_EQ(math::ilogb(x), 0);
+  EXPECT_TRUE(math::isfinite(x));
+  EXPECT_FALSE(math::isnan(x));
+  EXPECT_FALSE(math::isinf(x));
+  EXPECT_TRUE(math::signbit(R(-zero)));
+  EXPECT_TRUE(math::isinf(R(one / zero)));
+  EXPECT_TRUE(math::isnan(R(zero / zero)));
+  auto trig = math::sincos(x);
+  expect_equal(trig.sin, math::sin(x));
+  expect_equal(trig.cos, math::cos(x));
+  auto hyperbolic = math::sinhcosh(x);
+  expect_equal(hyperbolic.sinh, math::sinh(x));
+  expect_equal(hyperbolic.cosh, math::cosh(x));
+  expect_error_at_most(math::rootn(math::pown(x, 3), 3), x, C::real(8) * C::epsilon());
+}
+
+UNI20_PRECISION_TEST(NumericalScalar, FusedArithmeticRoundsOnce)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  auto one = C::real(1);
+  auto gap = C::power_of_two(-(C::digits() + 2) / 2);
+  R a = one + gap, b = one - gap;
+  R product = a * b;
+  expect_equal(R(product - one), C::real(0));
+  auto fused = math::fma(a, b, R(-one));
+  static_assert(std::same_as<decltype(fused), R>);
+  expect_equal(fused, R(-gap * gap));
+  C::expect_precision(fused);
+}
+UNI20_PRECISION_TEST(NumericalScalar, UtilitiesBoundarySemantics)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  R zero = C::real(0), one = C::real(1), two = C::real(2), nz = -zero;
+  R inf = one / zero, nan = zero / zero;
+  EXPECT_TRUE(math::signbit(math::round_even(R(-one / two))));
+  EXPECT_TRUE(math::signbit(math::round(nz)));
+  EXPECT_TRUE(math::signbit(math::floor(nz)));
+  EXPECT_TRUE(math::signbit(math::ceil(nz)));
+  EXPECT_TRUE(math::signbit(math::trunc(nz)));
+  EXPECT_TRUE(math::signbit(math::modf(nz).fraction));
+  EXPECT_TRUE(math::signbit(math::modf(nz).integer));
+  EXPECT_TRUE(math::signbit(math::frexp(nz).fraction));
+  EXPECT_EQ(math::frexp(nz).exponent, 0);
+  for (auto a : {zero, nz})
+    for (auto b : {zero, nz})
+    {
+      EXPECT_EQ(math::signbit(math::fmin(a, b)), math::signbit(a) || math::signbit(b));
+      EXPECT_EQ(math::signbit(math::fmax(a, b)), math::signbit(a) && math::signbit(b));
+      EXPECT_EQ(math::signbit(math::nextafter(a, b)), math::signbit(b));
+    }
+  expect_equal(math::fmin(nan, one), one);
+  expect_equal(math::fmax(one, nan), one);
+  EXPECT_TRUE(math::isnan(math::fdim(one, nan)));
+  expect_equal(math::fdim(inf, inf), zero);
+  EXPECT_TRUE(math::isnan(math::fma(zero, inf, one)));
+  auto remainder = math::remquo(C::real(-23), two);
+  expect_equal(remainder.remainder, one);
+  EXPECT_EQ(remainder.quotient, -4);
+  EXPECT_TRUE(math::signbit(math::remainder(C::real(-2), one)));
+  EXPECT_TRUE(math::signbit(math::fmod(C::real(-2), one)));
+  EXPECT_TRUE(math::isnan(math::remquo(inf, one).remainder));
+  EXPECT_EQ(math::remquo(inf, one).quotient, 0);
+  expect_equal(math::next_up(inf), inf);
+  expect_equal(math::next_down(R(-inf)), R(-inf));
+  EXPECT_TRUE(math::isfinite(math::next_down(inf)));
+  expect_equal(math::next_up(math::next_down(inf)), inf);
+  EXPECT_GT(math::next_up(zero), zero);
+  EXPECT_LT(math::next_down(zero), zero);
+  EXPECT_TRUE(math::isfinite(math::next_up(zero)));
+  EXPECT_EQ(math::frexp(inf).exponent, 0);
+  expect_equal(math::frexp(inf).fraction, inf);
+  EXPECT_TRUE(math::signbit(math::modf(R(-inf)).fraction));
+  EXPECT_THROW(math::ilogb(zero), std::domain_error);
+  EXPECT_THROW(math::ilogb(inf), std::domain_error);
+  EXPECT_THROW(math::ilogb(nan), std::domain_error);
+  EXPECT_TRUE(math::isnan(math::rootn(one, 0)));
+  EXPECT_TRUE(math::isnan(math::rootn(R(-one), 2)));
+  expect_equal(math::rootn(C::real(-8), -3), R(-one / two));
+  expect_equal(math::pown(R(-one), numeric_limits<std::int64_t>::min()), one);
+  expect_equal(math::rootn(R(-one), numeric_limits<std::int64_t>::max()), R(-one));
+}
+
+#if UNI20_ENABLE_MPFR
+UNI20_PRECISION_TEST(NumericalScalar, UtilityAccuracyImprovesWithPrecision)
+{
+  using C = TypeParam;
+  this->RecordProperty("backend", "scalar_math");
+  auto ref = Precision::bits(512);
+  // Rational power is analytic. The fifth-root oracle is Newton iteration,
+  // independent of rootn/pow providers, from an exactly represented input.
+  mpreal power_reference("16384/78125", ref); // (5/4)^-7
+  mpreal root_reference(1, ref);
+  for (int i = 0; i < 30; ++i)
+  {
+    auto square = root_reference * root_reference;
+    root_reference = (4 * root_reference + mpreal(2, ref) / (square * square)) / 5;
+  }
+  constexpr int bits = C::digits();
+  constexpr int previous = bits <= 24 ? 12 : bits <= 53 ? 24 : bits <= 64 ? 53 :
+                           bits <= 113 ? 64 : bits <= 128 ? 113 : 128;
+  auto check = [&](auto value, mpreal const& reference) {
+    C::expect_precision(value);
+    auto error = abs(widen(value) - reference);
+    auto lower_error = abs(reference.at(Precision::bits(previous)).at(ref) - reference);
+    EXPECT_LE(error, abs(reference) * widen(C::epsilon()) * 8);
+    EXPECT_LT(error * 16, lower_error);
+  };
+  check(math::pown(typename C::real_type(C::real(5) / C::real(4)), -7), power_reference);
+  check(math::rootn(C::real(2), 5), root_reference);
+}
+#endif
+
 } // namespace uni20::test

@@ -15,6 +15,10 @@ enum class PrecisionProbe
   ElementaryRetainsWorkingPrecision,
   ElementarySmallArguments,
   ElementaryAccuracyImprovesWithPrecision,
+  UtilitiesRetainWorkingPrecision,
+  FusedArithmeticRoundsOnce,
+  UtilitiesBoundarySemantics,
+  UtilityAccuracyImprovesWithPrecision,
   CpuMatrixOneNormRetainsIncrement,
   CpuReductionsRetainIncrement,
   CpuGemmRetainsIncrement,
@@ -52,6 +56,10 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "ElementaryRetainsWorkingPrecision", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ElementarySmallArguments", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ElementaryAccuracyImprovesWithPrecision", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "UtilitiesRetainWorkingPrecision", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "FusedArithmeticRoundsOnce", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "UtilitiesBoundarySemantics", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "UtilityAccuracyImprovesWithPrecision", "scalar_math"},
     ProbeDescription{"NumericalLinalg", "CpuMatrixOneNormRetainsIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuReductionsRetainIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuGemmRetainsIncrement", "cpu_reference"},
@@ -110,10 +118,13 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
 #endif
     if constexpr (C::is_complex)
       if (probe == ElementaryRetainsWorkingPrecision || probe == ElementarySmallArguments ||
-          probe == ElementaryAccuracyImprovesWithPrecision)
-        return {"not_applicable", "elementary expansion covers real scalars"};
+          probe == ElementaryAccuracyImprovesWithPrecision || probe == UtilitiesRetainWorkingPrecision ||
+          probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
+          probe == UtilityAccuracyImprovesWithPrecision)
+        return {"not_applicable", "elementary and utility expansion covers real scalars"};
     switch (probe)
     {
+      case UtilityAccuracyImprovesWithPrecision:
       case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:
       case SolveAccuracyImprovesWithPrecision:

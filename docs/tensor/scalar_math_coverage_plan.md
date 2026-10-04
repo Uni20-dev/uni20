@@ -24,8 +24,8 @@ establish a complex branch convention or implementation.
 - A trailing finite `Precision` on elementary functions converts the inputs
   first, then evaluates. This is the existing contract, not a promise to round
   the original rational expression only once. Basic arithmetic has its own
-  stronger mixed-rational rounding contract; fused operations need an equally
-  deliberate treatment.
+  stronger mixed-rational rounding contract; arithmetic utilities, including
+  fused operations, round the result from the original operands.
 - Document operation-specific exceptions to common precision, particularly
   sign sources, comparison operands and direction arguments. They do not all
   supply an approximation budget.
@@ -69,42 +69,42 @@ values and signed zero. MPFR-disabled native builds remain supported.
 
 ## 2. Arithmetic and numerical utility operations
 
-Status: planned. Split into focused PRs rather than adding all signatures at
-once. Settle each result and precision contract before implementation.
+Status: implemented. This slice raises the MPFR minimum to 4.2 for signed
+integer roots and the later extension routines. The original elementary PR
+retains its 4.1 minimum. Shared numerical probes cover float32/64/80/128 and
+MPFR at 128/256 bits, including boundary semantics and accuracy improvement.
 
-| Group | Remaining surface | Main design work |
+| Group | Implemented surface | Contract |
 | --- | --- | --- |
 | Integer powers and roots | `pown`, `rootn` | Signed exponent/order types; zero and negative orders; rational perfect roots; native and float128 algorithms without narrowing |
-| Rounding | `floor`, `ceil`, `trunc`, `round`, explicitly named ties-to-even rounding | Preserve exact rational semantics, ties and signed zero; avoid ambient rounding mode |
+| Rounding | `floor`, `ceil`, `trunc`, `round`, `round_even` | Preserve exact rational semantics, ties and signed zero; avoid ambient rounding mode |
 | Stable arithmetic | `fma`, `copysign`, `fdim`, `fmin`, `fmax` | Fused rounding with mixed rational inputs; sign/comparison operands; NaN rules |
 | Remainders | `fmod`, `remainder`, `remquo` | Truncating versus nearest-even quotient; negative inputs and quotient-bit contract |
-| Decomposition/scaling | `modf`, `frexp`, `ldexp`, `scalbn`, exponent extraction | Named result values; exponent width and special-value behavior |
+| Decomposition/scaling | `modf`, `frexp`, `ldexp`, `scalbn`, `ilogb` | Named result values; exponent width and special-value behavior |
 | Paired functions | `sincos`, `sinhcosh` | Named owning results, consistent component precision, paired provider calls |
-| Adjacent values | `nextafter`, next-up, next-down | A finite representable grid; direction need not have matching precision; signed-zero, infinity and exponent-limit rules |
+| Adjacent values | `nextafter`, `next_up`, `next_down` | A finite representable grid; direction need not have matching precision; signed-zero, infinity and exponent-limit rules |
 | Classification | `isfinite`, `isnan`, `isinf`, `signbit` through `uni20::math` | Bool results need a dispatch policy separate from precision-preserving numerical results |
 
-`ceil` and `ldexp` already exist in the generic facade for native types; MPFR
-support remains to be added. Classification already exists for `mpreal` at the
-root `uni20` namespace. Preserve those existing contracts when completing the
-shared surface.
+`ceil` and `ldexp` now support MPFR in the generic facade. Classification
+continues to support the existing root-level scalar interfaces as well.
 
-Prefer named results such as `{fraction, exponent}` or `{value, gamma_sign}`
-to public output-pointer interfaces. Names are illustrative until each API is
-reviewed. Exponent extraction must account for MPFR's exponent range instead
-of automatically returning C's `int`. Distinguish a base-two decomposition
-exponent from an `ilogb`-style exponent, including zero/nonfinite cases.
+The owning results are `frexp_result{fraction, exponent}`,
+`modf_result{fraction, integer}`, `remquo_result{remainder, quotient}`,
+`sincos_result{sin, cos}` and `sinhcosh_result{sinh, cosh}`. Exponents and integer
+orders use a signed 64-bit domain with checked integer inputs. `ilogb` rejects
+zero/nonfinite values. `remquo` reports signed low three quotient bits.
 
-Exact rational operations must not detour through floating point: for example,
-`floor(1/3)` is exact zero, and rational remainder is computed by an exact
-quotient rule. `fma(a, b, c)` must not become `(a*b)+c`, including when one input
-is a non-dyadic rational. Extend the existing mixed-arithmetic rounding tools
-or use a proved sufficient/adaptive precision strategy with final rounding.
+Exact rational operations do not detour through floating point. A trailing
+finite precision on arithmetic utilities rounds the **result** from the
+original inputs, including non-dyadic rational operands to `fma`. Paired
+trig/hyperbolic functions follow the component elementary input-conversion
+contract. This distinction is documented in [mpreal](mpreal.md).
 
-There is no next rational number. Adjacent-value APIs require a finite grid,
-with explicit precision when it cannot be inferred. MPFR's in-place neighbor
-functions are implementation primitives, not a ready-made C++ value API. Decide
-whether `nextafter` follows the standard signed-zero convention and how native
-subnormals differ from MPFR's representation before exposing it.
+There is no next rational number. Adjacent-value APIs take their grid from the
+first operand or an explicit precision, which first rounds that operand. Sign
+sources and unrounded directions may differ in precision. Equal zeros return
+the direction's sign. MPFR has no subnormals; its current exponent limits define
+the neighbors of zero and infinity. Native formats retain their own limits.
 
 ## 3. Real special functions and constants
 
@@ -145,7 +145,7 @@ need. Some have been available in MPFR for years, others require newer versions.
 Check each routine against the supported MPFR version. Keep capability checks
 centralized in configuration, or make a deliberate minimum-version change;
 do not introduce a header that unconditionally requires newer symbols while
-CMake still advertises 4.1. Native support needs its own accurate implementation
+CMake advertises an older minimum. Native support needs its own accurate implementation
 or provider. Merely multiplying a rounded pi into the argument is not an
 adequate replacement for a pi-scaled function's argument reduction contract.
 Likewise, do not replace the small-argument functions with cancellation-prone
@@ -180,7 +180,7 @@ CUDA MPFR execution, or new linear-algebra providers.
 
 ## Provider references
 
-- [MPFR 4.1 reference](https://www.mpfr.org/mpfr-4.1.0/mpfr.html): the current minimum.
+- [MPFR 4.2 reference](https://www.mpfr.org/mpfr-4.2.0/mpfr.html): the current minimum after numerical utilities.
 - [MPFR transcendental functions](https://www.mpfr.org/mpfr-current/mpfr.html#Transcendental-Functions).
 - [MPFR arithmetic functions](https://www.mpfr.org/mpfr-current/mpfr.html#Arithmetic-Functions).
 - [MPFR integer and remainder functions](https://www.mpfr.org/mpfr-current/mpfr.html#Integer-and-Remainder-Related-Functions).
