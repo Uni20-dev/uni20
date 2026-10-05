@@ -50,6 +50,9 @@ If the macro is absent, these native overloads are unavailable. Configured
 binary128 needs its own provider and is deliberately unsupported for these
 three functions; a standard template declaration accepting an extension type
 is not enough to establish that its implementation preserves precision.
+Future binary128 implementations may also serve the other native types after
+accuracy and performance validation; see the
+[shared native implementation plan](scalar_math_coverage_plan.md#shared-native-implementations).
 The shared numerical tests cover native float32/64/80 and MPFR 128/256-bit
 identities, and compare non-dyadic results with independent 512-bit references
 to demonstrate increasing accuracy. Identity tests also run without MPFR.
