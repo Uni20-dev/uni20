@@ -61,6 +61,57 @@ Avoid `EXPECT_NEAR` for scalar-generic numerical assertions: its arguments are
 type and formats only diagnostics. Construct decimals from text or exact
 integer ratios; casting a double literal does not create higher-precision data.
 
+## Choosing a numerical assertion
+
+Use exact equality when the contract demands it, including provider-wiring
+checks against the same correctly rounded operation. Use an explicit
+absolute/relative bound for residuals, accumulated errors and identities near
+zero. `EXPECT_FLOATING_EQ` and `ASSERT_FLOATING_EQ` from
+`<uni20/common/gtest.hpp>` instead count representable steps between results;
+their default tolerance is four ULPs. They support native float32/64/80/128,
+native complex values componentwise, and `mpreal` when MPFR is enabled.
+`complex<mpreal>` ULP assertions are not yet supported.
+
+For `mpreal`, the comparison contract is:
+
+- Two approximate operands must have the same precision, even if their values
+  are equal. A mismatch fails with a diagnostic; convert a reference explicitly
+  with `.at(p)` when that is intended.
+- An exact operand is rounded to the approximate operand's precision, nearest
+  with ties to even, before counting steps. This includes MPFR's ordinary
+  underflow/overflow behavior. Two exact operands require exact equality;
+  no tolerance gives unequal rationals a floating-point grid.
+- The grid uses that precision and MPFR's current exponent range, without
+  changing either. MPFR has no subnormals: zero and the smallest positive
+  representable value are one step apart. Both signed zeros occupy the same
+  position. Finite operands outside the current exponent range fail explicitly.
+- NaNs and unset values fail. Equal infinities pass at matching precision;
+  other comparisons involving infinity fail. Negative tolerances fail.
+- Diagnostic distances saturate at `max<long long>` in magnitude. The actual
+  comparison uses the full integer distance, so saturation cannot turn a
+  failure into a pass. Exact inequality and incomparable pairs have no distance
+  and use the same sentinel, with an explanatory assertion message.
+
+```cpp
+auto p = uni20::Precision::bits(256);
+auto actual = uni20::mpreal(1, p) / 3;
+auto reference = uni20::mpreal("1/3", uni20::Precision::bits(512));
+EXPECT_EQ(actual.precision(), p);
+EXPECT_FLOATING_EQ(actual, reference.at(p), 1);
+EXPECT_FLOATING_EQ(actual, uni20::mpreal("1/3", uni20::Precision::exact()), 1);
+EXPECT_FLOATING_EQ(uni20::mpreal(1, p), uni20::mpreal{1}, 0);
+```
+
+Operand expressions and the tolerance are evaluated once. Failure messages
+show round-trip MPFR values, exact/unset states, working precisions and the
+reason an invalid pair cannot be compared. Comparison preserves the operands
+and MPFR precision defaults, exponent range and exception flags. The shared
+`check::FloatingULP<mpreal>` comparator also serves `CHECK_FLOATING_EQ` and
+`PRECONDITION_FLOATING_EQ`; the detailed ULP diagnostic is supplied by the
+GoogleTest assertions. ULP proximity does not check the requested output
+precision or establish the independence of a reference, so keep those checks
+separate.
+
 ## First operation families
 
 Scalar math dispatch uses the same real/complex precision cases. A near-one

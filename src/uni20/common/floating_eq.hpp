@@ -11,6 +11,9 @@
 #include <uni20/core/numeric_limits.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/core/scalar_traits.hpp>
+#if UNI20_ENABLE_MPFR
+#include "detail/mpreal_ulp.hpp"
+#endif
 
 namespace uni20::check
 {
@@ -169,6 +172,38 @@ struct FloatingULP<T>
       return detail::ulp_distance_magnitude(a, b) <= static_cast<UInt>(max_ulps);
     }
 };
+
+#if UNI20_ENABLE_MPFR
+/// \brief Compare MPFR values on a shared runtime-precision grid.
+/// \details Approximate operands must have matching precision. An exact operand
+///          is rounded to the other's precision, nearest with ties to even;
+///          two exact values require exact equality. The current MPFR exponent
+///          range defines the endpoints. Unset values, mismatched precision,
+///          NaNs, unequal infinities, and negative tolerances compare false.
+///          Operands and MPFR settings/exception flags are preserved.
+template <> struct FloatingULP<mpreal>
+{
+    static bool eq(mpreal const& a, mpreal const& b, std::int64_t max_ulps = 4)
+    {
+      return detail::compare_mpreal(a, b, max_ulps).equal;
+    }
+};
+
+/// \brief Signed representable-step distance for matching-precision MPFR values.
+/// \details Uses the same grid and exact-value rules as FloatingULP<mpreal>.
+///          Finite distances saturate at +/- max<long long>; incomparable pairs
+///          return max<long long>. Saturation never relaxes the comparator's tolerance.
+inline long long float_distance(mpreal const& a, mpreal const& b)
+{
+  return detail::compare_mpreal(a, b, 0).distance;
+}
+
+/// \brief Absolute diagnostic step distance, with the same saturation as float_distance.
+inline long long float_abs_distance(mpreal const& a, mpreal const& b)
+{
+  return std::llabs(float_distance(a, b));
+}
+#endif
 
 /// \brief ULP comparator for complex numbers over floating point.
 template <typename T>

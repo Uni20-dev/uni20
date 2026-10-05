@@ -314,8 +314,10 @@ Choose the comparison from the numerical contract being tested:
 | Residual, reconstruction error, orthogonality defect, or cancellation result expected near zero | An explicit absolute or scale-aware error bound |
 | Iterative algorithm, eigensolver, matrix function, or transcendental result | A tolerance derived from precision, problem scale, and algorithmic error |
 
-`EXPECT_FLOATING_EQ` supports Uni20's ordinary and configured binary128 real
-types and the corresponding `uni20::complex<T>` types. Prefer it for
+`EXPECT_FLOATING_EQ` supports Uni20's native float32/64/80/128 real types,
+the corresponding `uni20::complex<T>` types, and optional `mpreal`.
+MPFR operands follow the [runtime-precision assertion contract](numerical_testing.md#choosing-a-numerical-assertion);
+`complex<mpreal>` is not yet supported. Prefer it for
 scalar-generic or complex tests, and over separate real/imaginary `EXPECT_NEAR`
 checks or casting an extension scalar to `double`. GoogleTest's
 `EXPECT_FLOAT_EQ` and `EXPECT_DOUBLE_EQ` have similar ULP semantics for tests

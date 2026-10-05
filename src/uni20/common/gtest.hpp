@@ -7,8 +7,8 @@
 /// for use inside GoogleTest unit tests. They extend the standard GTest
 /// floating-point comparison macros (`EXPECT_FLOAT_EQ`, `EXPECT_DOUBLE_EQ`) to:
 ///
-/// - Work with IEEE binary32, binary64, configured native fp80, and binary128 real scalars.
-/// - Work with `uni20::complex<T>` over those real scalar types.
+/// - Work with IEEE binary32, binary64, configured native fp80, binary128, and optional mpreal.
+/// - Work with `uni20::complex<T>` over the native real scalar types.
 /// - Allow explicit specification of ULP tolerance.
 /// - Default to a tolerance of 4 ULPs if none is provided, matching GoogleTest.
 ///
@@ -33,6 +33,7 @@
 /// - The compared expressions and their evaluated values
 /// - The allowed tolerance in ULPs
 /// - The actual ULP distance, computed via `uni20::check::float_distance`
+/// - For mpreal, operand states/precisions and the reason an invalid pair cannot be compared
 ///
 /// \note These macros are intended for unit tests only.
 /// For assertions in library code, use `CHECK_FLOATING_EQ` / `PRECONDITION_FLOATING_EQ`
@@ -48,30 +49,52 @@
 #include <gtest/gtest.h>
 #include <uni20/core/scalar_io.hpp>
 
+namespace uni20::check::detail
+{
+template <class T> std::string floating_operand_text(T const& value) { return uni20::format_scalar(value); }
+
+#if UNI20_ENABLE_MPFR
+inline std::string floating_operand_text(mpreal const& value)
+{
+  if (!value.initialized()) return "<unset>";
+  auto text = value.to_string();
+  return value.is_exact() ? text + " [exact]" : text + " [" + std::to_string(value.precision().bit_count()) + " bits]";
+}
+#endif
+
+template <UlpComparable T>
+::testing::AssertionResult floating_eq_assertion(char const* name, char const* left, char const* right, T const& a,
+                                                 T const& b, std::int64_t ulps)
+{
+  if (ulps < 0) return ::testing::AssertionFailure() << name << " requires non-negative ULP tolerance, got " << ulps;
+  if (FloatingULP<T>::eq(a, b, ulps)) return ::testing::AssertionSuccess();
+
+  auto result = ::testing::AssertionFailure();
+  result << name << " failed\n  " << left << " = " << floating_operand_text(a) << "\n  " << right << " = "
+         << floating_operand_text(b) << "\n  allowed tolerance: " << ulps << " ULP\n  actual distance: ";
+  auto const distance = float_abs_distance(a, b);
+  if (distance == std::numeric_limits<long long>::max())
+    result << "unrepresentable or exceeds diagnostic range";
+  else
+    result << distance;
+#if UNI20_ENABLE_MPFR
+  if constexpr (std::same_as<T, mpreal>)
+    if (auto reason = compare_mpreal(a, b, ulps).reason) result << "\n  reason: " << reason;
+#endif
+  return result;
+}
+} // namespace uni20::check::detail
+
 #define EXPECT_FLOATING_EQ(a, b, ...)                                                                                  \
   do                                                                                                                   \
   {                                                                                                                    \
     auto va = (a);                                                                                                     \
     auto vb = (b);                                                                                                     \
-    using T = std::decay_t<decltype(va)>;                                                                              \
-    static_assert(::uni20::check::UlpComparable<T>, "EXPECT_FLOATING_EQ requires a ULP-comparable scalar type");       \
-    std::int64_t ulps = ::trace::detail::get_ulps(va, vb __VA_OPT__(, __VA_ARGS__));                                   \
-    if (ulps < 0)                                                                                                      \
+    auto ulps = ::trace::detail::get_ulps(va, vb __VA_OPT__(, __VA_ARGS__));                                           \
+    auto result = ::uni20::check::detail::floating_eq_assertion("EXPECT_FLOATING_EQ", #a, #b, va, vb, ulps);           \
+    if (!result)                                                                                                       \
     {                                                                                                                  \
-      ADD_FAILURE() << "EXPECT_FLOATING_EQ requires non-negative ULP tolerance, got " << ulps;                         \
-    }                                                                                                                  \
-    else if (!::uni20::check::FloatingULP<T>::eq(va, vb, ulps))                                                        \
-    {                                                                                                                  \
-      auto const dist = ::uni20::check::float_abs_distance(va, vb);                                                    \
-      ::testing::Message msg;                                                                                          \
-      msg << "EXPECT_FLOATING_EQ failed at " << __FILE__ << ":" << __LINE__ << "\n  " #a " = "                         \
-          << ::uni20::format_scalar(va) << "\n  " #b " = " << ::uni20::format_scalar(vb)                               \
-          << "\n  allowed tolerance: " << ulps << " ULP" << "\n  actual distance: ";                                   \
-      if (dist == std::numeric_limits<long long>::max())                                                               \
-        msg << "unrepresentable or exceeds diagnostic range";                                                          \
-      else                                                                                                             \
-        msg << dist;                                                                                                   \
-      ADD_FAILURE() << msg;                                                                                            \
+      ADD_FAILURE() << result.message();                                                                               \
     }                                                                                                                  \
   }                                                                                                                    \
   while (0)
@@ -81,25 +104,11 @@
   {                                                                                                                    \
     auto va = (a);                                                                                                     \
     auto vb = (b);                                                                                                     \
-    using T = std::decay_t<decltype(va)>;                                                                              \
-    static_assert(::uni20::check::UlpComparable<T>, "ASSERT_FLOATING_EQ requires a ULP-comparable scalar type");       \
-    std::int64_t ulps = ::trace::detail::get_ulps(va, vb __VA_OPT__(, __VA_ARGS__));                                   \
-    if (ulps < 0)                                                                                                      \
+    auto ulps = ::trace::detail::get_ulps(va, vb __VA_OPT__(, __VA_ARGS__));                                           \
+    auto result = ::uni20::check::detail::floating_eq_assertion("ASSERT_FLOATING_EQ", #a, #b, va, vb, ulps);           \
+    if (!result)                                                                                                       \
     {                                                                                                                  \
-      FAIL() << "ASSERT_FLOATING_EQ requires non-negative ULP tolerance, got " << ulps;                                \
-    }                                                                                                                  \
-    else if (!::uni20::check::FloatingULP<T>::eq(va, vb, ulps))                                                        \
-    {                                                                                                                  \
-      auto const dist = ::uni20::check::float_abs_distance(va, vb);                                                    \
-      ::testing::Message msg;                                                                                          \
-      msg << "ASSERT_FLOATING_EQ failed at " << __FILE__ << ":" << __LINE__ << "\n  " #a " = "                         \
-          << ::uni20::format_scalar(va) << "\n  " #b " = " << ::uni20::format_scalar(vb)                               \
-          << "\n  allowed tolerance: " << ulps << " ULP" << "\n  actual distance: ";                                   \
-      if (dist == std::numeric_limits<long long>::max())                                                               \
-        msg << "unrepresentable or exceeds diagnostic range";                                                          \
-      else                                                                                                             \
-        msg << dist;                                                                                                   \
-      FAIL() << msg;                                                                                                   \
+      FAIL() << result.message();                                                                                      \
     }                                                                                                                  \
   }                                                                                                                    \
   while (0)

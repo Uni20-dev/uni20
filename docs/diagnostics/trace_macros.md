@@ -119,6 +119,12 @@ Debug-only assertion forms:
 
 `CHECK_FLOATING_EQ` is for floating-point values where exact bitwise equality is usually too strict.
 
+The floating-point check and precondition macros evaluate each operand, the
+optional tolerance, and any extra context expression once per call. Failure
+diagnostics use these same captured values. Extra context is evaluated even
+when the comparison passes. The debug forms follow this rule when enabled;
+with `NDEBUG` they evaluate nothing.
+
 ### What "ULP" Means
 
 ULP means "Unit in the Last Place":
@@ -130,8 +136,8 @@ ULP means "Unit in the Last Place":
 Practical guidance:
 
 - `CHECK_EQUAL(a, b)` for integers, enums, pointers, and exact-match logic.
-- `CHECK_FLOATING_EQ(a, b)` for IEEE binary32, binary64, configured binary128,
-  and corresponding complex comparisons.
+- `CHECK_FLOATING_EQ(a, b)` for native float32/64/80/128, corresponding native
+  complex comparisons, and optional `mpreal`.
 - Start with default tolerance (`4` ULP), then tighten only if needed.
 
 Near `1.0`, the step size is:
@@ -143,8 +149,8 @@ Near `1.0`, the step size is:
 | `uni20::float128` | `1.92592994438723585305597794258492732e-34` | see exact values below | see exact values below |
 
 `uni20::float128` support is present when Uni20 is configured with an IEEE
-binary128 provider. Padded x87 extended-precision `long double` is deliberately
-excluded because its object representation is not an IEEE interchange format.
+binary128 provider. Configured native `uni20::float80` uses a value-based
+ordering that does not inspect the padding in x87 extended-precision storage.
 
 Equivalent exact hex-float literals:
 
@@ -204,6 +210,14 @@ For unit tests, there are GTest-oriented helpers in
 
 These use the same ULP comparison engine as `CHECK_FLOATING_EQ`, but report through
 GoogleTest (`ADD_FAILURE`/`FAIL`) instead of aborting the process.
+
+With MPFR enabled, these assertions also accept `mpreal`. Approximate operands
+must have matching precision; one exact operand is rounded to the approximate
+operand's precision, while two exact operands require exact equality.
+Failures report full MPFR values and their precision or exact/unset state.
+See the [numerical assertion contract](../development/numerical_testing.md#choosing-a-numerical-assertion)
+for endpoint behavior and guidance on choosing ULP versus residual bounds.
+`complex<mpreal>` support is deferred.
 
 ```cpp
 #include <uni20/common/gtest.hpp>
