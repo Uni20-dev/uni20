@@ -2,6 +2,7 @@
 
 #include "detail/native_math.hpp"
 #include "detail/native_special_math.hpp"
+#include "math_constants.hpp"
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
 #if UNI20_ENABLE_MPFR
@@ -332,10 +333,10 @@ UNI20_SCALAR_MATH_DISPATCH(erf)
 UNI20_SCALAR_MATH_DISPATCH(erfc)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(digamma)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(beta)
+UNI20_SCALAR_MATH_DISPATCH_TO(beta, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(zeta)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(expint)
+UNI20_SCALAR_MATH_DISPATCH_TO(zeta, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(expint, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(dilog_real)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_j, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_y, native_math, preserves_real_precision)
@@ -558,6 +559,10 @@ inline constexpr detail::scalar_math::lgamma_sign_fn lgamma_sign{};
 /// \brief Logarithmic derivative of Gamma.
 inline constexpr detail::scalar_math::digamma_fn digamma{};
 /// \brief Real Beta function.
+/// \details Native arguments must have the same real type and both be positive;
+///          the standard-library provider determines accuracy and range behavior.
+/// \note Affected libstdc++/glibc providers retain an internal signgam data race;
+///       see docs/tensor/native_special_functions.md for the provider limitation.
 inline constexpr detail::scalar_math::beta_fn beta{};
 /// \brief Upper incomplete Gamma, with shape and lower integration endpoint.
 inline constexpr detail::scalar_math::upper_gamma_fn upper_gamma{};
@@ -566,8 +571,12 @@ inline constexpr detail::scalar_math::erf_fn erf{};
 /// \brief Complementary error function without subtractive cancellation.
 inline constexpr detail::scalar_math::erfc_fn erfc{};
 /// \brief Riemann zeta function.
+/// \details Native evaluation uses std::riemann_zeta, including its provider limits.
+/// \note Affected libstdc++/glibc providers retain an internal signgam data race;
+///       see docs/tensor/native_special_functions.md for the provider limitation.
 inline constexpr detail::scalar_math::zeta_fn zeta{};
 /// \brief Real principal-value exponential integral Ei.
+/// \details Native evaluation uses std::expint.
 inline constexpr detail::scalar_math::expint_fn expint{};
 /// \brief Real part of the dilogarithm.
 inline constexpr detail::scalar_math::dilog_real_fn dilog_real{};

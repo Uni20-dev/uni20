@@ -20,6 +20,9 @@ enum class PrecisionProbe
   UtilitiesBoundarySemantics,
   UtilityAccuracyImprovesWithPrecision,
   StandardSpecialAccuracy,
+  StandardProviderIdentities,
+  StandardProviderAccuracy,
+  MathConstantsAccuracy,
   LogGammaAccuracy,
   BesselAccuracy,
   MpfrSpecialIdentities,
@@ -67,6 +70,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "UtilitiesBoundarySemantics", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UtilityAccuracyImprovesWithPrecision", "scalar_math"},
     ProbeDescription{"NumericalScalar", "StandardSpecialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "StandardProviderIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "StandardProviderAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "MathConstantsAccuracy", "scalar_constants"},
     ProbeDescription{"NumericalScalar", "LogGammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BesselAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrSpecialIdentities", "scalar_math"},
@@ -134,6 +140,22 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
+    if (probe == StandardProviderIdentities || probe == StandardProviderAccuracy || probe == MathConstantsAccuracy)
+    {
+      if constexpr (C::is_complex) return {"not_applicable", "real special functions and constants"};
+      if constexpr (!C::runtime)
+      {
+        if (probe != MathConstantsAccuracy)
+        {
+          using R = typename C::real_type;
+          if constexpr (!std::same_as<R, float> && !std::same_as<R, double> && !std::same_as<R, long double>)
+            return {"unsupported", "no native Beta/zeta/Ei provider for this extension type"};
+#if !defined(__cpp_lib_math_special_functions) || __cpp_lib_math_special_functions < 201603L
+          return {"unavailable", "standard library does not advertise mathematical special functions"};
+#endif
+        }
+      }
+    }
     if (probe == LogGammaAccuracy || probe == BesselAccuracy)
     {
       if constexpr (C::is_complex) return {"not_applicable", "native special functions cover real scalars"};
@@ -178,6 +200,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     switch (probe)
     {
       case StandardSpecialAccuracy:
+      case StandardProviderAccuracy:
+      case MathConstantsAccuracy:
       case LogGammaAccuracy:
       case BesselAccuracy:
       case UtilityAccuracyImprovesWithPrecision:

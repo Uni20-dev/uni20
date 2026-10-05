@@ -246,8 +246,9 @@ auto spacing = epsilon(p);                // 2^(1-p.bit_count()).
 
 The pi descriptor computes pi at the requested precision, unlike promoting a
 previously rounded approximation. It supports arithmetic with an existing
-`mpreal`; precisionless combinations involving pi are unsupported. This slice
-supplies `pi<mpreal>`, not a generic replacement for `std::numbers`.
+`mpreal`; precisionless combinations involving pi are unsupported. The shared
+[native constant names](native_special_functions.md#typed-constants) also provide
+`pi<Real>`, `log_two<Real>` and `euler_gamma<Real>` as typed native values.
 
 The following real scalar functions are also available through
 [`uni20::math`](scalar_math_design.md) for generic algorithms:

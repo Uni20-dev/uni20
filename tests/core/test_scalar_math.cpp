@@ -74,9 +74,8 @@ static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log
 // to mpreal. These native implementations are deliberately deferred.
 template <class T> consteval bool deferred_native_special_functions()
 {
-  return !std::invocable<decltype(m::digamma), T> && !std::invocable<decltype(m::zeta), T> &&
-         !std::invocable<decltype(m::expint), T> && !std::invocable<decltype(m::dilog_real), T> &&
-         !std::invocable<decltype(m::airy_ai), T> && !std::invocable<decltype(m::beta), T, T> &&
+  return !std::invocable<decltype(m::digamma), T> && !std::invocable<decltype(m::dilog_real), T> &&
+         !std::invocable<decltype(m::airy_ai), T> &&
          !std::invocable<decltype(m::upper_gamma), T, T> && !std::invocable<decltype(m::agm), T, T>;
 }
 static_assert(deferred_native_special_functions<float>());

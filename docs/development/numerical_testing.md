@@ -128,6 +128,8 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Real elementary math | Small-argument `expm1`/`log1p` with cancellation negative controls; inverse identities retaining increments; error improvement against independent 512-bit series |
 | Real numerical utilities | Named decompositions and remainders retaining increments; fused cancellation; rounding ties, signed zeros, NaN/infinity and grid endpoints; integer power/root accuracy against rational and independent Newton references |
 | Native/MPFR Gamma and error functions | Accuracy improvement against `sqrt(pi)` and an independent 512-bit error-function series |
+| Native/MPFR Beta, zeta and Ei | Rational and series identities without MPFR; increased accuracy against pi identities and an independent 512-bit Ei series |
+| Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | MPFR elementary extensions | Small-argument cancellation controls, large pi-scaled argument reduction, inverse and reciprocal identities, compound rounding without loss in `1+x` |
 | CPU matrix one-norm and tensor reductions | Retained increment, conjugating inner product, squared-norm identity |
@@ -220,10 +222,12 @@ numerical subsystem. In the current implementation:
   completed matrix cells.
 
 New numerical operations should join these cases as they are implemented.
-The MPFR-only special/extension probes run at 128 and 256 bits. Their native
-implementations are deferred and reported as unsupported, even when MPFR is
-enabled. The native Gamma/error-function probes run at all configured real
-precisions; their high-precision oracle requires MPFR.
+The dedicated MPFR-only special/extension probes run at 128 and 256 bits.
+Their remaining native implementations are deferred and reported as unsupported,
+even when MPFR is enabled. The native Gamma/error-function probes run at all
+configured real precisions; their high-precision oracle requires MPFR. Beta,
+zeta and Ei have separate native/MPFR probes; their native binary128 cells
+remain unsupported. Constant probes also cover configured binary128.
 
 Keep operation-specific unsupported reasons explicit in the registry. When a
 combination gains support, enable the same mathematical probe for it.

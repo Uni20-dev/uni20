@@ -121,6 +121,9 @@ operations from the operations supported at every configured real precision.
 
 Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
+Native `beta`, `zeta` and `expint` use advertised standard-library functions
+for float/double/long double, with native Beta restricted to positive arguments.
+Binary128 adapters for those three functions remain deferred.
 See [native special functions](native_special_functions.md). The remaining
 native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
 it will not add Boost or use MPFR to implement native arithmetic.
@@ -140,10 +143,36 @@ rather than changing that meaning for negative Gamma. Name and document the
 dilogarithm API. Document provider limitations and behavior at domain boundaries;
 wrapping a provider is not a guarantee over a wider domain.
 
-Constants use precision-aware descriptors: `pi`, `log_two`, `euler_gamma` and
-`catalan`. They require finite precision and remain separate from exact
-rationals. `factorial(n,p)` explicitly selects exact or finite arithmetic; its
+For `mpreal`, constants use precision-aware descriptors: `pi`, `log_two`,
+`euler_gamma` and `catalan`. They require finite precision and remain separate
+from exact rationals. The first three names also supply native `constexpr`
+values backed by typed `std::numbers` constants, including configured binary128. `factorial(n,p)` explicitly selects exact or finite arithmetic; its
 integer-source checks and exact-storage costs are documented.
+
+### Shared native implementations
+
+Binary128 coverage may require Uni20 implementations of functions such as
+Beta, zeta and Ei. When a suitable provider is unavailable, design the native
+algorithm for reuse across float32/64/80/128 through the existing typed adapter
+boundary. Keep the public `uni20::math` calls unchanged and retain MPFR's own
+scalar implementations.
+
+Sharing an algorithm does not require identical approximation coefficients,
+iteration counts or evaluation paths at every precision. Construct constants
+and coefficients without first rounding to double; choose approximation order,
+termination criteria and scaling from the supported type's precision and range.
+Allow precision-specific implementations where they improve accuracy or speed.
+Each function needs explicit domain and exceptional-value contracts, including
+behavior near poles, zeros, cancellation and overflow/underflow boundaries.
+
+Start with the missing binary128 implementation, validate the shared algorithm
+at every intended native precision, then compare accuracy and performance with
+the existing providers before changing provider selection. Use the shared
+precision matrix and independent higher-precision MPFR references; MPFR remains
+a test oracle, not a runtime dependency of native evaluation. A reentrant
+Uni20 implementation of Beta or zeta could then also replace the affected
+standard providers and remove their documented `signgam` race. This is future
+implementation work; the current standard-library adapters remain in use.
 
 ## 4. Nonstandard elementary extensions
 
