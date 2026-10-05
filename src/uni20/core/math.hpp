@@ -1,6 +1,7 @@
 #pragma once
 
 #include "detail/native_math.hpp"
+#include "detail/native_special_math.hpp"
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
 #if UNI20_ENABLE_MPFR
@@ -329,19 +330,19 @@ UNI20_SCALAR_MATH_DISPATCH_TO(next_down, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH(tgamma)
 UNI20_SCALAR_MATH_DISPATCH(erf)
 UNI20_SCALAR_MATH_DISPATCH(erfc)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(lgamma)
+UNI20_SCALAR_MATH_DISPATCH_TO(lgamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(digamma)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(beta)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(zeta)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(expint)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(dilog_real)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(bessel_j)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(bessel_y)
+UNI20_SCALAR_MATH_DISPATCH_TO(bessel_j, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(bessel_y, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(agm)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(factorial)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(lgamma_sign)
+UNI20_SCALAR_MATH_DISPATCH_TO(lgamma_sign, native_math, preserves_components)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp2m1)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10m1)
@@ -549,9 +550,10 @@ inline constexpr detail::scalar_math::fmod_fn fmod{};
 inline constexpr detail::scalar_math::remainder_fn remainder{};
 /// \brief Real Gamma function.
 inline constexpr detail::scalar_math::tgamma_fn tgamma{};
-/// \brief Logarithm of the absolute Gamma function.
+/// \brief Logarithm of the absolute Gamma function; native providers are reentrant.
 inline constexpr detail::scalar_math::lgamma_fn lgamma{};
 /// \brief Log-absolute-Gamma and its sign as owning values.
+/// \details Undefined signs are zero; signed zero retains its one-sided pole sign.
 inline constexpr detail::scalar_math::lgamma_sign_fn lgamma_sign{};
 /// \brief Logarithmic derivative of Gamma.
 inline constexpr detail::scalar_math::digamma_fn digamma{};
@@ -570,8 +572,12 @@ inline constexpr detail::scalar_math::expint_fn expint{};
 /// \brief Real part of the dilogarithm.
 inline constexpr detail::scalar_math::dilog_real_fn dilog_real{};
 /// \brief Integer-order Bessel function of the first kind, with order first.
+/// \details Native absolute orders must fit int; other scalar providers retain their own limits.
+/// \throws std::out_of_range if the order cannot be represented by the selected provider.
 inline constexpr detail::scalar_math::bessel_j_fn bessel_j{};
 /// \brief Integer-order Bessel function of the second kind, with order first.
+/// \details Native absolute orders must fit int; other scalar providers retain their own limits.
+/// \throws std::out_of_range if the order cannot be represented by the selected provider.
 inline constexpr detail::scalar_math::bessel_y_fn bessel_y{};
 /// \brief Real Airy Ai, within the selected provider limitations.
 inline constexpr detail::scalar_math::airy_ai_fn airy_ai{};

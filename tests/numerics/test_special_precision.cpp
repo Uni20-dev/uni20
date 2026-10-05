@@ -44,7 +44,7 @@ mpreal bessel_j_series(int n, mpreal const& x)
   }
   return sum;
 }
-template <class C> void accuracy(typename C::real_type const& result, mpreal const& reference)
+template <class C> void accuracy(typename C::real_type const& result, mpreal const& reference, int epsilon_multiple = 1)
 {
   C::expect_precision(result);
   constexpr int bits = C::digits();
@@ -57,7 +57,7 @@ template <class C> void accuracy(typename C::real_type const& result, mpreal con
   auto error = abs(widen(result) - reference);
   auto low_error = abs(reference.at(Precision::bits(previous)).at(reference.precision()) - reference);
   EXPECT_GT(error, 0);
-  EXPECT_LE(error, widen(C::epsilon()) * abs(reference));
+  EXPECT_LE(error, widen(C::epsilon()) * abs(reference) * epsilon_multiple);
   EXPECT_LT(error * 16, low_error);
 }
 } // namespace
@@ -73,6 +73,37 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardSpecialAccuracy)
   accuracy<C>(math::erfc(C::real(1) / C::real(4)), 1 - erf_reference);
   // Gamma(1/2) = sqrt(pi); no Gamma function is used by the oracle.
   accuracy<C>(math::tgamma(C::real(1) / C::real(2)), math::sqrt(pi<mpreal>.at(p)));
+}
+
+UNI20_PRECISION_TEST(NumericalScalar, LogGammaAccuracy)
+{
+  using C = TypeParam;
+  this->RecordProperty("backend", "scalar_math");
+  auto p = Precision::bits(512);
+  auto half_log_pi = math::log(pi<mpreal>.at(p)) / 2;
+  auto positive = math::lgamma_sign(C::real(1) / 2);
+  auto negative = math::lgamma_sign(-C::real(1) / 2);
+  accuracy<C>(positive.value, half_log_pi, 8);
+  accuracy<C>(negative.value, half_log_pi + math::log(mpreal(2, p)), 8);
+  EXPECT_EQ(positive.sign, 1);
+  EXPECT_EQ(negative.sign, -1);
+  EXPECT_EQ(math::lgamma(C::real(1) / 2), positive.value);
+}
+
+UNI20_PRECISION_TEST(NumericalScalar, BesselAccuracy)
+{
+  using C = TypeParam;
+  this->RecordProperty("backend", "scalar_math");
+  auto p = Precision::bits(512);
+  auto x = mpreal("1/4", p);
+  auto argument = C::real(1) / 4;
+  for (int n : {0, 1, 3})
+  {
+    // The J oracle is an independent convergent series. MPFR supplies a
+    // wider reference for Y; native calls never use MPFR as their backend.
+    accuracy<C>(math::bessel_j(n, argument), bessel_j_series(n, x), 16);
+    accuracy<C>(math::bessel_y(n, argument), math::bessel_y(n, x), 16);
+  }
 }
 
 UNI20_PRECISION_TEST(NumericalScalar, MpfrSpecialIdentities)

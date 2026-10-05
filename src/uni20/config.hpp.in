@@ -54,6 +54,16 @@
 #cmakedefine01 UNI20_HAS_FLOAT128
 #cmakedefine01 UNI20_FLOAT128_PROVIDER_MPLAPACK
 
+// Native special functions, independently detected for each scalar type.
+#cmakedefine01 UNI20_HAS_LGAMMA_R_FLOAT
+#cmakedefine01 UNI20_HAS_LGAMMA_R_DOUBLE
+#cmakedefine01 UNI20_HAS_LGAMMA_R_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_LGAMMA_R_FLOAT128
+#cmakedefine01 UNI20_HAS_BESSEL_FLOAT
+#cmakedefine01 UNI20_HAS_BESSEL_DOUBLE
+#cmakedefine01 UNI20_HAS_BESSEL_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_BESSEL_FLOAT128
+
 // Use the Kokkos reference mdspan implementation in the Uni20 extension namespace.
 #ifndef MDSPAN_IMPL_STANDARD_NAMESPACE
 #define MDSPAN_IMPL_STANDARD_NAMESPACE stdex

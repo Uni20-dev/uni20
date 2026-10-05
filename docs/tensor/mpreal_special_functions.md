@@ -6,8 +6,10 @@ functions below accept `mpreal` through both `uni20::name(...)` and the generic
 minimum as the numerical utilities. This surface does not add MPC overloads.
 
 Native float32/64/80/128 use their native implementations for `tgamma`, `erf`
-and `erfc`. The other functions on this page currently have no native adapter;
-their native implementations are deferred. Enabling MPFR never supplies an
+and `erfc`. `lgamma`, `lgamma_sign`, `bessel_j`, and `bessel_y` also have
+[native adapters](native_special_functions.md) where platform routines are
+detected. The other functions on this page have no native adapter yet.
+Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check
 availability with `std::invocable` on the `uni20::math` callable.
 

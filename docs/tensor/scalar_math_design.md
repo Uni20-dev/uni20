@@ -37,7 +37,8 @@ providing a name does not synthesize a missing scalar operation.
 | `real`, `imag` | Read components by value, never expose mutable component references; real/integral values retain their type, and imaginary zero retains runtime precision |
 | `conj` | Conjugate complex values; preserve the type of real and integral values |
 | `tgamma`, `erf`, `erfc` | Native or MPFR provider evaluation |
-| `lgamma`, `lgamma_sign`, `digamma`, `beta`, `upper_gamma`, `zeta`, `expint`, `dilog_real`, `bessel_j`, `bessel_y`, `airy_ai`, `agm`, `factorial` | MPFR special functions; native implementations deferred |
+| `lgamma`, `lgamma_sign`, `bessel_j`, `bessel_y` | MPFR or detected native providers; native log-Gamma is reentrant and native Bessel absolute order must fit `int` |
+| `digamma`, `beta`, `upper_gamma`, `zeta`, `expint`, `dilog_real`, `airy_ai`, `agm`, `factorial` | MPFR special functions; native implementations deferred |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | MPFR base-ten and cancellation-safe extensions |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR pi-scaled trigonometry and inverse functions |
 | `sec`, `csc`, `cot`, `sech`, `csch`, `coth`, `compound` | MPFR reciprocal functions and compound integer powers |
@@ -51,6 +52,8 @@ from the value-reading `math::real` and `math::imag` interface.
 
 See [MPFR special functions and extensions](mpreal_special_functions.md) for
 argument order, named results, domains and exact/finite precision contracts.
+See [native special functions](native_special_functions.md) for per-type
+provider detection and native order limits.
 
 The interface currently targets host execution. Scalar-math support does not
 imply a BLAS/LAPACK provider, a projected Krylov solver, or CUDA support.

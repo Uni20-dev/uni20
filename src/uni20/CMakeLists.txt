@@ -14,6 +14,8 @@ endif()
 # Keep discovery and generated headers consistent in Uni20's directory scope.
 set(BLA_SIZEOF_INTEGER ${_uni20_blas_integer_bytes})
 
+include(Uni20NativeMath)
+
 # Build the definitions string for submodule tracing for the config.hpp file
 set(TRACE_MODULE_DEFINITIONS "")
 foreach(module IN LISTS SUBMODULES)

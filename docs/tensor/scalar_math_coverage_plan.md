@@ -119,6 +119,12 @@ separate follow-up, outside this change's scope; their `mpreal` overloads remain
 in scope. Shared precision tests must distinguish these unavailable native
 operations from the operations supported at every configured real precision.
 
+Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
+platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
+See [native special functions](native_special_functions.md). The remaining
+native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
+it will not add Boost or use MPFR to implement native arithmetic.
+
 | Family | Target surface |
 | --- | --- |
 | Gamma | `tgamma`, `lgamma`, signed log-Gamma, `digamma`, `beta`, upper incomplete Gamma |
