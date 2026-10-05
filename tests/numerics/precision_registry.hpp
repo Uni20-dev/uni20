@@ -20,6 +20,8 @@ enum class PrecisionProbe
   UtilitiesBoundarySemantics,
   UtilityAccuracyImprovesWithPrecision,
   StandardSpecialAccuracy,
+  LogGammaAccuracy,
+  BesselAccuracy,
   MpfrSpecialIdentities,
   MpfrSpecialAccuracy,
   MpfrExtensionsStableArithmetic,
@@ -65,6 +67,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "UtilitiesBoundarySemantics", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UtilityAccuracyImprovesWithPrecision", "scalar_math"},
     ProbeDescription{"NumericalScalar", "StandardSpecialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "LogGammaAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "BesselAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrSpecialIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrSpecialAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrExtensionsStableArithmetic", "scalar_math"},
@@ -130,6 +134,39 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
+    if (probe == LogGammaAccuracy || probe == BesselAccuracy)
+    {
+      if constexpr (C::is_complex) return {"not_applicable", "native special functions cover real scalars"};
+      if constexpr (!C::runtime)
+      {
+        using R = typename C::real_type;
+        bool gamma = false, bessel = false;
+        if constexpr (std::same_as<R, float>)
+        {
+          gamma = UNI20_HAS_LGAMMA_R_FLOAT;
+          bessel = UNI20_HAS_BESSEL_FLOAT;
+        }
+        else if constexpr (std::same_as<R, double>)
+        {
+          gamma = UNI20_HAS_LGAMMA_R_DOUBLE;
+          bessel = UNI20_HAS_BESSEL_DOUBLE;
+        }
+        else if constexpr (std::same_as<R, long double>)
+        {
+          gamma = UNI20_HAS_LGAMMA_R_LONG_DOUBLE;
+          bessel = UNI20_HAS_BESSEL_LONG_DOUBLE;
+        }
+#if UNI20_HAS_FLOAT128
+        else if constexpr (std::same_as<R, float128>)
+        {
+          gamma = UNI20_HAS_LGAMMA_R_FLOAT128;
+          bessel = UNI20_HAS_BESSEL_FLOAT128;
+        }
+#endif
+        if (!(probe == LogGammaAccuracy ? gamma : bessel))
+          return {"unavailable", "native special-function provider not detected for this scalar"};
+      }
+    }
     if (probe == StandardSpecialAccuracy || probe == MpfrSpecialIdentities ||
         probe == MpfrSpecialAccuracy || probe == MpfrExtensionsStableArithmetic)
     {
@@ -141,6 +178,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     switch (probe)
     {
       case StandardSpecialAccuracy:
+      case LogGammaAccuracy:
+      case BesselAccuracy:
       case UtilityAccuracyImprovesWithPrecision:
       case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:

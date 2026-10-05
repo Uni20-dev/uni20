@@ -436,6 +436,9 @@ and pi-scaled/small-argument extensions use that same contract, except that
 `compound` is an arithmetic utility and rounds the result. Missing native
 implementations remain unavailable; enabling MPFR does not add MPFR adapters
 for float32/64/80/128.
+Native log-Gamma and integer-order Bessel functions use independently detected
+platform routines at each precision, including reentrant sign handling and
+checked conversion of Bessel orders. See [native special functions](native_special_functions.md).
 See the [real operation and exact-result tables](mpreal.md) and
 [coverage plan](scalar_math_coverage_plan.md), and
 [special-function contracts](mpreal_special_functions.md).

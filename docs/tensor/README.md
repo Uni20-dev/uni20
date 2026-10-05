@@ -20,6 +20,8 @@ front-end operation semantics.
   promotion boundaries, numeric limits, and optional binary128 behavior.
 - [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`
   interface, ADL customization, native precision and component-value semantics.
+- [Native Special Functions](native_special_functions.md) documents reentrant
+  log-Gamma, integer-order Bessel functions and per-type provider availability.
 
 ## Coverage Plans
 
