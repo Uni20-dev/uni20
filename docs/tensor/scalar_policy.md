@@ -294,10 +294,21 @@ diagnostic distance saturates at `std::numeric_limits<long long>::max()`.
 The tracing `CHECK_FLOATING_EQ` and `PRECONDITION_FLOATING_EQ` assertions
 share the same comparison implementation.
 
+With MPFR enabled, `FloatingULP<mpreal>` counts steps on the shared runtime
+precision and current MPFR exponent range. Approximate operands must have
+matching precision. One exact operand is rounded to the approximate operand's
+precision; two exact operands require exact equality. Unset operands and
+precision mismatches fail with explicit GoogleTest diagnostics. No native
+conversion or ambient precision is used, and comparison preserves MPFR flags.
+`UlpOrderedReal` remains the native ordering concept; `UlpComparable` also
+admits `mpreal`. `complex<mpreal>` ULP comparison is deferred. See the
+[assertion contracts](../development/numerical_testing.md#choosing-a-numerical-assertion)
+for rounding, endpoint and diagnostic details.
+
 Use ULP bounds for contracts expressed in representable-value steps.
 Algorithmic residuals, truncation errors, and reference data with limited
 accuracy generally need explicit absolute/relative tolerances in the native
-scalar type instead. Do not narrow fp80 or fp128 through GoogleTest's
+scalar type instead. Do not narrow fp80, fp128, or MPFR through GoogleTest's
 double-based `EXPECT_NEAR`.
 
 ## Scalar Formatting
