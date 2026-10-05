@@ -419,15 +419,26 @@ require matching precision. Approximation-driven algorithms must obtain finite
 working precision explicitly or from their inputs; an all-exact state supplies
 no approximation budget.
 
-Runtime-precision real and complex math functions accept a trailing finite
+Runtime-precision real and complex elementary functions accept a trailing finite
 `Precision`: they convert each input to that precision, then evaluate, always
 returning an approximate result at that precision. Without an override, exact
 results remain exact where supported, and approximate operands supply the working
 precision. This distinction also applies to the real outputs of complex `abs`,
 `norm`, and `arg`. Real `expm1`/`log1p` use dedicated provider routines;
 new elementary functions follow the same exact/finite-precision distinction.
+Real arithmetic utilities instead round the result from the original operands
+when given an explicit precision: this covers integer powers/roots, integer
+rounding, fused arithmetic, extrema, remainders, decomposition and binary
+scaling. Sign sources and neighbor directions do not supply result precision;
+adjacent-value operations require a finite grid. Paired trig/hyperbolic
+functions retain the elementary input-conversion contract. MPFR special functions
+and pi-scaled/small-argument extensions use that same contract, except that
+`compound` is an arithmetic utility and rounds the result. Missing native
+implementations remain unavailable; enabling MPFR does not add MPFR adapters
+for float32/64/80/128.
 See the [real operation and exact-result tables](mpreal.md) and
-[remaining coverage plan](scalar_math_coverage_plan.md).
+[coverage plan](scalar_math_coverage_plan.md), and
+[special-function contracts](mpreal_special_functions.md).
 
 ## Numerical validation
 

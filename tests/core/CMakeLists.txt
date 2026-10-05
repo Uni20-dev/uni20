@@ -1,7 +1,7 @@
 # tests/core/CMakeLists.txt
 
 if(UNI20_ENABLE_MPFR)
-  add_test_module(mpfr SOURCES test_mpreal.cpp test_mpreal_elementary.cpp test_exact_constant.cpp test_scaled_rational.cpp LIBS uni20_core uni20_async TBB::tbb)
+  add_test_module(mpfr SOURCES test_mpreal.cpp test_mpreal_elementary.cpp test_mpreal_utilities.cpp test_mpreal_special.cpp test_mpreal_extensions.cpp test_exact_constant.cpp test_scaled_rational.cpp LIBS uni20_core uni20_async TBB::tbb)
 endif()
 
 if(UNI20_ENABLE_MPC)
@@ -10,7 +10,7 @@ endif()
 
 add_test_module(core
   SOURCES test_types.cpp test_numeric_limits.cpp test_scalar_traits.cpp test_scalar_concepts.cpp test_scalar_io.cpp
-          test_scalar_precision.cpp test_float80.cpp test_math.cpp test_scalar_math.cpp test_buildinfo.cpp
+          test_scalar_precision.cpp test_float80.cpp test_math.cpp test_scalar_math.cpp test_math_utilities.cpp test_buildinfo.cpp
   LIBS uni20_core
 )
 

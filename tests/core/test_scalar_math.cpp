@@ -69,6 +69,83 @@ template <class... Functions> consteval bool elementary_signatures(Functions...)
 }
 static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log1p, m::cbrt, m::asin, m::acos,
                                     m::tan, m::atan, m::sinh, m::cosh, m::tanh, m::asinh, m::acosh, m::atanh));
+
+// Enabling MPFR must not supply missing native functions through conversion
+// to mpreal. These native implementations are deliberately deferred.
+template <class T> consteval bool deferred_native_special_functions()
+{
+  return !std::invocable<decltype(m::lgamma), T> && !std::invocable<decltype(m::lgamma_sign), T> &&
+         !std::invocable<decltype(m::digamma), T> && !std::invocable<decltype(m::zeta), T> &&
+         !std::invocable<decltype(m::expint), T> && !std::invocable<decltype(m::dilog_real), T> &&
+         !std::invocable<decltype(m::airy_ai), T> && !std::invocable<decltype(m::beta), T, T> &&
+         !std::invocable<decltype(m::upper_gamma), T, T> && !std::invocable<decltype(m::agm), T, T> &&
+         !std::invocable<decltype(m::bessel_j), int, T> && !std::invocable<decltype(m::bessel_y), int, T>;
+}
+static_assert(deferred_native_special_functions<float>());
+static_assert(deferred_native_special_functions<double>());
+static_assert(deferred_native_special_functions<long double>());
+#if UNI20_HAS_FLOAT128
+static_assert(deferred_native_special_functions<uni20::float128>());
+#endif
+static_assert(deferred_native_special_functions<scalar_math_test::ConversionOnly<std::true_type>>());
+static_assert(!std::invocable<decltype(m::factorial), int>);
+template <class... F> consteval bool deferred_extensions(F...)
+{
+  return ((!std::invocable<F, float> && !std::invocable<F, double> && !std::invocable<F, long double>
+#if UNI20_HAS_FLOAT128
+           && !std::invocable<F, uni20::float128>
+#endif
+           && !std::invocable<F, scalar_math_test::ConversionOnly<std::true_type>>) && ...);
+}
+static_assert(deferred_extensions(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1,
+    m::sinpi, m::cospi, m::tanpi, m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot,
+    m::sech, m::csch, m::coth));
+static_assert(!std::invocable<decltype(m::atan2pi), double, double>);
+static_assert(!std::invocable<decltype(m::compound), double, int>);
+
+
+template <class T> void check_native_special_functions()
+{
+  static_assert(std::same_as<decltype(m::tgamma(T{5})), T>);
+  static_assert(std::same_as<decltype(m::erf(T{0})), T>);
+  static_assert(std::same_as<decltype(m::erfc(T{0})), T>);
+  EXPECT_TRUE(m::abs(m::tgamma(T{5}) - T{24}) <= T{96} * uni20::numeric_limits<T>::epsilon());
+  EXPECT_TRUE(m::erf(T{0}) == T{0});
+  EXPECT_TRUE(m::erfc(T{0}) == T{1});
+}
+
+TEST(ScalarMath, NativeSpecialFunctionsKeepNativeTypes)
+{
+  check_native_special_functions<float>();
+  check_native_special_functions<double>();
+  check_native_special_functions<long double>();
+#if UNI20_HAS_FLOAT128
+  check_native_special_functions<uni20::float128>();
+#endif
+}
+
+#if UNI20_ENABLE_MPFR
+template <class... Functions> consteval bool mpfr_special_signatures(Functions...)
+{
+  return ((std::invocable<Functions, uni20::mpreal> &&
+           std::invocable<Functions, uni20::mpreal, uni20::Precision> &&
+           !std::invocable<Functions, double, uni20::Precision>) && ...);
+}
+static_assert(mpfr_special_signatures(m::tgamma, m::erf, m::erfc, m::lgamma, m::lgamma_sign, m::digamma,
+                                      m::zeta, m::expint, m::dilog_real, m::airy_ai));
+static_assert(mpfr_special_signatures(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1,
+    m::sinpi, m::cospi, m::tanpi, m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot,
+    m::sech, m::csch, m::coth));
+static_assert(std::invocable<decltype(m::compound), uni20::mpreal, int, uni20::Precision>);
+static_assert(!std::invocable<decltype(m::compound), uni20::mpreal, bool>);
+static_assert(!std::invocable<decltype(m::compound), uni20::mpreal, double>);
+static_assert(!std::invocable<decltype(m::bessel_j), double, uni20::mpreal>);
+static_assert(!std::invocable<decltype(m::bessel_y), bool, uni20::mpreal>);
+static_assert(std::invocable<decltype(m::factorial), int, uni20::Precision>);
+static_assert(!std::invocable<decltype(m::factorial), bool, uni20::Precision>);
+static_assert(!std::invocable<decltype(m::factorial), double, uni20::Precision>);
+#endif
+
 static_assert(std::invocable<decltype(m::atan2), double, double>);
 static_assert(std::invocable<decltype(m::hypot), double, double>);
 static_assert(!std::invocable<decltype(m::hypot), scalar_math_test::ConversionOnly<std::true_type>, double>);

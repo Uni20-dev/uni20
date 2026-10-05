@@ -75,6 +75,10 @@ The `uni20_numerical_precision_tests` target currently covers:
 | --- | --- |
 | Scalar epsilon and arithmetic | Runtime epsilon, retained increment, complex reciprocal accuracy |
 | Real elementary math | Small-argument `expm1`/`log1p` with cancellation negative controls; inverse identities retaining increments; error improvement against independent 512-bit series |
+| Real numerical utilities | Named decompositions and remainders retaining increments; fused cancellation; rounding ties, signed zeros, NaN/infinity and grid endpoints; integer power/root accuracy against rational and independent Newton references |
+| Native/MPFR Gamma and error functions | Accuracy improvement against `sqrt(pi)` and an independent 512-bit error-function series |
+| MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
+| MPFR elementary extensions | Small-argument cancellation controls, large pi-scaled argument reduction, inverse and reciprocal identities, compound rounding without loss in `1+x` |
 | CPU matrix one-norm and tensor reductions | Retained increment, conjugating inner product, squared-norm identity |
 | CPU and provider GEMM | Analytic real/complex products with an increment near each precision's resolution |
 | CPU and provider square solve | Nearly singular dyadic system with analytic solution, independent scalar residual |
@@ -165,5 +169,10 @@ numerical subsystem. In the current implementation:
   completed matrix cells.
 
 New numerical operations should join these cases as they are implemented.
+The MPFR-only special/extension probes run at 128 and 256 bits. Their native
+implementations are deferred and reported as unsupported, even when MPFR is
+enabled. The native Gamma/error-function probes run at all configured real
+precisions; their high-precision oracle requires MPFR.
+
 Keep operation-specific unsupported reasons explicit in the registry. When a
 combination gains support, enable the same mathematical probe for it.
