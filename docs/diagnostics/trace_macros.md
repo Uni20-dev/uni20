@@ -119,6 +119,12 @@ Debug-only assertion forms:
 
 `CHECK_FLOATING_EQ` is for floating-point values where exact bitwise equality is usually too strict.
 
+The floating-point check and precondition macros evaluate each operand, the
+optional tolerance, and any extra context expression once per call. Failure
+diagnostics use these same captured values. Extra context is evaluated even
+when the comparison passes. The debug forms follow this rule when enabled;
+with `NDEBUG` they evaluate nothing.
+
 ### What "ULP" Means
 
 ULP means "Unit in the Last Place":

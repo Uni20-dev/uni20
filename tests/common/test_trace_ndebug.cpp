@@ -36,7 +36,9 @@ TEST(DebugMacrosNoOp, DebugCheckFloatingEqDoesNothing)
 {
   DEBUG_CHECK_FLOATING_EQ(1, 2);
   DEBUG_CHECK_FLOATING_EQ(3, 3);
-  SUCCEED();
+  int calls = 0;
+  DEBUG_CHECK_FLOATING_EQ(++calls, ++calls, ++calls, ++calls);
+  EXPECT_EQ(calls, 0);
 }
 
 TEST(DebugMacrosNoOp, DebugPreconditionDoesNothing)
@@ -57,7 +59,9 @@ TEST(DebugMacrosNoOp, DebugPreconditionFloatingEqDoesNothing)
 {
   DEBUG_PRECONDITION_FLOATING_EQ(1, 2);
   DEBUG_PRECONDITION_FLOATING_EQ(3, 3);
-  SUCCEED();
+  int calls = 0;
+  DEBUG_PRECONDITION_FLOATING_EQ(++calls, ++calls, ++calls, ++calls);
+  EXPECT_EQ(calls, 0);
 }
 
 TEST(DebugMacrosNoOp, DebugTraceModuleDoesNothing)
