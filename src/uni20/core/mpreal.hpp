@@ -2,6 +2,7 @@
 
 #include "detail/scaled_rational.hpp"
 #include "exact_constant.hpp"
+#include "math_constants.hpp"
 #include "scalar_traits.hpp"
 #include <memory>
 #include <ostream>
@@ -798,16 +799,14 @@ template <auto Provider> struct mp_constant
     friend mpreal operator*(mp_constant c, mpreal const& x) { return c.at(x.precision()) * x; }
     friend mpreal operator/(mp_constant c, mpreal const& x) { return c.at(x.precision()) / x; }
 };
+template <> struct math_constants<mpreal>
+{
+    static constexpr mp_constant<mpfr_const_pi> pi{};
+    static constexpr mp_constant<mpfr_const_log2> log_two{};
+    static constexpr mp_constant<mpfr_const_euler> euler_gamma{};
+    static constexpr mp_constant<mpfr_const_catalan> catalan{};
+};
 } // namespace detail
-
-/// \brief Precision-aware pi descriptor, evaluated by .at(p) or an approximate operand.
-template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_pi> pi{};
-/// \brief Precision-aware natural logarithm of two; finite precision is required.
-template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_log2> log_two{};
-/// \brief Precision-aware Euler-Mascheroni constant; finite precision is required.
-template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_euler> euler_gamma{};
-/// \brief Precision-aware Catalan constant; finite precision is required.
-template <std::same_as<mpreal> Real> inline constexpr detail::mp_constant<mpfr_const_catalan> catalan{};
 
 /// \brief Stream the round-trip decimal representation, independent of stream precision.
 inline std::ostream& operator<<(std::ostream& os, mpreal const& value) { return os << value.to_string(); }

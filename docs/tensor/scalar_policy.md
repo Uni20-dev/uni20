@@ -267,15 +267,18 @@ real scalars are checked for NaN and positive/negative infinity through
 components are finite. This keeps extension scalar support behind the same
 project customization points as scalar spelling and numeric limits.
 
-Use the typed constants in `std::numbers`, such as
-`std::numbers::pi_v<Real>`, when a mathematical constant participates in
-scalar-generic arithmetic. Do not widen an untyped `double` constant or a
-decimal `double` literal into a higher-precision scalar. The supported GNU
-binary128 configuration provides full-precision typed constants for
-`uni20::float128`; its tests verify that the result retains precision beyond a
-widened `double`. Uni20 does not currently duplicate `std::numbers`. If a future
-scalar provider cannot supply suitable typed standard constants, introduce a
-project customization point when integrating that provider.
+Use `uni20::pi<Real>`, `uni20::log_two<Real>` and `uni20::euler_gamma<Real>`
+from `<uni20/core/math_constants.hpp>` (also included by `math.hpp`) for the
+shared native/MPFR constant names. Native specializations are `constexpr`
+values of type `Real`, backed by `std::numbers`; configured binary128 retains
+its full precision. With `mpreal.hpp` included, the MPFR specializations are
+precision-aware descriptors: use `.at(p)` or arithmetic with an approximate
+operand to select finite precision. `catalan<mpreal>` is also available;
+native Catalan remains deferred. See [native constants](native_special_functions.md#typed-constants).
+
+Other native mathematical constants can use typed `std::numbers` values.
+Do not widen an untyped double constant or a decimal double literal into a
+higher-precision scalar. Do not choose ambient precision for an MPFR constant.
 
 ## Floating-Point Comparisons
 

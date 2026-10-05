@@ -8,7 +8,9 @@ minimum as the numerical utilities. This surface does not add MPC overloads.
 Native float32/64/80/128 use their native implementations for `tgamma`, `erf`
 and `erfc`. `lgamma`, `lgamma_sign`, `bessel_j`, and `bessel_y` also have
 [native adapters](native_special_functions.md) where platform routines are
-detected. The other functions on this page have no native adapter yet.
+detected. `beta`, `zeta` and `expint` use advertised standard-library providers
+for float/double/long double, and `pi`, `log_two`, `euler_gamma` have typed
+native constants. The other functions on this page have no native adapter yet.
 Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check
 availability with `std::invocable` on the `uni20::math` callable.

@@ -4,6 +4,46 @@
 
 namespace uni20::detail::native_math
 {
+template <class R> struct standard_special_provider
+{};
+
+// The standard feature macro guarantees float, double and long double support.
+// Extension types need their own provider: a viable std template declaration
+// alone does not establish a working, precision-preserving implementation.
+// Some libstdc++/glibc providers write signgam internally in beta and zeta.
+// Their results do not use that sign, but concurrent calls retain an upstream
+// data race. See docs/tensor/native_special_functions.md for the accepted
+// provider limitation and the restriction on application use of signgam.
+#if defined(__cpp_lib_math_special_functions) && __cpp_lib_math_special_functions >= 201603L
+template <class R>
+  requires(std::same_as<R, float> || std::same_as<R, double> || std::same_as<R, long double>)
+struct standard_special_provider<R>
+{
+    static R beta(R x, R y) { return std::beta(x, y); }
+    static R zeta(R x) { return std::riemann_zeta(x); }
+    static R expint(R x) { return std::expint(x); }
+};
+#endif
+
+template <NativeReal R>
+  requires requires(R x) { standard_special_provider<R>::beta(x, x); }
+R beta(R x, R y)
+{
+  return standard_special_provider<R>::beta(x, y);
+}
+template <NativeReal R>
+  requires requires(R x) { standard_special_provider<R>::zeta(x); }
+R zeta(R x)
+{
+  return standard_special_provider<R>::zeta(x);
+}
+template <NativeReal R>
+  requires requires(R x) { standard_special_provider<R>::expint(x); }
+R expint(R x)
+{
+  return standard_special_provider<R>::expint(x);
+}
+
 template <class R> struct lgamma_provider
 {};
 template <class R> struct bessel_provider
