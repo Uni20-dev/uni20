@@ -66,6 +66,12 @@ configuration it aliases `mplapack_binary128_t`, whose concrete spelling is
 selected by the resolved MPLAPACK package. Code that is not gated by
 `UNI20_HAS_FLOAT128` must not name `uni20::float128`.
 
+When MPFR is also enabled, binary128 imports use `mpreal{value, precision}` and
+exports use `static_cast<float128>(value)`. Both avoid intermediate narrowing to
+`long double`. Approximate and exact-rational exports round to nearest, ties to
+even, directly in the destination format, including subnormals. See
+[MPFR conversions](mpreal.md) for the dependency and rounding contracts.
+
 Runtime-facing code should use `uni20::ScalarPrecision` and
 `uni20::visit_scalar_precision` from `uni20/core/scalar_precision.hpp` instead
 of repeating configuration guards. The precision enum always recognizes

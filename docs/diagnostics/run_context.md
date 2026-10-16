@@ -303,8 +303,8 @@ including their individual precision or exact state. Unset values are rejected.
 already stored MPFR scalar (including an engaged optional). Conversions from
 text or native numbers require `as<mpreal>(precision)`; no implicit working
 precision is selected. The explicit overload accepts strings, integer storage
-types, `float`, `double`, `long double`, and MPFR values. Native floating inputs
-require finite precision. Approximate MPFR values cannot be reclassified as
+types, `float`, `double`, `long double`, supported `float128`, and MPFR values.
+Native floating inputs require finite precision. Approximate MPFR values cannot be reclassified as
 exact. Conversion back to supported native floating types checks finite overflow.
 
 Exact-rational formatting follows the

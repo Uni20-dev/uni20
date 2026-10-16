@@ -155,7 +155,7 @@ class metadata_value {
 
 #if UNI20_ENABLE_MPFR
     /// \brief Convert to mpreal at explicit precision, including optional destinations.
-    /// \details Text uses parse_real; native float/double/long double and integers are converted
+    /// \details Text uses parse_real; supported native reals (including float128) and integers are converted
     ///          directly. Exact precision admits rationals/integers, but rejects native floating inputs.
     ///          With no precision argument, as<mpreal>() only retrieves an already stored MPFR scalar.
     template <presentation::DataTableValue T>
@@ -182,6 +182,9 @@ class metadata_value {
           (try_type.template operator()<U>(), ...);
         }(static_cast<std::tuple<signed char, unsigned char, short, unsigned short, int, unsigned int, long,
                                  unsigned long, long long, unsigned long long, float, double, long double>*>(nullptr));
+#if UNI20_HAS_FLOAT128
+        try_type.template operator()<uni20::float128>();
+#endif
         if (!result) throw std::invalid_argument("incompatible metadata scalar types");
         return std::move(*result);
       }

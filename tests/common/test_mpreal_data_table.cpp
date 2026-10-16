@@ -10,6 +10,34 @@ namespace
 using namespace uni20;
 namespace p = uni20::presentation;
 
+#if UNI20_HAS_FLOAT128
+TEST(MprealMetadata, Binary128ConversionPreservesPrecisionAndChecksOverflow)
+{
+  auto native = uni20::float128(1) + numeric_limits<uni20::float128>::epsilon();
+  auto exact = mpreal{1} + pow(mpreal{2}, mpreal{-112});
+  for (auto bits : {128, 256})
+  {
+    auto precision = Precision::bits(bits);
+    auto imported = metadata_value(native).as<mpreal>(precision);
+    EXPECT_EQ(imported.precision(), precision);
+    EXPECT_EQ(imported, exact);
+    EXPECT_TRUE(metadata_value(imported).as<uni20::float128>() == native);
+    EXPECT_TRUE(metadata_value(exact).as<uni20::float128>() == native);
+    EXPECT_EQ(metadata_value(std::optional<uni20::float128>(native)).as<mpreal>(precision), exact);
+    EXPECT_EQ(metadata_value(native).as<std::optional<mpreal>>(precision)->precision(), precision);
+    EXPECT_FALSE(metadata_value(std::optional<uni20::float128>{}).as<std::optional<mpreal>>(precision));
+    EXPECT_THROW((void)metadata_value(mpreal("1e10000", precision)).as<uni20::float128>(), std::out_of_range);
+    auto largest = numeric_limits<uni20::float128>::max();
+    EXPECT_TRUE(metadata_value(mpreal(largest, precision)).as<uni20::float128>() == largest);
+    auto overflow = mpreal(largest, precision) * 2;
+    EXPECT_THROW((void)metadata_value(overflow).as<uni20::float128>(), std::out_of_range);
+    EXPECT_THROW((void)metadata_value(-overflow).as<uni20::float128>(), std::out_of_range);
+  }
+  EXPECT_THROW((void)metadata_value(native).as<mpreal>(), std::invalid_argument);
+  EXPECT_THROW((void)metadata_value(native).as<mpreal>(Precision::exact()), std::logic_error);
+}
+#endif
+
 TEST(MprealDataTable, RetainsPerValuePrecisionAndRejectsUnsetBeforeDelivery)
 {
   auto table = p::make_data_table("mixed", p::data_column<mpreal>("x"), p::data_column<std::optional<mpreal>>("y"));

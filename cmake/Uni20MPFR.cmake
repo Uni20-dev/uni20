@@ -56,3 +56,36 @@ function(uni20_find_mpfr)
   target_link_libraries(uni20_mpfr INTERFACE "${UNI20_MPFR_LIBRARY}" "${UNI20_GMP_LIBRARY}")
   mark_as_advanced(UNI20_GMP_INCLUDE_DIR UNI20_GMP_LIBRARY UNI20_MPFR_INCLUDE_DIR UNI20_MPFR_LIBRARY)
 endfunction()
+
+# Call after binary128 provider selection. The MPFR opt-in must reach consumers
+# on the command line: including mpfr.h before a Uni20 header must also work.
+function(uni20_enable_mpfr_float128)
+  include(CheckCXXSourceCompiles)
+  set(CMAKE_REQUIRED_INCLUDES "${UNI20_MPFR_INCLUDE_DIR};${UNI20_GMP_INCLUDE_DIR}")
+  set(CMAKE_REQUIRED_LIBRARIES "${UNI20_MPFR_LIBRARY};${UNI20_GMP_LIBRARY}")
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+  foreach(_type IN ITEMS _Float128 __float128)
+    set(CMAKE_REQUIRED_DEFINITIONS -DMPFR_WANT_FLOAT128 -Dmpfr_float128=${_type})
+    unset(UNI20_MPFR_FLOAT128_LINKS CACHE)
+    check_cxx_source_compiles("
+      #include <mpfr.h>
+      int main() {
+        mpfr_t x;
+        mpfr_init2(x, 113);
+        int (*volatile put)(mpfr_ptr, ${_type}, mpfr_rnd_t) = &mpfr_set_float128;
+        ${_type} (*volatile get)(mpfr_srcptr, mpfr_rnd_t) = &mpfr_get_float128;
+        put(x, static_cast<${_type}>(1), MPFR_RNDN);
+        auto value = get(x, MPFR_RNDN);
+        mpfr_clear(x);
+        return value != static_cast<${_type}>(1);
+      }" UNI20_MPFR_FLOAT128_LINKS)
+    if(UNI20_MPFR_FLOAT128_LINKS)
+      target_compile_definitions(uni20_mpfr INTERFACE MPFR_WANT_FLOAT128 mpfr_float128=${_type})
+      return()
+    endif()
+  endforeach()
+  message(FATAL_ERROR
+    "Combined MPFR and binary128 support requires MPFR's binary128 conversion API. "
+    "Use MPFR built with --enable-float128 and headers compatible with this compiler "
+    "(MPFR >= 4.2.2 for the __float128 spelling used by Clang).")
+endfunction()

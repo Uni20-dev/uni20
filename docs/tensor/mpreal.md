@@ -171,12 +171,32 @@ Arithmetic and conversions round to nearest, ties to even. Native floating-point
 inputs require a constructor with explicit precision, such as `mpreal{0.1, p}`;
 this imports the already-rounded binary64 value. Use decimal text or `_mp`
 literals to avoid that initial rounding. Plain integer operands are accepted.
-No implicit conversion to a native floating type is provided; explicit `double`
-and `long double` conversions, plus explicit `float` conversion, accept exact
+No implicit conversion to a native floating type is provided; explicit `float`,
+`double`, `long double`, and configured `uni20::float128` conversions accept exact
 and approximate values. Exact conversion rounds directly to the destination
 format, including subnormals, without an intermediate double-rounding error.
 Borrowed MPFR access still requires `.at(p)` for exact values. `copy_to(mpfr_ptr)` explicitly rounds either state into an initialized
 MPFR destination at the destination's precision.
+
+When binary128 and MPFR are both enabled, `mpreal{binary128_value, p}` imports
+all 113 significand bits before rounding to `p`; it never passes through
+`long double`. `static_cast<uni20::float128>(value)` rounds directly to binary128.
+Without configured binary128 support, the ordinary native constructor accepts
+only `float`, `double` and `long double`; a compiler extension cannot silently
+enter through `std::floating_point` and lose precision.
+Signed zeros and infinities are preserved; NaNs remain NaNs, but their payload
+and sign are not promised. Native exports may underflow to signed zero or
+overflow to infinity. Metadata's checked conversions additionally reject finite
+overflow. Native inputs require finite `Precision`, even if their value happens
+to be an integer: they are not implicitly reclassified as exact rationals.
+
+These conversions use MPFR's native binary128 API. CMake checks that both
+conversion functions compile and link, then propagates `MPFR_WANT_FLOAT128` and
+the compiler's supported `mpfr_float128` spelling to consumers, including those
+that include `mpfr.h` first. MPFR must be built with binary128 support. Clang's
+`__float128` spelling needs headers supporting the `mpfr_float128` customization
+(MPFR 4.2.2 or newer); older headers restricted to `_Float128` fail configuration
+with a diagnostic. See the [MPFR type documentation](https://www.mpfr.org/mpfr-current/mpfr.html#Nomenclature-and-Types).
 
 ## Exact literal arithmetic
 
