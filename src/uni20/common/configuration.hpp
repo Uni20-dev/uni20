@@ -25,6 +25,14 @@ class configuration;
 }
 using attribute_map = std::map<std::string, metadata_value>;
 
+/// \brief Binding values whose textual conversion needs no runtime precision choice.
+/// \details Runtime-precision reals, including optional values, must be resolved as text and
+///          converted with explicit Precision afterwards. Metadata storage remains unrestricted.
+template <typename T>
+concept ConfigurationValue =
+    presentation::DataTableValue<T> &&
+    !presentation::data_table_detail::runtime_real<presentation::data_table_detail::value_type<T>>;
+
 struct resolved_value
 {
     metadata_value value;
@@ -102,13 +110,13 @@ class configuration {
         : environment_(std::move(reader))
     {}
 
-    template <presentation::DataTableValue T> configuration_binding& add(std::string id, T initial)
+    template <ConfigurationValue T> configuration_binding& add(std::string id, T initial)
     {
       auto& binding = this->add<T>(std::move(id));
       binding.default_ = metadata_value(std::move(initial));
       return binding;
     }
-    template <presentation::DataTableValue T> configuration_binding& add(std::string id)
+    template <ConfigurationValue T> configuration_binding& add(std::string id)
     {
       metadata_detail::dt::validate_identifier(id);
       if (bindings_.contains(id)) throw std::invalid_argument("duplicate configuration field: " + id);
@@ -197,7 +205,8 @@ class configuration {
       }
       return selected;
     }
-    template <presentation::DataTableValue T> [[nodiscard]] T get(std::string const& id) const
+    /// \brief Resolve and convert a value without choosing a runtime precision.
+    template <ConfigurationValue T> [[nodiscard]] T get(std::string const& id) const
     {
       auto result = this->resolve(id);
       if (!result) throw std::invalid_argument("configuration field has no value: " + id);

@@ -40,7 +40,7 @@ class configuration {
     /// \details Conversion and validators remain on the original CLI11 option. Fallback values cross that
     ///          textual boundary using native round-trip formatting, including exact half-integers.
     /// \pre target is the variable assigned by this option's original CLI11 callback.
-    template <presentation::DataTableValue T>
+    template <ConfigurationValue T>
       requires(!presentation::data_table_detail::optional_traits<T>::optional)
     configuration_binding& bind(CLI::Option* option, T& target, std::string id)
     {

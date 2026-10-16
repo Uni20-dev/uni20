@@ -28,14 +28,14 @@ static_assert(!CanAppend<p::data_table<uni20::half_int>, double>);
 static_assert(CanAppend<p::data_table<std::optional<uni20::half_int>>, std::nullopt_t>);
 
 #if UNI20_ENABLE_MPFR
-// Runtime precision needs its own column schema and exact-value export contract.
-// Reject it at schema construction, not later inside a formatter or JSON writer.
 template <typename T>
 concept CanDeclareColumn = requires { typename p::data_column<T>; };
-static_assert(!p::DataTableValue<uni20::mpreal>);
-static_assert(!p::DataTableValue<std::optional<uni20::mpreal>>);
-static_assert(!CanDeclareColumn<uni20::mpreal>);
-static_assert(!CanDeclareColumn<std::optional<uni20::mpreal>>);
+static_assert(p::DataTableValue<uni20::mpreal>);
+static_assert(p::DataTableValue<std::optional<uni20::mpreal>>);
+static_assert(CanDeclareColumn<uni20::mpreal>);
+static_assert(CanDeclareColumn<std::optional<uni20::mpreal>>);
+static_assert(CanAppend<p::data_table<uni20::mpreal>, int>);
+static_assert(!CanAppend<p::data_table<uni20::mpreal>, double>); // No implicit working precision.
 #endif
 
 TEST(DataTable, OwnsValuesAndUsesSchemaConversions)

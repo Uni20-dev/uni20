@@ -8,13 +8,63 @@
 
 using namespace uni20;
 
+template <typename T>
+concept CanAddConfiguration = requires(configuration& config) { config.template add<T>("value"); };
+template <typename T>
+concept CanAddConfigurationDefault = requires(configuration& config, T value) { config.add("value", value); };
+template <typename T>
+concept CanGetConfiguration = requires(configuration const& config) { config.template get<T>("value"); };
+static_assert(CanAddConfiguration<double> && CanAddConfigurationDefault<double>);
+static_assert(CanAddConfiguration<half_int> && CanAddConfigurationDefault<half_int>);
+static_assert(CanAddConfiguration<std::string> && CanAddConfigurationDefault<std::string>);
+static_assert(CanAddConfiguration<std::optional<double>> && CanAddConfigurationDefault<std::optional<double>>);
+static_assert(CanGetConfiguration<double>);
+static_assert(CanGetConfiguration<half_int>);
+static_assert(CanGetConfiguration<std::string>);
+static_assert(CanGetConfiguration<std::optional<double>>);
+
 #if UNI20_ENABLE_MPFR
 template <typename T>
 concept CanConvertMetadata = requires(metadata_value const& value) { value.template as<T>(); };
-static_assert(!std::constructible_from<metadata_value, mpreal>);
-static_assert(!std::constructible_from<metadata_value, std::optional<mpreal>>);
-static_assert(!CanConvertMetadata<mpreal>);
-static_assert(!CanConvertMetadata<std::optional<mpreal>>);
+static_assert(std::constructible_from<metadata_value, mpreal>);
+static_assert(std::constructible_from<metadata_value, std::optional<mpreal>>);
+static_assert(CanConvertMetadata<mpreal>);
+static_assert(CanConvertMetadata<std::optional<mpreal>>);
+static_assert(!CanAddConfiguration<mpreal>);
+static_assert(!CanAddConfigurationDefault<mpreal>);
+static_assert(!CanAddConfiguration<std::optional<mpreal>>);
+static_assert(!CanAddConfigurationDefault<std::optional<mpreal>>);
+static_assert(!CanGetConfiguration<mpreal>);
+static_assert(!CanGetConfiguration<std::optional<mpreal>>);
+
+TEST(Configuration, MpfrTextSourcesUseExplicitPrecisionAfterResolution)
+{
+  std::string text = "1.000000000000000000000000000000000000000000000000000000000000000001";
+  configuration config([&](auto const&) -> std::optional<std::string> { return text; });
+  config.add<std::string>("value").environment("VALUE").attribute("input", "value").file("value");
+  for (auto source :
+       {configuration_source::environment, configuration_source::attribute, configuration_source::option_file})
+  {
+    if (source == configuration_source::attribute) config.attributes("input", {{"value", text}});
+    if (source == configuration_source::option_file) config.option_file("input.toml", {{"value", text}});
+    auto resolved = config.resolve("value");
+    ASSERT_TRUE(resolved);
+    EXPECT_EQ(resolved->origin.source, source);
+    EXPECT_EQ(resolved->value.get<std::string>(), text);
+    for (auto bits : {128, 256})
+    {
+      auto precision = Precision::bits(bits);
+      auto value = resolved->value.as<mpreal>(precision);
+      EXPECT_EQ(value.precision(), precision);
+      EXPECT_EQ(value, parse_real<mpreal>(text, precision));
+      EXPECT_EQ(value > mpreal(1), bits == 256);
+    }
+  }
+  config.set("value", "1/3");
+  auto exact = config.resolve("value")->value.as<mpreal>(Precision::exact());
+  EXPECT_TRUE(exact.is_exact());
+  EXPECT_EQ(exact.to_string(), "1/3");
+}
 #endif
 
 TEST(Metadata, OwnsTextAndRetainsNativeTypes)

@@ -119,6 +119,8 @@ template <typename T> display::formatted_cell terminal_cell(T const& value, data
     {
       candidate = uni20::isfinite(value);
       exception = !candidate;
+      if constexpr (runtime_real<T>)
+        if (value.is_exact() && format.fractions) candidate = false;
     }
     else if constexpr (integer<T>)
       candidate = true;

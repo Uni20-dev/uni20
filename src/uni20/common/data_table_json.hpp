@@ -46,6 +46,17 @@ template <typename T> void write_json_value(json_output& out, T const& value)
   }
   else if constexpr (std::same_as<T, std::string>)
     write_json_string(out.stream, value);
+  else if constexpr (runtime_real<T>)
+  {
+    out << "{\"value\":";
+    write_json_string(out.stream, value.is_exact() ? value.to_string() : cell_text(value, {}, true));
+    out << ",\"precision\":";
+    if (value.is_exact())
+      out << "\"exact\"";
+    else
+      out << fmt::format("{}", value.precision().bit_count());
+    out << '}';
+  }
   else if constexpr (Real<T>)
     write_json_string(out.stream, cell_text(value, {}, true));
   else if constexpr (integer<T>)
@@ -74,9 +85,10 @@ template <DataTableValue T> void write_json_column(json_output& out, data_column
   if constexpr (half_integer<V>)
   {
     out << "\"half_int\",\"storage_bits\":"
-        << fmt::format("{}", uni20::numeric_limits<typename V::value_type>::digits + 1)
-        << ",\"encoding\":\"number\"";
+        << fmt::format("{}", uni20::numeric_limits<typename V::value_type>::digits + 1) << ",\"encoding\":\"number\"";
   }
+  else if constexpr (runtime_real<V>)
+    out << "\"real\",\"radix\":2,\"precision\":\"per_value\",\"encoding\":\"value_precision\"";
   else if constexpr (Real<V>)
   {
     out << "\"real\",\"radix\":" << fmt::format("{}", uni20::numeric_limits<V>::radix)
@@ -158,7 +170,8 @@ inline void write_json_end(json_output& out, table_metadata const* summary)
 } // namespace data_table_detail
 
 /// \brief Write an ordered schema and typed rows, preserving real and integer precision.
-/// \details Reals and wide integers are decimal strings; half-integers are JSON numbers formatted exactly
+/// \details Fixed-precision reals and wide integers are decimal strings; MPFR cells pair a value string
+///          with its bit count or "exact" tag. Half-integers are JSON numbers formatted exactly
 ///          without floating-point conversion. Readers choose their own numeric precision.
 ///          UTF-8 text is validated. The caller owns the stream and must check flush/close errors.
 ///          In-progress snapshots omit the final summary. No-retention tables reject snapshots before writing.

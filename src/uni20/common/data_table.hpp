@@ -50,15 +50,19 @@ concept integer =
     std::same_as<T, unsigned short> || std::same_as<T, int> || std::same_as<T, unsigned int> || std::same_as<T, long> ||
     std::same_as<T, unsigned long> || std::same_as<T, long long> || std::same_as<T, unsigned long long>;
 
-// Table schemas and metadata conversions require fixed limits and a lossless
-// formatter. Real<T> alone also admits runtime-precision and third-party scalars.
+template <typename T> inline constexpr bool runtime_real = false;
+#if UNI20_ENABLE_MPFR
+template <> inline constexpr bool runtime_real<mpreal> = true;
+#endif
+
+// Admit only scalars with a matching formatting, schema and conversion contract.
 template <typename T>
 concept supported_real = std::same_as<T, float> || std::same_as<T, double> || std::same_as<T, long double>
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
     (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
                          || std::same_as<T, uni20::float128>
 #endif
-    ;
+                         || runtime_real<T>;
 
 template <typename To, typename From> consteval bool accepts()
 {
@@ -128,6 +132,11 @@ To convert(From&& input)
       if (input == nullptr) throw std::invalid_argument("null data table string");
     return std::string(std::forward<From>(input));
   }
+  else if constexpr (runtime_real<F>)
+  {
+    if (!input.initialized()) throw std::invalid_argument("unset data table value; use optional for missing data");
+    return static_cast<To>(std::forward<From>(input));
+  }
   else
     return static_cast<To>(std::forward<From>(input));
 }
@@ -151,9 +160,15 @@ class classic_numeric_locale {
 
 template <Real T> std::string real_text(T value, scalar_format_options options)
 {
+  if constexpr (runtime_real<T>)
+  {
+    classic_numeric_locale locale;
+    return uni20::format_real(value, options);
+  }
+  else
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
     (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
-  if constexpr (std::same_as<T, uni20::float128>)
+      if constexpr (std::same_as<T, uni20::float128>)
   {
     classic_numeric_locale locale;
     return uni20::format_real(value, options);
@@ -169,8 +184,7 @@ template <Real T> std::string real_text(T value, scalar_format_options options)
 
 /// \brief Types retained directly by data tables, without numerical narrowing or text conversion.
 /// \details Optional string columns are excluded until their delimited null encoding is specified.
-///          Real columns require a supported fixed-precision representation; mpreal and other
-///          extension scalars need explicit schema, parsing and export support before admission.
+///          Supported real columns include mpreal when MPFR is enabled; values retain their own precision.
 template <typename T>
 concept DataTableValue =
     std::same_as<T, std::remove_cvref_t<T>> &&
@@ -227,26 +241,27 @@ template <DataTableValue T> class data_column {
       return *this;
     }
 
-    /// \brief Use digits after the decimal point for real display; -1 selects the type's max_digits10.
+    /// \brief Use fractional decimal digits; -1 selects native max_digits10 or approximate MPFR round-trip digits.
     data_column& fixed(int digits)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::fixed, digits);
     }
-    /// \brief Use digits after the mantissa's decimal point; -1 selects the type's max_digits10.
+    /// \brief Use fractional mantissa digits; -1 selects native max_digits10 or approximate MPFR round-trip digits.
     data_column& scientific(int digits)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::scientific, digits);
     }
-    /// \brief Use significant digits for real display; -1 selects the type's max_digits10.
+    /// \brief Use significant digits; -1 selects native max_digits10 or approximate MPFR round-trip digits.
     data_column& general(int digits = -1)
       requires Real<data_table_detail::value_type<T>>
     {
       return this->set_numeric(real_format_notation::general, digits);
     }
     /// \brief Recover finite real values from their text, including the sign of zero.
-    /// \details Selects general notation with max_digits10 and disables negative-zero normalization.
+    /// \details Selects general notation with native max_digits10 or the approximate MPFR value's digit count
+    ///          and disables negative-zero normalization. Exact nonintegers require fractional() instead.
     ///          A later fixed/scientific/general call replaces this numeric format with ordinary display formatting.
     data_column& round_trip()
       requires Real<data_table_detail::value_type<T>>
@@ -255,9 +270,11 @@ template <DataTableValue T> class data_column {
       display_.numeric.normalize_negative_zero = false;
       return *this;
     }
-    /// \brief Display exact fractions instead of exact decimals for half-integers.
+    /// \brief Select exact fractions for half-integers or exact mpreal values.
+    /// \details For mpreal this also selects fraction output in CSV/TSV; approximate values are unchanged.
     data_column& fractional(bool enabled = true)
-      requires data_table_detail::half_integer<data_table_detail::value_type<T>>
+      requires(data_table_detail::half_integer<data_table_detail::value_type<T>> ||
+               data_table_detail::runtime_real<data_table_detail::value_type<T>>)
     {
       display_.fractions = enabled;
       return *this;
@@ -276,6 +293,7 @@ template <DataTableValue T> class data_column {
       display_.numeric.notation = notation;
       display_.numeric.precision = digits;
       display_.numeric.normalize_negative_zero = true;
+      if constexpr (data_table_detail::runtime_real<data_table_detail::value_type<T>>) display_.fractions = false;
       return *this;
     }
     std::string identifier_;
@@ -633,6 +651,14 @@ template <typename T> std::string cell_text(T const& value, data_column_display 
   else
   {
     scalar_format_options options = machine ? scalar_format_options{} : display.numeric;
+    if constexpr (runtime_real<T>)
+    {
+      // Exact values have no max_digits10: the caller must select fractions or
+      // a decimal digit count. Machine output uses this choice for exact values
+      // only; approximate values keep their own round-trip precision.
+      if (value.is_exact()) options = display.numeric;
+      options.exact_fractions = display.fractions;
+    }
     if (machine) options.normalize_negative_zero = false;
     return real_text(value, options);
   }

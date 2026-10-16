@@ -225,6 +225,11 @@ Resolution must preserve these contracts:
   native `parse_real<Real>` and checks in that type. Preserve already typed
   attribute/API values through checked conversions without a `double` or
   presentation-string intermediate. Half-integer inputs retain exact semantics.
+  Configuration bindings and retrieval use `ConfigurationValue`, which excludes
+  `mpreal` and optional `mpreal`: `add`, `get`, and CLI `bind` have no runtime
+  precision parameter.
+  Resolve these inputs as strings, then convert the selected metadata value with
+  `as<mpreal>(precision)` before publishing it as typed run metadata.
 - Return owned values and origin descriptions together. Origins distinguish CLI,
   API, file/key, input identifier/attribute, environment name and application
   default. They must not borrow parser buffers, environment pointers or a loaded
@@ -292,6 +297,23 @@ without intermediate narrowing. Half-integers use exact decimal spelling from
 integer storage, not a conversion through `double`. Missing values remain
 distinct from zero and from a present nonfinite value inside the context.
 
+With MPFR enabled, `metadata_value` also retains `mpreal` and optional `mpreal`,
+including their individual precision or exact state. Unset values are rejected.
+`get<mpreal>()` accesses the retained value and `as<mpreal>()` retrieves an
+already stored MPFR scalar (including an engaged optional). Conversions from
+text or native numbers require `as<mpreal>(precision)`; no implicit working
+precision is selected. The explicit overload accepts strings, integer storage
+types, `float`, `double`, `long double`, and MPFR values. Native floating inputs
+require finite precision. Approximate MPFR values cannot be reclassified as
+exact. Conversion back to supported native floating types checks finite overflow.
+
+Exact-rational formatting follows the
+[table policy](data_tables.md#runtime-precision-and-exact-fractions): set
+`.display.fractions = true` to retain a fraction spelling, or an explicit
+`.display.numeric` notation and digit count for decimal rounding. This choice
+also governs exact values in `metadata_document::strings()`, whereas approximate
+values always use round-trip text in that projection.
+
 Identifiers follow the existing data-column identifier grammar and are unique
 across the run. Duplicate declarations are errors. Explicit replacement of a
 field preserves its identity, position and declared type; parameter resolution
@@ -304,7 +326,8 @@ they actually use, including defaults and derived values.
 The first implementation projects typed fields into the existing
 `table_metadata` string map. It does **not** change Uni20's table JSON schema.
 That projection preserves numeric text precision, but does not preserve field
-types, group ordering or typed nulls in the exported metadata map. Those remain
+types, MPFR bit counts or exact/approximate tags, group ordering or typed nulls
+in the exported metadata map. Those remain
 available in the run context; a future structured metadata format is separate
 work and would need an explicit schema.
 

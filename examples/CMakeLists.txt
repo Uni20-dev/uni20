@@ -4,6 +4,8 @@ function(uni20_add_example target source)
 endfunction()
 
 if(UNI20_ENABLE_MPFR)
+  uni20_add_example(mpreal_data_table_example presentation/mpreal_data_table_example.cpp uni20_common)
+  add_test(NAME MpRealDataTableExample COMMAND mpreal_data_table_example)
   uni20_add_example(mpreal_example common/mpreal_example.cpp uni20_core)
   add_test(NAME MpRealExample COMMAND mpreal_example)
   uni20_add_example(mpreal_exact_example common/mpreal_exact_example.cpp uni20_core)
