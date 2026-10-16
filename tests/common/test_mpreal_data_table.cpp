@@ -10,7 +10,8 @@ namespace
 using namespace uni20;
 namespace p = uni20::presentation;
 
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
 TEST(MprealMetadata, Binary128ConversionPreservesPrecisionAndChecksOverflow)
 {
   auto native = uni20::float128(1) + numeric_limits<uni20::float128>::epsilon();

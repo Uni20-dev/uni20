@@ -52,6 +52,9 @@ Real output supports `float`, `double`, `long double`, the MPLAPACK native
 `_Float128` provider of `uni20::float128`, and `mpreal` when MPFR is enabled.
 Optional forms are supported too. Other `Real` types still require a matching
 formatting, schema and conversion contract before admission.
+In particular, MPLAPACK's quadmath `__float128` mode is not yet a table or
+metadata scalar, even when direct `mpreal` conversions are available. Enabling
+that provider does not disable conversions among supported metadata types.
 Formatting is locale independent, including the native binary128 and MPFR
 C-library paths, which select the C numeric locale for the calling thread only.
 

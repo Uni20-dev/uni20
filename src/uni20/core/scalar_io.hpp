@@ -195,11 +195,11 @@ template <typename T> [[nodiscard]] std::string fmt_real(T value, scalar_format_
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
 [[nodiscard]] inline std::string format_float128(uni20::float128 value, scalar_format_options const& options)
 {
+#if defined(MPLAPACK_BINARY128_MODE) && (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
   int const precision = effective_precision<uni20::float128>(options);
   char const notation = printf_notation(options.notation);
   std::string const format = fmt::format("%.{}{}", precision, notation);
 
-#if defined(MPLAPACK_BINARY128_MODE) && (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
   char fixed_buffer[128] = {};
   int const fixed_count = ::strfromf128(fixed_buffer, sizeof(fixed_buffer), format.c_str(), value);
   if (fixed_count < 0)
@@ -220,6 +220,9 @@ template <typename T> [[nodiscard]] std::string fmt_real(T value, scalar_format_
   dynamic_buffer.resize(static_cast<std::size_t>(dynamic_count));
   return dynamic_buffer;
 #else
+  // This diagnostic fallback does not require binary128 numeric_limits, which
+  // older standard libraries may omit. It is not admitted by DataTableValue.
+  (void)options;
   return fmt::format("{}", static_cast<long double>(value));
 #endif
 }

@@ -105,7 +105,9 @@ class metadata_value {
           if (auto p = std::any_cast<std::string>(&scalar)) return metadata_detail::parse<T>(*p);
           std::optional<T> result;
           auto try_type = [&]<typename U>() {
-            if constexpr (dt::accepts<T, U>())
+            // Only stored types can occur in the any. A configured scalar may
+            // have core conversions without the lossless table I/O contract.
+            if constexpr (presentation::DataTableValue<U> && dt::accepts<T, U>())
               if (auto p = std::any_cast<U>(&scalar))
               {
                 // T belongs to the enclosing template, U to this generic lambda.
@@ -176,7 +178,8 @@ class metadata_value {
         if (auto p = std::any_cast<std::string>(&scalar)) return parse_real<mpreal>(*p, precision);
         std::optional<mpreal> result;
         auto try_type = [&]<typename U>() {
-          if (auto p = std::any_cast<U>(&scalar)) result.emplace(*p, precision);
+          if constexpr (presentation::DataTableValue<U>)
+            if (auto p = std::any_cast<U>(&scalar)) result.emplace(*p, precision);
         };
         [&]<typename... U>(std::tuple<U...>*) {
           (try_type.template operator()<U>(), ...);
