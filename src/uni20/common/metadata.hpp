@@ -61,12 +61,12 @@ template <typename T> T parse(std::string_view text)
 
 /// \brief An immutable owned value that retains its native scalar and optional type.
 /// \details Copies share immutable storage. Text views and C strings are copied on entry.
-///          Supported types follow presentation::DataTableValue, including its fixed-precision
-///          real boundary. Runtime-precision values require a separate conversion/export contract.
+///          Supported types follow presentation::DataTableValue. MPFR values retain their
+///          exact/approximate state and precision; conversion to MPFR requires explicit precision.
 class metadata_value {
   public:
     template <presentation::DataTableValue T>
-    metadata_value(T value) : storage_(std::make_shared<model<T>>(std::move(value)))
+    metadata_value(T value) : storage_(std::make_shared<model<T>>(metadata_detail::dt::convert<T>(std::move(value))))
     {}
     metadata_value(std::string_view text) : metadata_value(std::string(text)) {}
     metadata_value(char const* text) : metadata_value(copy_text(text)) {}
@@ -98,43 +98,95 @@ class metadata_value {
         if (this->missing()) throw std::invalid_argument("missing value for a non-optional field");
         auto const& scalar = storage_->scalar();
         if (auto p = std::any_cast<T>(&scalar)) return *p;
-        if (auto p = std::any_cast<std::string>(&scalar)) return metadata_detail::parse<T>(*p);
-        std::optional<T> result;
-        auto try_type = [&]<typename U>() {
-          if constexpr (dt::accepts<T, U>())
-            if (auto p = std::any_cast<U>(&scalar))
-            {
-              // T belongs to the enclosing template, U to this generic lambda.
-              // Discard non-real destinations before inspecting their limits.
-              if constexpr (Real<T>)
+        if constexpr (dt::runtime_real<T>)
+          throw std::invalid_argument("conversion to mpreal requires explicit Precision");
+        else
+        {
+          if (auto p = std::any_cast<std::string>(&scalar)) return metadata_detail::parse<T>(*p);
+          std::optional<T> result;
+          auto try_type = [&]<typename U>() {
+            if constexpr (dt::accepts<T, U>())
+              if (auto p = std::any_cast<U>(&scalar))
               {
-                if constexpr (Real<U>)
+                // T belongs to the enclosing template, U to this generic lambda.
+                // Discard non-real destinations before inspecting their limits.
+                if constexpr (Real<T>)
                 {
-                  if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
-                                (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
-                                 uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
-                    if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
-                                                *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
+                  if constexpr (dt::runtime_real<U>)
+                  {
+#if UNI20_ENABLE_MPFR
+                    auto bound =
+                        mpreal(uni20::numeric_limits<T>::max(), Precision::bits(uni20::numeric_limits<T>::digits));
+                    if (uni20::isfinite(*p) && (*p > bound || *p < -bound))
                       throw std::out_of_range("real conversion overflow");
+#endif
+                  }
+                  else if constexpr (Real<U>)
+                  {
+                    if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
+                                  (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
+                                   uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
+                      if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
+                                                  *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
+                        throw std::out_of_range("real conversion overflow");
+                  }
                 }
+                auto converted = dt::convert<T>(*p);
+                result = std::move(converted);
               }
-              auto converted = dt::convert<T>(*p);
-              result = std::move(converted);
-            }
+          };
+          [&]<typename... U>(std::tuple<U...>*) {
+            (try_type.template operator()<U>(), ...);
+          }(static_cast<
+              std::tuple<signed char, unsigned char, short, unsigned short, int, unsigned int, long, unsigned long,
+                         long long, unsigned long long, float, double, long double, basic_half_int<std::intmax_t>>*>(
+              nullptr));
+#if UNI20_HAS_FLOAT128
+          try_type.template operator()<uni20::float128>();
+#endif
+#if UNI20_ENABLE_MPFR
+          try_type.template operator()<mpreal>();
+#endif
+          if (!result) throw std::invalid_argument("incompatible metadata scalar types");
+          return std::move(*result);
+        }
+      }
+    }
+
+#if UNI20_ENABLE_MPFR
+    /// \brief Convert to mpreal at explicit precision, including optional destinations.
+    /// \details Text uses parse_real; native float/double/long double and integers are converted
+    ///          directly. Exact precision admits rationals/integers, but rejects native floating inputs.
+    ///          With no precision argument, as<mpreal>() only retrieves an already stored MPFR scalar.
+    template <presentation::DataTableValue T>
+      requires metadata_detail::dt::runtime_real<metadata_detail::dt::value_type<T>>
+    [[nodiscard]] T as(Precision precision) const
+    {
+      namespace dt = metadata_detail::dt;
+      if constexpr (dt::optional_traits<T>::optional)
+      {
+        if (this->missing()) return std::nullopt;
+        return this->as<mpreal>(precision);
+      }
+      else
+      {
+        if (this->missing()) throw std::invalid_argument("missing value for a non-optional field");
+        auto const& scalar = storage_->scalar();
+        if (auto p = std::any_cast<mpreal>(&scalar)) return p->at(precision);
+        if (auto p = std::any_cast<std::string>(&scalar)) return parse_real<mpreal>(*p, precision);
+        std::optional<mpreal> result;
+        auto try_type = [&]<typename U>() {
+          if (auto p = std::any_cast<U>(&scalar)) result.emplace(*p, precision);
         };
         [&]<typename... U>(std::tuple<U...>*) {
           (try_type.template operator()<U>(), ...);
-        }(static_cast<
-            std::tuple<signed char, unsigned char, short, unsigned short, int, unsigned int, long, unsigned long,
-                       long long, unsigned long long, float, double, long double, basic_half_int<std::intmax_t>>*>(
-            nullptr));
-#if UNI20_HAS_FLOAT128
-        try_type.template operator()<uni20::float128>();
-#endif
+        }(static_cast<std::tuple<signed char, unsigned char, short, unsigned short, int, unsigned int, long,
+                                 unsigned long, long long, unsigned long long, float, double, long double>*>(nullptr));
         if (!result) throw std::invalid_argument("incompatible metadata scalar types");
         return std::move(*result);
       }
     }
+#endif
 
   private:
     struct interface
@@ -307,7 +359,7 @@ class metadata_document {
         for (auto const& field : group.fields)
         {
           auto key = keys.contains(field.id) ? keys.at(field.id) : field.id;
-          if (!result.emplace(key, field.value.text({}, true)).second)
+          if (!result.emplace(key, field.value.text(field.options.display, true)).second)
             throw std::invalid_argument("duplicate metadata export key: " + key);
         }
       return result;

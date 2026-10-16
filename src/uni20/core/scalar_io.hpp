@@ -40,14 +40,96 @@ struct scalar_format_options
     real_format_notation notation = real_format_notation::general;
     bool normalize_negative_zero = true;
     std::string_view imaginary_unit = "i";
+    /// Exact rationals use fractions unless decimal rounding is explicitly requested.
+    bool exact_fractions = true;
 };
 
 namespace detail
 {
 #if UNI20_ENABLE_MPFR
+// Decimal rounding of an exact rational must not pass through a binary float:
+// even an arbitrarily wide temporary can move a decimal halfway case off its tie.
+inline std::string format_exact_decimal(exact_constant const& value, scalar_format_options const& options)
+{
+  auto q = value.native_handle();
+  int const requested = options.precision;
+  if (requested < 0)
+  {
+    if (requested == -1 && mpz_cmp_ui(mpq_denref(q), 1) == 0) return value.to_string();
+    throw std::invalid_argument("exact decimal output requires an explicit digit count or fraction formatting");
+  }
+  if (requested == 0 && options.notation == real_format_notation::general)
+    throw std::invalid_argument("general decimal output requires a positive digit count");
+
+  mp_integer numerator, denominator, power, rounded, remainder;
+  mpz_abs(numerator.value, mpq_numref(q));
+  mpz_set(denominator.value, mpq_denref(q));
+  bool const negative = mpq_sgn(q) < 0;
+  long exponent = 0;
+  bool const fixed = options.notation == real_format_notation::fixed;
+  bool const general = options.notation == real_format_notation::general;
+  if (!fixed && mpz_sgn(numerator.value) != 0)
+  {
+    // Decimal digit estimates can be one too large. Correct them by exact comparisons.
+    exponent = static_cast<long>(mpz_sizeinbase(numerator.value, 10)) -
+               static_cast<long>(mpz_sizeinbase(denominator.value, 10));
+    auto compare_power = [&](long e) {
+      mpz_ui_pow_ui(power.value, 10, static_cast<unsigned long>(e < 0 ? -e : e));
+      if (e >= 0)
+      {
+        mpz_mul(remainder.value, denominator.value, power.value);
+        return mpz_cmp(numerator.value, remainder.value);
+      }
+      mpz_mul(remainder.value, numerator.value, power.value);
+      return mpz_cmp(remainder.value, denominator.value);
+    };
+    while (compare_power(exponent) < 0)
+      --exponent;
+    while (compare_power(exponent + 1) >= 0)
+      ++exponent;
+  }
+  long const fractional = general ? static_cast<long>(requested) - 1 : requested;
+  long const scale = fixed ? requested : fractional - exponent;
+  mpz_ui_pow_ui(power.value, 10, static_cast<unsigned long>(scale < 0 ? -scale : scale));
+  if (scale >= 0)
+    mpz_mul(numerator.value, numerator.value, power.value);
+  else
+    mpz_mul(denominator.value, denominator.value, power.value);
+  mpz_tdiv_qr(rounded.value, remainder.value, numerator.value, denominator.value);
+  mpz_mul_2exp(remainder.value, remainder.value, 1);
+  int const halfway = mpz_cmp(remainder.value, denominator.value);
+  if (halfway > 0 || (halfway == 0 && mpz_odd_p(rounded.value))) mpz_add_ui(rounded.value, rounded.value, 1);
+  std::string digits(mpz_sizeinbase(rounded.value, 10) + 2, '\0');
+  mpz_get_str(digits.data(), 10, rounded.value);
+  digits.resize(std::char_traits<char>::length(digits.c_str()));
+  if (!fixed && digits.size() > static_cast<std::size_t>(fractional + 1))
+  {
+    digits.pop_back(); // A rounding carry, e.g. 9.995 -> 1.000e+01.
+    ++exponent;
+  }
+  bool const scientific = !fixed && (!general || exponent < -4 || exponent >= requested);
+  long const decimal_places = fixed ? requested : (scientific ? fractional : fractional - exponent);
+  if (decimal_places > 0)
+  {
+    auto places = static_cast<std::size_t>(decimal_places);
+    if (digits.size() <= places) digits.insert(0, places + 1 - digits.size(), '0');
+    digits.insert(digits.size() - places, 1, '.');
+    if (general)
+    {
+      while (digits.back() == '0')
+        digits.pop_back();
+      if (digits.back() == '.') digits.pop_back();
+    }
+  }
+  if (scientific) digits += fmt::format("e{}{:02}", exponent < 0 ? '-' : '+', exponent < 0 ? -exponent : exponent);
+  if (negative) digits.insert(0, 1, '-');
+  return digits;
+}
+
 inline std::string format_mpreal(mpreal const& value, scalar_format_options const& options)
 {
-  if (value.is_exact()) return value.to_string();
+  if (value.is_exact())
+    return options.exact_fractions ? value.to_string() : format_exact_decimal(value.exact_value(), options);
   auto const requested = options.precision < 0 ? mpfr_get_str_ndigits(10, value.precision().bit_count())
                                                : static_cast<std::size_t>(options.precision);
   if (requested > static_cast<std::size_t>(std::numeric_limits<int>::max()))

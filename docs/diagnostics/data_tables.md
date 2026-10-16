@@ -39,7 +39,7 @@ with retention disabled. `data_table<Ts...>::make_row(...)` performs the same
 checked conversion as `append` without requiring retained history.
 
 Supported columns are the standard signed/unsigned integer storage types,
-`bool`, the fixed-precision real types listed below, `basic_half_int<T>`, `std::string`, and optional
+`bool`, the real types listed below, `basic_half_int<T>`, `std::string`, and optional
 numeric/boolean/half-integer values. Plain character types, borrowed string
 views, optional strings and complex values are not column types. String views
 are accepted as insertion inputs and copied; null C string pointers are rejected.
@@ -48,17 +48,12 @@ failures throw `std::overflow_error`; invalid schema identifiers, duplicate
 identifiers and invalid display precisions throw `std::invalid_argument`.
 Identifiers follow `[A-Za-z_][A-Za-z0-9_]*`.
 
-Real output supports `float`, `double`, `long double`, and the MPLAPACK native
-`_Float128` provider of `uni20::float128`. `DataTableValue` rejects other real
-types, including `mpreal` and `std::optional<mpreal>`, at schema construction.
-The same boundary applies to `metadata_value` construction and conversion.
-Being a Uni20 `Real` does not by itself provide table support: runtime precision
-needs a schema for per-value precision and exact rationals, explicit parsing and
-conversion precision, and matching export support. Until that contract is added,
-applications can explicitly format such values into string columns or metadata;
-these remain text rather than typed numeric data.
-Formatting is locale independent, including the native binary128 C-library path,
-which temporarily selects the C numeric locale for the calling thread only.
+Real output supports `float`, `double`, `long double`, the MPLAPACK native
+`_Float128` provider of `uni20::float128`, and `mpreal` when MPFR is enabled.
+Optional forms are supported too. Other `Real` types still require a matching
+formatting, schema and conversion contract before admission.
+Formatting is locale independent, including the native binary128 and MPFR
+C-library paths, which select the C numeric locale for the calling thread only.
 
 A writer checks stream failures even when stream exceptions are disabled and
 throws `std::ios_base::failure`. It does not flush or close the caller-owned
@@ -67,6 +62,52 @@ A failed write may leave partial output, but never modifies the retained table.
 
 See the runnable [data table example](../../examples/presentation/data_table_example.cpp)
 for terminal, CSV and TSV output from the same table.
+
+### Runtime precision and exact fractions
+
+An `mpreal` column retains each value's own binary precision or exact rational
+state; it does not impose one working precision on the entire column. Integer
+inputs become exact integers. Approximate inputs must already be `mpreal` values
+constructed at an explicit precision: inserting a native floating value does not
+choose a precision implicitly. Unset values are rejected before retention or sink
+delivery; use `std::optional<mpreal>` for missing data.
+
+For exact values, choose how to format them:
+
+```cpp
+using uni20::mpreal;
+using uni20::Precision;
+auto table = p::make_data_table("Exact and approximate values",
+    p::data_column<mpreal>("fraction").fractional(),
+    p::data_column<mpreal>("decimal").fixed(6),
+    p::data_column<mpreal>("result"));
+table.append(mpreal("1/3", Precision::exact()),
+             mpreal("1/3", Precision::exact()),
+             mpreal("1/3", Precision::bits(256)));
+p::write_csv(output_stream, table);
+```
+
+This emits `1/3`, `0.333333`, and a round-trip decimal for the 256-bit value.
+The fraction spelling requires a fraction-aware reader, unlike ordinary plotting
+software. `.fixed(n)`, `.scientific(n)` and `.general(n)` round exact rationals
+directly in decimal, nearest with ties to even, without an intermediate binary
+approximation. Their digit semantics are the same as for native reals. These
+helpers reset `.fractional()`; calling `.fractional()` last selects fractions.
+Stored values are never changed. Projection overrides can choose different
+formats for different sinks.
+
+Without an explicit digit count or `.fractional()`, an exact integer emits its
+integer spelling; an exact noninteger throws `std::invalid_argument`. There is
+no `max_digits10` for an exact rational. This rule applies to human and delimited
+output, including `.round_trip()` on exact nonintegers. Approximate MPFR values
+use their own round-trip digit count by default; display digit counts affect
+CSV/TSV only with `data_export_precision::display`. Exact values use the explicit
+fraction/decimal choice even in the default delimited export mode.
+
+JSON ignores these formatting choices and always retains the exact rational or
+the approximate value and its precision. See [JSON encoding](#json-encoding).
+The [MPFR table example](../../examples/presentation/mpreal_data_table_example.cpp)
+demonstrates both formats and metadata conversion.
 
 ## Purpose and Existing Boundary
 
@@ -104,8 +145,8 @@ Use actual scalar types, including `long double` and enabled extension types.
 Do not force numbers through `double`, a fixed numeric cell variant, or formatted
 strings. Strings are data when the declared column type is a string. Boolean,
 integer, real, `basic_half_int<T>` and optional numeric columns belong in the
-first implementation. Complex and general rational columns require explicit
-writer support later; half-integers do not depend on a general rational type.
+first implementation. Complex and standalone general rational columns require
+writer support later; exact rationals carried by `mpreal` are supported.
 
 The first representation is an owning `data_table<Ts...>` with a fixed
 heterogeneous schema and rows equivalent to `std::tuple<Ts...>`. A typed column
@@ -189,8 +230,8 @@ fixed notation uses digits after the decimal point; scientific notation uses
 digits after the decimal point in the mantissa. A setting of three scientific
 fractional digits therefore displays four significant digits.
 
-`-1` selects the stored real type's `max_digits10` as the digit count in all
-three notations. Both column helpers and projection overrides accept it,
+`-1` selects the stored fixed-precision real type's `max_digits10` as the digit
+count in all three notations. Both column helpers and projection overrides accept it,
 including an override that chooses a notation and leaves precision at its
 default. Values below `-1` are rejected. Zero digits is valid for fixed and
 scientific notation, but general notation requires a positive count or `-1`.
@@ -304,11 +345,22 @@ and select numeric columns for that route.
 ### JSON Encoding
 
 Use an ordered column schema and row arrays so column order and metadata are
-explicit. For a precision-preserving mode, encode all real columns as decimal
-strings, with the scalar radix and precision recorded in the schema. This avoids
+explicit. Fixed-precision real columns use decimal strings, with the scalar
+radix and precision recorded in the schema. This avoids
 switching a column's JSON representation when moving from fp64 to fp128 and
 avoids relying on the reader's default numeric precision. Schema describes the
 actual arithmetic type, not merely the spelling `long double`.
+
+MPFR columns instead declare `type: "real"`, `radix: 2`,
+`precision: "per_value"`, and `encoding: "value_precision"`. Each present cell
+is an object, for example `{"value":"1.25","precision":256}` or
+`{"value":"1/3","precision":"exact"}`. An integer `precision` is the number
+of binary significand bits; `"exact"` denotes a canonical rational or integer
+spelling. Approximate decimal strings round-trip at the recorded precision;
+`"nan"`, `"inf"`, `"-inf"` and signed zero remain approximate values with their
+precision attached. Optional missing cells are `null`, not objects. Readers can
+reconstruct a value using `parse_real<mpreal>(text, Precision::bits(bits))` or
+`Precision::exact()`. JSON never applies a column's fraction/display policy.
 
 Use JSON booleans and `null` for booleans and missing values. A real column's
 encoding can explicitly admit `"nan"`, `"inf"` and `"-inf"`, distinct from
@@ -343,7 +395,7 @@ An unfinished snapshot omits `summary`; a finished empty summary is `{}`.
 snapshots/full replay, or the current accepted count for future-only attachment.
 A streaming JSON document is complete only after explicit finalization; it is
 not a checkpoint or interrupted-run recovery format.
-Extended mappings for complex/rational values remain future work.
+Extended mappings for complex and standalone rational types remain future work.
 JSON forbids bare NaN/infinity tokens and
 does not guarantee that consumers retain extended numeric precision; see
 [RFC 8259, numbers](https://www.rfc-editor.org/rfc/rfc8259#section-6).

@@ -498,8 +498,15 @@ exact or approximate components into an initialized destination. Stream output i
 
 ## Text and asynchronous use
 
-Exact values print as canonical fractions (`1/3`) or integers (`1`). Formatting
-options do not turn them into decimal approximations; convert with `.at(p)` first.
+Exact values print as canonical fractions (`1/3`) or integers (`1`) by default.
+For decimal formatting, pass `scalar_format_options{.precision = 6,
+.notation = real_format_notation::fixed, .exact_fractions = false}` to
+`format_real` or `format_scalar`. This rounds the rational directly in decimal,
+nearest with ties to even, without changing its stored value or introducing a
+binary intermediate. Fixed/scientific precision counts fractional digits;
+general precision counts significant digits. Decimal output requires an explicit
+digit count for noninteger rationals; without one, exact integers retain their
+integer spelling. `.at(p)` instead changes the value to a binary approximation.
 Both exact and finite-precision parsing accept fractions of signed base-ten
 integers, such as `-2/3` or `4/-6`, and canonicalize them. Finite-precision parsing
 rounds the rational once. Whitespace, decimal/exponent fraction components, and
@@ -518,8 +525,9 @@ it. `format_real`/`format_scalar` also support this type, including general, fix
 and scientific notation and negative-zero normalization. Their default precision
 is computed from the value. `parse_real<mpreal>(text, p)` requires explicit
 precision; `read_real(stream, value)` uses the destination value's current
-precision and leaves it unchanged on invalid input. Table schemas and runtime
-precision selection are not yet connected.
+precision and leaves it unchanged on invalid input.
+[Typed tables](../diagnostics/data_tables.md#runtime-precision-and-exact-fractions)
+and metadata retain `mpreal` directly, with per-cell precision in table JSON.
 
 Precision is carried by values and explicit `Precision` objects, including when
 passed in coroutine frames. Scalar operations never read or change MPFR's default
