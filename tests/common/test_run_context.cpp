@@ -23,9 +23,29 @@ static_assert(CanGetConfiguration<half_int>);
 static_assert(CanGetConfiguration<std::string>);
 static_assert(CanGetConfiguration<std::optional<double>>);
 
-#if UNI20_ENABLE_MPFR
 template <typename T>
 concept CanConvertMetadata = requires(metadata_value const& value) { value.template as<T>(); };
+
+#if UNI20_HAS_FLOAT128
+// Table support is narrower than scalar conversion support. Assert the provider
+// contract independently, rather than silently dropping tests if a concept regresses.
+#if UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                                            \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
+static_assert(presentation::DataTableValue<float128>);
+static_assert(std::constructible_from<metadata_value, float128>);
+static_assert(std::constructible_from<metadata_value, std::optional<float128>>);
+static_assert(CanConvertMetadata<float128>);
+static_assert(CanConvertMetadata<std::optional<float128>>);
+#else
+static_assert(!presentation::DataTableValue<float128>);
+static_assert(!std::constructible_from<metadata_value, float128>);
+static_assert(!std::constructible_from<metadata_value, std::optional<float128>>);
+static_assert(!CanConvertMetadata<float128>);
+static_assert(!CanConvertMetadata<std::optional<float128>>);
+#endif
+#endif
+
+#if UNI20_ENABLE_MPFR
 static_assert(std::constructible_from<metadata_value, mpreal>);
 static_assert(std::constructible_from<metadata_value, std::optional<mpreal>>);
 static_assert(CanConvertMetadata<mpreal>);
@@ -98,7 +118,8 @@ TEST(Metadata, CheckedConversions)
   EXPECT_EQ(metadata_value(basic_half_int<short>::parse("7/2")).as<half_int>(), half_int::parse("3.5"));
   EXPECT_THROW((void)metadata_value(half_int(64)).as<basic_half_int<signed char>>(), std::overflow_error);
   EXPECT_THROW((void)metadata_value(numeric_limits<double>::max()).as<float>(), std::out_of_range);
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
   // Standard-library limits may be unspecialized for the configured extension scalar.
   // Its actual exponent range must keep widening from being misdiagnosed as overflow.
   EXPECT_EQ(metadata_value(1.5).as<uni20::float128>(), uni20::float128(1.5));
@@ -106,6 +127,16 @@ TEST(Metadata, CheckedConversions)
   EXPECT_FALSE(metadata_value("false").as<bool>());
   EXPECT_EQ(metadata_value(std::optional<int>(0)).as<long>(), 0);
   EXPECT_THROW((void)metadata_value(static_cast<char const*>(nullptr)), std::invalid_argument);
+}
+
+TEST(Metadata, NativeRealConversionsWithConfiguredProviders)
+{
+  // Enabling a scalar provider excluded from DataTableValue must not prevent
+  // conversions among supported metadata types (even without MPFR enabled).
+  EXPECT_EQ(metadata_value(1.25L).as<double>(), 1.25);
+  EXPECT_EQ(metadata_value(1.25).as<long double>(), 1.25L);
+  EXPECT_EQ(metadata_value(3).as<float>(), 3.0f);
+  EXPECT_EQ(metadata_value(std::optional<long double>(1.25L)).as<std::optional<double>>(), 1.25);
 }
 
 TEST(Metadata, OrderedSnapshotsReplacementAndExportMapping)
@@ -197,7 +228,8 @@ TEST(Configuration, DeferredPrecisionAndNativeValues)
   EXPECT_EQ(value, parse_real<long double>("1.000000000000000001"));
   c.add("native", value);
   EXPECT_EQ(c.get<long double>("native"), value);
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
+    (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
   auto quad = parse_real<float128>("1.000000000000000000000000000001");
   c.add("quad", quad);
   EXPECT_EQ(c.get<float128>("quad"), quad);

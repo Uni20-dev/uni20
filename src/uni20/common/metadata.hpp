@@ -105,7 +105,9 @@ class metadata_value {
           if (auto p = std::any_cast<std::string>(&scalar)) return metadata_detail::parse<T>(*p);
           std::optional<T> result;
           auto try_type = [&]<typename U>() {
-            if constexpr (dt::accepts<T, U>())
+            // Only stored types can occur in the any. A configured scalar may
+            // have core conversions without the lossless table I/O contract.
+            if constexpr (presentation::DataTableValue<U> && dt::accepts<T, U>())
               if (auto p = std::any_cast<U>(&scalar))
               {
                 // T belongs to the enclosing template, U to this generic lambda.
@@ -155,7 +157,7 @@ class metadata_value {
 
 #if UNI20_ENABLE_MPFR
     /// \brief Convert to mpreal at explicit precision, including optional destinations.
-    /// \details Text uses parse_real; native float/double/long double and integers are converted
+    /// \details Text uses parse_real; supported native reals (including float128) and integers are converted
     ///          directly. Exact precision admits rationals/integers, but rejects native floating inputs.
     ///          With no precision argument, as<mpreal>() only retrieves an already stored MPFR scalar.
     template <presentation::DataTableValue T>
@@ -176,12 +178,16 @@ class metadata_value {
         if (auto p = std::any_cast<std::string>(&scalar)) return parse_real<mpreal>(*p, precision);
         std::optional<mpreal> result;
         auto try_type = [&]<typename U>() {
-          if (auto p = std::any_cast<U>(&scalar)) result.emplace(*p, precision);
+          if constexpr (presentation::DataTableValue<U>)
+            if (auto p = std::any_cast<U>(&scalar)) result.emplace(*p, precision);
         };
         [&]<typename... U>(std::tuple<U...>*) {
           (try_type.template operator()<U>(), ...);
         }(static_cast<std::tuple<signed char, unsigned char, short, unsigned short, int, unsigned int, long,
                                  unsigned long, long long, unsigned long long, float, double, long double>*>(nullptr));
+#if UNI20_HAS_FLOAT128
+        try_type.template operator()<uni20::float128>();
+#endif
         if (!result) throw std::invalid_argument("incompatible metadata scalar types");
         return std::move(*result);
       }

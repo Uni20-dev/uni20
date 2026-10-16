@@ -28,8 +28,9 @@ round to integers or half-integers. The supported vocabulary matches
 is enabled. These retain each value's precision or exact rational state; unset
 values are rejected. `as<mpreal>()` only retrieves an already stored MPFR scalar.
 Use `as<mpreal>(precision)` to parse text, convert an integer, `float`, `double`
-or `long double`, or round an MPFR value to a selected precision. Optional
-strings, vectors and arbitrary object types are not included.
+or `long double`, import a supported `float128` without narrowing, or round an
+MPFR value to a selected precision. Optional strings, vectors and arbitrary
+object types are not included.
 
 A `metadata_document` orders groups and fields. Field IDs are globally unique
 within the document and use the data-column identifier grammar. Labels, units,

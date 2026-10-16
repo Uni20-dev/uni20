@@ -123,11 +123,22 @@ class mpreal {
     /// \brief Copy a valid borrowed MPFR value, rounding at finite precision.
     /// \pre value points to an initialized MPFR object during this call.
     explicit mpreal(mpfr_srcptr value, Precision p) : mpreal(p) { mpfr_set(this->approximate(), value, MPFR_RNDN); }
-    /// \brief Import a native floating approximation; precision must be finite.
-    template <std::floating_point F> mpreal(F value, Precision p) : mpreal(p)
+    /// \brief Import float, double or long double; precision must be finite.
+    template <class F>
+      requires(std::same_as<F, float> || std::same_as<F, double> || std::same_as<F, long double>)
+    mpreal(F value, Precision p) : mpreal(p)
     {
       mpfr_set_ld(this->approximate(), static_cast<long double>(value), MPFR_RNDN);
     }
+#if UNI20_HAS_FLOAT128
+    /// \brief Import all binary128 bits, rounding only to the requested finite precision.
+    template <class F>
+      requires std::same_as<F, float128>
+    mpreal(F value, Precision p) : mpreal(p)
+    {
+      mpfr_set_float128(this->approximate(), value, MPFR_RNDN);
+    }
+#endif
     /// \brief Convert to finite precision, or retain an already-exact value in exact mode.
     /// \throws std::invalid_argument If asked to reclassify an approximation as exact.
     mpreal(mpreal const& other, Precision p) : mpreal(p)
@@ -188,6 +199,10 @@ class mpreal {
     explicit operator float() const { return this->to_native<float, mpfr_get_flt>(); }
     explicit operator double() const { return this->to_native<double, mpfr_get_d>(); }
     explicit operator long double() const { return this->to_native<long double, mpfr_get_ld>(); }
+#if UNI20_HAS_FLOAT128
+    /// \brief Round directly to binary128, including its subnormals, nearest with ties to even.
+    explicit operator float128() const { return this->to_native<float128, mpfr_get_float128>(113); }
+#endif
 
     /// \brief Format exact rationals as numerator/denominator and approximations as decimal scientific notation.
     /// \details Exact values retain their rational spelling regardless of digits.
@@ -234,13 +249,13 @@ class mpreal {
     friend mpreal epsilon(Precision precision);
     friend struct detail::mpreal_access;
     friend struct detail::mpcomplex_access;
-    template <class F, auto Convert> F to_native() const
+    template <class F, auto Convert> F to_native(int digits = uni20::numeric_limits<F>::digits) const
     {
       this->require_value();
       if (!this->is_exact()) return Convert(this->native_handle(), MPFR_RNDN);
       // Enclose the rational and refine until both bounds round identically.
       // This avoids double rounding, including at native subnormal boundaries.
-      auto bits = static_cast<mpfr_prec_t>(std::numeric_limits<F>::digits + 16);
+      auto bits = static_cast<mpfr_prec_t>(digits + 16);
       for (;;)
       {
         detail::mpfr_value lower(Precision::bits(bits)), upper(Precision::bits(bits));
