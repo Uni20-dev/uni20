@@ -79,9 +79,10 @@ maps and returned origins are owned. `copy_attributes(output, {{id, attribute}})
 is an explicit operation for saving selected resolved values; reading fallback
 attributes never modifies an input object.
 
-Configuration bindings use `ConfigurationValue`, a narrower vocabulary than
-metadata storage: `add<mpreal>()`, `add<std::optional<mpreal>>()`, and direct MPFR
-CLI bindings are rejected at compile time because they have no precision policy.
+Configuration bindings and retrieval use `ConfigurationValue`, a narrower
+vocabulary than metadata storage: `add<mpreal>()`, `get<mpreal>()`, their optional
+MPFR forms, and direct MPFR CLI bindings are rejected at compile time because
+they have no precision policy.
 Resolve a string, select the working precision, then convert explicitly:
 
 ```cpp

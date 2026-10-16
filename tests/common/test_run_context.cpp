@@ -12,10 +12,16 @@ template <typename T>
 concept CanAddConfiguration = requires(configuration& config) { config.template add<T>("value"); };
 template <typename T>
 concept CanAddConfigurationDefault = requires(configuration& config, T value) { config.add("value", value); };
+template <typename T>
+concept CanGetConfiguration = requires(configuration const& config) { config.template get<T>("value"); };
 static_assert(CanAddConfiguration<double> && CanAddConfigurationDefault<double>);
 static_assert(CanAddConfiguration<half_int> && CanAddConfigurationDefault<half_int>);
 static_assert(CanAddConfiguration<std::string> && CanAddConfigurationDefault<std::string>);
 static_assert(CanAddConfiguration<std::optional<double>> && CanAddConfigurationDefault<std::optional<double>>);
+static_assert(CanGetConfiguration<double>);
+static_assert(CanGetConfiguration<half_int>);
+static_assert(CanGetConfiguration<std::string>);
+static_assert(CanGetConfiguration<std::optional<double>>);
 
 #if UNI20_ENABLE_MPFR
 template <typename T>
@@ -28,6 +34,8 @@ static_assert(!CanAddConfiguration<mpreal>);
 static_assert(!CanAddConfigurationDefault<mpreal>);
 static_assert(!CanAddConfiguration<std::optional<mpreal>>);
 static_assert(!CanAddConfigurationDefault<std::optional<mpreal>>);
+static_assert(!CanGetConfiguration<mpreal>);
+static_assert(!CanGetConfiguration<std::optional<mpreal>>);
 
 TEST(Configuration, MpfrTextSourcesUseExplicitPrecisionAfterResolution)
 {

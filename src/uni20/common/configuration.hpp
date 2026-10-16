@@ -205,7 +205,8 @@ class configuration {
       }
       return selected;
     }
-    template <presentation::DataTableValue T> [[nodiscard]] T get(std::string const& id) const
+    /// \brief Resolve and convert a value without choosing a runtime precision.
+    template <ConfigurationValue T> [[nodiscard]] T get(std::string const& id) const
     {
       auto result = this->resolve(id);
       if (!result) throw std::invalid_argument("configuration field has no value: " + id);

@@ -225,8 +225,9 @@ Resolution must preserve these contracts:
   native `parse_real<Real>` and checks in that type. Preserve already typed
   attribute/API values through checked conversions without a `double` or
   presentation-string intermediate. Half-integer inputs retain exact semantics.
-  Configuration bindings use `ConfigurationValue`, which excludes `mpreal` and
-  optional `mpreal`: `add` and CLI `bind` have no runtime precision parameter.
+  Configuration bindings and retrieval use `ConfigurationValue`, which excludes
+  `mpreal` and optional `mpreal`: `add`, `get`, and CLI `bind` have no runtime
+  precision parameter.
   Resolve these inputs as strings, then convert the selected metadata value with
   `as<mpreal>(precision)` before publishing it as typed run metadata.
 - Return owned values and origin descriptions together. Origins distinguish CLI,
