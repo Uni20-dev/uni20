@@ -325,12 +325,17 @@ types satisfying Uni20's `Real` and `Complex` concepts, including
 Native `float80` uses the existing `long double` parsing, formatting, and
 presentation precision policy; no conversion through `double` is involved.
 
-Scalar formatting support does not imply typed table or metadata support.
-`presentation::DataTableValue` admits supported fixed-precision real types;
-`mpreal` and optional `mpreal` are rejected by table schemas and `metadata_value`
-construction/conversion until runtime-precision parsing and export contracts are
-defined. `format_real(mpreal)` remains available for explicit textual output.
-See [typed data tables](../diagnostics/data_tables.md) for the supported types.
+`presentation::DataTableValue` admits supported fixed-precision real types and,
+with MPFR enabled, `mpreal` and optional `mpreal`. Tables and `metadata_value`
+retain per-value precision or exact rational state and reject unset values.
+Conversions from text or native numbers to MPFR require explicit `Precision`;
+configuration bindings therefore resolve runtime-precision inputs as strings.
+Exact fractions can be displayed as fractions or rounded decimals without
+changing the stored value. Table JSON preserves exactness/precision tags; the
+current metadata string-map export does not. See
+[typed data tables](../diagnostics/data_tables.md) and
+[run contexts](../diagnostics/run_context_usage.md) for the conversion and export
+contracts. `format_real(mpreal)` remains available for explicit textual output.
 
 Trace precision is independently configurable for float32, float64, and
 float128 values. The global environment variables are

@@ -24,11 +24,12 @@ performs a checked conversion or parses a complete text token directly as `T`.
 Integers and half-integers reject narrowing overflow; real conversion permits
 rounding but rejects finite overflow. Floating-point values never implicitly
 round to integers or half-integers. The supported vocabulary matches
-[data tables](data_tables.md): real fields have supported fixed precision.
-Runtime-precision `mpreal` and optional `mpreal` are rejected at construction and
-conversion, pending an explicit parsing/precision/export contract. Applications
-can use `format_real` to publish them deliberately as text. Optional strings,
-vectors and arbitrary object types are not included.
+[data tables](data_tables.md), including `mpreal` and optional `mpreal` when MPFR
+is enabled. These retain each value's precision or exact rational state; unset
+values are rejected. `as<mpreal>()` only retrieves an already stored MPFR scalar.
+Use `as<mpreal>(precision)` to parse text, convert an integer, `float`, `double`
+or `long double`, or round an MPFR value to a selected precision. Optional
+strings, vectors and arbitrary object types are not included.
 
 A `metadata_document` orders groups and fields. Field IDs are globally unique
 within the document and use the data-column identifier grammar. Labels, units,
@@ -39,10 +40,14 @@ Copies share immutable scalar storage and own independent document structure.
 
 Human rendering honors field display policies. `document.strings()` uses native
 round-trip formatting and exact half-integer decimals for the existing table
-metadata format. An explicit mapping, such as `{{"program", "Program"}}`, changes
-export keys; unknown IDs and key collisions are errors. This projection loses
-native type, grouping, order and the distinction between missing and empty text.
-It does not change the typed document. A typed metadata JSON schema is future work.
+metadata format. For exact MPFR fractions, choose `.display.fractions = true` or
+an explicit `.display.numeric` notation and digit count for decimal rounding;
+see the [fraction policy](data_tables.md#runtime-precision-and-exact-fractions).
+An explicit mapping, such as `{{"program", "Program"}}`, changes export keys;
+unknown IDs and key collisions are errors. This projection loses native type,
+MPFR precision/exactness tags, grouping, order and the distinction between missing
+and empty text. It does not change the typed document. A typed metadata JSON
+schema is future work; table cells already have precision-tagged MPFR encoding.
 
 ## Configuration without a parser
 
@@ -73,6 +78,18 @@ for the solver and its reports when a stable configuration is needed. Attribute
 maps and returned origins are owned. `copy_attributes(output, {{id, attribute}})`
 is an explicit operation for saving selected resolved values; reading fallback
 attributes never modifies an input object.
+
+Configuration bindings use `ConfigurationValue`, a narrower vocabulary than
+metadata storage: `add<mpreal>()`, `add<std::optional<mpreal>>()`, and direct MPFR
+CLI bindings are rejected at compile time because they have no precision policy.
+Resolve a string, select the working precision, then convert explicitly:
+
+```cpp
+config.add<std::string>("tolerance").environment("SOLVER_TOLERANCE").required();
+auto tolerance_input = config.resolve("tolerance");
+auto tolerance = tolerance_input->value.as<uni20::mpreal>(uni20::Precision::bits(256));
+run.metadata().add("model", "tolerance", tolerance);
+```
 
 ## Reusing CLI11 declarations
 

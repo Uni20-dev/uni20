@@ -7,6 +7,18 @@
 namespace c = uni20::cli;
 namespace
 {
+template <typename T>
+concept CanBindConfiguration =
+    requires(c::configuration& config, CLI::Option* option, T& value) { config.bind(option, value, "value"); };
+static_assert(CanBindConfiguration<double>);
+static_assert(CanBindConfiguration<uni20::half_int>);
+static_assert(CanBindConfiguration<std::string>);
+static_assert(!CanBindConfiguration<std::optional<double>>);
+#if UNI20_ENABLE_MPFR
+static_assert(!CanBindConfiguration<uni20::mpreal>);
+static_assert(!CanBindConfiguration<std::optional<uni20::mpreal>>);
+#endif
+
 c::parse_result parse(c::configuration& config, std::initializer_list<char const*> args)
 {
   std::vector<char const*> argv{"probe"};
