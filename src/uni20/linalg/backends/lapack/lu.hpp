@@ -1,5 +1,10 @@
 #pragma once
 
+#include <uni20/config.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "lu_mpfr.hpp"
+#endif
+
 #include "linear_solve.hpp"
 #include <uni20/linalg/backends/lu_common.hpp>
 

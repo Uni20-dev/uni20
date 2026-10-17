@@ -8,6 +8,10 @@ This directory contains LAPACK operation-tag backend adapters.
 - `matrix_norm.hpp`: general dense matrix norms through `lange`.
 - `linear_solve.hpp`: destructive dense general solves through `getrf`/`getrs`,
   with recoverable numerical diagnostics and an optional relative pivot threshold.
+- `lu.hpp`: reusable LU factors and solves, with portable zero-based pivots.
+- `linear_solve_mpfr.hpp`, `lu_mpfr.hpp`: optional scalar specializations of
+  `LapackBackend`, included by the corresponding operation headers. They pack
+  logical MPFR/MPC values and pass working precision to the MPLAPACK provider.
 - `lq.hpp`: reduced real LQ factorization through `gelqf` and `orglq`.
 - `tridiagonal_eigen.hpp`: symmetric tridiagonal eigenvalues and eigenvectors
   through `sterf` and `steqr`.
@@ -34,8 +38,10 @@ This directory contains LAPACK operation-tag backend adapters.
 - Return a non-success `KernelAttempt` only for clean preflight decline. LAPACK
   `INFO` failures after a provider call are terminal and must not trigger
   fallback.
-- Current update-matrix paths require a directly addressable column-major
-  mdspan. Unsupported layouts decline before any operand is modified.
+- Native update-matrix paths require a directly addressable column-major
+  mdspan. Unsupported layouts decline before any operand is modified. MPFR
+  specializations instead pack logical host values, including transforming
+  accessors, through the shared `../mpfr_common.hpp` helpers.
 - Read-only matrix norms additionally accept row-major storage by exchanging
   one and infinity norms under the provider transpose. Complex non-Frobenius
   forms decline because LAPACK's component-sum convention differs from
@@ -48,3 +54,4 @@ This directory contains LAPACK operation-tag backend adapters.
 - [Linalg backend source map](../)
 - [BLAS/LAPACK mdspan wrappers](../../../../../docs/linalg/blas_lapack_wrappers.md)
 - [Mdspan linear algebra dispatch](../../../../../docs/linalg/mdspan_dispatch.md)
+- [MPFR provider and integration roadmap](../../../../../docs/linalg/mplapack_mpfr.md)

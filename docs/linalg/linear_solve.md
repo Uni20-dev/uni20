@@ -5,7 +5,7 @@ Include `<uni20/linalg/ops/linear_solve.hpp>`. All interfaces solve
 right-hand sides. The scalar types must match.
 
 Optional `mpreal` and `complex<mpreal>` support uses the
-[MPLAPACK MPFR/MPC backend](mplapack_mpfr.md). Its
+[MPLAPACK MPFR/MPC provider](mplapack_mpfr.md). Its
 `SolveOptions<mpreal>` defaults to exact zero in its ordinary tolerance value
 field; describing this policy needs no working precision. An all-exact solve
 still requires a finite operation precision.
@@ -135,8 +135,9 @@ Diagnostics follow the ordinary output-by-reference kernel convention.
 - LAPACK uses `unchecked::getrf`, inspects the provider result and LU pivots,
   then calls `getrs`. Standard real/complex LAPACK types and configured
   MPLAPACK binary128 use this path for compatible column-major workspaces.
-- Dedicated MPLAPACK adapters provide [binary80](mplapack_binary80.md) and
-  [MPFR/MPC](mplapack_mpfr.md) factorization and solve calls.
+- `LapackBackend` also selects the scalar-specific [MPFR/MPC adapter](mplapack_mpfr.md),
+  which packs provider objects and establishes working precision per call.
+  [Binary80](mplapack_binary80.md) retains its dedicated adapter selector.
 - CPU reference uses accessor-respecting partial-pivoted Gaussian elimination,
   including row-major workspaces and native long double.
 - A dispatch decline preserves `A`, `B`, and `SolveInfo`.

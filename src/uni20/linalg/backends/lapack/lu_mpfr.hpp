@@ -1,14 +1,18 @@
 #pragma once
 
-#include "mpfr.hpp"
+#include <uni20/backend/mplapack/mpfr.hpp>
 #include <uni20/linalg/backends/lu_common.hpp>
+#include <uni20/linalg/backends/mpfr_common.hpp>
+#include <uni20/linalg/dispatch.hpp>
+#include <uni20/linalg/operation_tags.hpp>
+#include <uni20/tensor/access.hpp>
 
 namespace uni20::linalg
 {
 /// \brief Accept logical host workspaces for finite-precision MPFR/MPC LU.
 template <MutableRankedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && mplapack_detail::RuntimeScalar<typename A::value_type>
-consteval auto kernel_accepts_types(MplapackMpfrBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
+  requires HostWritableMdspec<A> && mpfr_detail::RuntimeScalar<typename A::value_type>
+consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
                                     SolveOptions<mpreal> const&, Precision)
 {
   return kernel_types_yes;
@@ -16,8 +20,8 @@ consteval auto kernel_accepts_types(MplapackMpfrBackend, lu_factor_op const&, A&
 
 /// \brief Convert values at the backend boundary and compute portable owning factors.
 template <MutableRankedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && mplapack_detail::RuntimeScalar<typename A::value_type>
-KernelAttempt try_kernel(MplapackMpfrBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
+  requires HostWritableMdspec<A> && mpfr_detail::RuntimeScalar<typename A::value_type>
+KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
                          SolveOptions<mpreal> const& options, Precision p)
 {
   (void)p.bit_count();
@@ -31,7 +35,7 @@ KernelAttempt try_kernel(MplapackMpfrBackend, lu_factor_op const&, A& a, std::sp
     info.status = SolveStatus::nonfinite_input;
     return KernelAttempt::success;
   }
-  auto work = mplapack_detail::pack(s, p);
+  auto work = mpfr_detail::pack(s, p);
   if (!detail::solve_matrix_is_finite(work.mdspan()))
   {
     info.status = SolveStatus::nonfinite_result;
@@ -40,8 +44,8 @@ KernelAttempt try_kernel(MplapackMpfrBackend, lu_factor_op const&, A& a, std::sp
   auto scale = detail::lu_input_scale(work.mdspan(), mpreal(0, p));
   auto tolerance = options.relative_pivot_tolerance.at(p);
   std::vector<std::size_t> provider_pivots;
-  auto singular = mplapack::getrf(pivots.size(), mplapack_detail::values(work), provider_pivots, p);
-  mplapack_detail::unpack(work, s);
+  auto singular = mplapack::getrf(pivots.size(), mpfr_detail::values(work), provider_pivots, p);
+  mpfr_detail::unpack(work, s);
   std::copy(provider_pivots.begin(), provider_pivots.end(), pivots.begin());
   if (!detail::solve_matrix_is_finite(work.mdspan()))
     info.status = SolveStatus::nonfinite_result;
@@ -54,10 +58,10 @@ KernelAttempt try_kernel(MplapackMpfrBackend, lu_factor_op const&, A& a, std::sp
 
 /// \brief Accept read-only runtime-precision factors and logical host RHS elements.
 template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
-  requires HostReadableMdspec<A> && HostWritableMdspec<B> && mplapack_detail::RuntimeScalar<typename A::value_type> &&
+  requires HostReadableMdspec<A> && HostWritableMdspec<B> && mpfr_detail::RuntimeScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
-consteval auto kernel_accepts_types(MplapackMpfrBackend, lu_solve_op const&, A&, std::span<std::size_t const>, B&,
-                                    SolveInfo&, Precision)
+consteval auto kernel_accepts_types(LapackBackend, lu_solve_op const&, A&, std::span<std::size_t const>, B&, SolveInfo&,
+                                    Precision)
 {
   return kernel_types_yes;
 }
@@ -65,9 +69,9 @@ consteval auto kernel_accepts_types(MplapackMpfrBackend, lu_solve_op const&, A&,
 /// \brief Solve at the factors' precision; RHS failures leave the factors reusable.
 /// \pre Factors and pivots describe a successful LU at p and do not overlap the RHS.
 template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
-  requires HostReadableMdspec<A> && HostWritableMdspec<B> && mplapack_detail::RuntimeScalar<typename A::value_type> &&
+  requires HostReadableMdspec<A> && HostWritableMdspec<B> && mpfr_detail::RuntimeScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
-KernelAttempt try_kernel(MplapackMpfrBackend, lu_solve_op const&, A& a, std::span<std::size_t const> pivots, B& b,
+KernelAttempt try_kernel(LapackBackend, lu_solve_op const&, A& a, std::span<std::size_t const> pivots, B& b,
                          SolveInfo& info, Precision p)
 {
   (void)p.bit_count();
@@ -83,16 +87,16 @@ KernelAttempt try_kernel(MplapackMpfrBackend, lu_solve_op const&, A& a, std::spa
     info.status = SolveStatus::nonfinite_input;
     return KernelAttempt::success;
   }
-  auto av = mplapack_detail::pack(as, p);
-  auto bv = mplapack_detail::pack(bs, p);
+  auto av = mpfr_detail::pack(as, p);
+  auto bv = mpfr_detail::pack(bs, p);
   if (!detail::solve_matrix_is_finite(bv.mdspan()))
   {
     info.status = SolveStatus::nonfinite_result;
     return KernelAttempt::success;
   }
-  mplapack::getrs(pivots.size(), b.extent(1), mplapack_detail::values(std::as_const(av)), pivots,
-                  mplapack_detail::values(bv), p);
-  mplapack_detail::unpack(bv, bs);
+  mplapack::getrs(pivots.size(), b.extent(1), mpfr_detail::values(std::as_const(av)), pivots, mpfr_detail::values(bv),
+                  p);
+  mpfr_detail::unpack(bv, bs);
   if (!detail::solve_matrix_is_finite(bv.mdspan())) info.status = SolveStatus::nonfinite_result;
   return KernelAttempt::success;
 }

@@ -348,25 +348,15 @@ struct HostStorage
       return storage.data();
     }
 
-#if UNI20_BACKEND_BLAS
     using backend_selector_type = linalg::backend_list<
 #if UNI20_ENABLE_MPLAPACK_BINARY80
         linalg::MplapackBinary80Backend,
 #endif
-#if UNI20_ENABLE_MPLAPACK_MPFR
-        linalg::MplapackMpfrBackend,
+        linalg::LapackBackend,
+#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
+        linalg::BlasBackend,
 #endif
-        linalg::LapackBackend, linalg::BlasBackend, linalg::CpuReferenceBackend>;
-#else
-    using backend_selector_type = linalg::backend_list<
-#if UNI20_ENABLE_MPLAPACK_BINARY80
-        linalg::MplapackBinary80Backend,
-#endif
-#if UNI20_ENABLE_MPLAPACK_MPFR
-        linalg::MplapackMpfrBackend,
-#endif
-        linalg::LapackBackend, linalg::CpuReferenceBackend>;
-#endif
+        linalg::CpuReferenceBackend>;
 
     /// \brief Return the default ordered linalg backends for pageable host storage.
     [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
@@ -375,11 +365,8 @@ struct HostStorage
 #if UNI20_ENABLE_MPLAPACK_BINARY80
           linalg::MplapackBinary80Backend{},
 #endif
-#if UNI20_ENABLE_MPLAPACK_MPFR
-          linalg::MplapackMpfrBackend{},
-#endif
           linalg::LapackBackend{},
-#if UNI20_BACKEND_BLAS
+#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
           linalg::BlasBackend{},
 #endif
           linalg::CpuReferenceBackend{}};

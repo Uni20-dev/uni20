@@ -150,6 +150,13 @@ backend_list{
 
 Order is semantic. The first eligible backend that succeeds performs the operation.
 
+Backend families do not imply one scalar representation or provider ABI.
+For example, configured MPFR GEMM specializes `BlasBackend`, and MPFR LU and
+square solves specialize `LapackBackend`. Their scalar-specific kernels pack
+provider objects and establish working precision per invocation. Native kernels
+can use compatible storage directly. Type acceptance remains operation-specific;
+membership in a backend family does not imply coverage of all its operations.
+
 Tensor operation wrappers normally obtain a selector from the operand storage policies:
 
 ```cpp

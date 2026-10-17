@@ -17,11 +17,8 @@
 #if UNI20_ENABLE_MPLAPACK_BINARY80
 #include <uni20/linalg/backends/mplapack/binary80.hpp>
 #endif
-#if UNI20_ENABLE_MPLAPACK_MPFR
-#include <uni20/linalg/backends/mplapack/mpfr.hpp>
-#endif
 
-#if UNI20_BACKEND_BLAS
+#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
 #include <uni20/linalg/backends/blas/gemm.hpp>
 #endif
 

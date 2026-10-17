@@ -26,7 +26,9 @@ optional multiprecision support, and linear-algebra design background.
 - [MPLAPACK Binary128](mplapack_binary128.md) is the build and validation guide
   for optional binary128 provider support.
 - [MPLAPACK MPFR/MPC](mplapack_mpfr.md) covers explicit-precision matrix products,
-  LU solves, tensor defaults and per-call provider context in async execution.
+  LU solves through the BLAS/LAPACK families, tensor defaults and per-call provider
+  context in async execution. Its [roadmap](mplapack_mpfr.md#integration-roadmap)
+  separates completed integration from further routine coverage.
 - [Tensor Contraction](tensor_contraction.md) defines the fixed-output dense
   contraction contract, current CPU reference path, and backend strategy
   hierarchy.

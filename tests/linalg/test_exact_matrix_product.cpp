@@ -81,7 +81,7 @@ TYPED_TEST(ExactMatrixProduct, RuntimeDeclinesDoNotTouchStorage)
   EXPECT_EQ(linalg::try_kernel(linalg::CpuReferenceBackend{}, linalg::gemm_op{}, od, S{1}, ad, bd, S{}, p),
             linalg::KernelAttempt::unsupported_instance);
 #if UNI20_ENABLE_MPLAPACK_MPFR
-  EXPECT_EQ(linalg::try_kernel(linalg::MplapackMpfrBackend{}, linalg::gemm_op{}, od, S{1}, ad, bd, S{}, exact),
+  EXPECT_EQ(linalg::try_kernel(linalg::BlasBackend{}, linalg::gemm_op{}, od, S{1}, ad, bd, S{}, exact),
             linalg::KernelAttempt::unsupported_instance);
 #endif
   EXPECT_FALSE((out[0, 0].initialized()));

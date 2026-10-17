@@ -33,6 +33,7 @@ add_test_module(linalg
     test_linear_solve.cpp
     test_matrix_norm.cpp
     test_matrix_product.cpp
+    test_mpfr_backend_dispatch.cpp
     test_qr_lq.cpp
     test_self_adjoint_eigh.cpp
     test_svd.cpp

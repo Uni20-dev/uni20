@@ -167,7 +167,7 @@ TEST(Lu, SingularComplexRuntimeDeterminantRetainsPrecision)
   auto p = Precision::bits(256);
   DenseMatrix<complex<mpreal>> a(2, 2, p);
   a[0, 0] = complex<mpreal>(mpreal{1}, mpreal{1}, p);
-  auto d = slogdet_with_info(MplapackMpfrBackend{}, a);
+  auto d = slogdet_with_info(LapackBackend{}, a);
   ASSERT_TRUE(d.value);
   EXPECT_EQ(d.info.status, SolveStatus::singular);
   EXPECT_EQ(d.value->phase, complex<mpreal>(0, p));

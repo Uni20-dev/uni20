@@ -15,13 +15,6 @@
 namespace uni20::linalg
 {
 
-/// \brief Serial MPLAPACK backend with per-invocation MPFR/MPC working precision.
-struct MplapackMpfrBackend
-{
-    static constexpr std::string_view name = "mplapack_mpfr";
-    friend constexpr bool operator==(MplapackMpfrBackend const&, MplapackMpfrBackend const&) = default;
-};
-
 /// \brief MPLAPACK binary80 GEMM and LU adapters for native x87 scalars.
 struct MplapackBinary80Backend
 {
@@ -29,14 +22,14 @@ struct MplapackBinary80Backend
     friend constexpr bool operator==(MplapackBinary80Backend const&, MplapackBinary80Backend const&) = default;
 };
 
-/// \brief Backend value for configured dense LAPACK kernels.
+/// \brief Backend family for configured dense LAPACK kernels, including MPLAPACK scalar adapters.
 struct LapackBackend
 {
     static constexpr std::string_view name = "lapack";
     friend constexpr bool operator==(LapackBackend const&, LapackBackend const&) = default;
 };
 
-/// \brief Backend value for BLAS dense linalg kernels.
+/// \brief Backend family for BLAS dense linalg kernels, including MPLAPACK MPFR GEMM.
 struct BlasBackend
 {
     static constexpr std::string_view name = "blas";

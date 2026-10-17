@@ -10,7 +10,8 @@ They hold exact rationals until finite working precision is supplied. Their
 precision cannot be described by type-only numerical limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
 allocation and dense backend integration are separate from scalar support.
 `UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a narrowly scoped
-[matrix-product and LU-solve backend](../linalg/mplapack_mpfr.md), without extending
+[matrix-product and LU-solve provider](../linalg/mplapack_mpfr.md), selected through
+`BlasBackend` and `LapackBackend`, without extending
 the type-only `LapackScalar` concepts or generic Krylov support.
 
 `uni20::complex<T>` selects the appropriate owning scalar type. Existing native
@@ -234,6 +235,13 @@ must itself be the scalar value.
 `Blas*` and `Lapack*` describe configured backend support. This distinction
 matters for extension scalar types: a type can be a valid Uni20 real scalar
 without having BLAS or LAPACK coverage in the current build.
+
+The broad traits currently describe the fixed-scalar raw-wrapper surface, not
+every scalar accepted by every operation in a backend family. In particular,
+configured MPFR products and LU use `BlasBackend`/`LapackBackend` while remaining
+outside these traits. Use `probe_dispatch_kernel_types` for a particular
+operation and operand signature. The [integration roadmap](../linalg/mplapack_mpfr.md#integration-roadmap)
+tracks the capability audit needed before broadening the scalar concepts.
 
 In particular, `float80` and `complex<float80>` reuse the native `long double`
 scalar and generic CPU paths where supported. The optional
