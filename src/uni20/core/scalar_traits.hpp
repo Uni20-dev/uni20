@@ -187,11 +187,6 @@ struct make_complex<T>
     using type = uni20::complex<T>;
 };
 
-#if UNI20_HAS_MPREAL && !UNI20_HAS_MPREAL
-// No standard-complex fallback for the pending MPC scalar family.
-template <> struct make_complex<mpreal>;
-#endif
-
 /// \brief Metafunction that leaves already-complex types unchanged.
 /// \tparam T Type whose scalar component is already complex.
 /// \ingroup core_math
