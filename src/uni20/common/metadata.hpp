@@ -118,7 +118,7 @@ class metadata_value {
                   {
 #if UNI20_ENABLE_MPFR
                     auto bound =
-                        mpreal(uni20::numeric_limits<T>::max(), Precision::bits(uni20::numeric_limits<T>::digits));
+                        mpreal(uni20::numeric_limits<T>::max(), Precision::bits(uni20::numeric_limits<T>::digits()));
                     if (uni20::isfinite(*p) && (*p > bound || *p < -bound))
                       throw std::out_of_range("real conversion overflow");
 #endif
@@ -127,7 +127,7 @@ class metadata_value {
                   {
                     if constexpr (uni20::numeric_limits<U>::max_exponent > uni20::numeric_limits<T>::max_exponent ||
                                   (uni20::numeric_limits<U>::max_exponent == uni20::numeric_limits<T>::max_exponent &&
-                                   uni20::numeric_limits<U>::digits >= uni20::numeric_limits<T>::digits))
+                                   uni20::numeric_limits<U>::digits() >= uni20::numeric_limits<T>::digits()))
                       if (uni20::isfinite(*p) && (*p > static_cast<U>(uni20::numeric_limits<T>::max()) ||
                                                   *p < -static_cast<U>(uni20::numeric_limits<T>::max())))
                         throw std::out_of_range("real conversion overflow");

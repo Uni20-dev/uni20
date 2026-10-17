@@ -15,6 +15,7 @@
 #endif
 #include <optional>
 #include <span>
+#include <uni20/linalg/precision.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/precision.hpp>
 #include <uni20/tensor/tensor.hpp>
@@ -42,14 +43,9 @@ template <RealOrComplex S> class LuFactorization {
     DenseMatrix<S> const& packed() const& noexcept { return factors_; }
     /// \brief Zero-based swap sequence; at step k exchange rows k and pivots[k].
     std::span<std::size_t const> pivots() const& noexcept { return pivots_; }
-#if UNI20_ENABLE_MPFR
     /// \brief Finite working precision used for these factors and subsequent solves.
-    Precision precision() const
-      requires has_runtime_precision_v<S>
-    {
-      return factors_.default_precision();
-    }
-#endif
+    Precision precision() const { return precision_of(factors_); }
+
   private:
     friend struct detail::LuFactorAccess;
     LuFactorization(DenseMatrix<S>&& factors, std::vector<std::size_t>&& pivots)
@@ -76,35 +72,24 @@ struct LuFactorAccess
     }
 };
 
-template <class S, class... P> S lu_scalar(int value, P... precision)
-{
-  if constexpr (has_runtime_precision_v<S>)
-    return S(value, precision...);
-  else
-    return S(value);
-}
-
-template <KernelBackendSelector Backend, RankedTensorView<2> A, class... P>
+template <KernelBackendSelector Backend, RankedTensorView<2> A>
 auto lu_factor_impl(Backend&& backend, A const& a, SolveOptions<make_real_t<tensor_element_t<A>>> const& options,
-                    P... precision)
+                    Precision p)
 {
   using S = tensor_element_t<A>;
   ERROR_IF(a.extent(0) != a.extent(1), "LU requires a square matrix");
   detail::require_solve_options(options);
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<S>) ((void)precision.bit_count(), ...);
-#endif
+  require_precision<S>(p);
+  (void)p.bit_count();
   auto work = make_tensor<ColumnMajor>(a);
   std::vector<std::size_t> pivots(std::size_t(a.extent(0)));
   LuFactorizationResult<S> result{.info = {}, .factor = {}};
   auto descriptor = mdspec_of(work);
-  dispatch_kernel(std::forward<Backend>(backend), lu_factor_op{}, descriptor, std::span(pivots), result.info, options,
-                  precision...);
+  dispatch_at_precision<S>(std::forward<Backend>(backend), lu_factor_op{}, p, descriptor, std::span(pivots),
+                           result.info, options);
   if (result.info.succeeded())
   {
-#if UNI20_ENABLE_MPFR
-    if constexpr (has_runtime_precision_v<S>) (work.default_precision(precision), ...);
-#endif
+    uni20::detail::record_output_precision(work, p);
     result.factor = LuFactorAccess::make(std::move(work), std::move(pivots));
   }
   return result;
@@ -115,18 +100,16 @@ inline void require_lu_success(SolveInfo const& info)
 }
 } // namespace detail
 
-#if UNI20_ENABLE_MPFR
 /// \brief Factor at explicit finite precision, preserving input values and defaults.
 /// \details Conversion occurs in the backend. Exact inputs require this finite
 ///          override. Numerical failures return diagnostics with no factor.
 template <KernelBackendSelector Backend, RankedTensorView<2> A>
-  requires RealOrComplex<tensor_element_t<A>> && has_runtime_precision_v<tensor_element_t<A>>
+  requires RealOrComplex<tensor_element_t<A>>
 [[nodiscard]] auto lu_factor_with_info(Backend&& backend, A const& a, Precision p,
-                                       SolveOptions<mpreal> const& options = {})
+                                       SolveOptions<make_real_t<tensor_element_t<A>>> const& options = {})
 {
   return detail::lu_factor_impl(std::forward<Backend>(backend), a, options, p);
 }
-#endif
 
 /// \brief Factor at native precision or the input tensor's finite construction default.
 /// \details Preserves the logical input, including accessor transformations, in
@@ -137,12 +120,7 @@ template <KernelBackendSelector Backend, RankedTensorView<2> A>
 [[nodiscard]] auto lu_factor_with_info(Backend&& backend, A const& a,
                                        SolveOptions<make_real_t<tensor_element_t<A>>> const& options = {})
 {
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<tensor_element_t<A>>)
-    return lu_factor_with_info(std::forward<Backend>(backend), a, a.default_precision(), options);
-  else
-#endif
-    return detail::lu_factor_impl(std::forward<Backend>(backend), a, options);
+  return detail::lu_factor_impl(std::forward<Backend>(backend), a, options, precision_of(a));
 }
 
 /// \brief Factor with the default backend for the materialized host workspace.
@@ -178,16 +156,9 @@ template <KernelBackendSelector Backend, RealOrComplex S, MutableRankedTensorVie
   auto ad = mdspec_of(factor.packed());
   auto bd = mdspec_of(b);
   SolveInfo info;
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<S>)
-  {
-    auto p = factor.precision();
-    dispatch_kernel(std::forward<Backend>(backend), lu_solve_op{}, ad, factor.pivots(), bd, info, p);
-    if (info.succeeded() && factor.order() != 0 && b.extent(1) != 0) uni20::detail::record_output_precision(b, p);
-  }
-  else
-#endif
-    dispatch_kernel(std::forward<Backend>(backend), lu_solve_op{}, ad, factor.pivots(), bd, info);
+  auto p = factor.precision();
+  detail::dispatch_at_precision<S>(std::forward<Backend>(backend), lu_solve_op{}, p, ad, factor.pivots(), bd, info);
+  if (info.succeeded() && factor.order() != 0 && b.extent(1) != 0) uni20::detail::record_output_precision(b, p);
   return info;
 }
 
@@ -215,9 +186,7 @@ template <KernelBackendSelector Backend, RealOrComplex S, RankedTensorView<2> B>
 {
   auto result = make_tensor<ColumnMajor>(b);
   lu_solve_inplace(std::forward<Backend>(backend), factor, result);
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<S>) result.default_precision(factor.precision());
-#endif
+  uni20::detail::record_output_precision(result, factor.precision());
   return result;
 }
 

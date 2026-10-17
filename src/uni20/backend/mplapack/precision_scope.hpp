@@ -3,7 +3,7 @@
 // This header belongs only at the external-provider boundary. MPLAPACK must be
 // included before its bundled wrapper so both use the same context ABI.
 #include <mpblas_mpfr.h>
-#include <uni20/core/precision.hpp>
+#include <uni20/core/mpreal.hpp>
 
 namespace uni20::mplapack::detail
 {
@@ -19,7 +19,7 @@ class precision_scope {
           complex_precision_(mpfrxx::mpc_precision_override_storage()),
           complex_rounding_(mpfrxx::mpc_rounding_override_storage())
     {
-      auto const bits = p.bit_count(); // Validate before mutating any provider defaults.
+      auto const bits = uni20::detail::mpfr_precision(p); // Validate before mutating provider defaults.
       mpfrxx::initialize_thread_defaults();
       mpfrxx::initialize_mpc_defaults_for_current_thread();
       // Wrapper first-use initialization may read exponent bounds from the

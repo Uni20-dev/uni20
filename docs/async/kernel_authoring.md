@@ -170,6 +170,12 @@ for `Async<Tensor>`.
 
 ## Output Semantics
 
+Async `gemm`, `assign_product`, `add_product`, `solve`, and `solve_inplace`
+accept an optional working precision for both fixed and runtime scalar types.
+The request is copied into the coroutine; inferred defaults are read after the
+input epochs become readable. Fixed types reject requests that do not match
+their native precision. See [generic precision](../tensor/scalar_policy.md#generic-precision).
+
 `gemm` is a fixed-output operation:
 
 - The output must already be constructed with the matrix-product shape.
@@ -182,7 +188,7 @@ for `Async<Tensor>`.
   satisfy the selected backend. The coroutine holds the alias writer and copies
   its bound descriptor locally, preserving the parent allocation and binding.
 
-`assign_product` is an overwrite operation:
+`assign_product` is an overwrite operation. For fixed scalar types:
 
 - Its backend dispatch uses `assign_product_op`, which has no `beta` argument.
 - For independent values, the async front end passes the output's
@@ -198,6 +204,14 @@ for `Async<Tensor>`.
   resolves that device to its canonical allocation resources.
 - A backend may lower the accepted operation to its GEMM provider using a zero
   value represented in the form that provider requires.
+
+For runtime-precision host scalars, the coroutine resolves precision and
+prepares an independent output before invoking synchronous `assign_product`;
+a mutable alias instead passes its fixed bound view. That frontend dispatches
+GEMM with the resolved precision. Owning outputs record that precision, while
+structural views preserve the parent's default. Provider precision scopes cover
+only synchronous calls after awaits; no scope survives coroutine suspension.
+The fixed-scalar CUDA path retains its asynchronous backend dispatch.
 
 `add_product` is an update operation:
 

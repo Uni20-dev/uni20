@@ -37,7 +37,7 @@ template <class BackendSelector, class ResultTensor, uni20::RankedTensorView<2> 
           uni20::RankedTensorView<2> RhsTensor>
 async::AsyncTask co_preserving_solve(BackendSelector const selector, async::WriteBuffer<ResultTensor> output,
                                      async::ReadBuffer<CoefficientTensor> coefficients,
-                                     async::ReadBuffer<RhsTensor> right_hand_sides)
+                                     async::ReadBuffer<RhsTensor> right_hand_sides, std::optional<Precision> p)
 {
   auto output_storage = output.storage();
   auto awaited = co_await async::all(output_storage, coefficients, right_hand_sides);
@@ -45,14 +45,14 @@ async::AsyncTask co_preserving_solve(BackendSelector const selector, async::Writ
   auto const& coefficient_value = std::get<1>(awaited);
   auto const& rhs_value = std::get<2>(awaited);
 
-  auto result = uni20::linalg::solve(selector, coefficient_value, rhs_value);
+  auto result = uni20::linalg::solve(selector, coefficient_value, rhs_value, p);
   storage.emplace(std::move(result));
   co_return;
 }
 
 template <class BackendSelector, uni20::AsyncTensorOutput CoefficientTensor, uni20::AsyncTensorOutput RhsTensor>
 async::AsyncTask co_solve_inplace(BackendSelector const selector, async::WriteBuffer<CoefficientTensor> coefficients,
-                                  async::WriteBuffer<RhsTensor> right_hand_sides)
+                                  async::WriteBuffer<RhsTensor> right_hand_sides, std::optional<Precision> p)
 {
   auto coefficient_awaiter = uni20::detail::mutable_async_tensor_awaiter(coefficients);
   auto rhs_awaiter = uni20::detail::mutable_async_tensor_awaiter(right_hand_sides);
@@ -60,19 +60,19 @@ async::AsyncTask co_solve_inplace(BackendSelector const selector, async::WriteBu
   decltype(auto) coefficient_value = uni20::detail::mutable_async_tensor_value<CoefficientTensor>(std::get<0>(awaited));
   decltype(auto) rhs_value = uni20::detail::mutable_async_tensor_value<RhsTensor>(std::get<1>(awaited));
 
-  uni20::linalg::solve_inplace(selector, coefficient_value, rhs_value);
+  uni20::linalg::solve_inplace(selector, coefficient_value, rhs_value, p);
   co_return;
 }
 
 template <class BackendSelector, uni20::RankedTensorView<2> CoefficientTensor, uni20::RankedTensorView<2> RhsTensor>
-[[nodiscard]] auto schedule_preserving_solve(BackendSelector selector,
-                                             async::Async<CoefficientTensor> const& coefficients,
-                                             async::Async<RhsTensor> const& right_hand_sides)
+[[nodiscard]] auto
+schedule_preserving_solve(BackendSelector selector, async::Async<CoefficientTensor> const& coefficients,
+                          async::Async<RhsTensor> const& right_hand_sides, std::optional<Precision> p = {})
 {
   using result_type = preserving_solve_result_t<CoefficientTensor, RhsTensor>;
   async::Async<result_type> output;
   output.debug_name("solve.solution");
-  auto task = co_preserving_solve(std::move(selector), output.write(), coefficients.read(), right_hand_sides.read());
+  auto task = co_preserving_solve(std::move(selector), output.write(), coefficients.read(), right_hand_sides.read(), p);
   task.debug_name("solve");
   async::schedule(std::move(task));
   return output;
@@ -80,11 +80,11 @@ template <class BackendSelector, uni20::RankedTensorView<2> CoefficientTensor, u
 
 template <class BackendSelector, uni20::AsyncTensorOutput CoefficientTensor, uni20::AsyncTensorOutput RhsTensor>
 void schedule_solve_inplace(BackendSelector selector, async::Async<CoefficientTensor>& coefficients,
-                            async::Async<RhsTensor>& right_hand_sides)
+                            async::Async<RhsTensor>& right_hand_sides, std::optional<Precision> p = {})
 {
   ERROR_IF(std::addressof(coefficients.queue()) == std::addressof(right_hand_sides.queue()),
            "async solve workspaces must not share an epoch queue");
-  auto task = co_solve_inplace(std::move(selector), coefficients.write(), right_hand_sides.write());
+  auto task = co_solve_inplace(std::move(selector), coefficients.write(), right_hand_sides.write(), p);
   task.debug_name("solve_inplace");
   async::schedule(std::move(task));
 }
@@ -98,9 +98,9 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Coef
   requires uni20::RealOrComplex<uni20::tensor_element_t<CoefficientTensor>> &&
            std::same_as<uni20::tensor_element_t<CoefficientTensor>, uni20::tensor_element_t<RhsTensor>>
 [[nodiscard]] auto solve(BackendSelector selector, async::Async<CoefficientTensor> const& coefficients,
-                         async::Async<RhsTensor> const& right_hand_sides)
+                         async::Async<RhsTensor> const& right_hand_sides, std::optional<Precision> p = {})
 {
-  return detail::schedule_preserving_solve(std::move(selector), coefficients, right_hand_sides);
+  return detail::schedule_preserving_solve(std::move(selector), coefficients, right_hand_sides, p);
 }
 
 /// \brief Schedule a preserving dense general solve using static Tensor policy.
@@ -108,10 +108,10 @@ template <uni20::RankedTensorView<2> CoefficientTensor, uni20::RankedTensorView<
   requires uni20::RealOrComplex<uni20::tensor_element_t<CoefficientTensor>> &&
            std::same_as<uni20::tensor_element_t<CoefficientTensor>, uni20::tensor_element_t<RhsTensor>>
 [[nodiscard]] auto solve(async::Async<CoefficientTensor> const& coefficients,
-                         async::Async<RhsTensor> const& right_hand_sides)
+                         async::Async<RhsTensor> const& right_hand_sides, std::optional<Precision> p = {})
 {
   auto selector = detail::select_async_solve_backend<CoefficientTensor, RhsTensor>();
-  return detail::schedule_preserving_solve(std::move(selector), coefficients, right_hand_sides);
+  return detail::schedule_preserving_solve(std::move(selector), coefficients, right_hand_sides, p);
 }
 
 /// \brief Schedule a destructive dense general solve through an explicit selector.
@@ -123,55 +123,20 @@ template <KernelBackendSelector BackendSelector, uni20::AsyncTensorOutput Coeffi
           uni20::AsyncTensorOutput RhsTensor>
   requires detail::CompatibleLinearSolveTensors<CoefficientTensor, RhsTensor>
 void solve_inplace(BackendSelector selector, async::Async<CoefficientTensor>& coefficients,
-                   async::Async<RhsTensor>& right_hand_sides)
+                   async::Async<RhsTensor>& right_hand_sides, std::optional<Precision> p = {})
 {
-  detail::schedule_solve_inplace(std::move(selector), coefficients, right_hand_sides);
+  detail::schedule_solve_inplace(std::move(selector), coefficients, right_hand_sides, p);
 }
 
 /// \brief Schedule a destructive dense general solve using static Tensor policy.
 /// \pre The two async workspaces have distinct epoch queues and nonoverlapping storage.
 template <uni20::AsyncTensorOutput CoefficientTensor, uni20::AsyncTensorOutput RhsTensor>
   requires detail::CompatibleLinearSolveTensors<CoefficientTensor, RhsTensor>
-void solve_inplace(async::Async<CoefficientTensor>& coefficients, async::Async<RhsTensor>& right_hand_sides)
+void solve_inplace(async::Async<CoefficientTensor>& coefficients, async::Async<RhsTensor>& right_hand_sides,
+                   std::optional<Precision> p = {})
 {
   auto selector = select_backend_for<CoefficientTensor, RhsTensor>(linear_solve_op{});
-  detail::schedule_solve_inplace(std::move(selector), coefficients, right_hand_sides);
+  detail::schedule_solve_inplace(std::move(selector), coefficients, right_hand_sides, p);
 }
-
-#if UNI20_ENABLE_MPFR
-namespace detail
-{
-template <class Selector, class Result, class A, class B>
-async::AsyncTask co_preserving_solve_at_precision(Selector selector, async::WriteBuffer<Result> output,
-                                                  async::ReadBuffer<A> a, async::ReadBuffer<B> b, Precision p)
-{
-  auto output_storage = output.storage();
-  auto awaited = co_await async::all(output_storage, a, b);
-  std::get<0>(awaited).emplace(uni20::linalg::solve(selector, std::get<1>(awaited), std::get<2>(awaited), p));
-  co_return;
-}
-} // namespace detail
-
-/// \brief Schedule a preserving solve at explicit precision, establishing provider state after all awaits.
-template <KernelBackendSelector Selector, RankedTensorView<2> A, RankedTensorView<2> B>
-  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
-[[nodiscard]] auto solve(Selector selector, async::Async<A> const& a, async::Async<B> const& b, Precision p)
-{
-  using result_type = detail::preserving_solve_result_t<A, B>;
-  async::Async<result_type> output;
-  auto task = detail::co_preserving_solve_at_precision(std::move(selector), output.write(), a.read(), b.read(), p);
-  task.debug_name("solve");
-  async::schedule(std::move(task));
-  return output;
-}
-
-/// \brief Schedule an explicit-precision solve using storage-selected backends.
-template <RankedTensorView<2> A, RankedTensorView<2> B>
-  requires has_runtime_precision_v<tensor_element_t<A>> && std::same_as<tensor_element_t<A>, tensor_element_t<B>>
-[[nodiscard]] auto solve(async::Async<A> const& a, async::Async<B> const& b, Precision p)
-{
-  return solve(detail::select_async_solve_backend<A, B>(), a, b, p);
-}
-#endif
 
 } // namespace uni20::linalg

@@ -151,7 +151,7 @@ template <typename T> [[nodiscard]] int effective_precision(scalar_format_option
   {
     return options.precision;
   }
-  return uni20::numeric_limits<std::remove_cv_t<T>>::max_digits10;
+  return uni20::numeric_limits<std::remove_cv_t<T>>::max_digits10();
 }
 
 [[nodiscard]] inline char printf_notation(real_format_notation notation)

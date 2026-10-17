@@ -421,10 +421,10 @@ workspaces, and Schur reordering indices.
 | `set_matrix` | Set diagonal/off-diagonal values in a selected matrix region. | In-place mutation. | Implemented; diagonal and off-diagonal values may be immediate or Async. |
 | `matrix_norm`, `matrix_norm_host` | Maximum-entry, induced one/infinity, or Frobenius matrix norm selected by `MatrixNorm`. | Returns a storage-preserving real rank-zero Tensor or a host scalar. Complex norms use mathematical magnitude. | Implemented; the Tensor form may also write an explicit async scalar output. |
 | `solve_inplace` | Solve `A * X = B` using destructive coefficient and RHS workspaces. | `B` contains `X` on return; `A` contains backend factorization data. An `N x 0` right-hand side is a vacuous no-op that preserves both workspaces without testing singularity. Numerical failures are terminal errors. | Implemented; both writer epochs receive any failure. |
-| `solve_inplace_with_info` | Solve `A * X = B` with recoverable numerical diagnostics and optional native-precision pivot tolerance. | Returns `SolveInfo`; `B` is a valid solution only on success. Workspaces may change on numerical failure, but dispatch must not retry another backend. See [square solves](../linalg/linear_solve.md). | Synchronous only; no async diagnostic-returning overload yet. |
+| `solve_inplace_with_info` | Solve `A * X = B` with recoverable numerical diagnostics and optional real-scalar pivot tolerance. | Returns `SolveInfo`; `B` is a valid solution only on success. Workspaces may change on numerical failure, but dispatch must not retry another backend. See [square solves](../linalg/linear_solve.md). | Synchronous only; no async diagnostic-returning overload yet. |
 | `solve` | Preserve `A` and `B` and return `X`. | Materializes owning column-major host work matrices before destructive dispatch. | Implemented; returns an independent async solution. |
 | `lu_factor`, `lu_factor_with_info` | Preserve a square matrix and return reusable packed LU with zero-based row swaps. | Owns read-only column-major host factors; the recoverable result contains factors only on success. See [LU](../linalg/lu.md). | Synchronous only. |
-| `lu_solve`, `lu_solve_inplace`, `lu_solve_inplace_with_info` | Reuse completed factors for one or more RHS columns. | Factors remain unchanged on success or failure. Preserving solves return an owner; in-place forms overwrite the RHS. Runtime-precision factors determine solve precision. | Synchronous only. |
+| `lu_solve`, `lu_solve_inplace`, `lu_solve_inplace_with_info` | Reuse completed factors for one or more RHS columns. | Factors remain unchanged on success or failure. Preserving solves return an owner; in-place forms overwrite the RHS. Factor precision determines solve precision. | Synchronous only. |
 | `slogdet`, `slogdet_with_info` | Signed or complex-phase logarithmic determinant of a matrix or completed LU. | Matrix form factors once; factor form reduces in O(n). Singular returns phase zero and negative-infinite log magnitude. | Synchronous only. |
 | `qr_factorization`, `lq_factorization` | Reduced real QR or LQ using a destructive matrix workspace. | Factor outputs may resize; the matrix workspace is overwritten. | No direct wrapper; use async `qr` or `lq`. |
 | `qr(matrix)`, `lq(matrix)` | Preserve or consume a real matrix and return owning reduced factors. | Preserving calls materialize column-major host work. Consuming calls use an exact column-major host tensor directly as destructive workspace and otherwise materialize. QR returns `Q: m x k`, `R: k x n`; LQ returns `L: m x k`, `Q: k x n`, where `k = min(m,n)`. | Preserving and consuming forms return two independent Async outputs. |
@@ -442,6 +442,15 @@ workspaces, and Schur reordering indices.
 | `schur`, `hessenberg_schur` | LAPACK-style decomposition. | Destructive matrix workspace and caller-provided outputs. | No value API yet; no application-level async wrapper. |
 | `reorder_schur` | Reorder an existing Schur form. | In-place mutation of Schur form and optionally vectors. | No value API yet; no application-level async wrapper. |
 | `symmetric_tridiagonal_eigen` | Tridiagonal eigensystem over caller-provided spans and tensor output. | LAPACK-style mutable work/output buffers. | No value API yet; no application-level async wrapper. |
+
+`gemm`, `assign_product`, `add_product`, square solves, LU factorization, and
+matrix-form `slogdet` accept a working precision through the same API for fixed
+and runtime scalar types. Their existing Async forms accept it too. Fixed types
+reject mismatched precision requests; omitted runtime precision is inferred from
+participating tensor defaults after the inputs become readable. This does not
+add precision arguments or MPFR provider support to the other operations in the
+table. See [generic precision](scalar_policy.md#generic-precision) and
+[dense operation contracts](../linalg/dense_operation_contracts.md#working-precision).
 
 Preserving Async `solve`, `qr`, `lq`, `eigh`, exact SVD, and truncated SVD overloads
 accept `Async<Tensor>` whenever `Tensor` models the appropriate ranked
@@ -471,7 +480,8 @@ ordinary application code should prefer operation-specific overwrite, update,
 or value-returning APIs where those exist because their output policy is
 explicit.
 
-`assign_product` and `gemm` use distinct dispatch operations:
+For fixed-precision scalars, `assign_product` and `gemm` use distinct dispatch
+operations:
 
 ```cpp
 auto lhs_span = mdspec_of(std::as_const(lhs));
@@ -533,6 +543,12 @@ input descriptors have already been normalized by the frontend and the writable
 output is normalized once after preparation. The adapter then invokes the
 private cuBLAS mdspan implementation directly rather than redispatching those
 operands as `gemm_op`.
+
+The runtime-precision host path first resolves precision and prepares the
+`assign_product` output in the frontend, then dispatches `gemm_op` with zero
+`beta` and the resolved precision. Its backend converts the numerical inputs.
+Owning outputs record the operation precision; writes through structural views
+preserve the parent's default. See the [MPFR/MPC adapter](../linalg/mplapack_mpfr.md).
 
 For `CudaTensor`, `gemm`, `assign_product`, and `add_product` retain their
 Tensor epoch buffers while awaiting `co_dispatch_kernel`. The cuBLAS backend's

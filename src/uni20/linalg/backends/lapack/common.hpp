@@ -48,7 +48,7 @@ template <class Scalar> blas_int workspace_size(Scalar const& query)
   CHECK(recommended >= real_type{1}, recommended);
 
   auto const maximum = static_cast<real_type>(uni20::numeric_limits<blas_int>::max());
-  if constexpr (uni20::numeric_limits<real_type>::digits < uni20::numeric_limits<blas_int>::digits)
+  if (uni20::numeric_limits<real_type>::digits(recommended) < uni20::numeric_limits<blas_int>::digits())
   {
     // A low-precision real may round max(blas_int) up to the first
     // unrepresentable integer, so equality is not a safe conversion bound.

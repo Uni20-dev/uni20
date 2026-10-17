@@ -288,7 +288,13 @@ template <std::signed_integral T> struct numeric_limits<basic_half_int<T>>
     static constexpr bool is_bounded = true;
     static constexpr bool is_iec559 = false;
     static constexpr int radix = 2;
-    static constexpr int digits = numeric_limits<T>::digits;
+    static constexpr int digits() noexcept { return numeric_limits<T>::digits(); }
+    static constexpr int digits(basic_half_int<T> const&) noexcept { return digits(); }
+    static constexpr int digits(Precision p)
+    {
+      if (!p.is_exact()) throw std::invalid_argument("half-integer arithmetic requires exact precision");
+      return digits();
+    }
     static constexpr bool has_infinity = false;
     static constexpr bool has_quiet_NaN = false;
     static constexpr bool has_signaling_NaN = false;

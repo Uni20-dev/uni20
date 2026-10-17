@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mpfr.h>
 #include <uni20/core/exact_constant.hpp>
 
 #include <algorithm>

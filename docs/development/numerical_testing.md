@@ -15,6 +15,13 @@ are constructed in that case's precision. MPFR exact arithmetic has separate
 tests: passing an exact rational identity does not demonstrate finite-precision
 behavior.
 
+The shared contexts construct scalars with `scalar_at_precision<R>(n, p)` and
+tensors with a trailing `p` for fixed and runtime types alike. The
+`GenericPrecisionQueries` and `GenericPrecisionOperations` probes cover this
+common API, including fixed-type mismatch rejection before output mutation.
+The operation probe uses default dispatch; separate forced-provider probes
+remain responsible for provider certification.
+
 All twelve cases remain in the coverage matrix when optional dependencies are
 disabled. `precision_registry.hpp` declares which operation/scalar/backend
 combinations are configured and supported. Only those combinations become

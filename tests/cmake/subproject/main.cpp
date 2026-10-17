@@ -43,7 +43,7 @@ int main()
 
 #if UNI20_HAS_FLOAT128
   {
-    static_assert(uni20::numeric_limits<uni20::float128>::digits == 113);
+    static_assert(uni20::numeric_limits<uni20::float128>::digits() == 113);
     using std::abs;
     using std::atan;
     using std::tan;

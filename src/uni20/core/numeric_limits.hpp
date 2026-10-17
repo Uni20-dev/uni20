@@ -1,5 +1,6 @@
 #pragma once
 
+#include "precision.hpp"
 #include <limits>
 #include <type_traits>
 
@@ -20,12 +21,53 @@ struct numeric_limits<T> : std::numeric_limits<T>
 {
     using std::numeric_limits<T>::epsilon;
 
+    /// \brief Fixed significand capacity, also available through an exemplar or precision.
+    static constexpr int digits() noexcept { return std::numeric_limits<T>::digits; }
+    static constexpr int digits(T const&) noexcept { return digits(); }
+    static constexpr int digits(Precision p)
+    {
+      require_precision(p);
+      return digits();
+    }
+
+    /// \brief Decimal digits preserved by conversion into this native type.
+    static constexpr int digits10() noexcept { return std::numeric_limits<T>::digits10; }
+    static constexpr int digits10(T const&) noexcept { return digits10(); }
+    static constexpr int digits10(Precision p)
+    {
+      require_precision(p);
+      return digits10();
+    }
+
+    /// \brief Decimal digits sufficient to round-trip a value of this native type.
+    static constexpr int max_digits10() noexcept { return std::numeric_limits<T>::max_digits10; }
+    static constexpr int max_digits10(T const&) noexcept { return max_digits10(); }
+    static constexpr int max_digits10(Precision p)
+    {
+      require_precision(p);
+      return max_digits10();
+    }
+
+    /// \brief Spacing above one at this type's precision; reject incompatible requests.
+    static constexpr T epsilon(Precision p)
+    {
+      require_precision(p);
+      return std::numeric_limits<T>::epsilon();
+    }
+
     /// \brief Spacing above one, accepting an exemplar for scalar-generic code.
     template <class U>
       requires(std::is_same_v<T, U> && std::numeric_limits<T>::is_specialized)
     static constexpr T epsilon(U const&) noexcept
     {
       return std::numeric_limits<T>::epsilon();
+    }
+
+  private:
+    static constexpr void require_precision(Precision p)
+    {
+      auto native = std::numeric_limits<T>::is_exact ? Precision::exact() : Precision::bits(digits());
+      if (p != native) throw std::invalid_argument("fixed-precision scalar requires its native precision");
     }
 };
 

@@ -28,22 +28,16 @@ template <class R, bool IsComplex, int Bits = 0> struct PrecisionContext
     static constexpr bool is_complex = IsComplex;
     static constexpr bool runtime = Bits != 0;
 
-    static R real(int n)
-    {
-#if UNI20_ENABLE_MPFR
-      if constexpr (runtime)
-        return R(n, Precision::bits(Bits));
-      else
-#endif
-        return R(n);
-    }
+    static constexpr Precision precision() { return Precision::bits(digits()); }
+
+    static R real(int n) { return scalar_at_precision<R>(n, precision()); }
 
     static constexpr int digits()
     {
       if constexpr (runtime)
         return Bits;
       else
-        return numeric_limits<R>::digits;
+        return numeric_limits<R>::digits();
     }
 
     static R epsilon() { return numeric_limits<R>::epsilon(real(1)); }
@@ -72,15 +66,7 @@ template <class R, bool IsComplex, int Bits = 0> struct PrecisionContext
     }
     static scalar_type scalar(int re, int im = 0) { return scalar(real(re), real(im)); }
 
-    static auto matrix(index_type rows, index_type cols)
-    {
-#if UNI20_ENABLE_MPFR
-      if constexpr (runtime)
-        return DenseMatrix<scalar_type>(rows, cols, Precision::bits(Bits));
-      else
-#endif
-        return DenseMatrix<scalar_type>(rows, cols);
-    }
+    static auto matrix(index_type rows, index_type cols) { return DenseMatrix<scalar_type>(rows, cols, precision()); }
 
     template <class T> static void expect_precision(T const& value)
     {
@@ -205,7 +191,7 @@ template <class R> mpreal widen(R value)
     bool const negative = fraction < R(0);
     if (negative) fraction = -fraction;
     mpreal significand(0, p);
-    for (int bit = 0; bit < numeric_limits<R>::digits; ++bit)
+    for (int bit = 0; bit < numeric_limits<R>::digits(); ++bit)
     {
       fraction *= R(2);
       significand *= 2;
@@ -215,7 +201,7 @@ template <class R> mpreal widen(R value)
         fraction -= R(1);
       }
     }
-    auto result = significand * pow(mpreal(2, p), mpreal(exponent - numeric_limits<R>::digits, p));
+    auto result = significand * pow(mpreal(2, p), mpreal(exponent - numeric_limits<R>::digits(), p));
     return negative ? -result : result;
   }
 }

@@ -2,6 +2,32 @@
 
 namespace uni20::test
 {
+UNI20_PRECISION_TEST(NumericalScalar, GenericPrecisionQueries)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  using S = typename C::scalar_type;
+  auto p = C::precision();
+  auto one = scalar_at_precision<S>(1, p);
+  EXPECT_EQ(precision_of(one), p);
+  EXPECT_EQ(numeric_limits<R>::digits(p), C::digits());
+  EXPECT_EQ(numeric_limits<R>::digits(C::real(1)), C::digits());
+  expect_equal(numeric_limits<R>::epsilon(p), C::epsilon());
+  auto a = C::matrix(2, 2);
+  EXPECT_EQ(precision_of(a), p);
+  a[0, 0] = C::scalar(C::real(1) + C::gap(), C::real(0));
+  auto copied = at_precision(a, p);
+  EXPECT_EQ(precision_of(copied), p);
+  expect_equal(S(copied[0, 0]), S(a[0, 0]));
+  expect_equal(S(copied[1, 1]), C::scalar(0));
+  if constexpr (!C::runtime)
+  {
+    auto wrong = Precision::bits(C::digits() + 1);
+    EXPECT_THROW((DenseMatrix<S>(2, 2, wrong)), std::invalid_argument);
+    EXPECT_THROW((void)at_precision(a, wrong), std::invalid_argument);
+  }
+}
+
 UNI20_PRECISION_TEST(NumericalScalar, EpsilonAndRetainedIncrement)
 {
   using C = TypeParam;
@@ -301,8 +327,12 @@ UNI20_PRECISION_TEST(NumericalScalar, UtilityAccuracyImprovesWithPrecision)
     root_reference = (4 * root_reference + mpreal(2, ref) / (square * square)) / 5;
   }
   constexpr int bits = C::digits();
-  constexpr int previous = bits <= 24 ? 12 : bits <= 53 ? 24 : bits <= 64 ? 53 :
-                           bits <= 113 ? 64 : bits <= 128 ? 113 : 128;
+  constexpr int previous = bits <= 24    ? 12
+                           : bits <= 53  ? 24
+                           : bits <= 64  ? 53
+                           : bits <= 113 ? 64
+                           : bits <= 128 ? 113
+                                         : 128;
   auto check = [&](auto value, mpreal const& reference) {
     C::expect_precision(value);
     auto error = abs(widen(value) - reference);

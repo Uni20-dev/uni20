@@ -53,7 +53,7 @@ TEST(ScalarPrecisionTest, VisitsConfiguredConcreteTypes)
 
   if (uni20::has_float80)
   {
-    auto significand_bits = []<typename Scalar>() { return uni20::numeric_limits<Scalar>::digits; };
+    auto significand_bits = []<typename Scalar>() { return uni20::numeric_limits<Scalar>::digits(); };
     EXPECT_EQ(uni20::visit_scalar_precision(uni20::ScalarPrecision::fp80, significand_bits), 64);
     EXPECT_EQ(uni20::visit_scalar_precision(uni20::ScalarPrecision::fp80, type_size), sizeof(long double));
   }

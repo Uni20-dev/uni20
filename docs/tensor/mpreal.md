@@ -7,7 +7,9 @@ Symbolic constants such as `pi<mpreal>` remain separate descriptor types.
 
 This is CPU arithmetic. Tensor construction defaults and the optional
 [MPLAPACK product/solve backend](../linalg/mplapack_mpfr.md) are described below.
-Table schemas and CLI selection do not yet support arbitrary precision.
+[Typed tables and metadata](../diagnostics/data_tables.md#runtime-precision-and-exact-fractions)
+retain runtime-precision values. The configured CLI precision selector still
+selects fixed floating-point formats; applications choose MPFR precision explicitly.
 
 ## Configuration
 
@@ -564,7 +566,7 @@ temporary precision separately for every synchronous provider call after awaits.
 
 ## Tensor construction defaults
 
-Host tensors accept a trailing `Precision`:
+Host tensors of runtime-precision scalars accept a trailing `Precision`:
 
 ```cpp
 auto p = uni20::Precision::bits(256);
@@ -577,6 +579,11 @@ a.default_precision(uni20::Precision::bits(80));
 auto rounded = uni20::at_precision(a, uni20::Precision::bits(80));
 // rounded owns converted elements and has an 80-bit construction default.
 ```
+
+The same constructor syntax, `precision_of(tensor)`, and `at_precision(tensor, p)`
+also work for fixed scalars, provided `p` matches their native precision; those
+tensors store no precision metadata. See [generic precision](scalar_policy.md#generic-precision).
+The mutable defaults described below apply to runtime-precision tensors.
 
 The default belongs to the storage and survives copying, moving, empty shapes
 and owning reshapes. It supplies the precision of new zeros during construction
@@ -601,8 +608,9 @@ default, after which its metadata is independent of the source.
 Async aliases may bind reserved storage before the parent is constructed. They
 resolve precision through the parent only once the relevant epoch is readable,
 just like other parent metadata. Reusing an alias across epochs observes each
-readable parent state's default without a mutable cache. Raw mdspans carry no
-tensor default and require explicit operation precision.
+readable parent state's default without a mutable cache. Raw mdspans of
+runtime-precision scalars carry no tensor default and require explicit operation
+precision.
 
 Writing through a structural view changes elements but does not change the
 parent's construction default, even if the operation requests another working

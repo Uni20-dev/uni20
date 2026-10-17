@@ -11,6 +11,9 @@ layers such as tensor, linalg, backend, async, or symmetry.
   classification, promotion, and formatting support.
 - `scalar_precision.hpp`: provider-neutral runtime selection of configured real
   scalar precisions.
+- `precision.hpp`: provider-independent exact or finite working precision, in every build.
+- `runtime_precision.hpp`: generic `precision_of`, `native_precision` and
+  `scalar_at_precision` queries/construction for fixed and runtime scalar types.
 - `numeric_limits.hpp`: Uni20 numeric-limits customization point for generic
   scalar algorithms.
 - `math.hpp`: shared `uni20::math` dispatch and scalar classification/construction helpers.

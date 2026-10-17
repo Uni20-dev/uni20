@@ -68,6 +68,15 @@ provider precision. An explicit `p` is passed directly to that backend, without
 changing input defaults to convey the request. Bare descriptors have no tensor
 construction defaults, and backend kernels do not mutate owner metadata.
 
+These frontends share their precision interface with fixed-precision scalars.
+For example, `solve(a, b, precision_of(a))` and
+`assign_product(output, a, b, precision_of(a))` also work for `double`, float80,
+float128 and their complex counterparts. A fixed result requires its native
+significand size exactly; an incompatible or exact request throws before an
+output is resized or overwritten. Fixed kernels receive no extra precision
+argument. `Precision` and the generic queries are available without MPFR; see
+[generic precision](../tensor/scalar_policy.md#generic-precision).
+
 `gemm(output, alpha, a, b, beta[, p])` keeps the output's existing shape. With no
 override and nonzero `beta`, its default also participates in precision selection;
 exact defaults are neutral and differing finite defaults are rejected.

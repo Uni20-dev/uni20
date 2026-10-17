@@ -5,8 +5,7 @@ Include `<uni20/linalg/ops/linear_solve.hpp>`. All interfaces solve
 right-hand sides. The scalar types must match.
 
 Optional `mpreal` and `complex<mpreal>` support uses the
-[MPLAPACK MPFR/MPC backend](mplapack_mpfr.md). Matching tensor defaults select
-working precision; a trailing `Precision` selects it explicitly. Its
+[MPLAPACK MPFR/MPC backend](mplapack_mpfr.md). Its
 `SolveOptions<mpreal>` defaults to exact zero in its ordinary tolerance value
 field; describing this policy needs no working precision. An all-exact solve
 still requires a finite operation precision.
@@ -62,6 +61,30 @@ runtime-precision construction defaults as well as values. Shape mismatch, inval
 options, unavailable backends, and invalid provider arguments remain errors,
 not numerical statuses.
 
+## Working precision
+
+The same precision argument works for fixed and runtime scalar types:
+
+```cpp
+auto p = uni20::precision_of(a);
+auto x = uni20::linalg::solve(a, b, p);
+uni20::linalg::solve_inplace(a_work, b_work, p);
+auto info = uni20::linalg::solve_inplace_with_info(a_work, b_work, p, options);
+```
+
+For fixed types, `p` must equal `native_precision<Scalar>()`; an incompatible
+request is rejected before changing the workspaces. Omitting `p` selects the
+participating tensor defaults. Exact defaults are neutral, while differing
+finite defaults require an explicit choice. Runtime solves require finite
+working precision, including when both inputs are exact. The backend converts
+runtime inputs and workspaces at that precision; changing a tensor's default
+alone does not convert its elements.
+
+Async `solve` and `solve_inplace` accept the same argument and resolve inferred
+precision only after the input epochs are readable. See the canonical
+[generic precision contract](../tensor/scalar_policy.md#generic-precision) and
+the [runnable example](../../examples/linalg/generic_precision_example.cpp).
+
 ## Pivot policy and precision
 
 The recoverable frontend accepts a final `SolveOptions<Real>` argument, where
@@ -84,8 +107,9 @@ abs(pivot[k]) / max_ij(abs(A_original[i, j])) <= relative_pivot_tolerance
 
 Complex entry magnitudes are mathematical absolute values. Tolerances must be
 finite and nonnegative. The comparison uses division to avoid overflowing a
-product of the tolerance and matrix scale. All arithmetic and options remain
-in native precision, including long double and configured MPLAPACK binary128.
+product of the tolerance and matrix scale. Arithmetic and options use the
+selected scalar precision without narrowing through `double`; runtime backends
+convert the tolerance at the selected working precision.
 This pivot heuristic is **not** a reciprocal condition estimate and is not a
 rank-revealing factorization. Choosing a tolerance is an application policy;
 the strict interfaces keep the zero default.
@@ -102,13 +126,17 @@ conditioning checks remain separate application decisions.
 
 ## Backend and dispatch contract
 
-There is one operation tag, `linear_solve_op`, with kernel arguments
-`(A_descriptor, B_descriptor, SolveInfo&, SolveOptions<Real> const&)`.
+There is one operation tag, `linear_solve_op`. Fixed-scalar kernels receive
+`(A_descriptor, B_descriptor, SolveInfo&, SolveOptions<Real> const&)`;
+runtime-scalar kernels receive a trailing resolved `Precision` as well.
+The frontend selects precision; the backend owns numerical conversion.
 Diagnostics follow the ordinary output-by-reference kernel convention.
 
 - LAPACK uses `unchecked::getrf`, inspects the provider result and LU pivots,
   then calls `getrs`. Standard real/complex LAPACK types and configured
-  MPLAPACK types use this path for compatible column-major workspaces.
+  MPLAPACK binary128 use this path for compatible column-major workspaces.
+- Dedicated MPLAPACK adapters provide [binary80](mplapack_binary80.md) and
+  [MPFR/MPC](mplapack_mpfr.md) factorization and solve calls.
 - CPU reference uses accessor-respecting partial-pivoted Gaussian elimination,
   including row-major workspaces and native long double.
 - A dispatch decline preserves `A`, `B`, and `SolveInfo`.

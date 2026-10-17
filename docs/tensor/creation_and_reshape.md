@@ -17,7 +17,12 @@ valid: every untouched stored element remains zero.
 | --- | --- |
 | `DenseMatrix<T>(rows, cols)` for fixed-precision numeric `T` | Zero, including native complex types. |
 | `DenseMatrix<T>(rows, cols, p)` for `mpreal` or `complex<mpreal>` | Actual zeros at precision `p`. |
+| `DenseMatrix<T>(rows, cols, p)` for fixed-precision numeric `T` | Zero; `p` must equal `native_precision<T>()`. No precision metadata is stored. |
 | `DenseMatrix<T>(uninitialized, rows, cols)` (with trailing `p` when required) | Unspecified native values or unset runtime-precision scalars; write before reading. |
+
+For host tensors, `precision_of(tensor)` and `at_precision(tensor, p)` work with
+both fixed and runtime scalar types. Fixed types validate their native precision
+without storing extra metadata. See the [generic precision contract](scalar_policy.md#generic-precision).
 
 ```cpp
 uni20::DenseMatrix<double> diagonal(2, 2);

@@ -235,8 +235,8 @@ template <class Scalar> int run(Options const& options)
                                 static_cast<long double>(sizeof(Scalar)) / (1024.0L * 1024.0L * 1024.0L);
 
   uni20::presentation::numeric_format_options numeric_format;
-  numeric_format.float32_precision = uni20::numeric_limits<uni20::float32>::max_digits10;
-  numeric_format.float64_precision = uni20::numeric_limits<uni20::float64>::max_digits10;
+  numeric_format.float32_precision = uni20::numeric_limits<uni20::float32>::max_digits10();
+  numeric_format.float64_precision = uni20::numeric_limits<uni20::float64>::max_digits10();
 
   uni20::presentation::report_builder report("Async TBB matrix-product batch");
   report

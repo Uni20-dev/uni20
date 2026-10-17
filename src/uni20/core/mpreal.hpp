@@ -5,6 +5,7 @@
 #include "math_constants.hpp"
 #include "scalar_traits.hpp"
 #include <memory>
+#include <mpfr.h>
 #include <ostream>
 #include <uni20/common/initialization.hpp>
 #include <variant>
@@ -15,6 +16,13 @@ namespace detail
 {
 struct mpreal_access;
 struct mpcomplex_access;
+// Provider limits belong here, not in the generic precision description.
+inline mpfr_prec_t mpfr_precision(Precision p)
+{
+  auto bits = p.bit_count();
+  if (bits < MPFR_PREC_MIN || bits > MPFR_PREC_MAX) throw std::invalid_argument("MPFR: unsupported significand size");
+  return static_cast<mpfr_prec_t>(bits);
+}
 inline void require_mpfr_tls()
 {
   static bool const supported = mpfr_buildopt_tls_p() != 0;
@@ -30,7 +38,7 @@ struct mpfr_value
     explicit mpfr_value(Precision p)
     {
       require_mpfr_tls();
-      mpfr_init2(value, p.bit_count());
+      mpfr_init2(value, mpfr_precision(p));
       initialized = true;
       mpfr_set_zero(value, 1);
     }
@@ -249,7 +257,7 @@ class mpreal {
     friend mpreal epsilon(Precision precision);
     friend struct detail::mpreal_access;
     friend struct detail::mpcomplex_access;
-    template <class F, auto Convert> F to_native(int digits = uni20::numeric_limits<F>::digits) const
+    template <class F, auto Convert> F to_native(int digits = uni20::numeric_limits<F>::digits()) const
     {
       this->require_value();
       if (!this->is_exact()) return Convert(this->native_handle(), MPFR_RNDN);
