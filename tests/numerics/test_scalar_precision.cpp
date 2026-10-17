@@ -53,7 +53,7 @@ UNI20_PRECISION_TEST(NumericalScalar, EpsilonAndRetainedIncrement)
   C::expect_precision(z);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 UNI20_PRECISION_TEST(NumericalScalar, ReciprocalAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;
@@ -152,7 +152,7 @@ UNI20_PRECISION_TEST(NumericalScalar, ElementaryRetainsWorkingPrecision)
   check(math::hypot(R(C::real(3) * x), R(C::real(4) * x)), R(C::real(5) * x));
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 UNI20_PRECISION_TEST(NumericalScalar, ElementaryAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;
@@ -311,7 +311,7 @@ UNI20_PRECISION_TEST(NumericalScalar, UtilitiesBoundarySemantics)
   expect_equal(math::rootn(R(-one), numeric_limits<std::int64_t>::max()), R(-one));
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 UNI20_PRECISION_TEST(NumericalScalar, UtilityAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;

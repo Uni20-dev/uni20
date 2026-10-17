@@ -130,13 +130,13 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     if (decomposition)
     {
       if constexpr (C::binary80_provider) return {"unsupported", "binary80 decomposition provider not yet wired"};
-#if !UNI20_ENABLE_MPLAPACK_MPFR
-      if constexpr (C::runtime) return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_MPFR"};
+#if !UNI20_HAS_MPLAPACK_MPREAL
+      if constexpr (C::runtime) return {"unavailable", "enable mpreal and UNI20_BACKEND_MPLAPACK"};
 #endif
-#if !UNI20_ENABLE_MPLAPACK
+#if !UNI20_HAS_MPLAPACK_FLOAT128
       if constexpr (!C::runtime && !std::same_as<typename C::real_type, float> &&
                     !std::same_as<typename C::real_type, double>)
-        return {"unavailable", "configure UNI20_ENABLE_MPLAPACK for binary128 decompositions"};
+        return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK for binary128 decompositions"};
 #endif
     }
     bool const cpu_lu = probe == CpuLuResolvesSmallGap || probe == CpuLuAccuracyImprovesWithPrecision ||
@@ -154,11 +154,15 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       if (probe == ProviderGemmRetainsIncrement)
         return {"unavailable", "configure UNI20_BACKEND_BLAS for native provider GEMM"};
 #endif
-#if !UNI20_ENABLE_MPLAPACK_BINARY80
+#if !UNI20_HAS_MPLAPACK_FLOAT80
     if constexpr (C::binary80_provider)
-      if (provider) return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_BINARY80"};
+      if (provider) return {"unavailable", "enable float80 and UNI20_BACKEND_MPLAPACK"};
 #endif
-#if UNI20_ENABLE_MPLAPACK_BINARY80 && !UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if !UNI20_HAS_MPLAPACK_FLOAT128
+    if constexpr (C::kind == PrecisionKind::float128)
+      if (provider) return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK"};
+#endif
+#if UNI20_HAS_MPLAPACK_FLOAT80 && !UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
     if constexpr (C::binary80_provider && C::is_complex)
       if (provider && probe != ProviderGemmRetainsIncrement)
         return {"unsupported", "provider complex division is unsafe with distinct _Float64x"};
@@ -240,7 +244,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case SolveAccuracyImprovesWithPrecision:
       case CpuLuAccuracyImprovesWithPrecision:
       case ProviderLuAccuracyImprovesWithPrecision:
-#if !UNI20_ENABLE_MPFR
+#if !UNI20_HAS_MPREAL
         return {"unavailable", "MPFR required for independent 512-bit error measurement"};
 #endif
         break;
@@ -270,11 +274,11 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       default:
         break;
     }
-#if !UNI20_ENABLE_MPLAPACK_MPFR
+#if !UNI20_HAS_MPLAPACK_MPREAL
     if constexpr (C::runtime)
       if (provider || probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision ||
           probe == GenericPrecisionOperations)
-        return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_MPFR"};
+        return {"unavailable", "enable mpreal and UNI20_BACKEND_MPLAPACK"};
 #endif
     return {};
   }

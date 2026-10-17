@@ -5,6 +5,8 @@ optional multiprecision support, and linear-algebra design background.
 
 ## Implemented Layers And Forward Work
 
+- [Scalar Configuration](scalar_configuration.md) separates optional scalar
+  families from numerical-backend selection.
 - [Generic Precision](../tensor/scalar_policy.md#generic-precision) defines the
   shared fixed/runtime precision API used by products, square solves, LU, and
   logarithmic determinants and dense decompositions.

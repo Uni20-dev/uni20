@@ -30,6 +30,26 @@ TEST(ConceptTest, RealConcept)
   static_assert(!uni20::Real<uni20::complex<float>>);
 }
 
+TEST(ConceptTest, ScalarAvailabilityDoesNotEnableProviders)
+{
+  static_assert(!UNI20_HAS_MPLAPACK_FLOAT80 || (UNI20_HAS_FLOAT80 && UNI20_BACKEND_MPLAPACK));
+  static_assert(!UNI20_HAS_MPLAPACK_FLOAT128 || (UNI20_HAS_FLOAT128 && UNI20_BACKEND_MPLAPACK));
+  static_assert(!UNI20_HAS_MPLAPACK_MPREAL || (UNI20_HAS_MPREAL && UNI20_BACKEND_MPLAPACK));
+#if UNI20_HAS_FLOAT128
+  static_assert(uni20::Real<uni20::float128>);
+  static_assert(uni20::Complex<uni20::complex256>);
+  static_assert(uni20::BlasReal<uni20::float128> == bool(UNI20_HAS_MPLAPACK_FLOAT128));
+  static_assert(uni20::LapackReal<uni20::float128> == bool(UNI20_HAS_MPLAPACK_FLOAT128));
+  static_assert(uni20::LapackComplex<uni20::complex256> == bool(UNI20_HAS_MPLAPACK_FLOAT128));
+  auto const x = uni20::float128(1) / uni20::float128(3);
+  EXPECT_LT(uni20::math::abs(uni20::math::tan(uni20::math::atan(x)) - x),
+            uni20::float128(8) * uni20::numeric_limits<uni20::float128>::epsilon());
+#endif
+#if UNI20_HAS_MPREAL
+  static_assert(std::same_as<uni20::complex<uni20::mpreal>, uni20::mpcomplex>);
+#endif
+}
+
 TEST(ConceptTest, ComplexConcept)
 {
   static_assert(uni20::Complex<uni20::complex<float>>);

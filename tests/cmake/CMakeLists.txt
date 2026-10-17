@@ -2,7 +2,20 @@
 # tests exercise CMake usage requirements outside Uni20's directory scope.
 include(subproject_args.cmake)
 
-if(UNI20_ENABLE_MPFR)
+add_test(NAME CMakeSubproject.scalar_configuration
+  COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/scalar_configuration"
+    "-Dcompiler=${CMAKE_CXX_COMPILER}" "-Dnative_float80=${UNI20_NATIVE_FLOAT80}"
+    "-Dhas_mpreal=${UNI20_HAS_MPREAL}"
+    "-Dhas_float128=${UNI20_HAS_FLOAT128}" "-Dmplapack_source=${UNI20_MPLAPACK_SOURCE}"
+    "-Dmplapack_dir=${mplapack_DIR}"
+    "-Dgmp_include=${UNI20_GMP_INCLUDE_DIR}" "-Dgmp_library=${UNI20_GMP_LIBRARY}"
+    "-Dmpfr_include=${UNI20_MPFR_INCLUDE_DIR}" "-Dmpfr_library=${UNI20_MPFR_LIBRARY}"
+    "-Dmpc_include=${UNI20_MPC_INCLUDE_DIR}" "-Dmpc_library=${UNI20_MPC_LIBRARY}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_scalars.cmake")
+set_tests_properties(CMakeSubproject.scalar_configuration PROPERTIES LABELS cmake TIMEOUT 120)
+
+if(UNI20_HAS_MPREAL)
   add_test(NAME CMakeSubproject.mpfr_dependencies
     COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
       "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/mpfr_dependencies"
@@ -48,10 +61,13 @@ set_tests_properties(CMakeSubproject.dependency_arguments PROPERTIES LABELS cmak
 # Do not compile the entire MPLAPACK provider three more times in nested builds.
 # Main-suite tests cover the fetched provider; an installed package also gives
 # these downstream consumers inexpensive binary128 compile/link/run coverage.
-if(UNI20_ENABLE_MPLAPACK AND UNI20_MPLAPACK_SOURCE STREQUAL "system")
-  string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  -DUNI20_ENABLE_MPLAPACK=ON\n")
+if(UNI20_HAS_FLOAT128 AND UNI20_MPLAPACK_SOURCE STREQUAL "system")
+  string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  -DUNI20_ENABLE_FLOAT128=ON\n")
 else()
-  string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  -DUNI20_ENABLE_MPLAPACK=OFF\n")
+  string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  -DUNI20_ENABLE_FLOAT128=OFF\n")
+endif()
+if(NOT UNI20_MPLAPACK_SOURCE STREQUAL "system")
+  string(APPEND UNI20_SUBPROJECT_TEST_ARGS "  -DUNI20_BACKEND_MPLAPACK=OFF\n")
 endif()
 
 configure_file(run_subproject.cmake.in run_subproject.cmake @ONLY)

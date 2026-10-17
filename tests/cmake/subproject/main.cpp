@@ -14,18 +14,16 @@ static_assert(sizeof(uni20::blas_int) == (UNI20_ILP64 ? 8 : 4));
 
 int main()
 {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   {
     using namespace uni20::literals;
     auto p = uni20::Precision::bits(256);
     auto x = (0.1_mp + 0.2_mp).at(p);
-    if (x != uni20::mpreal("0.3", p) || uni20::sqrt(uni20::mpreal(4, p)) != 2)
-      return 6;
+    if (x != uni20::mpreal("0.3", p) || uni20::sqrt(uni20::mpreal(4, p)) != 2) return 6;
   }
 #endif
   // Exercise an out-of-line common-library function, not just its headers.
-  if (terminal::is_a_terminal(nullptr))
-    return 1;
+  if (terminal::is_a_terminal(nullptr)) return 1;
 
 #if UNI20_TEST_PARENT_BLAS
   double const matrix[] = {1, 2, 3, 4};
@@ -33,12 +31,10 @@ int main()
   double product[4] = {};
   uni20::blas::gemm('N', 'N', 2, 2, 2, 1.0, matrix, 2, identity, 2, 0.0, product, 2);
   for (int i = 0; i != 4; ++i)
-    if (product[i] != matrix[i])
-      return 4;
+    if (product[i] != matrix[i]) return 4;
   double diagonal[] = {4, 0, 0, 3};
   uni20::blas_int pivots[2] = {};
-  if (uni20::lapack::unchecked::getrf(2, 2, diagonal, 2, pivots) != 0 || pivots[0] != 1 || pivots[1] != 2)
-    return 5;
+  if (uni20::lapack::unchecked::getrf(2, 2, diagonal, 2, pivots) != 0 || pivots[0] != 1 || pivots[1] != 2) return 5;
 #endif
 
 #if UNI20_HAS_FLOAT128
@@ -49,11 +45,11 @@ int main()
     using std::tan;
     uni20::float128 const x = uni20::float128{1} / uni20::float128{3};
     auto const error = abs(tan(atan(x)) - x);
-    if (error > uni20::float128{8} * uni20::numeric_limits<uni20::float128>::epsilon())
-      return 2;
+    if (error > uni20::float128{8} * uni20::numeric_limits<uni20::float128>::epsilon()) return 2;
+#if UNI20_HAS_MPLAPACK_FLOAT128
     uni20::float128 values[] = {1, 2};
-    if (Rdot(2, values, 1, values, 1) != uni20::float128{5})
-      return 3;
+    if (Rdot(2, values, 1, values, 1) != uni20::float128{5}) return 3;
+#endif
   }
 #endif
   return 0;

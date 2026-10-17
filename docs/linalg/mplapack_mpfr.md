@@ -14,8 +14,8 @@ Install the GMP, MPFR and MPC development packages (`libgmp-dev`, `libmpfr-dev`,
 
 ```sh
 cmake -S . -B build_codex/mplapack_mpfr \
-  -DUNI20_ENABLE_MPFR=ON -DUNI20_ENABLE_MPC=ON \
-  -DUNI20_ENABLE_MPLAPACK_MPFR=ON
+  -DUNI20_ENABLE_MPREAL=ON \
+  -DUNI20_BACKEND_MPLAPACK=ON
 ```
 
 `UNI20_USE_SYSTEM_MPLAPACK=AUTO` prefers an installed MPLAPACK package at least
@@ -25,10 +25,12 @@ The fetched build uses the reference library, with optimized, CUDA and OpenCL
 variants disabled. Provider-internal parallelism is outside this adapter's
 precision contract.
 
-This option is independent of `UNI20_ENABLE_MPLAPACK`, which enables binary128.
-Both can be enabled together; neither implies the other. Real-only scalar and
-tensor support still needs only `UNI20_ENABLE_MPFR`, without MPC or MPLAPACK.
-The provider's MPFR component itself needs MPC even for real solves.
+The scalar option enables both `mpreal` and `mpcomplex`, using GMP, MPFR and
+MPC. Without `UNI20_BACKEND_MPLAPACK`, scalar arithmetic and tensor storage
+remain available without MPLAPACK. With it, the MPFR component is selected
+automatically, alongside components for any enabled fixed-precision families.
+To request only arbitrary-precision kernels, set `UNI20_ENABLE_FLOAT80=OFF`
+and `UNI20_ENABLE_FLOAT128=OFF`.
 
 ## Selecting working precision
 
@@ -51,8 +53,7 @@ scanned for consistency. MPLAPACK requires finite working precision. GEMM at
 `Precision::exact()` instead uses the reference CPU kernel: MPLAPACK declines
 the instance without reading or modifying elements, and normal dispatch falls
 through. Exact participating elements and coefficients then give an exact
-rational product. This also works with MPFR alone, without MPLAPACK or MPC;
-complex exact products require MPC for the scalar type.
+rational product. This also works with the scalar family alone, without MPLAPACK.
 
 An all-exact solve requires an explicit finite override. A GEMM output with
 nonzero `beta` may supply finite precision through its construction default.

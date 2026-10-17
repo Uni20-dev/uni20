@@ -4,7 +4,7 @@
 #include <uni20/common/data_table_sinks.hpp>
 #include <uni20/common/output_session.hpp>
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 namespace
 {
 using namespace uni20;

@@ -1,5 +1,5 @@
 #include <uni20/core/runtime_precision.hpp>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <uni20/core/mpreal.hpp>
 #endif
 
@@ -58,7 +58,7 @@ TEST(PrecisionTest, FixedScalarRequiresMatchingPrecision)
   EXPECT_THROW((void)scalar_at_precision<int>(3, Precision::bits(32)), std::invalid_argument);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 static_assert(!HasNativePrecision<mpreal>);
 TEST(PrecisionTest, RuntimePrecisionIsExplicitAndProviderChecksItsRange)
 {

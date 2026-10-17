@@ -104,7 +104,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, DecompositionSpectrum)
 }
 UNI20_PRECISION_TEST(NumericalLinalg, DecompositionAccuracyImprovesWithPrecision)
 {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   using C = TypeParam;
   auto a = C::matrix(2, 2);
   a[0, 0] = C::scalar(2);

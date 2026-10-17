@@ -46,7 +46,7 @@ TEST(ScalarIoTest, ReadsBuiltInRealScalarsFromStreamToken)
   EXPECT_DOUBLE_EQ(value, 3.5);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 TEST(ScalarIoTest, ExactRationalsRoundDirectlyToDecimalTiesToEven)
 {
   using namespace uni20;

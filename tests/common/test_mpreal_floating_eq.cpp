@@ -3,7 +3,7 @@
 
 #include <gtest/gtest-spi.h>
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 namespace
 {
 using namespace uni20;
@@ -11,7 +11,7 @@ using check::float_abs_distance;
 using check::float_distance;
 using Ulp = check::FloatingULP<mpreal>;
 static_assert(check::UlpComparable<mpreal>);
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 static_assert(!check::UlpComparable<complex<mpreal>>);
 #endif
 

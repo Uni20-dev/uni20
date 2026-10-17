@@ -21,9 +21,9 @@ TEST(Initialization, SignalingNaNCapabilityDoesNotRequireGenericLimits)
   static_assert(!uni20::detail::has_signaling_nan_v<int>);
   static_assert(!uni20::detail::has_signaling_nan_v<std::string>);
   static_assert(!uni20::detail::has_signaling_nan_v<std::unique_ptr<int>>);
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   static_assert(!uni20::detail::has_signaling_nan_v<uni20::mpreal>);
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
   static_assert(!uni20::detail::has_signaling_nan_v<uni20::complex<uni20::mpreal>>);
 #endif
 #endif

@@ -62,7 +62,7 @@ cmake --build build --target spin_half_heisenberg_dmrg_example
 ```
 
 The current CPU build supports real or complex `fp32`, `fp64`, and — when
-built with `-DUNI20_ENABLE_MPLAPACK=ON` — real or complex `fp128`, selectable
+built with `-DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON` — real or complex `fp128`, selectable
 at runtime via `--scalar=real|complex` and `--precision=fp32|fp64|fp128`.
 
 For a CUDA build with cuBLAS and cuSOLVER:

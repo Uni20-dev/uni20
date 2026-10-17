@@ -34,7 +34,9 @@ not a replacement for this integration check.
 
 For cross-cutting scalar changes, cover the GCC Debug and Release configurations,
 Clang Debug, and the optional MPLAPACK configuration when affected. Include the
-MPFR-disabled, MPFR-only, and MPFR/MPC combinations used by those jobs. Run an
+arbitrary-precision family disabled and enabled, with and without MPLAPACK
+kernels. The Clang job disables the optional float80 alias so that native
+`long double` support is tested independently of that alias. Run an
 unfiltered `cmake --build <build-dir>` before `ctest --test-dir <build-dir>
 --output-on-failure`; test discovery after a partial build is not evidence that
 the entire suite built. Record compiler/configuration details, actual failures,
@@ -60,7 +62,7 @@ Current test modules include:
 
 `tests/krylov` contains Uni20-native C++ matrix-free interface tests, native
 solver tests, Matrix Market fixture checks, and optional MPLAPACK binary128
-probes when `UNI20_ENABLE_MPLAPACK=ON`.
+probes when `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON`.
 
 ## Configuration Options
 
@@ -74,7 +76,10 @@ Python bindings default to `OFF` when Uni20 is embedded in another project.
 | `UNI20_BUILD_TESTS` | `ON` | Build and register C++ tests |
 | `UNI20_BUILD_COMBINED_TESTS` | `ON` | Build `tests/uni20_tests` combined test executable |
 | `UNI20_BUILD_PYTHON` | `ON` | Also enable `tests/python` CTest entries |
-| `UNI20_ENABLE_MPLAPACK` | `OFF` | Enable the binary128 backend; prefer installed MPLAPACK 3.0.0 or newer and otherwise fetch `v3.0.0` |
+| `UNI20_ENABLE_FLOAT80` | `AUTO` | Detect native 80-bit scalars; `ON` requires them, `OFF` omits them |
+| `UNI20_ENABLE_FLOAT128` | `OFF` | Binary128 scalar family (`AUTO/ON/OFF`) |
+| `UNI20_ENABLE_MPREAL` | `OFF` | Arbitrary-precision real and complex scalar family (`AUTO/ON/OFF`) |
+| `UNI20_BACKEND_MPLAPACK` | `OFF` | Enable MPLAPACK kernels for all enabled optional scalar families |
 
 Example configure:
 
@@ -95,7 +100,7 @@ build and validation workflow:
 
 ```bash
 cmake -S . -B build \
-  -DUNI20_ENABLE_MPLAPACK=ON \
+  -DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON \
   -Dmplapack_DIR=/path/to/mplapack-build-binary128
 ```
 

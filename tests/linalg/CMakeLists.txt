@@ -2,11 +2,11 @@ add_test_module(linalg_decompositions SOURCES test_mpfr_decompositions.cpp LIBS 
 
 add_test_module(lu SOURCES test_lu.cpp LIBS uni20_linalg)
 
-if(UNI20_ENABLE_MPLAPACK_BINARY80)
+if(UNI20_HAS_MPLAPACK_FLOAT80)
   add_test_module(linalg_binary80 SOURCES test_mplapack_binary80.cpp LIBS uni20_linalg uni20_async)
 endif()
 
-if(UNI20_ENABLE_MPLAPACK_MPFR)
+if(UNI20_HAS_MPLAPACK_MPREAL)
   add_test_module(linalg_mpfr SOURCES test_mplapack_mpfr.cpp LIBS uni20_linalg uni20_async TBB::tbb)
 endif()
 
@@ -64,7 +64,7 @@ if(UNI20_BACKEND_BLAS)
   )
 endif()
 
-if(UNI20_ENABLE_MPLAPACK)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_executable(uni20_linalg_mplapack_binary128_tests
     test_mplapack_binary128_cpu_ops.cpp
     "${PROJECT_SOURCE_DIR}/tests/uni20_tests_main.cpp"

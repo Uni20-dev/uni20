@@ -9,7 +9,7 @@
 #include <uni20/backend/blas/blas_int.hpp>
 #include <uni20/config.hpp>
 
-#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 // clang-format off
 #include <mplapack_config.h>
 #include <mplapack_binary128.h>
@@ -22,7 +22,7 @@
 namespace uni20::lapack::mplapack::detail
 {
 
-#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 
 inline std::size_t lapack_int_work_size(blas_int count)
 {

@@ -116,7 +116,7 @@ class metadata_value {
                 {
                   if constexpr (dt::runtime_real<U>)
                   {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
                     auto bound =
                         mpreal(uni20::numeric_limits<T>::max(), Precision::bits(uni20::numeric_limits<T>::digits()));
                     if (uni20::isfinite(*p) && (*p > bound || *p < -bound))
@@ -146,7 +146,7 @@ class metadata_value {
 #if UNI20_HAS_FLOAT128
           try_type.template operator()<uni20::float128>();
 #endif
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
           try_type.template operator()<mpreal>();
 #endif
           if (!result) throw std::invalid_argument("incompatible metadata scalar types");
@@ -155,7 +155,7 @@ class metadata_value {
       }
     }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Convert to mpreal at explicit precision, including optional destinations.
     /// \details Text uses parse_real; supported native reals (including float128) and integers are converted
     ///          directly. Exact precision admits rationals/integers, but rejects native floating inputs.

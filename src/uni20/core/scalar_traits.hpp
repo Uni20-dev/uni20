@@ -39,7 +39,7 @@ template <> struct is_real_t<double> : std::true_type
 template <> struct is_real_t<long double> : std::true_type
 {};
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <> struct is_real_t<mpreal> : std::true_type
 {};
 #endif
@@ -63,7 +63,7 @@ template <typename T> struct is_complex_t : std::false_type
 
 template <typename T> struct is_complex_t<detail::standard_complex<T>> : std::true_type
 {};
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 template <> struct is_complex_t<mpcomplex> : std::true_type
 {};
 #endif
@@ -186,11 +186,6 @@ struct make_complex<T>
 {
     using type = uni20::complex<T>;
 };
-
-#if UNI20_ENABLE_MPFR && !UNI20_ENABLE_MPC
-// No standard-complex fallback for the pending MPC scalar family.
-template <> struct make_complex<mpreal>;
-#endif
 
 /// \brief Metafunction that leaves already-complex types unchanged.
 /// \tparam T Type whose scalar component is already complex.

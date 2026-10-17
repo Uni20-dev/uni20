@@ -17,7 +17,7 @@ tuning values, see [Krylov Algorithms](algorithms.md).
 | `f128` | `uni20::float128`, when `UNI20_HAS_FLOAT128=1` |
 | `cf128` | `uni20::complex<uni20::float128>`, also spelled `uni20::complex256`, when `UNI20_HAS_FLOAT128=1` |
 
-Binary128 validation is gated by `UNI20_ENABLE_MPLAPACK=ON`. CMake resolves an
+Binary128 validation is gated by `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON`. CMake resolves an
 installed MPLAPACK 3.0.0 or newer package with the binary128 component, or
 fetches the pinned 3.0.0 release. The optional validation currently
 covers scalar aliases and I/O, BLAS/LAPACK wrapper surfaces, tensor linear
@@ -168,7 +168,7 @@ Ritz-reality helper tests do not certify those solvers.
 
 ## Optional MPLAPACK Binary128 Coverage
 
-This table records the `UNI20_ENABLE_MPLAPACK=ON` probes. The entries are not
+This table records the `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON` probes. The entries are not
 part of the ordinary default test matrix. They check that the scalar-generic
 paths genuinely operate at the configured binary128 precision and do not
 silently collapse to double precision.
@@ -240,7 +240,7 @@ stress tests remain future work.
 
 ## Runtime-precision scalar helper coverage
 
-With `UNI20_ENABLE_MPC=ON`,
+With `UNI20_ENABLE_MPREAL=ON`,
 `KrylovMatrixFreeInterface.RitzRealityUsesRuntimePrecision` checks the standalone
 Ritz-reality classifier at 80 and 256 bits, including all three classifications,
 precision-dependent classification of the same numerical value, and exact inputs

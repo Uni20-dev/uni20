@@ -15,7 +15,7 @@ namespace
 using ComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160>&>()));
 using ConstComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160> const&>()));
 constexpr auto complex_lu_acceptance =
-    UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
+    UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
 static_assert(probe_dispatch_kernel_types<MplapackBinary80Backend, lu_factor_op, ComplexDescriptor&,
                                           std::span<std::size_t>, SolveInfo&, SolveOptions<float80> const&>() ==
               complex_lu_acceptance);
@@ -101,7 +101,7 @@ TEST(Binary80Linalg, PreservesPrecisionAndExponentRange)
   auto default_result = slogdet(a);
   EXPECT_LT(abs(default_result.phase - cpu.phase), 1e-18L);
   EXPECT_LT(abs(default_result.log_absolute - cpu.log_absolute), 1e-18L);
-#if UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
   auto f = lu_factor(MplapackBinary80Backend{}, a);
   auto x = lu_solve(MplapackBinary80Backend{}, f, a);
   for (std::size_t i = 0; i < 2; ++i)
@@ -121,7 +121,7 @@ TEST(Binary80Linalg, ComplexDefaultSolveAndLogdetPreserveExponentRange)
                                [](auto const& f, auto const& b) { return lu_solve(f, b); });
 }
 
-#if UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
 TEST(Binary80Linalg, ComplexProviderSolveAndLogdetPreserveExponentRange)
 {
   check_complex_exponent_range([](auto const& a) { return lu_factor_with_info(MplapackBinary80Backend{}, a); },

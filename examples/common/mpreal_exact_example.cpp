@@ -41,7 +41,7 @@ int main()
   std::cout << "Passing precision explicitly also makes a rational root approximate: " << approximate_root
             << " (is_exact = " << is_exact(approximate_root) << ").\n";
   if (root * root != fraction || !is_exact(root) || is_exact(approximate_root)) return 1;
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
   complex<mpreal> z(mpreal{1}, mpreal{2});
   auto quotient = z / complex<mpreal>{3};
   std::cout << "Complex rational arithmetic stays exact too: (1+2i)/3 = " << quotient

@@ -27,7 +27,7 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderIdentities)
 }
 } // namespace uni20::test
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 namespace uni20::test
 {
 namespace

@@ -57,7 +57,7 @@ async::AsyncTask co_assign_product(BackendSelector const selector, async::WriteB
   auto rhs_descriptor = uni20::mdspec_of(rhs_value);
   auto p = requested ? *requested : common_default_precision(lhs_value, rhs_value);
   require_precision<scalar_type>(p);
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   if constexpr (has_runtime_precision_v<scalar_type>)
   {
     if constexpr (async::is_async_alias_v<OutputTensor>)
@@ -110,7 +110,7 @@ async::AsyncTask co_gemm(BackendSelector const selector, async::WriteBuffer<Outp
   auto output_span = uni20::mdspec_of(output_value);
   auto lhs_span = uni20::mdspec_of(lhs_value);
   auto rhs_span = uni20::mdspec_of(rhs_value);
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   if constexpr (has_runtime_precision_v<scalar_type>)
     uni20::linalg::gemm(selector, output_value, alpha_scalar, lhs_value, rhs_value, beta_scalar, requested);
   else

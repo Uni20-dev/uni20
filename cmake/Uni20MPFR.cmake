@@ -2,17 +2,31 @@
 include_guard(GLOBAL)
 
 function(uni20_find_mpfr)
+  set(_required ON)
+  if(ARGC GREATER 0)
+    set(_required "${ARGV0}")
+  endif()
+  set(UNI20_MPFR_FOUND OFF PARENT_SCOPE)
   find_path(UNI20_GMP_INCLUDE_DIR NAMES gmp.h)
   find_library(UNI20_GMP_LIBRARY NAMES gmp)
   find_path(UNI20_MPFR_INCLUDE_DIR NAMES mpfr.h)
   find_library(UNI20_MPFR_LIBRARY NAMES mpfr)
   if(NOT UNI20_GMP_INCLUDE_DIR OR NOT UNI20_GMP_LIBRARY OR
      NOT UNI20_MPFR_INCLUDE_DIR OR NOT UNI20_MPFR_LIBRARY)
-    message(FATAL_ERROR
-      "UNI20_ENABLE_MPFR requires installed GMP and MPFR development packages. "
+    if(_required)
+      message(FATAL_ERROR
+      "UNI20_ENABLE_MPREAL=ON requires installed GMP and MPFR development packages. "
       "On Ubuntu: sudo apt install libgmp-dev libmpfr-dev. "
       "For a custom installation, set CMAKE_PREFIX_PATH or UNI20_{GMP,MPFR}_{INCLUDE_DIR,LIBRARY}. "
       "Uni20 does not download these libraries.")
+    else()
+      message(STATUS
+      "UNI20_ENABLE_MPREAL=ON requires installed GMP and MPFR development packages. "
+      "On Ubuntu: sudo apt install libgmp-dev libmpfr-dev. "
+      "For a custom installation, set CMAKE_PREFIX_PATH or UNI20_{GMP,MPFR}_{INCLUDE_DIR,LIBRARY}. "
+      "Uni20 does not download these libraries.")
+      return()
+    endif()
   endif()
 
   include(CheckCXXSourceCompiles)
@@ -36,7 +50,12 @@ function(uni20_find_mpfr)
     }
   ]=] UNI20_MPFR_LINKS)
   if(NOT UNI20_MPFR_LINKS)
-    message(FATAL_ERROR "Cannot compile and link MPFR >= 4.2 with GMP; check the selected headers and libraries.")
+    if(_required)
+      message(FATAL_ERROR "Cannot compile and link MPFR >= 4.2 with GMP; check the selected headers and libraries.")
+    else()
+      message(STATUS "Cannot compile and link MPFR >= 4.2 with GMP; check the selected headers and libraries.")
+      return()
+    endif()
   endif()
   if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
     unset(UNI20_MPFR_HAS_TLS CACHE)
@@ -45,7 +64,12 @@ function(uni20_find_mpfr)
       int main() { return mpfr_buildopt_tls_p() ? 0 : 1; }
     ]=] UNI20_MPFR_HAS_TLS)
     if(NOT UNI20_MPFR_HAS_TLS)
-      message(FATAL_ERROR "Uni20 requires a thread-safe MPFR build (--enable-thread-safe).")
+      if(_required)
+        message(FATAL_ERROR "Uni20 requires a thread-safe MPFR build (--enable-thread-safe).")
+      else()
+        message(STATUS "Skipping mpreal: MPFR is not thread-safe (--enable-thread-safe required).")
+        return()
+      endif()
     endif()
   else()
     message(STATUS "Cross-compiling: MPFR thread-local support will be checked at runtime")
@@ -55,11 +79,17 @@ function(uni20_find_mpfr)
   target_include_directories(uni20_mpfr SYSTEM INTERFACE "${UNI20_MPFR_INCLUDE_DIR}" "${UNI20_GMP_INCLUDE_DIR}")
   target_link_libraries(uni20_mpfr INTERFACE "${UNI20_MPFR_LIBRARY}" "${UNI20_GMP_LIBRARY}")
   mark_as_advanced(UNI20_GMP_INCLUDE_DIR UNI20_GMP_LIBRARY UNI20_MPFR_INCLUDE_DIR UNI20_MPFR_LIBRARY)
+  set(UNI20_MPFR_FOUND ON PARENT_SCOPE)
 endfunction()
 
 # Call after binary128 provider selection. The MPFR opt-in must reach consumers
 # on the command line: including mpfr.h before a Uni20 header must also work.
 function(uni20_enable_mpfr_float128)
+  set(_required ON)
+  if(ARGC GREATER 0)
+    set(_required "${ARGV0}")
+  endif()
+  set(UNI20_MPFR_FLOAT128_FOUND OFF PARENT_SCOPE)
   include(CheckCXXSourceCompiles)
   set(CMAKE_REQUIRED_INCLUDES "${UNI20_MPFR_INCLUDE_DIR};${UNI20_GMP_INCLUDE_DIR}")
   set(CMAKE_REQUIRED_LIBRARIES "${UNI20_MPFR_LIBRARY};${UNI20_GMP_LIBRARY}")
@@ -81,9 +111,14 @@ function(uni20_enable_mpfr_float128)
       }" UNI20_MPFR_FLOAT128_LINKS)
     if(UNI20_MPFR_FLOAT128_LINKS)
       target_compile_definitions(uni20_mpfr INTERFACE MPFR_WANT_FLOAT128 mpfr_float128=${_type})
+      set(UNI20_MPFR_FLOAT128_FOUND ON PARENT_SCOPE)
       return()
     endif()
   endforeach()
+  if(NOT _required)
+    message(STATUS "Combined mpreal/float128 arithmetic unavailable: MPFR binary128 conversions do not link")
+    return()
+  endif()
   message(FATAL_ERROR
     "Combined MPFR and binary128 support requires MPFR's binary128 conversion API. "
     "Use MPFR built with --enable-float128 and headers compatible with this compiler "

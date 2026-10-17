@@ -19,7 +19,7 @@ target_link_libraries(my_solver PRIVATE uni20_core uni20_common)
 ```
 
 Configure with `-DUNI20_SOURCE_DIR=/path/to/uni20`. Set
-`-DUNI20_ENABLE_MPLAPACK=ON` to enable Uni20's binary128 scalar and backend;
+`-DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON` to enable Uni20's binary128 scalar and backend;
 see [MPLAPACK setup](../linalg/mplapack_binary128.md) for provider selection.
 Use the configured Uni20 targets so generated headers, compile definitions,
 and provider libraries travel together.

@@ -2,7 +2,7 @@
 
 #include <uni20/core/runtime_precision.hpp>
 #include <uni20/core/scalar_concepts.hpp>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <uni20/core/mpreal.hpp>
 #endif
 

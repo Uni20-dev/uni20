@@ -14,7 +14,7 @@ static_assert(CanBindConfiguration<double>);
 static_assert(CanBindConfiguration<uni20::half_int>);
 static_assert(CanBindConfiguration<std::string>);
 static_assert(!CanBindConfiguration<std::optional<double>>);
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 static_assert(!CanBindConfiguration<uni20::mpreal>);
 static_assert(!CanBindConfiguration<std::optional<uni20::mpreal>>);
 #endif

@@ -18,7 +18,7 @@
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/precision.hpp>
 #include <uni20/tensor/tensor.hpp>
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
 #include <uni20/linalg/backends/mplapack/binary80.hpp>
 #endif
 

@@ -67,7 +67,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "blas_or_mplapack");
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
   if constexpr (C::binary80_provider)
     check_product<C>(linalg::MplapackBinary80Backend{});
   else
@@ -107,7 +107,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "lapack_or_mplapack");
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
   if constexpr (C::binary80_provider)
     check_solve<C>(linalg::MplapackBinary80Backend{}, false);
   else
@@ -119,7 +119,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   if constexpr (C::runtime)
     check_solve<C>(linalg::LapackBackend{}, true);
   else
@@ -127,7 +127,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
     check_solve<C>(linalg::CpuReferenceBackend{}, true);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <class C, class Backend> void check_solve_accuracy(Backend backend)
 {
   testing::Test::RecordProperty("backend", std::string(Backend::name));
@@ -152,12 +152,12 @@ template <class C, class Backend> void check_solve_accuracy(Backend backend)
 }
 #endif
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 UNI20_PRECISION_TEST(NumericalLinalg, SolveAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   if constexpr (C::runtime)
     check_solve_accuracy<C>(linalg::LapackBackend{});
   else

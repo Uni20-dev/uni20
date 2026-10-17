@@ -32,7 +32,7 @@ Uni20 currently has a strong real dense projected-kernel prototype:
   Hermitian eigensystems, Schur, QZ, and condition diagnostics;
 - real binary128 coverage for selected Krylov eigensolvers, Krylov exponential
   actions, dense matrix exponentials, and precision-validation probes when
-  `UNI20_ENABLE_MPLAPACK=ON`.
+  `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON`.
 
 The complex dense surface is still narrower than the real survey, but the
 checked provider layer now includes the main prerequisites for tensor

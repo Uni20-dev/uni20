@@ -62,21 +62,21 @@ static_assert(m::expm1(Number{1}).value == 401);
 template <class... Functions> consteval bool elementary_signatures(Functions...)
 {
   return ((std::invocable<Functions, float> && std::invocable<Functions, double> &&
-           std::invocable<Functions, long double> &&
-           !std::invocable<Functions, scalar_math_test::Unsupported> &&
+           std::invocable<Functions, long double> && !std::invocable<Functions, scalar_math_test::Unsupported> &&
            !std::invocable<Functions, scalar_math_test::ConversionOnly<std::true_type>> &&
-           !std::invocable<Functions, double, double>) && ...);
+           !std::invocable<Functions, double, double>) &&
+          ...);
 }
-static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log1p, m::cbrt, m::asin, m::acos,
-                                    m::tan, m::atan, m::sinh, m::cosh, m::tanh, m::asinh, m::acosh, m::atanh));
+static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log1p, m::cbrt, m::asin, m::acos, m::tan,
+                                    m::atan, m::sinh, m::cosh, m::tanh, m::asinh, m::acosh, m::atanh));
 
 // Enabling MPFR must not supply missing native functions through conversion
 // to mpreal. These native implementations are deliberately deferred.
 template <class T> consteval bool deferred_native_special_functions()
 {
   return !std::invocable<decltype(m::digamma), T> && !std::invocable<decltype(m::dilog_real), T> &&
-         !std::invocable<decltype(m::airy_ai), T> &&
-         !std::invocable<decltype(m::upper_gamma), T, T> && !std::invocable<decltype(m::agm), T, T>;
+         !std::invocable<decltype(m::airy_ai), T> && !std::invocable<decltype(m::upper_gamma), T, T> &&
+         !std::invocable<decltype(m::agm), T, T>;
 }
 static_assert(deferred_native_special_functions<float>());
 static_assert(deferred_native_special_functions<double>());
@@ -92,14 +92,13 @@ template <class... F> consteval bool deferred_extensions(F...)
 #if UNI20_HAS_FLOAT128
            && !std::invocable<F, uni20::float128>
 #endif
-           && !std::invocable<F, scalar_math_test::ConversionOnly<std::true_type>>) && ...);
+           && !std::invocable<F, scalar_math_test::ConversionOnly<std::true_type>>) &&
+          ...);
 }
-static_assert(deferred_extensions(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1,
-    m::sinpi, m::cospi, m::tanpi, m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot,
-    m::sech, m::csch, m::coth));
+static_assert(deferred_extensions(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1, m::sinpi, m::cospi, m::tanpi,
+                                  m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot, m::sech, m::csch, m::coth));
 static_assert(!std::invocable<decltype(m::atan2pi), double, double>);
 static_assert(!std::invocable<decltype(m::compound), double, int>);
-
 
 template <class T> void check_native_special_functions()
 {
@@ -121,18 +120,18 @@ TEST(ScalarMath, NativeSpecialFunctionsKeepNativeTypes)
 #endif
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <class... Functions> consteval bool mpfr_special_signatures(Functions...)
 {
-  return ((std::invocable<Functions, uni20::mpreal> &&
-           std::invocable<Functions, uni20::mpreal, uni20::Precision> &&
-           !std::invocable<Functions, double, uni20::Precision>) && ...);
+  return ((std::invocable<Functions, uni20::mpreal> && std::invocable<Functions, uni20::mpreal, uni20::Precision> &&
+           !std::invocable<Functions, double, uni20::Precision>) &&
+          ...);
 }
-static_assert(mpfr_special_signatures(m::tgamma, m::erf, m::erfc, m::lgamma, m::lgamma_sign, m::digamma,
-                                      m::zeta, m::expint, m::dilog_real, m::airy_ai));
-static_assert(mpfr_special_signatures(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1,
-    m::sinpi, m::cospi, m::tanpi, m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot,
-    m::sech, m::csch, m::coth));
+static_assert(mpfr_special_signatures(m::tgamma, m::erf, m::erfc, m::lgamma, m::lgamma_sign, m::digamma, m::zeta,
+                                      m::expint, m::dilog_real, m::airy_ai));
+static_assert(mpfr_special_signatures(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1, m::sinpi, m::cospi,
+                                      m::tanpi, m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot, m::sech,
+                                      m::csch, m::coth));
 static_assert(std::invocable<decltype(m::compound), uni20::mpreal, int, uni20::Precision>);
 static_assert(!std::invocable<decltype(m::compound), uni20::mpreal, bool>);
 static_assert(!std::invocable<decltype(m::compound), uni20::mpreal, double>);
@@ -191,7 +190,7 @@ TEST(ScalarMath, ReadsComponentsByValue)
   EXPECT_EQ(m::abs_squared(z), 25);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 TEST(ScalarMath, ExactAndExplicitPrecisionContracts)
 {
   using uni20::mpreal;
@@ -229,7 +228,7 @@ TEST(ScalarMath, ExactAndExplicitPrecisionContracts)
 }
 #endif
 
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 TEST(ScalarMath, ExactComplexAndApproximateMagnitude)
 {
   using uni20::mpreal;

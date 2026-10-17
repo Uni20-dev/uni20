@@ -51,7 +51,7 @@ concept integer =
     std::same_as<T, unsigned long> || std::same_as<T, long long> || std::same_as<T, unsigned long long>;
 
 template <typename T> inline constexpr bool runtime_real = false;
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <> inline constexpr bool runtime_real<mpreal> = true;
 #endif
 

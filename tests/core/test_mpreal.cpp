@@ -34,7 +34,7 @@ static_assert(!AddsNativeFloat<mpreal>);
 static_assert(HasPrecisionlessSqrt<decimal_literal>);
 static_assert(Real<mpreal> && Scalar<mpreal>);
 static_assert(!BlasReal<mpreal> && !LapackReal<mpreal>);
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 static_assert(HasComplexSpelling<mpreal> && HasComplexCounterpart<mpreal>);
 #else
 static_assert(!HasComplexSpelling<mpreal> && !HasComplexCounterpart<mpreal>);

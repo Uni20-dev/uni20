@@ -48,7 +48,7 @@ enum class ScalarPrecision
 {
   Float32,
   Float64
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   ,
   Float128
 #endif
@@ -391,7 +391,7 @@ struct ExampleOptions
       return "float";
     case ScalarPrecision::Float64:
       return "double";
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
     case ScalarPrecision::Float128:
       return "float128";
 #endif
@@ -411,10 +411,10 @@ struct ExampleOptions
   }
   if (value == "float128" || value == "quad" || value == "binary128")
   {
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
     return ScalarPrecision::Float128;
 #else
-    throw std::invalid_argument("float128 precision requires a UNI20_HAS_FLOAT128 build");
+    throw std::invalid_argument("float128 precision requires a UNI20_HAS_MPLAPACK_FLOAT128 build");
 #endif
   }
   throw std::invalid_argument("unsupported --precision value; use float, double, or float128 when available");
@@ -604,7 +604,7 @@ void print_usage(char const* program)
   fmt::print("Options:\n");
   fmt::print("  --matrix=PATH          Matrix Market coordinate file\n");
   fmt::print("  --precision=float|double");
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   fmt::print("|float128");
 #endif
   fmt::print(", default double\n");
@@ -747,7 +747,7 @@ max_original_relative_residual(SparseMatrixMarketMatrix const& matrix,
   numeric.float32_precision = uni20::numeric_limits<float>::max_digits10();
   numeric.float64_precision = uni20::numeric_limits<double>::max_digits10();
   numeric.long_double_precision = uni20::numeric_limits<long double>::max_digits10();
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   numeric.float128_precision = uni20::numeric_limits<uni20::float128>::max_digits10();
 #endif
   return numeric;
@@ -1068,7 +1068,7 @@ int main(int argc, char** argv)
         return run_example<float>(options);
       case ScalarPrecision::Float64:
         return run_example<double>(options);
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
       case ScalarPrecision::Float128:
         return run_example<uni20::float128>(options);
 #endif

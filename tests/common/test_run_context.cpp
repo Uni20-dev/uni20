@@ -45,7 +45,7 @@ static_assert(!CanConvertMetadata<std::optional<float128>>);
 #endif
 #endif
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 static_assert(std::constructible_from<metadata_value, mpreal>);
 static_assert(std::constructible_from<metadata_value, std::optional<mpreal>>);
 static_assert(CanConvertMetadata<mpreal>);

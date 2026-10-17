@@ -7,13 +7,14 @@
 #include <cmath>
 #include <sstream>
 
-TEST(Float80Test, AvailabilityMatchesNativeFormat)
+TEST(Float80Test, AvailabilityRequiresNativeFormat)
 {
   using Limits = uni20::numeric_limits<long double>;
   constexpr bool native = Limits::is_iec559 && Limits::radix == 2 && Limits::digits() == 64 &&
                           Limits::min_exponent == -16381 && Limits::max_exponent == 16384 &&
                           Limits::denorm_min() > 0 && Limits::denorm_min() < Limits::min();
-  EXPECT_EQ(uni20::has_float80, native);
+  EXPECT_EQ(uni20::has_float80, bool(UNI20_HAS_FLOAT80));
+  EXPECT_TRUE(!uni20::has_float80 || native);
 }
 
 #if UNI20_HAS_FLOAT80

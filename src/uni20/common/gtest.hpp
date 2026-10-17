@@ -53,7 +53,7 @@ namespace uni20::check::detail
 {
 template <class T> std::string floating_operand_text(T const& value) { return uni20::format_scalar(value); }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 inline std::string floating_operand_text(mpreal const& value)
 {
   if (!value.initialized()) return "<unset>";
@@ -77,7 +77,7 @@ template <UlpComparable T>
     result << "unrepresentable or exceeds diagnostic range";
   else
     result << distance;
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   if constexpr (std::same_as<T, mpreal>)
     if (auto reason = compare_mpreal(a, b, ulps).reason) result << "\n  reason: " << reason;
 #endif

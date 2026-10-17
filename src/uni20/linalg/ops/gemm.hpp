@@ -14,11 +14,11 @@
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/output.hpp>
 #include <uni20/tensor/precision.hpp>
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
 #include <uni20/linalg/backends/mplapack/binary80.hpp>
 #endif
 
-#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_BACKEND_BLAS || UNI20_HAS_MPLAPACK_MPREAL
 #include <uni20/linalg/backends/blas/gemm.hpp>
 #endif
 

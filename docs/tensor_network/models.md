@@ -112,7 +112,7 @@ without a separate canonicalization pass. See
 energy convergence contract and current truncation limits. The registered
 [model example](../../examples/models/) includes four-site analytic validation
 and a reproducible 20-site comparison against Matrix Product Toolkit. With
-`UNI20_ENABLE_MPLAPACK=ON`, its `--precision=fp128` mode validates the same
+`UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON`, its `--precision=fp128` mode validates the same
 symmetry-aware DMRG path for real and complex binary128 storage. The registered
 checks use precision-specific reference tolerances, including
 real and complex fp32 coverage of the four-site analytic result. Larger

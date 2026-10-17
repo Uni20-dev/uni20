@@ -20,7 +20,7 @@ concept Binary80Scalar = std::same_as<T, float80> || std::same_as<T, complex160>
 // specialization; otherwise ordinary dispatch can select the CPU backend.
 template <class T>
 concept Binary80LuScalar =
-    std::same_as<T, float80> || (UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU != 0 && std::same_as<T, complex160>);
+    std::same_as<T, float80> || (UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU != 0 && std::same_as<T, complex160>);
 
 template <class Span> auto pack(Span const& span, bool read = true)
 {

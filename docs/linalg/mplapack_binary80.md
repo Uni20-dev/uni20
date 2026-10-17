@@ -1,18 +1,20 @@
 # MPLAPACK binary80 adapter
 
-`UNI20_ENABLE_MPLAPACK_BINARY80=ON` enables real and complex binary80 GEMM
+`UNI20_ENABLE_FLOAT80=ON` together with `UNI20_BACKEND_MPLAPACK=ON`
+enables real and complex binary80 GEMM
 and real square solves, [reusable LU and logarithmic determinants](lu.md).
 Complex LU/solve provider support depends on the provider type, as described below:
 
 ```sh
 cmake -S . -B build_codex/mplapack_binary80 \
-  -DUNI20_ENABLE_MPLAPACK_BINARY80=ON
+  -DUNI20_ENABLE_FLOAT80=ON -DUNI20_BACKEND_MPLAPACK=ON
 ```
 
 This requires native x87 extended-precision `long double`
-(`UNI20_HAS_FLOAT80=1`). It does not emulate fp80 on other platforms. The option
-is independent of binary128 (`UNI20_ENABLE_MPLAPACK`) and MPFR/MPC
-(`UNI20_ENABLE_MPLAPACK_MPFR`); any combination can be enabled.
+(`UNI20_HAS_FLOAT80=1`). It does not emulate fp80 on other platforms.
+The scalar option defaults to `AUTO`; the backend defaults to `OFF`.
+Binary128 and arbitrary precision are independent scalar-family choices.
+The single backend switch enables kernels for all enabled families.
 
 Dependency resolution uses MPLAPACK >= 3.0.0 with the
 `mplapack::mplapack_binary80` target, or the pinned v3.0.0 source. The existing
@@ -34,7 +36,7 @@ available through ordinary dispatch fallback or explicit selection.
 
 The unconditional provider coverage is `Rgemm`, `Cgemm`, `Rgetrf` and `Rgetrs`.
 `Cgetrf` and `Cgetrs` are enabled only when the provider uses `long double`
-(`UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU=1`). With MPLAPACK 3.0.0 and GCC 13,
+(`UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU=1`). With MPLAPACK 3.0.0 and GCC 13,
 the distinct `_Float64x` uses generic standard-library complex division, which
 squares the denominator without scaling. For example, factoring
 `[[s,s],[s,2s]]` with `s=1e3000L` reports success but gives an incorrect

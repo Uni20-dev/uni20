@@ -23,7 +23,7 @@ int main()
   std::cout << "Solve [[2,1],[1,3]] x = [1,0] with one precision-generic function.\n"
             << "The exact solution is (3/5, -1/5); each run rounds at its chosen precision.\n";
   demonstrate<double>("double", uni20::native_precision<double>());
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   demonstrate<uni20::mpreal>("MPFR", uni20::Precision::bits(128));
   demonstrate<uni20::mpreal>("MPFR", uni20::Precision::bits(256));
 #endif

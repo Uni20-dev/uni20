@@ -214,7 +214,7 @@ class Tensor {
     explicit Tensor(InputTensor const& input)
         : Tensor(uninitialized, convert_tensor_extents<extents_type>(input.extents()))
     {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
       if constexpr (has_runtime_precision_v<value_type> && requires { input.default_precision_if_set(); })
         if (auto p = input.default_precision_if_set()) data_.default_precision(*p);
 #endif
@@ -266,7 +266,7 @@ class Tensor {
                  std::get<Rank>(std::tuple{args...}))
     {}
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Default working precision; individual elements may use other precisions.
     Precision default_precision() const
       requires has_runtime_precision_v<value_type>

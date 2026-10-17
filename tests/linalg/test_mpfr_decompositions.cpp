@@ -61,7 +61,7 @@ TEST(DecompositionPrecision, AsyncConsumingPrecisionFailureReachesInputAndEveryR
   EXPECT_THROW((void)input.get_wait(scheduler), std::invalid_argument);
 }
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 #include <uni20/async/tbb_scheduler.hpp>
 #include <uni20/tensor/conjugate.hpp>
 #include <uni20/tensor/reshape.hpp>

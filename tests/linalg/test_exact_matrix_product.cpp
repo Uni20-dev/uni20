@@ -1,6 +1,6 @@
 #include <uni20/config.hpp>
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <gtest/gtest.h>
 #include <uni20/async/debug_scheduler.hpp>
 #include <uni20/core/math.hpp>
@@ -11,7 +11,7 @@ using namespace uni20;
 
 template <class S> class ExactMatrixProduct : public testing::Test {};
 using ExactScalars = testing::Types<mpreal
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
                                     ,
                                     complex<mpreal>
 #endif
@@ -80,7 +80,7 @@ TYPED_TEST(ExactMatrixProduct, RuntimeDeclinesDoNotTouchStorage)
   auto od = mdspec_of(out);
   EXPECT_EQ(linalg::try_kernel(linalg::CpuReferenceBackend{}, linalg::gemm_op{}, od, S{1}, ad, bd, S{}, p),
             linalg::KernelAttempt::unsupported_instance);
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   EXPECT_EQ(linalg::try_kernel(linalg::BlasBackend{}, linalg::gemm_op{}, od, S{1}, ad, bd, S{}, exact),
             linalg::KernelAttempt::unsupported_instance);
 #endif
@@ -107,7 +107,7 @@ TYPED_TEST(ExactMatrixProduct, AsyncProductRetainsExactArithmetic)
   EXPECT_EQ(result.default_precision(), exact);
 }
 
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 TEST(ExactComplexMatrixProduct, ConjugatingAccessorIsObserved)
 {
   using C = complex<mpreal>;
@@ -119,7 +119,7 @@ TEST(ExactComplexMatrixProduct, ConjugatingAccessorIsObserved)
 }
 #endif
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 TYPED_TEST(ExactMatrixProduct, FiniteOverrideUsesMplapack)
 {
   using S = TypeParam;

@@ -23,7 +23,7 @@ using RuntimeCases =
                    ,
                    PrecisionContext<uni20::float128, false>
 #endif
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
                    ,
                    PrecisionContext<uni20::mpreal, false, 128>, PrecisionContext<uni20::mpreal, false, 256>
 #endif

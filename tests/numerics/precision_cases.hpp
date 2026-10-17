@@ -70,7 +70,7 @@ template <class R, bool IsComplex, int Bits = 0> struct PrecisionContext
 
     template <class T> static void expect_precision(T const& value)
     {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
       if constexpr (runtime)
       {
         EXPECT_FALSE(value.is_exact());
@@ -92,10 +92,11 @@ enum class PrecisionKind
 
 template <PrecisionKind Kind, bool IsComplex> struct CaseInfo
 {
+    static constexpr PrecisionKind kind = Kind;
     // Explicit expected coverage, not inferred from the production concepts:
     // accidentally removing a supported scalar must fail compilation/testing.
-    static constexpr bool projected_lapack =
-        Kind == PrecisionKind::float32 || Kind == PrecisionKind::float64 || Kind == PrecisionKind::float128;
+    static constexpr bool projected_lapack = Kind == PrecisionKind::float32 || Kind == PrecisionKind::float64 ||
+                                             (Kind == PrecisionKind::float128 && UNI20_HAS_MPLAPACK_FLOAT128);
     // GEMM/solve provider coverage can grow independently of projected solvers.
     static constexpr bool binary80_provider = Kind == PrecisionKind::float80;
 
@@ -128,13 +129,13 @@ UNI20_TEST_PRECISION_CASE(float80, uni20::float80, 0);
 UNI20_TEST_PRECISION_CASE(float128, uni20::float128, 0);
 #endif
 #endif
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <PrecisionKind K>
   requires(K == PrecisionKind::mp128 || K == PrecisionKind::mp256)
 struct PrecisionCase<K, false> : CaseInfo<K, false>,
                                  PrecisionContext<mpreal, false, K == PrecisionKind::mp128 ? 128 : 256>
 {};
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 template <PrecisionKind K>
   requires(K == PrecisionKind::mp128 || K == PrecisionKind::mp256)
 struct PrecisionCase<K, true> : CaseInfo<K, true>, PrecisionContext<mpreal, true, K == PrecisionKind::mp128 ? 128 : 256>
@@ -175,7 +176,7 @@ template <class S, class R> void expect_error_at_most(S const& actual, S const& 
                                   << " error=" << format_scalar(error) << " bound=" << format_scalar(tolerance);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 // Transfer the native binary value exactly into a wider independent oracle.
 // Decimal round trips and casts through double would contaminate the oracle.
 template <class R> mpreal widen(R value)

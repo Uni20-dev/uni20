@@ -48,7 +48,7 @@ int main()
             << "A is positive definite: its singular values equal its eigenvalues, (3 +/- sqrt(5))/2.\n"
             << "The same C++ calls below use native double and, when enabled, MPFR.\n";
   demonstrate<double>(uni20::native_precision<double>());
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   demonstrate<uni20::mpreal>(uni20::Precision::bits(128));
   demonstrate<uni20::mpreal>(uni20::Precision::bits(256));
 #endif

@@ -9,7 +9,7 @@ add_test(NAME DenseDecompositionPrecisionExample COMMAND dense_decomposition_pre
 uni20_add_example(generic_precision_example linalg/generic_precision_example.cpp uni20_linalg)
 add_test(NAME GenericPrecisionExample COMMAND generic_precision_example)
 
-if(UNI20_ENABLE_MPFR)
+if(UNI20_HAS_MPREAL)
   uni20_add_example(mpreal_data_table_example presentation/mpreal_data_table_example.cpp uni20_common)
   add_test(NAME MpRealDataTableExample COMMAND mpreal_data_table_example)
   uni20_add_example(mpreal_example common/mpreal_example.cpp uni20_core)
@@ -25,11 +25,11 @@ if(UNI20_ENABLE_MPFR)
   uni20_add_example(tensor_precision_example common/tensor_precision_example.cpp uni20_core uni20_linalg)
   add_test(NAME TensorPrecisionExample COMMAND tensor_precision_example)
 endif()
-if(UNI20_ENABLE_MPC)
+if(UNI20_HAS_MPREAL)
   uni20_add_example(mpcomplex_example common/mpcomplex_example.cpp uni20_core)
   add_test(NAME MpComplexExample COMMAND mpcomplex_example)
 endif()
-if(UNI20_ENABLE_MPLAPACK_MPFR)
+if(UNI20_HAS_MPLAPACK_MPREAL)
   uni20_add_example(mplapack_mpfr_example common/mplapack_mpfr_example.cpp uni20_linalg)
   add_test(NAME MplapackMpfrExample COMMAND mplapack_mpfr_example)
   uni20_add_example(mplapack_precision_example async/mplapack_precision_example.cpp uni20_linalg uni20_async TBB::tbb)
@@ -66,7 +66,7 @@ add_test(NAME SpinHalfHeisenbergDmrgFloat32Example
          COMMAND spin_half_heisenberg_dmrg_example --precision=fp32 --check)
 add_test(NAME SpinHalfHeisenbergDmrgComplexFloat32Example
          COMMAND spin_half_heisenberg_dmrg_example --precision=fp32 --scalar=complex --check)
-if(UNI20_HAS_FLOAT128)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_test(NAME SpinHalfHeisenbergDmrgFloat128Example
            COMMAND spin_half_heisenberg_dmrg_example --precision=fp128 --check)
   add_test(NAME SpinHalfHeisenbergDmrgComplexFloat128Example
@@ -105,7 +105,7 @@ if(UNI20_HAS_FLOAT80)
   add_test(NAME KernelDispatchExample.TensorGemmFp80
       COMMAND gemm_dispatch_example --precision=fp80 --diagnostics=on)
 endif()
-if(UNI20_HAS_FLOAT128)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_test(NAME KernelDispatchExample.TensorGemmFp128
       COMMAND gemm_dispatch_example --precision=fp128 --diagnostics=on)
 endif()
@@ -129,7 +129,7 @@ add_test(NAME KrylovMatrixMarketExample.ShiftInvertDouble
         "${PROJECT_SOURCE_DIR}/tests/krylov/matrix_market/path_laplacian_30.mtx"
         --precision=double --mode=shift-invert --which=LM --nev=2 --ncv=8 --tol=1e-10 --max-iters=100
         --diagnostics=summary)
-if(UNI20_HAS_FLOAT128)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_test(NAME KrylovMatrixMarketExample.Float128
       COMMAND krylov_matrix_market_example
           "${PROJECT_SOURCE_DIR}/tests/krylov/matrix_market/path_laplacian_30.mtx"
@@ -146,7 +146,7 @@ add_test(NAME KrylovNonsymmetricMatrixMarketExample.Lop163
     COMMAND krylov_nonsymmetric_matrix_market_example
         "${PROJECT_SOURCE_DIR}/tests/krylov/matrix_market/nep/stoch/lop163.mtx"
         --which=LM --nev=3 --nkeep=6 --ncv=24 --tol=1e-10 --diagnostics=summary --eigenvectors=false)
-if(UNI20_HAS_FLOAT128)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_test(NAME KrylovNonsymmetricMatrixMarketExample.Lop163Float128
       COMMAND krylov_nonsymmetric_matrix_market_example
           "${PROJECT_SOURCE_DIR}/tests/krylov/matrix_market/nep/stoch/lop163.mtx"
@@ -177,7 +177,7 @@ add_test(NAME KrylovExponentialMatrixMarketProbeExample.TdvpDouble
 add_test(NAME KrylovExponentialMatrixMarketProbeExample.TdvpFloat
     COMMAND krylov_exponential_matrix_market_probe_example
         --precision=float --tol=1e-8 --time-imag=-0.01968473663975394 --max-dim=32 --check)
-if(UNI20_HAS_FLOAT128)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_test(NAME KrylovExponentialMatrixMarketProbeExample.TdvpFloat128
       COMMAND krylov_exponential_matrix_market_probe_example
           --precision=float128 --tol=1e-20 --time-imag=-0.01968473663975394 --max-dim=32)

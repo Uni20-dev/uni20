@@ -1,8 +1,8 @@
 #pragma once
 
 #include "mpreal.hpp"
-#if !UNI20_ENABLE_MPC
-#error "uni20/core/mpcomplex.hpp requires UNI20_ENABLE_MPC"
+#if !UNI20_HAS_MPREAL
+#error "uni20/core/mpcomplex.hpp requires UNI20_ENABLE_MPREAL=ON (GMP, MPFR and MPC)"
 #endif
 #include <mpc.h>
 

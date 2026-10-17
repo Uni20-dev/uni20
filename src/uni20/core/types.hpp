@@ -22,10 +22,8 @@ using index_type = std::ptrdiff_t;
 using float32 = float;
 using float64 = double;
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 class mpreal;
-#endif
-#if UNI20_ENABLE_MPC
 class mpcomplex;
 #endif
 
@@ -37,12 +35,10 @@ template <typename Real> struct complex_type
 {
     using type = standard_complex<Real>;
 };
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <> struct complex_type<mpreal>
 {
-#if UNI20_ENABLE_MPC
     using type = mpcomplex;
-#endif
 };
 #endif
 } // namespace detail
