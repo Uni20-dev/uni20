@@ -109,6 +109,22 @@ TEST(AsyncLinearSolveTest, PreservingSolveReturnsIndependentSolutionAndPreserves
   EXPECT_DOUBLE_EQ((rhs.get_wait(scheduler)[1, 1]), 0.0);
 }
 
+TEST(AsyncLinearSolveTest, ExplicitNativePrecisionAndMismatchPropagation)
+{
+  uni20::async::DebugScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  async_matrix_type coefficients = make_coefficients();
+  async_matrix_type rhs = make_rhs();
+  auto solution = uni20::linalg::solve(coefficients, rhs, uni20::native_precision<double>());
+  expect_solution(solution.get_wait(scheduler));
+  auto invalid = uni20::linalg::solve(coefficients, rhs, uni20::Precision::bits(128));
+  EXPECT_THROW((void)invalid.get_wait(scheduler), std::invalid_argument);
+  EXPECT_DOUBLE_EQ((coefficients.get_wait(scheduler)[0, 0]), 3.0);
+  EXPECT_DOUBLE_EQ((rhs.get_wait(scheduler)[1, 1]), 0.0);
+  uni20::linalg::solve_inplace(coefficients, rhs, uni20::native_precision<double>());
+  expect_solution(rhs.get_wait(scheduler));
+}
+
 TEST(AsyncLinearSolveTest, PreservingSolveAcceptsDeferredTensorViews)
 {
   uni20::async::DebugScheduler scheduler;

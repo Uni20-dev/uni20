@@ -151,6 +151,25 @@ TEST(AsyncMatrixProductTest, AssignProductConstructsOutputAndRetainsPendingInput
   expect_matrix_product(output.get_wait(scheduler));
 }
 
+TEST(AsyncMatrixProductTest, ExplicitNativePrecisionCoversOverwriteAndUpdate)
+{
+  uni20::async::DebugScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  async_matrix_type a = make_matrix<matrix_type>(1, 1, {2});
+  async_matrix_type b = make_matrix<matrix_type>(1, 1, {3});
+  async_matrix_type out;
+  auto p = uni20::native_precision<double>();
+  uni20::linalg::assign_product(out, a, b, p);
+  EXPECT_DOUBLE_EQ((out.get_wait(scheduler)[0, 0]), 6.0);
+  uni20::linalg::add_product(out, a, b, p);
+  EXPECT_DOUBLE_EQ((out.get_wait(scheduler)[0, 0]), 12.0);
+  uni20::linalg::gemm(out, 2, a, b, 1, p);
+  EXPECT_DOUBLE_EQ((out.get_wait(scheduler)[0, 0]), 24.0);
+  async_matrix_type invalid;
+  uni20::linalg::assign_product(invalid, a, b, uni20::Precision::bits(128));
+  EXPECT_THROW((void)invalid.get_wait(scheduler), std::invalid_argument);
+}
+
 TEST(AsyncMatrixProductTest, ExplicitSelectorResizesExistingOutput)
 {
   uni20::async::DebugScheduler scheduler;

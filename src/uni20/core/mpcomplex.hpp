@@ -23,7 +23,7 @@ struct mpc_value
     explicit mpc_value(Precision p)
     {
       require_mpfr_tls();
-      mpc_init2(value, p.bit_count());
+      mpc_init2(value, mpfr_precision(p));
       initialized = true;
       mpc_set_ui(value, 0, MPC_RNDNN);
     }

@@ -744,11 +744,11 @@ max_original_relative_residual(SparseMatrixMarketMatrix const& matrix,
 {
   presentation::numeric_format_options numeric;
   numeric.notation = presentation::real_notation::scientific;
-  numeric.float32_precision = uni20::numeric_limits<float>::max_digits10;
-  numeric.float64_precision = uni20::numeric_limits<double>::max_digits10;
-  numeric.long_double_precision = uni20::numeric_limits<long double>::max_digits10;
+  numeric.float32_precision = uni20::numeric_limits<float>::max_digits10();
+  numeric.float64_precision = uni20::numeric_limits<double>::max_digits10();
+  numeric.long_double_precision = uni20::numeric_limits<long double>::max_digits10();
 #if UNI20_HAS_FLOAT128
-  numeric.float128_precision = uni20::numeric_limits<uni20::float128>::max_digits10;
+  numeric.float128_precision = uni20::numeric_limits<uni20::float128>::max_digits10();
 #endif
   return numeric;
 }

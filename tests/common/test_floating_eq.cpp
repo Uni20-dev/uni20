@@ -191,7 +191,7 @@ TEST(Float80FloatingEq, AdjacentValuesAcrossEveryBinade)
 {
   // Includes every subnormal power of two, the normal/subnormal boundary,
   // and the change in spacing on either side of every normal power of two.
-  for (int exponent = Limits80::min_exponent - Limits80::digits; exponent < Limits80::max_exponent; ++exponent)
+  for (int exponent = Limits80::min_exponent - Limits80::digits(); exponent < Limits80::max_exponent; ++exponent)
   {
     SCOPED_TRACE(exponent);
     Real80 const value = std::ldexp(Real80{1}, exponent);

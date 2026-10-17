@@ -10,6 +10,8 @@ namespace uni20::test
 enum class PrecisionProbe
 {
   EpsilonAndRetainedIncrement,
+  GenericPrecisionQueries,
+  GenericPrecisionOperations,
   ReciprocalAccuracyImprovesWithPrecision,
   MathDispatchRetainsWorkingPrecision,
   ElementaryRetainsWorkingPrecision,
@@ -60,6 +62,8 @@ struct ProbeDescription
 
 inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "EpsilonAndRetainedIncrement", "scalar"},
+    ProbeDescription{"NumericalScalar", "GenericPrecisionQueries", "scalar"},
+    ProbeDescription{"NumericalLinalg", "GenericPrecisionOperations", "default_dispatch"},
     ProbeDescription{"NumericalScalar", "ReciprocalAccuracyImprovesWithPrecision", "scalar"},
     ProbeDescription{"NumericalScalar", "MathDispatchRetainsWorkingPrecision", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ElementaryRetainsWorkingPrecision", "scalar_math"},
@@ -189,8 +193,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           return {"unavailable", "native special-function provider not detected for this scalar"};
       }
     }
-    if (probe == StandardSpecialAccuracy || probe == MpfrSpecialIdentities ||
-        probe == MpfrSpecialAccuracy || probe == MpfrExtensionsStableArithmetic)
+    if (probe == StandardSpecialAccuracy || probe == MpfrSpecialIdentities || probe == MpfrSpecialAccuracy ||
+        probe == MpfrExtensionsStableArithmetic)
     {
       if constexpr (C::is_complex) return {"not_applicable", "special-function expansion covers real scalars"};
       if constexpr (!C::runtime)
@@ -242,7 +246,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     }
 #if !UNI20_ENABLE_MPLAPACK_MPFR
     if constexpr (C::runtime)
-      if (provider || probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision)
+      if (provider || probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision ||
+          probe == GenericPrecisionOperations)
         return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_MPFR"};
 #endif
     return {};

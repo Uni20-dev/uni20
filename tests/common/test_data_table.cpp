@@ -167,7 +167,7 @@ TYPED_TEST(DataTablePrecision, DefaultDigitCountRespectsNotation)
   table.append(1.25, 1.25, 1.25);
   auto report = p::to_report_table(table);
   auto const& row = std::get<std::vector<p::table_cell>>(report.entries()[0]);
-  std::string const zeros(uni20::numeric_limits<Real>::max_digits10 - 2, '0');
+  std::string const zeros(uni20::numeric_limits<Real>::max_digits10() - 2, '0');
   EXPECT_EQ(p::render_plain(row[0].content), "1.25" + zeros);
   EXPECT_EQ(p::render_plain(row[1].content), "1.25" + zeros + "e+00");
   EXPECT_EQ(p::render_plain(row[2].content), "1.25");
@@ -290,7 +290,7 @@ TEST(DataTable, LongDoubleRoundTripsWithoutPassingThroughDouble)
   long double result = 0;
   input >> header >> result;
   EXPECT_EQ(result, value);
-  if constexpr (uni20::numeric_limits<long double>::digits > uni20::numeric_limits<double>::digits)
+  if constexpr (uni20::numeric_limits<long double>::digits() > uni20::numeric_limits<double>::digits())
   {
     EXPECT_NE(result, static_cast<long double>(static_cast<double>(value)));
   }

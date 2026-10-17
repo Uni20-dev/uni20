@@ -1,5 +1,8 @@
 # Linear Algebra Examples
 
+- `generic_precision_example.cpp` uses the same solve API with `double` and,
+  when MPFR is enabled, 128-bit and 256-bit `mpreal`. It also demonstrates
+  rejection of an incompatible precision request for a fixed scalar type.
 - `blas_example.cpp` prints the configured BLAS vendor and version. Its target
   is available only when the BLAS backend target exists.
 - `kernel_dispatch_example.cpp` demonstrates compile-time type probing,

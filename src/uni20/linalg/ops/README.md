@@ -13,6 +13,7 @@ Operation values and diagnostic names are defined centrally in
   linear solves.
 - `lq.hpp`: destructive-workspace and preserving-value reduced real LQ
   factorizations.
+- `lu.hpp`: reusable owning LU factors and repeated solves.
 - `matrix_exponential.hpp`: fixed-output matrix exponential dispatch.
 - `matrix_norm.hpp`: dense maximum-entry, one, infinity, and Frobenius norms.
 - `matrix_product.hpp`: fixed-update and resizable-overwrite Tensor matrix
@@ -26,6 +27,8 @@ Operation values and diagnostic names are defined centrally in
 - `self_adjoint_eigh.hpp`: destructive in-place, preserving value, and
   allocation-reusing consuming forms for dense symmetric/Hermitian
   eigensystems.
+- `slogdet.hpp`: signed or complex-phase logarithmic determinants from a matrix
+  or completed LU factors.
 - `svd.hpp`: destructive, preserving, and storage-consuming exact dense SVD
   forms for singular values only, either factor separately, or both factors.
   Left and right singular-vector extents are independently reduced or full.
@@ -66,6 +69,7 @@ Operation values and diagnostic names are defined centrally in
 
 ## Related Documentation
 
+- [Generic precision](../../../../docs/tensor/scalar_policy.md#generic-precision)
 - [Dense operation contracts](../../../../docs/linalg/dense_operation_contracts.md)
 - [Linalg source map](../)
 - [Tensor operations](../../../../docs/tensor/operations.md)

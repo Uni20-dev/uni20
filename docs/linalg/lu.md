@@ -31,7 +31,8 @@ its data; copies are independent. Its accessors are read-only:
   triangle, including its diagonal, stores U.
 - `pivots()` gives zero-based row swaps in elimination order: at step `k`,
   exchange rows `k` and `pivots()[k]`. Applying these swaps to A gives **P A = L U**.
-- Runtime-precision factors also expose `precision()`.
+- `precision()` gives the factors' working precision for both fixed and runtime
+  scalar types.
 
 Borrowed matrix references and pivot spans are valid only while their factor
 object retains its storage. A moved-from object supports destruction and
@@ -101,9 +102,10 @@ exact matrix that was rounded before factorization.
 
 ## Precision and providers
 
-Native scalars use their own precision. For `mpreal` and `complex<mpreal>`,
-factorization uses the matrix's finite construction default, or a trailing
-explicit `Precision` before optional solve options:
+Native scalars use their own precision. Every supported scalar also accepts an
+explicit `Precision` before optional solve options; for fixed types it must
+exactly match `precision_of(a)`. For `mpreal` and `complex<mpreal>`, omitting it
+uses the matrix's finite construction default:
 
 ```cpp
 auto p = uni20::Precision::bits(512);
@@ -112,6 +114,12 @@ auto attempt = lu_factor_with_info(a, p, SolveOptions<uni20::mpreal>{});
 auto determinant = slogdet(a, p);
 auto x = lu_solve(factors, b); // Always uses factors.precision().
 ```
+
+`factors.precision()` is available for fixed and runtime scalars alike. A generic
+caller can use `lu_factor(a, precision_of(a))`; incompatible precision requests
+are rejected before numerical work. Explicit precision is also supported by
+the one-shot `solve`, `solve_inplace` and `solve_inplace_with_info` interfaces,
+including asynchronous `solve` and `solve_inplace`.
 
 An exact-default matrix requires an explicit finite precision. The backend
 converts actual elements, regardless of their individual precisions, without

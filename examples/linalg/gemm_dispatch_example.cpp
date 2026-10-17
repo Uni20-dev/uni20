@@ -106,8 +106,8 @@ template <class Scalar> [[nodiscard]] Scalar absolute_value(Scalar value) { retu
 [[nodiscard]] uni20::presentation::mdspan_format_options matrix_format_options()
 {
   uni20::presentation::mdspan_format_options options;
-  options.numeric.float32_precision = uni20::numeric_limits<uni20::float32>::max_digits10;
-  options.numeric.float64_precision = uni20::numeric_limits<uni20::float64>::max_digits10;
+  options.numeric.float32_precision = uni20::numeric_limits<uni20::float32>::max_digits10();
+  options.numeric.float64_precision = uni20::numeric_limits<uni20::float64>::max_digits10();
   options.numeric.float128_precision = 36;
   return options;
 }

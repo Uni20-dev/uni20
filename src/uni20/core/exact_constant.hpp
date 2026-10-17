@@ -3,6 +3,7 @@
 #include "precision.hpp"
 #include <charconv>
 #include <concepts>
+#include <gmp.h>
 #include <limits>
 #include <optional>
 #include <string>

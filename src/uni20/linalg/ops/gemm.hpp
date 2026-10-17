@@ -10,6 +10,7 @@
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_scalar.hpp>
 #include <uni20/linalg/operation_tags.hpp>
+#include <uni20/linalg/precision.hpp>
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/output.hpp>
 #include <uni20/tensor/precision.hpp>
@@ -35,7 +36,9 @@ namespace uni20::linalg
 /// \brief Update a fixed-size matrix as `output = alpha * lhs * rhs + beta * output`.
 /// \details For `lhs` of shape `m x k` and `rhs` of shape `k x n`, `output` must already
 ///          have shape `m x n`; it is never resized. Operands use the same scalar
-///          type; coefficients are converted to the output scalar type. Runtime-precision
+///          type. An explicit precision must match fixed result types; otherwise
+///          input defaults infer precision (including the output when beta is nonzero).
+///          Coefficients are converted to the output scalar type. Runtime-precision
 ///          coefficients also accept integers or exact literals. Multiplication observes
 ///          the supplied views: transpose or conjugate a view explicitly when required.
 ///          With `beta == 0`, old output elements are not read. With `alpha == 0` or
@@ -48,25 +51,18 @@ template <class BackendSelector, uni20::MutableRankedTensorView<2> OutputTensor,
   requires(OperationScalar<Alpha, tensor_element_t<OutputTensor>> &&
            OperationScalar<Beta, tensor_element_t<OutputTensor>>)
 void gemm(BackendSelector&& selector, OutputTensor&& output, Alpha alpha, LhsTensor const& lhs, RhsTensor const& rhs,
-          Beta beta)
+          Beta beta, std::optional<Precision> requested = {})
 {
   using scalar_type = tensor_element_t<OutputTensor>;
   auto output_span = uni20::mdspec_of(output);
   auto lhs_span = uni20::mdspec_of(lhs);
   auto rhs_span = uni20::mdspec_of(rhs);
-#if UNI20_ENABLE_MPFR
-  if constexpr (has_runtime_precision_v<tensor_element_t<OutputTensor>>)
-  {
-    auto p = common_default_precision(lhs, rhs);
-    if (beta != 0) p = common_precision(p, output.default_precision());
-    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, scalar_type(alpha), lhs_span,
-                    rhs_span, scalar_type(beta), p);
-    uni20::detail::record_output_precision(output, p);
-  }
-  else
-#endif
-    dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, output_span, scalar_type(alpha), lhs_span,
-                    rhs_span, scalar_type(beta));
+  auto p = requested ? *requested : common_default_precision(lhs, rhs);
+  scalar_type const beta_scalar(beta);
+  if (!requested && beta_scalar != scalar_type{}) p = common_precision(p, precision_of(output));
+  detail::dispatch_at_precision<scalar_type>(std::forward<BackendSelector>(selector), gemm_op{}, p, output_span,
+                                             scalar_type(alpha), lhs_span, rhs_span, beta_scalar);
+  uni20::detail::record_output_precision(output, p);
 }
 
 /// \brief Apply the fixed-storage `gemm` contract using the operands' default backend selector.
@@ -74,39 +70,11 @@ template <uni20::MutableRankedTensorView<2> OutputTensor, class Alpha, class Bet
           uni20::RankedTensorView<2> RhsTensor>
   requires(OperationScalar<Alpha, tensor_element_t<OutputTensor>> &&
            OperationScalar<Beta, tensor_element_t<OutputTensor>>)
-void gemm(OutputTensor&& output, Alpha alpha, LhsTensor const& lhs, RhsTensor const& rhs, Beta beta)
+void gemm(OutputTensor&& output, Alpha alpha, LhsTensor const& lhs, RhsTensor const& rhs, Beta beta,
+          std::optional<Precision> p = {})
 {
   auto selector = select_backend(gemm_op{}, output, lhs, rhs);
-  gemm(selector, std::forward<OutputTensor>(output), alpha, lhs, rhs, beta);
+  gemm(selector, std::forward<OutputTensor>(output), alpha, lhs, rhs, beta, p);
 }
-
-#if UNI20_ENABLE_MPFR
-/// \brief Apply fixed-shape GEMM at explicit precision, or exact scalar arithmetic in exact mode.
-/// \details A finite precision converts participating values at the backend boundary.
-template <KernelBackendSelector BackendSelector, MutableRankedTensorView<2> Output, class Alpha, class Beta,
-          RankedTensorView<2> A, RankedTensorView<2> B>
-  requires(has_runtime_precision_v<tensor_element_t<Output>> && OperationScalar<Alpha, tensor_element_t<Output>> &&
-           OperationScalar<Beta, tensor_element_t<Output>>)
-void gemm(BackendSelector&& selector, Output&& output, Alpha alpha, A const& a, B const& b, Beta beta, Precision p)
-{
-  auto out = mdspec_of(output);
-  auto ad = mdspec_of(a);
-  auto bd = mdspec_of(b);
-  using scalar_type = tensor_element_t<Output>;
-  dispatch_kernel(std::forward<BackendSelector>(selector), gemm_op{}, out, scalar_type(alpha), ad, bd,
-                  scalar_type(beta), p);
-  uni20::detail::record_output_precision(output, p);
-}
-
-/// \brief Apply explicit-precision GEMM through the storage-selected backend.
-template <MutableRankedTensorView<2> Output, class Alpha, class Beta, RankedTensorView<2> A, RankedTensorView<2> B>
-  requires(has_runtime_precision_v<tensor_element_t<Output>> && OperationScalar<Alpha, tensor_element_t<Output>> &&
-           OperationScalar<Beta, tensor_element_t<Output>>)
-void gemm(Output&& output, Alpha alpha, A const& a, B const& b, Beta beta, Precision p)
-{
-  auto selector = select_backend(gemm_op{}, output, a, b);
-  gemm(selector, std::forward<Output>(output), alpha, a, b, beta, p);
-}
-#endif
 
 } // namespace uni20::linalg

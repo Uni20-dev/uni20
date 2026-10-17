@@ -5,6 +5,9 @@ optional multiprecision support, and linear-algebra design background.
 
 ## Implemented Layers And Forward Work
 
+- [Generic Precision](../tensor/scalar_policy.md#generic-precision) defines the
+  shared fixed/runtime precision API used by products, square solves, LU, and
+  logarithmic determinants.
 - [Dense Operation Contracts](dense_operation_contracts.md) explains fixed
   outputs, matrix norms, destructive eigensystems, and Schur block reordering.
 - [Square Linear Solves](linear_solve.md) describes strict and recoverable
@@ -28,7 +31,7 @@ optional multiprecision support, and linear-algebra design background.
   contraction contract, current CPU reference path, and backend strategy
   hierarchy.
 
-The two adapter documents contain both implemented checkpoints and future work.
+The adapter documents contain both implemented checkpoints and future work.
 For the current user-facing Tensor operation matrix, use
 [Tensor Operations](../tensor/operations.md); tests remain the implementation
 evidence for exact backend coverage.

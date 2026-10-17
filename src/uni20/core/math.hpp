@@ -4,6 +4,7 @@
 #include "detail/native_special_math.hpp"
 #include "math_constants.hpp"
 #include "numeric_limits.hpp"
+#include "runtime_precision.hpp"
 #include "scalar_concepts.hpp"
 #if UNI20_ENABLE_MPFR
 #include "mpreal.hpp"
@@ -180,7 +181,7 @@ using std::imag;
 template <Scalar S, class Value>
   requires(std::constructible_from<S, Value const&> ||
            requires(S const& exemplar, Value const& value) { S(value, exemplar.precision()); })
-[[nodiscard]] auto scalar_like(S const& exemplar, Value const& value) -> S
+[[nodiscard]] constexpr auto scalar_like(S const& exemplar, Value const& value) -> S
 {
   if constexpr (requires { S(value, exemplar.precision()); })
     return S(value, exemplar.precision());
@@ -205,7 +206,7 @@ template <class Result, class Arg> consteval bool preserves_real_precision()
   if constexpr (!Real<Arg>)
     return true;
   else if constexpr (Real<Result>)
-    return numeric_limits<Result>::digits >= numeric_limits<Arg>::digits &&
+    return numeric_limits<Result>::digits() >= numeric_limits<Arg>::digits() &&
            numeric_limits<Result>::max_exponent >= numeric_limits<Arg>::max_exponent;
   else
     return false;

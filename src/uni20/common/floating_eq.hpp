@@ -23,9 +23,9 @@ namespace detail
 
 template <typename T>
 inline constexpr bool has_ieee_binary_interchange_layout_v =
-    (sizeof(T) == 4 && uni20::numeric_limits<T>::digits == 24 && uni20::numeric_limits<T>::max_exponent == 128) ||
-    (sizeof(T) == 8 && uni20::numeric_limits<T>::digits == 53 && uni20::numeric_limits<T>::max_exponent == 1024) ||
-    (sizeof(T) == 16 && uni20::numeric_limits<T>::digits == 113 && uni20::numeric_limits<T>::max_exponent == 16384);
+    (sizeof(T) == 4 && uni20::numeric_limits<T>::digits() == 24 && uni20::numeric_limits<T>::max_exponent == 128) ||
+    (sizeof(T) == 8 && uni20::numeric_limits<T>::digits() == 53 && uni20::numeric_limits<T>::max_exponent == 1024) ||
+    (sizeof(T) == 16 && uni20::numeric_limits<T>::digits() == 113 && uni20::numeric_limits<T>::max_exponent == 16384);
 
 } // namespace detail
 

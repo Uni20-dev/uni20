@@ -35,6 +35,25 @@ mathematical contract. See [kernel dispatch](../architecture/kernel_dispatch.md)
 for eligibility, runtime decline, and error handling, and
 [provider coverage](dense_blas_lapack_coverage.md) for the implemented routines.
 
+## Working Precision
+
+`gemm`, `assign_product`, `add_product`, square solves, LU factorization, and
+matrix-form logarithmic determinants accept an explicit `Precision` for both
+fixed and runtime scalar types. For example, the native GEMM above also accepts:
+
+```cpp
+auto p = uni20::precision_of(A);
+uni20::linalg::gemm(C, 1.0, A, B, 0.0, p);
+```
+
+A fixed scalar requires its native precision; incompatible requests fail before
+output mutation or resizing. Without an explicit request, runtime operations
+infer precision from participating tensor defaults, with exact defaults neutral.
+GEMM includes the output default when `beta` is nonzero. Differing finite
+defaults require an explicit choice. These arguments do not extend provider
+coverage to other operations. See the [generic precision contract](../tensor/scalar_policy.md#generic-precision),
+[square solves](linear_solve.md#working-precision), and [LU precision policy](lu.md#precision-and-providers).
+
 ## Norms and Initialization
 
 For a matrix `A`, `MatrixNorm` selects:

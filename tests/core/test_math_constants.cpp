@@ -24,7 +24,7 @@ template <class R> void check_constants()
   EXPECT_TRUE(uni20::euler_gamma<R> < R(0.58));
   if constexpr (!std::same_as<R, float> && !std::same_as<R, double>)
   {
-    if constexpr (uni20::numeric_limits<R>::digits > uni20::numeric_limits<double>::digits)
+    if constexpr (uni20::numeric_limits<R>::digits() > uni20::numeric_limits<double>::digits())
     {
       EXPECT_TRUE(uni20::pi<R> != R(uni20::pi<double>));
       EXPECT_TRUE(uni20::log_two<R> != R(uni20::log_two<double>));

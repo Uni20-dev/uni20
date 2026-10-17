@@ -24,7 +24,7 @@ static_assert(std::same_as<_Float128, long double> || !std::constructible_from<m
 template <class R> struct NativeCase
 {
     using real_type = R;
-    static constexpr int digits = numeric_limits<R>::digits;
+    static constexpr int digits = numeric_limits<R>::digits();
     static constexpr int min_exponent = numeric_limits<R>::min_exponent;
     static constexpr int max_exponent = numeric_limits<R>::max_exponent;
 };

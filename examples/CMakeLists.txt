@@ -3,6 +3,9 @@ function(uni20_add_example target source)
   target_link_libraries(${target} PRIVATE ${ARGN})
 endfunction()
 
+uni20_add_example(generic_precision_example linalg/generic_precision_example.cpp uni20_linalg)
+add_test(NAME GenericPrecisionExample COMMAND generic_precision_example)
+
 if(UNI20_ENABLE_MPFR)
   uni20_add_example(mpreal_data_table_example presentation/mpreal_data_table_example.cpp uni20_common)
   add_test(NAME MpRealDataTableExample COMMAND mpreal_data_table_example)

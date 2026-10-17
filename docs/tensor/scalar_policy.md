@@ -37,6 +37,53 @@ This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
 `src/uni20/core/scalar_traits.hpp` and `src/uni20/core/scalar_concepts.hpp`.
 
+## Generic precision
+
+`core/precision.hpp` defines `Precision` in every build, without an MPFR
+dependency. It describes exact arithmetic or a positive binary significand size;
+`decimal_digits(n)` requests enough bits for at least `n` decimal digits.
+Providers check their own representable precision ranges before allocation or
+numerical work. There is no ambient or `native` precision value.
+
+`core/runtime_precision.hpp` supplies the scalar queries and construction helper:
+
+```cpp
+auto p = uni20::precision_of(value);
+auto zero = uni20::scalar_at_precision<Real>(0, p);
+auto eps = uni20::numeric_limits<Real>::epsilon(p);
+```
+
+For native real or complex values, `precision_of` returns the significand size of
+the real component type. `native_precision<T>()` is its `constexpr`, type-only
+counterpart. Exact scalar types such as integers and half-integers report
+`Precision::exact()`. Runtime scalars report their actual exact or finite state;
+unset values throw. `scalar_at_precision<T>(value, p)` constructs runtime values
+at `p`; for fixed types it requires exactly their native precision. It never
+silently lowers an incompatible precision request.
+
+`tensor/precision.hpp` extends `precision_of` to tensors and views. It reads the
+construction default of runtime tensors, without inspecting elements; fixed
+element types report native precision without storing metadata. A runtime tensor
+without a default cannot supply an inferred precision. Parent-backed views keep
+following their parent's default. Host tensor constructors and
+`at_precision(tensor, p)` accept precision for fixed types too, validating the
+match before allocation or copying.
+
+The matrix-product, GEMM, square-solve, LU and log-determinant interfaces accept
+the same explicit precision argument for native and runtime scalars. Omitting it
+selects precision from participating tensor defaults; exact defaults are neutral,
+and different finite defaults require an override. An explicit request fixes the
+result precision: native results must match their type, while runtime conversion
+happens inside the backend. Approximation-only operations require finite precision.
+Async operations infer defaults after awaiting their readable inputs.
+
+This does not add a precision argument to every numerical operation or expand
+provider coverage. Fixed kernels retain type-defined precision; runtime kernels
+receive the resolved precision through dispatch. The [MPLAPACK integration](../linalg/mplapack_mpfr.md)
+documents current coverage and provider-specific state.
+The runnable [generic precision example](../../examples/linalg/generic_precision_example.cpp)
+solves the same system with `double` and, when configured, MPFR at 128 and 256 bits.
+
 ## Scalar Spelling
 
 Uni20 code should spell real and complex scalar types through the project-level
@@ -380,7 +427,9 @@ namespace uni20
 template <> struct numeric_limits<my_real>
 {
     static constexpr bool is_specialized = true;
-    static constexpr int digits = /* ... */;
+    static constexpr bool is_exact = false;
+    static constexpr int digits() { return /* ... */; }
+    static constexpr int digits(my_real const&) { return digits(); }
 
     static my_real epsilon();
     static my_real epsilon(my_real const&); // Same value, for generic callers.
@@ -407,10 +456,14 @@ auto bits = numeric_limits<mpreal>::digits(x);
 auto same_eps = numeric_limits<mpreal>::epsilon(p);
 ```
 
-Scalar-generic code can use `numeric_limits<Real>::epsilon(value)` for native
-real types as well. Their existing zero-argument, constexpr queries remain
-available. Runtime `digits(value)` and `digits(p)` apply to `mpreal`; native
-`digits` remains the usual compile-time constant.
+Scalar-generic code uses `numeric_limits<Real>::digits(value)` and
+`epsilon(value)`, or the corresponding queries taking `Precision`. Native
+types also provide zero-argument `digits()`, `digits10()`, `max_digits10()` and
+`epsilon()`; these remain `constexpr`. Decimal digit queries on native types
+also accept an exemplar or precision. Explicit precision must match the native
+type, including when querying limits. Fixed properties such as `radix`,
+`is_integer` and `max_exponent` remain constants. MPFR has no precisionless digit
+count or epsilon; decimal digit limits are not currently part of its specialization.
 
 An exact or unset exemplar cannot supply finite working precision: these runtime
 queries throw rather than return zero or choose an ambient default. Pass a finite

@@ -61,7 +61,7 @@ template <typename T> void write_json_value(json_output& out, T const& value)
     write_json_string(out.stream, cell_text(value, {}, true));
   else if constexpr (integer<T>)
   {
-    if constexpr (uni20::numeric_limits<T>::digits > 53)
+    if constexpr (uni20::numeric_limits<T>::digits() > 53)
       write_json_string(out.stream, cell_text(value, {}, true));
     else
       out << cell_text(value, {}, true);
@@ -85,22 +85,22 @@ template <DataTableValue T> void write_json_column(json_output& out, data_column
   if constexpr (half_integer<V>)
   {
     out << "\"half_int\",\"storage_bits\":"
-        << fmt::format("{}", uni20::numeric_limits<typename V::value_type>::digits + 1) << ",\"encoding\":\"number\"";
+        << fmt::format("{}", uni20::numeric_limits<typename V::value_type>::digits() + 1) << ",\"encoding\":\"number\"";
   }
   else if constexpr (runtime_real<V>)
     out << "\"real\",\"radix\":2,\"precision\":\"per_value\",\"encoding\":\"value_precision\"";
   else if constexpr (Real<V>)
   {
     out << "\"real\",\"radix\":" << fmt::format("{}", uni20::numeric_limits<V>::radix)
-        << ",\"precision_bits\":" << fmt::format("{}", uni20::numeric_limits<V>::digits)
+        << ",\"precision_bits\":" << fmt::format("{}", uni20::numeric_limits<V>::digits())
         << ",\"encoding\":\"decimal_string\"";
   }
   else if constexpr (integer<V>)
   {
     write_json_string(out.stream, fmt::format("{}int{}", std::is_signed_v<V> ? "" : "u",
-                                              uni20::numeric_limits<V>::digits + (std::is_signed_v<V> ? 1 : 0)));
+                                              uni20::numeric_limits<V>::digits() + (std::is_signed_v<V> ? 1 : 0)));
     out << ",\"encoding\":";
-    write_json_string(out.stream, uni20::numeric_limits<V>::digits > 53 ? "decimal_string" : "number");
+    write_json_string(out.stream, uni20::numeric_limits<V>::digits() > 53 ? "decimal_string" : "number");
   }
   else if constexpr (std::same_as<V, bool>)
     out << "\"bool\"";

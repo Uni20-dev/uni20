@@ -1,4 +1,5 @@
 #include <uni20/common/half_int.hpp>
+#include <uni20/core/runtime_precision.hpp>
 
 #include <gtest/gtest.h>
 
@@ -46,11 +47,13 @@ TYPED_TEST(HalfIntParsing, NumericLimitsDescribeExactHalfIntegerRange)
   static_assert(Limits::is_exact && Limits::is_signed && Limits::is_bounded);
   static_assert(!Limits::is_integer && !Limits::is_iec559);
   static_assert(!Limits::has_infinity && !Limits::has_quiet_NaN && !Limits::has_signaling_NaN);
-  static_assert(Limits::radix == 2 && Limits::digits == std::numeric_limits<T>::digits);
+  static_assert(Limits::radix == 2 && Limits::digits() == std::numeric_limits<T>::digits);
   static_assert(Limits::lowest().twice() == std::numeric_limits<T>::lowest());
   static_assert(Limits::max().twice() == std::numeric_limits<T>::max());
   static_assert(uni20::numeric_limits<Half const>::max().twice() == Limits::max().twice());
   static_assert(uni20::is_exact(uni20::from_twice(T{1})));
+  static_assert(uni20::native_precision<Half>() == uni20::Precision::exact());
+  static_assert(uni20::precision_of(uni20::from_twice(T{1})) == uni20::Precision::exact());
   // The upper endpoint has a fractional part even for a 64-bit carrier.
   EXPECT_EQ(Half::parse(uni20::to_string(Limits::lowest())), Limits::lowest());
   EXPECT_EQ(Half::parse(uni20::to_string(Limits::max())), Limits::max());
