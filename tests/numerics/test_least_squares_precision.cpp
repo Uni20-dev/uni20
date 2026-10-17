@@ -76,6 +76,30 @@ template <class C, class Backend> void check_least_squares(Backend backend)
   ASSERT_TRUE(sensitive.info.succeeded());
   expect_error_at_most((*sensitive.solution)[0, 0], C::scalar(1), tol / delta);
   expect_error_at_most(S((*sensitive.solution)[1, 0] * phase), C::scalar(-1), tol / delta);
+  // Three coupled unknowns exercise successive triangular updates. The known
+  // residual directions are (1, 2, 0, -1, -2) and -2 times that vector,
+  // orthogonal to every column of this coefficient matrix.
+  auto coupled = C::matrix(5, 3), multiple_rhs = C::matrix(5, 2);
+  int const coefficients[5][3] = {{2, 1, -1}, {0, 3, 2}, {0, 0, 4}, {2, 1, -1}, {0, 3, 2}};
+  int const right_sides[5][2] = {{-2, -6}, {2, 1}, {12, 4}, {-4, -2}, {-2, 9}};
+  for (index_type i = 0; i < 5; ++i)
+  {
+    for (index_type k = 0; k < 3; ++k)
+      coupled[i, k] = C::scalar(coefficients[i][k]) * (k == 0 ? phase : C::scalar(1));
+    for (index_type j = 0; j < 2; ++j)
+      multiple_rhs[i, j] = C::scalar(right_sides[i][j]);
+  }
+  auto coupled_result = linalg::least_squares_with_info(backend, coupled, multiple_rhs);
+  ASSERT_TRUE(coupled_result.info.succeeded());
+  auto const& coupled_x = *coupled_result.solution;
+  expect_error_at_most(S(coupled_x[0, 0] * phase), C::scalar(1), tol);
+  expect_error_at_most(coupled_x[1, 0], C::scalar(-2), tol);
+  expect_error_at_most(coupled_x[2, 0], C::scalar(3), tol);
+  expect_error_at_most(S(coupled_x[0, 1] * phase), C::scalar(-2), tol);
+  expect_error_at_most(coupled_x[1, 1], C::scalar(1), tol);
+  expect_error_at_most(coupled_x[2, 1], C::scalar(1), tol);
+  expect_error_at_most(coupled_result.residual_norms[0], R(math::sqrt(C::real(10))), tol);
+  expect_error_at_most(coupled_result.residual_norms[1], R(C::real(2) * math::sqrt(C::real(10))), tol);
   // Exercise a nontrivial rotation outside double's exponent range.
   if constexpr ([] {
                   if constexpr (C::runtime)

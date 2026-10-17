@@ -46,10 +46,17 @@ precision. No process-global precision or error policy is changed.
 | `CpuReferenceBackend` | Givens QR and triangular substitution, native real/complex scalars and configured MPFR/MPC. Native long double needs no MPLAPACK. |
 | `LapackBackend` | Existing LAPACK/MPLAPACK reduced QR, `Q^H B`, then scalar-generic triangular substitution. Its scalar coverage exactly follows QR, including the binary80 complex-provider restriction. |
 
-The current provider path materializes reduced Q and packs logical matrices.
-It does not call `gels` or form normal equations. Applying packed Householder
-reflectors directly is a possible future optimization. An explicitly requested
-unavailable provider fails dispatch rather than silently using CPU arithmetic.
+Both backends pack logical inputs into column-major workspaces. Triangular
+substitution and residual evaluation traverse those workspaces by column;
+row-major input support does not require a separate numerical implementation.
+Layout-specific optimizations should follow demonstrated workload needs. Residual
+evaluation reuses one length-`m` scratch vector across RHS columns.
+
+The current provider path materializes reduced Q and projects B into a separate
+`n x nrhs` workspace. It does not call `gels` or form normal equations. Applying
+packed Householder reflectors directly is a possible future optimization. An
+explicitly requested unavailable provider fails dispatch rather than silently
+using CPU arithmetic.
 
 ## Numerical outcomes and diagonal policy
 

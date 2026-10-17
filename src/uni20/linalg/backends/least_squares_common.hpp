@@ -110,33 +110,47 @@ KernelAttempt run(X& x, A& a, B& b, std::span<make_real_t<typename A::value_type
     if (!check_diagonal(work, scale, tolerance, info)) return KernelAttempt::success;
   }
   DenseMatrix<S> solution(uninitialized, n, nrhs, p);
+  // Packing gives both backends column-major workspaces, irrespective of input layout.
   for (std::size_t j = 0; j < nrhs; ++j)
-    for (std::size_t i = n; i-- > 0;)
+  {
+    for (std::size_t i = 0; i < n; ++i)
+      solution[i, j] = rhs[i, j];
+    for (std::size_t k = n; k-- > 0;)
     {
-      S value = rhs[i, j];
-      for (std::size_t k = i + 1; k < n; ++k)
-        value -= work[i, k] * solution[k, j];
-      solution[i, j] = value / work[i, i];
+      solution[k, j] /= work[k, k];
+      S const& value = solution[k, j];
+      for (std::size_t i = 0; i < k; ++i)
+        solution[i, j] -= work[i, k] * value;
     }
+  }
   if (!finite(solution.mdspan()))
   {
     info.status = LeastSquaresStatus::nonfinite_result;
     return KernelAttempt::success;
   }
   std::vector<R> norms(nrhs, zero);
+  // Reuse one RHS-sized scratch vector while accumulating along contiguous columns.
+  std::vector<S> error(m);
   for (std::size_t j = 0; j < nrhs; ++j)
+  {
+    for (std::size_t i = 0; i < m; ++i)
+      error[i] = -bv[i, j];
+    for (std::size_t k = 0; k < n; ++k)
+    {
+      S const& value = solution[k, j];
+      for (std::size_t i = 0; i < m; ++i)
+        error[i] += av[i, k] * value;
+    }
     for (std::size_t i = 0; i < m; ++i)
     {
-      S error = -bv[i, j];
-      for (std::size_t k = 0; k < n; ++k)
-        error += av[i, k] * solution[k, j];
-      norms[j] = math::hypot(norms[j], math::abs(error));
+      norms[j] = math::hypot(norms[j], math::abs(error[i]));
       if (!uni20::isfinite(norms[j]))
       {
         info.status = LeastSquaresStatus::nonfinite_result;
         return KernelAttempt::success;
       }
     }
+  }
   auto xa = acquire_host_write_access_sync(x);
   auto xs = xa.mdspan();
   packed_detail::unpack(solution, xs);

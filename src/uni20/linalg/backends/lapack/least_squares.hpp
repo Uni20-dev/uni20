@@ -21,17 +21,19 @@ template <class Matrix> void provider_qr(Matrix& a, Matrix& b, Precision p)
   DenseMatrix<S> q(uninitialized, m, n, p), r(uninitialized, n, n, p);
   auto ad = mdspec_of(a), qd = mdspec_of(q), rd = mdspec_of(r);
   detail::dispatch_at_precision<S>(LapackBackend{}, qr_op{}, p, qd, rd, ad);
-  auto original_rhs = b;
-  for (std::size_t j = 0; j < std::size_t(b.extent(1)); ++j)
+  std::size_t nrhs = b.extent(1);
+  DenseMatrix<S> projected_rhs(uninitialized, n, nrhs, p);
+  for (std::size_t j = 0; j < nrhs; ++j)
     for (std::size_t k = 0; k < n; ++k)
     {
       S value = scalar_at_precision<S>(0, p);
       for (std::size_t i = 0; i < m; ++i)
-        value += uni20::conj(q[i, k]) * original_rhs[i, j];
-      b[k, j] = value;
+        value += uni20::conj(q[i, k]) * b[i, j];
+      projected_rhs[k, j] = value;
     }
   // Only the n-by-n triangular system is used after this point.
   a = std::move(r);
+  b = std::move(projected_rhs);
 }
 } // namespace least_squares_detail
 
