@@ -27,6 +27,40 @@ TEST(DecompositionPrecision, FixedPrecisionRejectedBeforeConsumptionOrResize)
   EXPECT_EQ(r.extent(0), 1);
 }
 
+TEST(DecompositionPrecision, AsyncPreservingPrecisionFailureLeavesInputReadable)
+{
+  async::DebugScheduler scheduler;
+  async::ScopedScheduler scope(&scheduler);
+  DenseMatrix<double> matrix(2, 2);
+  matrix[0, 0] = 3;
+  matrix[1, 1] = 2;
+  auto pointer = matrix.data();
+  async::Async<DenseMatrix<double>> input(std::move(matrix));
+
+  // Validation belongs to the task, so scheduling succeeds and reads report it.
+  auto [left, values, right] = svd(input, Precision::bits(100));
+  EXPECT_THROW((void)left.get_wait(scheduler), std::invalid_argument);
+  EXPECT_THROW((void)values.get_wait(scheduler), std::invalid_argument);
+  EXPECT_THROW((void)right.get_wait(scheduler), std::invalid_argument);
+  auto const& preserved = input.get_wait(scheduler);
+  EXPECT_EQ(preserved.data(), pointer);
+  EXPECT_DOUBLE_EQ((preserved[0, 0]), 3);
+  EXPECT_DOUBLE_EQ((preserved[1, 1]), 2);
+}
+
+TEST(DecompositionPrecision, AsyncConsumingPrecisionFailureReachesInputAndEveryResult)
+{
+  async::DebugScheduler scheduler;
+  async::ScopedScheduler scope(&scheduler);
+  async::Async<DenseMatrix<double>> input(DenseMatrix<double>(2, 2));
+
+  auto [left, values, right] = svd(std::move(input), Precision::bits(100));
+  EXPECT_THROW((void)left.get_wait(scheduler), std::invalid_argument);
+  EXPECT_THROW((void)values.get_wait(scheduler), std::invalid_argument);
+  EXPECT_THROW((void)right.get_wait(scheduler), std::invalid_argument);
+  EXPECT_THROW((void)input.get_wait(scheduler), std::invalid_argument);
+}
+
 #if UNI20_ENABLE_MPLAPACK_MPFR
 #include <uni20/async/tbb_scheduler.hpp>
 #include <uni20/tensor/conjugate.hpp>

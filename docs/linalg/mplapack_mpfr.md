@@ -229,8 +229,8 @@ empty matrix. An exact or absent input default requires an explicit override.
 Only the matrix input supplies an inferred default: output defaults do not
 participate. Exact input elements are rounded at the provider boundary. Owning
 results and successful destructive workspaces record the selected precision;
-structural output views retain their parent's default. Fixed-type precision
-mismatches are rejected before consuming input or resizing outputs.
+structural output views retain their parent's default. Synchronous calls reject
+fixed-type precision mismatches before consuming input or resizing outputs.
 
 QR/LQ produce reduced factors with orthogonal or unitary Q. Self-adjoint
 factorization reads only the selected triangle. SVD returns nonnegative singular
@@ -251,6 +251,13 @@ QR/LQ, self-adjoint eigensystems and all SVD forms. Precision inference happens
 after the input becomes readable; an explicit request is copied into the
 coroutine frame. General nonsymmetric eigenanalysis retains its synchronous
 fixed-output API; no new async or preserving interface is implied.
+
+Async calls validate precision inside the scheduled task. A precision failure
+leaves a preserving call's input readable and propagates to every result epoch.
+A consuming call has enrolled its input as a writer, so the same failure also
+propagates to the input epoch; it does not guarantee preservation of the input.
+This follows the ordinary [async failure contract](../tensor/operations.md#failures),
+including when an explicit request could be rejected without reading elements.
 
 ## Examples and validation
 

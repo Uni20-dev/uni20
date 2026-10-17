@@ -47,9 +47,10 @@ auto p = uni20::precision_of(A);
 uni20::linalg::gemm(C, 1.0, A, B, 0.0, p);
 ```
 
-A fixed scalar requires its native precision; incompatible requests fail before
-output mutation or resizing. Without an explicit request, runtime operations
-infer precision from participating tensor defaults, with exact defaults neutral.
+A fixed scalar requires its native precision. Synchronous calls reject
+incompatible requests before output mutation or resizing. Without an explicit
+request, runtime operations infer precision from participating tensor defaults,
+with exact defaults neutral.
 GEMM includes the output default when `beta` is nonzero. Differing finite
 defaults require an explicit choice. These arguments do not extend provider
 coverage to other operations. See the [generic precision contract](../tensor/scalar_policy.md#generic-precision),
@@ -63,6 +64,11 @@ precision, including for all-exact inputs and empty shapes. `qr(A, p)`,
 Destructive forms place `p` before optional settings; `nonsymmetric_eigen`
 places it after the required vector flag. Owning outputs and successful
 workspaces record `p`; output views preserve parent defaults.
+Async precision validation occurs inside the scheduled task. A failed
+preserving call leaves its input readable; a failed consuming call propagates
+the error to its input writer epoch as well as every result epoch. The
+synchronous guarantee of rejection before consumption does not apply to a
+consuming async call. See the [async failure contract](../tensor/operations.md#failures).
 See [MPFR decompositions](mplapack_mpfr.md#dense-decompositions) for provider
 coverage, workspace handling and async behavior.
 

@@ -669,6 +669,13 @@ to the task. Reads of those output epochs observe the failure. Synchronous
 `CHECK` and `PANIC` still identify internal logic errors and may terminate the
 process; bindings must validate user input before entering such paths.
 
+Precision validation inside a scheduled decomposition follows the same rule.
+A preserving call leaves its input readable when the requested precision is
+invalid. A consuming call has enrolled the input as a writer, so the input and
+all result epochs observe the precision error. It does not promise rejection
+before consumption or input preservation. Validation before `take()` inside
+the coroutine would still propagate the exception to that input writer epoch.
+
 ## Adding an Async Operation
 
 Before adding an Async overload:
