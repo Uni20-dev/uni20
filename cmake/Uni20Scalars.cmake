@@ -34,7 +34,7 @@ uni20_scalar_option(UNI20_ENABLE_MPREAL OFF "Arbitrary-precision mpreal and mpco
 option(UNI20_BACKEND_MPLAPACK "Enable MPLAPACK kernels for configured scalar families" OFF)
 
 foreach(_capability IN ITEMS FLOAT80 FLOAT128 MPREAL MPLAPACK_FLOAT80
-    MPLAPACK_FLOAT128 MPLAPACK_MPREAL MPLAPACK_FLOAT80_COMPLEX_LU)
+    MPLAPACK_FLOAT128 MPLAPACK_MPREAL MPLAPACK_FLOAT80_COMPLEX)
   set(UNI20_HAS_${_capability} OFF)
 endforeach()
 set(UNI20_FLOAT128_PROVIDER_MPLAPACK OFF)
@@ -286,7 +286,7 @@ macro(uni20_configure_scalar_providers)
       ]=] UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
       # Generic std::complex<_Float64x> division can square its denominator,
       # overflowing or underflowing on otherwise representable LU problems.
-      # Only enable complex LU for the native long-double specialization.
+      # Only enable complex LU/decompositions for the native long-double specialization.
       # This is a compile-time capability check, including for cross builds.
       unset(UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE CACHE)
       check_cxx_source_compiles([=[
@@ -299,10 +299,10 @@ macro(uni20_configure_scalar_providers)
     if(NOT UNI20_MPLAPACK_BINARY80_HEADERS_COMPATIBLE)
       message(FATAL_ERROR "MPLAPACK binary80 headers must support native long double value conversion and real/complex LU")
     endif()
-    set(UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU ${UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE})
+    set(UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX ${UNI20_MPLAPACK_BINARY80_COMPLEX_USES_LONG_DOUBLE})
     message(STATUS "MPLAPACK binary80 backend enabled (${UNI20_MPLAPACK_SOURCE})")
-    if(NOT UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU)
-      message(STATUS "MPLAPACK binary80 complex LU disabled: provider scalar is not native long double; default complex LU uses CPU")
+    if(NOT UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX)
+      message(STATUS "MPLAPACK binary80 complex LU/decompositions disabled: provider scalar is not native long double; default complex LU uses CPU")
     endif()
   endif()
 

@@ -46,8 +46,11 @@ int main()
 {
   std::cout << "Dense decompositions of A = [[2,1],[1,1]].\n"
             << "A is positive definite: its singular values equal its eigenvalues, (3 +/- sqrt(5))/2.\n"
-            << "The same C++ calls below use native double and, when enabled, MPFR.\n";
+            << "The same C++ calls below use native double and, when enabled, binary80 and MPFR.\n";
   demonstrate<double>(uni20::native_precision<double>());
+#if UNI20_HAS_MPLAPACK_FLOAT80
+  demonstrate<uni20::float80>(uni20::native_precision<uni20::float80>());
+#endif
 #if UNI20_HAS_MPLAPACK_MPREAL
   demonstrate<uni20::mpreal>(uni20::Precision::bits(128));
   demonstrate<uni20::mpreal>(uni20::Precision::bits(256));

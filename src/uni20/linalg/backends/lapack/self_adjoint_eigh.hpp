@@ -133,7 +133,8 @@ KernelAttempt try_self_adjoint_eigh(self_adjoint_eigh_op const& op, EigenvalueMd
 /// \brief Report eligibility for host-accessible mdspec self-adjoint eigenanalysis.
 template <uni20::MutableRankedStridedMdspecLike<1> EigenvalueMdspan,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspan>
-  requires uni20::HostWritableMdspec<EigenvalueMdspan> && uni20::HostWritableMdspec<MatrixMdspan>
+  requires LapackScalar<typename MatrixMdspan::value_type> && uni20::HostWritableMdspec<EigenvalueMdspan> &&
+           uni20::HostWritableMdspec<MatrixMdspan>
 consteval auto kernel_accepts_types(LapackBackend const&, self_adjoint_eigh_op const&, EigenvalueMdspan&, MatrixMdspan&)
 {
   using eigenvalue_span = uni20::host_write_mdspan_t<EigenvalueMdspan>;
@@ -148,7 +149,8 @@ consteval auto kernel_accepts_types(LapackBackend const&, self_adjoint_eigh_op c
 /// \brief Resolve host access and run LAPACK self-adjoint eigenanalysis.
 template <uni20::MutableRankedStridedMdspecLike<1> EigenvalueMdspan,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspan>
-  requires uni20::HostWritableMdspec<EigenvalueMdspan> && uni20::HostWritableMdspec<MatrixMdspan>
+  requires LapackScalar<typename MatrixMdspan::value_type> && uni20::HostWritableMdspec<EigenvalueMdspan> &&
+           uni20::HostWritableMdspec<MatrixMdspan>
 KernelAttempt try_kernel(LapackBackend, self_adjoint_eigh_op const& operation, EigenvalueMdspan& eigenvalues,
                          MatrixMdspan& matrix_work)
 {
@@ -161,6 +163,6 @@ KernelAttempt try_kernel(LapackBackend, self_adjoint_eigh_op const& operation, E
 
 } // namespace uni20::linalg
 
-#if UNI20_HAS_MPLAPACK_MPREAL
-#include "decompositions_mpfr.hpp"
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+#include "decompositions_packed.hpp"
 #endif

@@ -14,8 +14,8 @@ the [raw external-library wrappers](../../backend/).
 - [`cuda/`](cuda/): generic CUDA runtime kernels and transfers used after provider backends decline.
 - [`lapack/`](lapack/): LAPACK-backed matrix operation entry points.
 - [`cusolver/`](cusolver/): cuSOLVER-backed matrix operation entry points.
-- `mpfr_common.hpp`: logical host packing shared by the MPFR BLAS/LAPACK
-  specializations. Provider object representation stays in `backend/mplapack/`.
+- `packed_matrix.hpp`: precision-aware logical host packing shared by packed
+  BLAS/LAPACK specializations. Provider object representation stays in `backend/mplapack/`.
 
 ## Notes
 

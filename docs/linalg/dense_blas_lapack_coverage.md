@@ -39,10 +39,12 @@ Native float32/64 and binary128 also support complex QR/LQ through their
 `geqrf`/`ungqr` and `gelqf`/`unglq` provider wrappers.
 
 The optional [binary80 adapter](mplapack_binary80.md) covers real and complex
-GEMM and real LU/solve. Complex `Cgetrf`/`Cgetrs` require a `long double` provider;
-they are disabled for distinct `_Float64x` because its generic complex division
-can silently overflow. This does not extend the broad BLAS/LAPACK scalar traits
-or the remaining inventory below.
+GEMM through `BlasBackend` and real LU/solve, QR/LQ, self-adjoint/general
+eigensystems and all SVD forms through `LapackBackend`. Its decomposition
+routines match the MPFR table above. Complex LU and decompositions require a
+`long double` provider; they are disabled for distinct `_Float64x` because its
+generic complex division can silently overflow. This does not extend the broad
+raw-wrapper BLAS/LAPACK scalar traits, Schur/tridiagonal or projected coverage.
 
 CUDA provider coverage is currently narrower: cuBLAS `S/D/C/ZGEMM`, conjugate
 dot products, and Euclidean norms have checked provider wrappers and a

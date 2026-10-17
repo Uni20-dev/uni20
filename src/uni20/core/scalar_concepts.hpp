@@ -86,39 +86,37 @@ concept Scalar = is_scalar_v<T>;
 template <typename T>
 concept RealOrComplex = Real<T> || Complex<T>;
 
-/// \brief Concept for BLAS-compatible real scalar types.
+/// \brief Real scalar types supported by the configured raw-pointer BLAS wrappers.
 /// \tparam T Type to test.
 /// \ingroup core_math
 template <typename T>
 concept BlasReal = Real<T> && detail::has_blas_real_backend_v<T>;
 
-/// \brief Concept for BLAS-compatible complex scalar types.
+/// \brief Complex scalar types supported by the configured raw-pointer BLAS wrappers.
 /// \tparam T Type to test.
 /// \ingroup core_math
 template <typename T>
 concept BlasComplex = Complex<T> && detail::has_blas_complex_backend_v<T>;
 
-/// \brief Concept for all BLAS-compatible scalar types.
+/// \brief Scalar types supported by the configured raw-pointer BLAS wrappers.
 /// \tparam T Type to test.
 /// \ingroup core_math
 template <typename T>
 concept BlasScalar = BlasReal<T> || BlasComplex<T>;
 
-/// \brief Concept for real scalar types with a configured dense LAPACK backend.
-/// \details This names the LAPACK requirement explicitly for dense
-///          factorizations, eigensolvers, Schur decompositions, and related
-///          projected Krylov subspace kernels. It is intentionally separate
-///          from `BlasReal` so dense BLAS and dense LAPACK backend coverage can
-///          diverge for extension scalar types.
+/// \brief Real scalar types supported by the configured raw-pointer LAPACK wrappers.
+/// \details Packed adapters may support additional scalars for individual operations
+///          without satisfying this concept. Use operation-specific dispatch probes
+///          for backend-family eligibility; this trait is not a complete capability
+///          test for `LapackBackend`.
 /// \tparam T Type to test.
 /// \ingroup core_math
 template <typename T>
 concept LapackReal = Real<T> && detail::has_lapack_real_backend_v<T>;
 
-/// \brief Concept for complex scalar types with a configured dense LAPACK backend.
-/// \details This is intentionally separate from `BlasComplex` so dense BLAS and
-///          dense LAPACK backend coverage can diverge for extension scalar
-///          types.
+/// \brief Complex scalar types supported by the configured raw-pointer LAPACK wrappers.
+/// \details As with `LapackReal`, packed scalar adapters have per-operation coverage
+///          independent of this raw-wrapper trait.
 /// \tparam T Type to test.
 /// \ingroup core_math
 template <typename T>

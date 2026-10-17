@@ -69,7 +69,8 @@ preserving call leaves its input readable; a failed consuming call propagates
 the error to its input writer epoch as well as every result epoch. The
 synchronous guarantee of rejection before consumption does not apply to a
 consuming async call. See the [async failure contract](../tensor/operations.md#failures).
-See [MPFR decompositions](mplapack_mpfr.md#dense-decompositions) for provider
+See [MPFR decompositions](mplapack_mpfr.md#dense-decompositions) and the
+[binary80 adapter](mplapack_binary80.md) for provider
 coverage, workspace handling and async behavior.
 
 ## Norms and Initialization

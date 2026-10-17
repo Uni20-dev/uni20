@@ -191,7 +191,8 @@ KernelAttempt try_nonsymmetric_eigen(nonsymmetric_eigen_op const& op, MatrixMdsp
 /// \brief Report eligibility for host-accessible mdspec nonsymmetric eigenanalysis.
 template <uni20::MutableRankedStridedMdspecLike<2> MatrixMdspan, class EigenScalar,
           uni20::MutableRankedMdspecLike<2> RightEigenvectorMdspan>
-  requires uni20::HostWritableMdspec<MatrixMdspan> && uni20::HostWritableMdspec<RightEigenvectorMdspan>
+  requires LapackScalar<typename MatrixMdspan::value_type> && uni20::HostWritableMdspec<MatrixMdspan> &&
+           uni20::HostWritableMdspec<RightEigenvectorMdspan>
 consteval auto kernel_accepts_types(LapackBackend const&, nonsymmetric_eigen_op const&, MatrixMdspan&,
                                     std::span<EigenScalar>&, RightEigenvectorMdspan&)
 {
@@ -207,7 +208,8 @@ consteval auto kernel_accepts_types(LapackBackend const&, nonsymmetric_eigen_op 
 /// \brief Resolve host access and run LAPACK nonsymmetric eigenanalysis.
 template <uni20::MutableRankedStridedMdspecLike<2> MatrixMdspan, class EigenScalar,
           uni20::MutableRankedMdspecLike<2> RightEigenvectorMdspan>
-  requires uni20::HostWritableMdspec<MatrixMdspan> && uni20::HostWritableMdspec<RightEigenvectorMdspan>
+  requires LapackScalar<typename MatrixMdspan::value_type> && uni20::HostWritableMdspec<MatrixMdspan> &&
+           uni20::HostWritableMdspec<RightEigenvectorMdspan>
 KernelAttempt try_kernel(LapackBackend, nonsymmetric_eigen_op const& operation, MatrixMdspan& matrix_work,
                          std::span<EigenScalar> eigenvalues, RightEigenvectorMdspan& right_eigenvectors)
 {
@@ -220,6 +222,6 @@ KernelAttempt try_kernel(LapackBackend, nonsymmetric_eigen_op const& operation, 
 
 } // namespace uni20::linalg
 
-#if UNI20_HAS_MPLAPACK_MPREAL
-#include "decompositions_mpfr.hpp"
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+#include "decompositions_packed.hpp"
 #endif

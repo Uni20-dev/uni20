@@ -67,12 +67,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "blas_or_mplapack");
-#if UNI20_HAS_MPLAPACK_FLOAT80
-  if constexpr (C::binary80_provider)
-    check_product<C>(linalg::MplapackBinary80Backend{});
-  else
-#endif
-    check_product<C>(linalg::BlasBackend{});
+  check_product<C>(linalg::BlasBackend{});
 }
 
 template <class C, class Backend> void check_solve(Backend backend, bool exponent_range)
@@ -107,12 +102,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "lapack_or_mplapack");
-#if UNI20_HAS_MPLAPACK_FLOAT80
-  if constexpr (C::binary80_provider)
-    check_solve<C>(linalg::MplapackBinary80Backend{}, false);
-  else
-#endif
-    check_solve<C>(linalg::LapackBackend{}, false);
+  check_solve<C>(linalg::LapackBackend{}, false);
 }
 
 UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)

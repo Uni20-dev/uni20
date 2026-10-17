@@ -18,6 +18,10 @@ passes an explicit working precision to the provider. This specialization is
 available even when native BLAS is disabled. Exact GEMM declines without touching
 operands so the CPU reference kernel can perform rational arithmetic.
 
+`binary80.hpp` supplies binary80 real/complex GEMM under the same `BlasBackend`,
+including when native BLAS is disabled. Provider representation conversion stays
+in the compiled MPLAPACK adapter.
+
 ## Related Documentation
 
 - [Linalg backend source map](../)

@@ -1,15 +1,18 @@
 #pragma once
 
-#include "binary80.hpp"
+#include <uni20/linalg/backends/binary80_common.hpp>
 #include <uni20/linalg/backends/lu_common.hpp>
+#include <uni20/linalg/dispatch.hpp>
+#include <uni20/linalg/operation_tags.hpp>
+#include <uni20/tensor/access.hpp>
 
 namespace uni20::linalg
 {
 /// \brief Accept logical host workspaces for native binary80 LU.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
-consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_factor_op const&, A&, std::span<std::size_t>,
-                                    SolveInfo&, SolveOptions<float80> const&)
+consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
+                                    SolveOptions<float80> const&)
 {
   return kernel_types_yes;
 }
@@ -17,8 +20,8 @@ consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_factor_op const&
 /// \brief Convert values at the backend boundary and compute portable owning factors.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
-KernelAttempt try_kernel(MplapackBinary80Backend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
-                         SolveInfo& info, SolveOptions<float80> const& options)
+KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
+                         SolveOptions<float80> const& options)
 {
   detail::require_lu_shape(a, pivots.size());
   detail::require_solve_options(options);
@@ -51,8 +54,7 @@ template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostReadableMdspec<A> && HostWritableMdspec<B> &&
            mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
-consteval auto kernel_accepts_types(MplapackBinary80Backend, lu_solve_op const&, A&, std::span<std::size_t const>, B&,
-                                    SolveInfo&)
+consteval auto kernel_accepts_types(LapackBackend, lu_solve_op const&, A&, std::span<std::size_t const>, B&, SolveInfo&)
 {
   return kernel_types_yes;
 }
@@ -63,7 +65,7 @@ template <RankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
   requires HostReadableMdspec<A> && HostWritableMdspec<B> &&
            mplapack_binary80_detail::Binary80LuScalar<typename A::value_type> &&
            std::same_as<typename A::value_type, typename B::value_type>
-KernelAttempt try_kernel(MplapackBinary80Backend, lu_solve_op const&, A& a, std::span<std::size_t const> pivots, B& b,
+KernelAttempt try_kernel(LapackBackend, lu_solve_op const&, A& a, std::span<std::size_t const> pivots, B& b,
                          SolveInfo& info)
 {
   detail::require_lu_solve_shape(a, pivots, b);

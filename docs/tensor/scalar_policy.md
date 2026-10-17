@@ -241,17 +241,19 @@ without having BLAS or LAPACK coverage in the current build.
 
 The broad traits currently describe the fixed-scalar raw-wrapper surface, not
 every scalar accepted by every operation in a backend family. In particular,
-configured MPFR products and LU use `BlasBackend`/`LapackBackend` while remaining
+configured MPFR and binary80 products, LU and decompositions use `BlasBackend`/`LapackBackend` while remaining
 outside these traits. Use `probe_dispatch_kernel_types` for a particular
 operation and operand signature. The [integration roadmap](../linalg/mplapack_mpfr.md#integration-roadmap)
-tracks the capability audit needed before broadening the scalar concepts.
+tracks the remaining projected-algorithm capability audit.
 
 In particular, `float80` and `complex<float80>` reuse the native `long double`
 scalar and generic CPU paths where supported. The optional
 [MPLAPACK binary80 adapter](../linalg/mplapack_binary80.md) adds GEMM, square
-solves and reusable LU through `MplapackBinary80Backend`. Complex provider LU
-requires its scalar to be `long double`; distinct `_Float64x` complex division
-is unsafe, so default complex solves use the CPU path instead. The adapter keeps
+solves, reusable LU, QR/LQ, self-adjoint/general eigensystems and SVD through
+`BlasBackend` and `LapackBackend`. Complex provider LU and decompositions require
+its scalar to be `long double`; distinct `_Float64x` complex division is unsafe,
+so default complex solves use the CPU path instead. Complex decompositions have
+no CPU fallback. The adapter keeps
 provider types private and converts by value. This limited coverage does not
 make these types satisfy the broad `Blas*`/`Lapack*` traits or add GPU support. Runtime precision
 visitors instantiate every configured scalar: clients requiring LAPACK must

@@ -12,8 +12,11 @@ This directory contains LAPACK operation-tag backend adapters.
 - `linear_solve_mpfr.hpp`, `lu_mpfr.hpp`: optional scalar specializations of
   `LapackBackend`, included by the corresponding operation headers. They pack
   logical MPFR/MPC values and pass working precision to the MPLAPACK provider.
-- `decompositions_mpfr.hpp`: optional MPFR/MPC QR/LQ, eigensystem and SVD kernels,
-  sharing logical packing and explicit precision at the provider boundary.
+- `linear_solve_binary80.hpp`, `lu_binary80.hpp`: binary80 scalar specializations
+  of the same `LapackBackend`, with provider complex-arithmetic restrictions.
+- `decompositions_packed.hpp`: shared MPFR/MPC and binary80 QR/LQ, eigensystem and
+  SVD kernels. `packed_decomposition_capabilities.hpp` checks each provider
+  operation independently.
 - `lq.hpp`: reduced real or complex LQ factorization through `gelqf` and `orglq`/`unglq`.
 - `tridiagonal_eigen.hpp`: symmetric tridiagonal eigenvalues and eigenvectors
   through `sterf` and `steqr`.
@@ -41,9 +44,9 @@ This directory contains LAPACK operation-tag backend adapters.
   `INFO` failures after a provider call are terminal and must not trigger
   fallback.
 - Native update-matrix paths require a directly addressable column-major
-  mdspan. Unsupported layouts decline before any operand is modified. MPFR
+  mdspan. Unsupported layouts decline before any operand is modified. MPFR and binary80
   specializations instead pack logical host values, including transforming
-  accessors, through the shared `../mpfr_common.hpp` helpers.
+  accessors, through the shared `../packed_matrix.hpp` helpers.
 - Read-only matrix norms additionally accept row-major storage by exchanging
   one and infinity norms under the provider transpose. Complex non-Frobenius
   forms decline because LAPACK's component-sum convention differs from

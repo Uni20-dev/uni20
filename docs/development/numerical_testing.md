@@ -44,8 +44,8 @@ Float80 similarly requires Uni20's native 64-bit-significand format detection.
 
 Dense decomposition probes force `LapackBackend` for real/complex QR, LQ,
 self-adjoint eigensystems, SVD and general eigenanalysis. They cover float32/64,
-optional binary128 and MPFR at 128/256 bits; binary80 remains explicitly
-unsupported for this operation family. Reconstruction and orthogonality use
+configured binary80/binary128 and MPFR at 128/256 bits. Binary80 complex
+decomposition cells require a native long-double provider. Reconstruction and orthogonality use
 scalar loops independent of provider GEMM. Spectral gaps detect narrowing, and
 a separate 512-bit analytic oracle checks improved QR/eigenvalue/SVD accuracy.
 
@@ -218,7 +218,8 @@ numerical subsystem. In the current implementation:
 
 - Float80 CPU arithmetic, reductions, GEMM, solve, reusable LU and log
   determinants have shared probes. The optional binary80 provider runs the same
-  GEMM, solve and LU/log-determinant probes. Its complex LU/solve cells are
+  GEMM, solve, LU/log-determinant and dense-decomposition probes. Its complex
+  LU/solve and decomposition cells are
   explicitly unsupported when the provider uses distinct `_Float64x`, whose
   generic complex division can silently overflow; default dispatch uses the CPU
   implementation, but that fallback does not count as provider validation.
@@ -229,7 +230,7 @@ numerical subsystem. In the current implementation:
 - Float80 and MPFR/MPC projected LAPACK wrappers and end-to-end Krylov solvers
   remain unsupported here. Helper-level runtime epsilon tests do not establish
   Lanczos, Arnoldi, or exponential-action support.
-- Shared coverage must expand to decompositions, broader matrix functions,
+- Shared coverage must expand to further matrix functions,
   iterative stopping/restart criteria, async precision propagation, and other
   numerical subsystems before their scalar support is certified. Existing
   specialized tests supply additional evidence but must not be mistaken for

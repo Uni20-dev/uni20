@@ -129,12 +129,20 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
                                probe == DecompositionAccuracyImprovesWithPrecision;
     if (decomposition)
     {
-      if constexpr (C::binary80_provider) return {"unsupported", "binary80 decomposition provider not yet wired"};
+      if constexpr (C::binary80_provider)
+      {
+#if !UNI20_HAS_MPLAPACK_FLOAT80
+        return {"unavailable", "enable float80 and UNI20_BACKEND_MPLAPACK"};
+#elif !UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX
+        if constexpr (C::is_complex)
+          return {"unsupported", "provider complex division is unsafe with distinct _Float64x"};
+#endif
+      }
 #if !UNI20_HAS_MPLAPACK_MPREAL
       if constexpr (C::runtime) return {"unavailable", "enable mpreal and UNI20_BACKEND_MPLAPACK"};
 #endif
 #if !UNI20_HAS_MPLAPACK_FLOAT128
-      if constexpr (!C::runtime && !std::same_as<typename C::real_type, float> &&
+      if constexpr (!C::runtime && !C::binary80_provider && !std::same_as<typename C::real_type, float> &&
                     !std::same_as<typename C::real_type, double>)
         return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK for binary128 decompositions"};
 #endif
@@ -162,7 +170,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     if constexpr (C::kind == PrecisionKind::float128)
       if (provider) return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK"};
 #endif
-#if UNI20_HAS_MPLAPACK_FLOAT80 && !UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80 && !UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX
     if constexpr (C::binary80_provider && C::is_complex)
       if (provider && probe != ProviderGemmRetainsIncrement)
         return {"unsupported", "provider complex division is unsafe with distinct _Float64x"};
