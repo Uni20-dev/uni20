@@ -219,3 +219,7 @@ KernelAttempt try_kernel(LapackBackend, nonsymmetric_eigen_op const& operation, 
 }
 
 } // namespace uni20::linalg
+
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "decompositions_mpfr.hpp"
+#endif

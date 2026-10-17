@@ -3,7 +3,7 @@
 /**
  * \file lq.hpp
  * \ingroup linalg
- * \brief LAPACK backend for reduced dense real LQ factorization.
+ * \brief LAPACK backend for reduced dense real or complex LQ factorization.
  */
 
 #include "common.hpp"
@@ -35,7 +35,7 @@ template <class LMdspan, class QMdspan, class MatrixMdspan> consteval auto lq_ac
   using l_scalar = std::remove_cv_t<typename LMdspan::element_type>;
   using q_scalar = std::remove_cv_t<typename QMdspan::element_type>;
   using matrix_scalar = std::remove_cv_t<typename MatrixMdspan::element_type>;
-  if constexpr (uni20::LapackReal<matrix_scalar> && std::same_as<l_scalar, matrix_scalar> &&
+  if constexpr (uni20::LapackScalar<matrix_scalar> && std::same_as<l_scalar, matrix_scalar> &&
                 std::same_as<q_scalar, matrix_scalar> && uni20::DefaultAccessorMdspanLike<MatrixMdspan>)
     return kernel_types_maybe;
   else
@@ -116,7 +116,7 @@ KernelAttempt try_lq(LMdspan& l, QMdspan& q, MatrixMdspan& matrix_work)
 
 } // namespace lapack_detail
 
-/// \brief Report eligibility for a host-accessible reduced real LQ factorization.
+/// \brief Report eligibility for a host-accessible reduced real or complex LQ factorization.
 template <uni20::MutableRankedMdspecLike<2> LMdspec, uni20::MutableRankedMdspecLike<2> QMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
   requires uni20::HostWritableMdspec<LMdspec> && uni20::HostWritableMdspec<QMdspec> &&
@@ -133,7 +133,7 @@ consteval auto kernel_accepts_types(LapackBackend const&, lq_op const&, LMdspec&
     return kernel_types_maybe;
 }
 
-/// \brief Resolve host access and compute reduced LQ through LAPACK `gelqf` and `orglq`.
+/// \brief Resolve host access and compute reduced LQ through LAPACK `gelqf` and `orglq`/`unglq`.
 template <uni20::MutableRankedMdspecLike<2> LMdspec, uni20::MutableRankedMdspecLike<2> QMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
   requires uni20::HostWritableMdspec<LMdspec> && uni20::HostWritableMdspec<QMdspec> &&
@@ -146,3 +146,7 @@ KernelAttempt try_kernel(LapackBackend, lq_op const&, LMdspec& l, QMdspec& q, Ma
 }
 
 } // namespace uni20::linalg
+
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "decompositions_mpfr.hpp"
+#endif

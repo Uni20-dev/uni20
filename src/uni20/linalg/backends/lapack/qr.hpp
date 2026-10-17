@@ -3,7 +3,7 @@
 /**
  * \file qr.hpp
  * \ingroup linalg
- * \brief LAPACK backend for reduced dense real QR factorization.
+ * \brief LAPACK backend for reduced dense real or complex QR factorization.
  */
 
 #include "common.hpp"
@@ -35,7 +35,7 @@ template <class QMdspan, class RMdspan, class MatrixMdspan> consteval auto qr_ac
   using q_scalar = std::remove_cv_t<typename QMdspan::element_type>;
   using r_scalar = std::remove_cv_t<typename RMdspan::element_type>;
   using matrix_scalar = std::remove_cv_t<typename MatrixMdspan::element_type>;
-  if constexpr (uni20::LapackReal<matrix_scalar> && std::same_as<q_scalar, matrix_scalar> &&
+  if constexpr (uni20::LapackScalar<matrix_scalar> && std::same_as<q_scalar, matrix_scalar> &&
                 std::same_as<r_scalar, matrix_scalar> && uni20::DefaultAccessorMdspanLike<MatrixMdspan>)
     return kernel_types_maybe;
   else
@@ -116,7 +116,7 @@ KernelAttempt try_qr(QMdspan& q, RMdspan& r, MatrixMdspan& matrix_work)
 
 } // namespace lapack_detail
 
-/// \brief Report eligibility for a host-accessible reduced real QR factorization.
+/// \brief Report eligibility for a host-accessible reduced real or complex QR factorization.
 template <uni20::MutableRankedMdspecLike<2> QMdspec, uni20::MutableRankedMdspecLike<2> RMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
   requires uni20::HostWritableMdspec<QMdspec> && uni20::HostWritableMdspec<RMdspec> &&
@@ -133,7 +133,7 @@ consteval auto kernel_accepts_types(LapackBackend const&, qr_op const&, QMdspec&
     return kernel_types_maybe;
 }
 
-/// \brief Resolve host access and compute reduced QR through LAPACK `geqrf` and `orgqr`.
+/// \brief Resolve host access and compute reduced QR through LAPACK `geqrf` and `orgqr`/`ungqr`.
 template <uni20::MutableRankedMdspecLike<2> QMdspec, uni20::MutableRankedMdspecLike<2> RMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
   requires uni20::HostWritableMdspec<QMdspec> && uni20::HostWritableMdspec<RMdspec> &&
@@ -146,3 +146,7 @@ KernelAttempt try_kernel(LapackBackend, qr_op const&, QMdspec& q, RMdspec& r, Ma
 }
 
 } // namespace uni20::linalg
+
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "decompositions_mpfr.hpp"
+#endif

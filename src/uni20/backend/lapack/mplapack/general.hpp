@@ -259,12 +259,34 @@ namespace uni20::lapack::unchecked
   return static_cast<blas_int>(mplapack_info);
 }
 
+[[nodiscard]] inline blas_int geqrf(blas_int m, blas_int n, uni20::complex<uni20::float128>* a, blas_int lda,
+                                    uni20::complex<uni20::float128>* tau, uni20::complex<uni20::float128>* work,
+                                    blas_int lwork)
+{
+  UNI20_EXTERNAL_API_CALL(LAPACK, Cgeqrf, m, n, a, lda, tau, work, lwork);
+  mplapackint mplapack_info = 0;
+  Cgeqrf(static_cast<mplapackint>(m), static_cast<mplapackint>(n), a, static_cast<mplapackint>(lda), tau, work,
+         static_cast<mplapackint>(lwork), mplapack_info);
+  return static_cast<blas_int>(mplapack_info);
+}
+
 [[nodiscard]] inline blas_int gelqf(blas_int m, blas_int n, uni20::float128* a, blas_int lda, uni20::float128* tau,
                                     uni20::float128* work, blas_int lwork)
 {
   UNI20_EXTERNAL_API_CALL(LAPACK, Rgelqf, m, n, a, lda, tau, work, lwork);
   mplapackint mplapack_info = 0;
   Rgelqf(static_cast<mplapackint>(m), static_cast<mplapackint>(n), a, static_cast<mplapackint>(lda), tau, work,
+         static_cast<mplapackint>(lwork), mplapack_info);
+  return static_cast<blas_int>(mplapack_info);
+}
+
+[[nodiscard]] inline blas_int gelqf(blas_int m, blas_int n, uni20::complex<uni20::float128>* a, blas_int lda,
+                                    uni20::complex<uni20::float128>* tau, uni20::complex<uni20::float128>* work,
+                                    blas_int lwork)
+{
+  UNI20_EXTERNAL_API_CALL(LAPACK, Cgelqf, m, n, a, lda, tau, work, lwork);
+  mplapackint mplapack_info = 0;
+  Cgelqf(static_cast<mplapackint>(m), static_cast<mplapackint>(n), a, static_cast<mplapackint>(lda), tau, work,
          static_cast<mplapackint>(lwork), mplapack_info);
   return static_cast<blas_int>(mplapack_info);
 }
@@ -299,12 +321,34 @@ namespace uni20::lapack::unchecked
   return static_cast<blas_int>(mplapack_info);
 }
 
+[[nodiscard]] inline blas_int orgqr(blas_int m, blas_int n, blas_int k, uni20::complex<uni20::float128>* a,
+                                    blas_int lda, uni20::complex<uni20::float128>* tau,
+                                    uni20::complex<uni20::float128>* work, blas_int lwork)
+{
+  UNI20_EXTERNAL_API_CALL(LAPACK, Cungqr, m, n, k, a, lda, tau, work, lwork);
+  mplapackint mplapack_info = 0;
+  Cungqr(static_cast<mplapackint>(m), static_cast<mplapackint>(n), static_cast<mplapackint>(k), a,
+         static_cast<mplapackint>(lda), tau, work, static_cast<mplapackint>(lwork), mplapack_info);
+  return static_cast<blas_int>(mplapack_info);
+}
+
 [[nodiscard]] inline blas_int orglq(blas_int m, blas_int n, blas_int k, uni20::float128* a, blas_int lda,
                                     uni20::float128* tau, uni20::float128* work, blas_int lwork)
 {
   UNI20_EXTERNAL_API_CALL(LAPACK, Rorglq, m, n, k, a, lda, tau, work, lwork);
   mplapackint mplapack_info = 0;
   Rorglq(static_cast<mplapackint>(m), static_cast<mplapackint>(n), static_cast<mplapackint>(k), a,
+         static_cast<mplapackint>(lda), tau, work, static_cast<mplapackint>(lwork), mplapack_info);
+  return static_cast<blas_int>(mplapack_info);
+}
+
+[[nodiscard]] inline blas_int orglq(blas_int m, blas_int n, blas_int k, uni20::complex<uni20::float128>* a,
+                                    blas_int lda, uni20::complex<uni20::float128>* tau,
+                                    uni20::complex<uni20::float128>* work, blas_int lwork)
+{
+  UNI20_EXTERNAL_API_CALL(LAPACK, Cunglq, m, n, k, a, lda, tau, work, lwork);
+  mplapackint mplapack_info = 0;
+  Cunglq(static_cast<mplapackint>(m), static_cast<mplapackint>(n), static_cast<mplapackint>(k), a,
          static_cast<mplapackint>(lda), tau, work, static_cast<mplapackint>(lwork), mplapack_info);
   return static_cast<blas_int>(mplapack_info);
 }

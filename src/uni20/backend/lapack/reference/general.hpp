@@ -136,11 +136,23 @@ extern "C"
   void dgeqrf_(blas_int const* m, blas_int const* n, double* a, blas_int const* lda, double* tau, double* work,
                blas_int const* lwork, blas_int* info);
 
+  void zgeqrf_(blas_int const* m, blas_int const* n, uni20::complex<double>* a, blas_int const* lda,
+               uni20::complex<double>* tau, uni20::complex<double>* work, blas_int const* lwork, blas_int* info);
+
+  void cgeqrf_(blas_int const* m, blas_int const* n, uni20::complex<float>* a, blas_int const* lda,
+               uni20::complex<float>* tau, uni20::complex<float>* work, blas_int const* lwork, blas_int* info);
+
   void sgelqf_(blas_int const* m, blas_int const* n, float* a, blas_int const* lda, float* tau, float* work,
                blas_int const* lwork, blas_int* info);
 
   void dgelqf_(blas_int const* m, blas_int const* n, double* a, blas_int const* lda, double* tau, double* work,
                blas_int const* lwork, blas_int* info);
+
+  void zgelqf_(blas_int const* m, blas_int const* n, uni20::complex<double>* a, blas_int const* lda,
+               uni20::complex<double>* tau, uni20::complex<double>* work, blas_int const* lwork, blas_int* info);
+
+  void cgelqf_(blas_int const* m, blas_int const* n, uni20::complex<float>* a, blas_int const* lda,
+               uni20::complex<float>* tau, uni20::complex<float>* work, blas_int const* lwork, blas_int* info);
 
   void sgeqlf_(blas_int const* m, blas_int const* n, float* a, blas_int const* lda, float* tau, float* work,
                blas_int const* lwork, blas_int* info);
@@ -160,11 +172,23 @@ extern "C"
   void dorgqr_(blas_int const* m, blas_int const* n, blas_int const* k, double* a, blas_int const* lda, double* tau,
                double* work, blas_int const* lwork, blas_int* info);
 
+  void zungqr_(blas_int const* m, blas_int const* n, blas_int const* k, uni20::complex<double>* a, blas_int const* lda,
+               uni20::complex<double>* tau, uni20::complex<double>* work, blas_int const* lwork, blas_int* info);
+
+  void cungqr_(blas_int const* m, blas_int const* n, blas_int const* k, uni20::complex<float>* a, blas_int const* lda,
+               uni20::complex<float>* tau, uni20::complex<float>* work, blas_int const* lwork, blas_int* info);
+
   void sorglq_(blas_int const* m, blas_int const* n, blas_int const* k, float* a, blas_int const* lda, float* tau,
                float* work, blas_int const* lwork, blas_int* info);
 
   void dorglq_(blas_int const* m, blas_int const* n, blas_int const* k, double* a, blas_int const* lda, double* tau,
                double* work, blas_int const* lwork, blas_int* info);
+
+  void zunglq_(blas_int const* m, blas_int const* n, blas_int const* k, uni20::complex<double>* a, blas_int const* lda,
+               uni20::complex<double>* tau, uni20::complex<double>* work, blas_int const* lwork, blas_int* info);
+
+  void cunglq_(blas_int const* m, blas_int const* n, blas_int const* k, uni20::complex<float>* a, blas_int const* lda,
+               uni20::complex<float>* tau, uni20::complex<float>* work, blas_int const* lwork, blas_int* info);
 
   void sorgql_(blas_int const* m, blas_int const* n, blas_int const* k, float* a, blas_int const* lda, float* tau,
                float* work, blas_int const* lwork, blas_int* info);
@@ -1125,6 +1149,24 @@ extern "C"
   return info;
 }
 
+[[nodiscard]] inline blas_int geqrf(blas_int m, blas_int n, uni20::complex<double>* a, blas_int lda,
+                                    uni20::complex<double>* tau, uni20::complex<double>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, zgeqrf_, m, n, a, lda, tau, work, lwork);
+  detail::zgeqrf_(&m, &n, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int geqrf(blas_int m, blas_int n, uni20::complex<float>* a, blas_int lda,
+                                    uni20::complex<float>* tau, uni20::complex<float>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, cgeqrf_, m, n, a, lda, tau, work, lwork);
+  detail::cgeqrf_(&m, &n, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
 [[nodiscard]] inline blas_int gelqf(blas_int m, blas_int n, float* a, blas_int lda, float* tau, float* work,
                                     blas_int lwork)
 {
@@ -1140,6 +1182,24 @@ extern "C"
   blas_int info = 0;
   UNI20_EXTERNAL_API_CALL(LAPACK, dgelqf_, m, n, a, lda, tau, work, lwork);
   detail::dgelqf_(&m, &n, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int gelqf(blas_int m, blas_int n, uni20::complex<double>* a, blas_int lda,
+                                    uni20::complex<double>* tau, uni20::complex<double>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, zgelqf_, m, n, a, lda, tau, work, lwork);
+  detail::zgelqf_(&m, &n, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int gelqf(blas_int m, blas_int n, uni20::complex<float>* a, blas_int lda,
+                                    uni20::complex<float>* tau, uni20::complex<float>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, cgelqf_, m, n, a, lda, tau, work, lwork);
+  detail::cgelqf_(&m, &n, a, &lda, tau, work, &lwork, &info);
   return info;
 }
 
@@ -1197,6 +1257,24 @@ extern "C"
   return info;
 }
 
+[[nodiscard]] inline blas_int orgqr(blas_int m, blas_int n, blas_int k, uni20::complex<double>* a, blas_int lda,
+                                    uni20::complex<double>* tau, uni20::complex<double>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, zungqr_, m, n, k, a, lda, tau, work, lwork);
+  detail::zungqr_(&m, &n, &k, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int orgqr(blas_int m, blas_int n, blas_int k, uni20::complex<float>* a, blas_int lda,
+                                    uni20::complex<float>* tau, uni20::complex<float>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, cungqr_, m, n, k, a, lda, tau, work, lwork);
+  detail::cungqr_(&m, &n, &k, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
 [[nodiscard]] inline blas_int orglq(blas_int m, blas_int n, blas_int k, float* a, blas_int lda, float* tau, float* work,
                                     blas_int lwork)
 {
@@ -1212,6 +1290,24 @@ extern "C"
   blas_int info = 0;
   UNI20_EXTERNAL_API_CALL(LAPACK, dorglq_, m, n, k, a, lda, tau, work, lwork);
   detail::dorglq_(&m, &n, &k, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int orglq(blas_int m, blas_int n, blas_int k, uni20::complex<double>* a, blas_int lda,
+                                    uni20::complex<double>* tau, uni20::complex<double>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, zunglq_, m, n, k, a, lda, tau, work, lwork);
+  detail::zunglq_(&m, &n, &k, a, &lda, tau, work, &lwork, &info);
+  return info;
+}
+
+[[nodiscard]] inline blas_int orglq(blas_int m, blas_int n, blas_int k, uni20::complex<float>* a, blas_int lda,
+                                    uni20::complex<float>* tau, uni20::complex<float>* work, blas_int lwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, cunglq_, m, n, k, a, lda, tau, work, lwork);
+  detail::cunglq_(&m, &n, &k, a, &lda, tau, work, &lwork, &info);
   return info;
 }
 

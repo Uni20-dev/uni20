@@ -1,6 +1,6 @@
 if(UNI20_ENABLE_MPLAPACK_MPFR)
   add_library(uni20_backend_mplapack_mpfr STATIC mpfr.cpp)
-  target_link_libraries(uni20_backend_mplapack_mpfr PUBLIC uni20_core PRIVATE mplapack::mplapack_mpfr)
+  target_link_libraries(uni20_backend_mplapack_mpfr PUBLIC uni20_core PRIVATE mplapack::mplapack_mpfr uni20_common)
 endif()
 if(UNI20_ENABLE_MPLAPACK_BINARY80)
   add_library(uni20_backend_mplapack_binary80 STATIC binary80.cpp)
