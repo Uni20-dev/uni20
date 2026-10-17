@@ -134,6 +134,104 @@ TYPED_TEST(LuRefinement, SmallMatrixScaleDoesNotOverflowNormalizedSolve)
   EXPECT_NEAR(((*result.solution)[0, 1] / 1e-160), 1.0, 1e-15);
 }
 
+TYPED_TEST(LuRefinement, ScalingSurvivesNarrowerResidualExponentRange)
+{
+  // Exact dyadic solutions must survive the initial solve; further refinement
+  // could otherwise conceal a component lost during a workspace conversion.
+  auto check = []<class F, class W>() {
+    W phase = [] {
+      if constexpr (Complex<W>)
+        return W(1, -1);
+      else
+        return W(1);
+    }();
+    auto p = LuRefinementPrecision<F, W, W>::native();
+    DenseMatrix<W> a(2, 2), b(2, 1);
+    a[0, 0] = 0x1p-140F;
+    a[1, 1] = 1;
+    b[0, 0] = 0x1p-140F * phase;
+    auto small_rhs = lu_refine_with_info(TypeParam{}, a, b, p, {.max_iterations = 0});
+    ASSERT_TRUE(small_rhs.info.succeeded());
+    ASSERT_TRUE(small_rhs.solution);
+    EXPECT_EQ(((*small_rhs.solution)[0, 0]), phase);
+    EXPECT_EQ(((*small_rhs.solution)[1, 0]), W(0));
+
+    // Downward RHS normalization produces a solved component below float's
+    // range. Undoing that scale must precede narrowing its exponent range.
+    a[0, 0] = a[1, 1] = 0x1p120F;
+    b[0, 0] = 0x1p100F * phase;
+    b[1, 0] = 0x1p-20F * phase;
+    auto large_rhs = lu_refine_with_info(TypeParam{}, a, b, p, {.max_iterations = 0});
+    ASSERT_TRUE(large_rhs.info.succeeded());
+    ASSERT_TRUE(large_rhs.solution);
+    EXPECT_EQ(((*large_rhs.solution)[0, 0]), 0x1p-20F * phase);
+    EXPECT_EQ(((*large_rhs.solution)[1, 0]), 0x1p-140F * phase);
+
+    // The incoming transfer must likewise avoid underflow while scaling in
+    // float before conversion to the wider factor scalar.
+    a[0, 0] = 0x1p100F;
+    a[1, 1] = 0x1p-100F;
+    b[1, 0] = 0x1p-140F * phase;
+    auto mixed_scale = lu_refine_with_info(TypeParam{}, a, b, p, {.max_iterations = 0});
+    ASSERT_TRUE(mixed_scale.info.succeeded());
+    ASSERT_TRUE(mixed_scale.solution);
+    EXPECT_EQ(((*mixed_scale.solution)[0, 0]), phase);
+    EXPECT_EQ(((*mixed_scale.solution)[1, 0]), 0x1p-40F * phase);
+  };
+  check.template operator()<double, float>();
+  check.template operator()<complex<double>, complex<float>>();
+}
+
+TYPED_TEST(LuRefinement, ScalingSurvivesWiderResidualExponentRange)
+{
+  auto check = []<class F, class W>() {
+    W phase = [] {
+      if constexpr (Complex<W>)
+        return W(1, -1);
+      else
+        return W(1);
+    }();
+    DenseMatrix<W> a(1, 1), b(1, 2);
+    a[0, 0] = 1;
+    b[0, 0] = 0x1p-200 * phase;
+    b[0, 1] = 0x1p200 * phase;
+    auto p = LuRefinementPrecision<F, W, W>::native();
+    auto result = lu_refine_with_info(TypeParam{}, a, b, p, {.max_iterations = 0});
+    ASSERT_TRUE(result.info.succeeded());
+    ASSERT_TRUE(result.solution);
+    // Unscaling in factor arithmetic would underflow one RHS and overflow
+    // the other, although both exact solutions fit the working scalar.
+    EXPECT_EQ(((*result.solution)[0, 0]), (b[0, 0]));
+    EXPECT_EQ(((*result.solution)[0, 1]), (b[0, 1]));
+
+    // A representable RHS can still need upward scaling when the factors
+    // are large: the unscaled float solve would underflow its tiny solution.
+    a[0, 0] = 0x1p100;
+    b[0, 0] = 0x1p-100 * phase;
+    b[0, 1] = 0x1p100 * phase;
+    auto large_factor = lu_refine_with_info(TypeParam{}, a, b, p, {.max_iterations = 0});
+    ASSERT_TRUE(large_factor.info.succeeded());
+    ASSERT_TRUE(large_factor.solution);
+    EXPECT_EQ(((*large_factor.solution)[0, 0]), 0x1p-200 * phase);
+    EXPECT_EQ(((*large_factor.solution)[0, 1]), phase);
+  };
+  check.template operator()<float, double>();
+  check.template operator()<complex<float>, complex<double>>();
+}
+
+TEST(LuRefinementApi, SmallRhsScalingDoesNotOverflowWithDisparatePivots)
+{
+  DenseMatrix<double> a(2, 2), b(2, 1);
+  a[0, 0] = 1;
+  a[1, 1] = b[1, 0] = 0x1p-130;
+  auto p = LuRefinementPrecision<float, double, double>::native();
+  auto result = lu_refine_with_info(CpuReferenceBackend{}, a, b, p);
+  ASSERT_TRUE(result.info.succeeded());
+  ASSERT_TRUE(result.solution);
+  EXPECT_EQ(((*result.solution)[0, 0]), 0);
+  EXPECT_EQ(((*result.solution)[1, 0]), 1);
+}
+
 namespace
 {
 struct FailSecondCorrection

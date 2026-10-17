@@ -60,14 +60,24 @@ provider or GPU/async path. MPLAPACK is needed only when the **factor scalar**
 requires it: for example, native float factors can refine an MPFR iterate even
 in a build without MPLAPACK. Native long-double factors can use CpuReferenceBackend.
 
-The algorithm scales each RHS/residual column by a power of two toward the
-upper factors' scale (capped at unity) before converting to factor arithmetic.
-It undoes that shift in residual arithmetic before rounding the correction to
-working precision. Using the factors' scale avoids inflating RHS values for
-tiny, well-conditioned matrices until their triangular solves overflow.
-Scaling avoids losing an entire small residual
-solely because the factor scalar has a narrower exponent range. It does not
-eliminate all componentwise underflow or guarantee convergence.
+The algorithm selects a power-of-two shift for each RHS/residual column toward
+the upper factors' scale (capped at unity). For bounded factor scalars, it also
+caps the target using the smallest upper-triangular diagonal and the factor
+type's exponent range, leaving significand-sized headroom below overflow when
+dividing by that diagonal. This avoids over-inflating a small RHS when pivots
+have very different scales. Always leaving representable RHS values unscaled
+would instead lose significant bits in subnormals, or underflow a solve with
+uniformly large factors. Runtime MPFR/MPC factors retain the factors' scale as
+their target, with their much wider exponent range.
+
+Both the transfer to factor arithmetic and the inverse shift into residual
+arithmetic combine scaling with scalar conversion: they convert a bounded
+binary significand and apply the combined exponent in the destination scalar.
+This avoids intermediate overflow or underflow solely because the source and
+destination exponent ranges differ. The unscaled correction is then rounded to
+working precision. Scaling avoids losing an entire small residual solely because
+the factor scalar has a narrower exponent range; it does not eliminate all
+componentwise underflow, protect every triangular solve, or guarantee convergence.
 Provider limitations still apply: a triangular solve that forms a reciprocal
 of a subnormal diagonal can overflow even when the mathematical solution is
 finite. Such an outcome is reported as a correction failure, without fallback;

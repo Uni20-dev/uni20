@@ -68,17 +68,27 @@ template <RealOrComplex S> auto component_magnitude(S const& value)
     return math::abs(value);
 }
 
-template <RealOrComplex S> S scale_binary(S const& value, std::int64_t exponent)
+// Transfer the bounded significand and combine exponents before applying the
+// scale. Neither scaling in From nor converting to To first is safe when their
+// exponent ranges differ, even if the final value is representable.
+template <RealOrComplex To, RealOrComplex From>
+  requires(Complex<To> == Complex<From>)
+To convert_scaled(From const& value, std::int64_t exponent, Precision p)
 {
-  if constexpr (Complex<S>)
-    return S(math::ldexp(value.real(), exponent), math::ldexp(value.imag(), exponent));
+  if (exponent == 0) return convert<To>(value, p);
+  if constexpr (Complex<To>)
+    return To(convert_scaled<make_real_t<To>>(value.real(), exponent, p),
+              convert_scaled<make_real_t<To>>(value.imag(), exponent, p));
   else
-    return math::ldexp(value, exponent);
+  {
+    auto parts = math::frexp(value);
+    return math::ldexp(convert<To>(parts.fraction, p), parts.exponent + exponent);
+  }
 }
 
-// Normalize near the upper factors' scale, capped at unity. Normalizing every
-// RHS to unity can overflow a triangular solve for a well-conditioned matrix
-// with tiny coefficients. Binary shifts avoid rounding the scale itself.
+// Normalize toward the factors' scale with headroom for the smallest pivot.
+// Normalizing every RHS to unity can overflow a triangular solve even for tiny,
+// well-conditioned matrices. Binary shifts avoid rounding the scale itself.
 template <class Backend, class F, class W, class R>
 std::optional<DenseMatrix<W>> correction(Backend& backend, LuFactorization<F> const& factor, DenseMatrix<R> const& rhs,
                                          LuRefinementPrecision<F, W, R> p, std::vector<bool> const& active,
@@ -98,7 +108,7 @@ std::optional<DenseMatrix<W>> correction(Backend& backend, LuFactorization<F> co
     if (magnitude == 0) continue;
     shifts[j] = target_exponent - math::frexp(magnitude).exponent;
     for (std::size_t i = 0; i < n; ++i)
-      work[i, j] = convert<F>(scale_binary(R(rhs[i, j]), shifts[j]), p.factor);
+      work[i, j] = convert_scaled<F>(R(rhs[i, j]), shifts[j], p.factor);
   }
   info = lu_solve_inplace_with_info(backend, factor, work);
   if (!info.succeeded()) return {};
@@ -108,7 +118,7 @@ std::optional<DenseMatrix<W>> correction(Backend& backend, LuFactorization<F> co
     if (!active[j]) continue;
     for (std::size_t i = 0; i < n; ++i)
     {
-      R scaled = scale_binary(convert<R>(F(work[i, j]), p.residual), -shifts[j]);
+      R scaled = convert_scaled<R>(F(work[i, j]), -shifts[j], p.residual);
       W value = convert<W>(scaled, p.working);
       if (!uni20::isfinite(value))
       {
@@ -131,10 +141,25 @@ LuRefinementResult<W, R> run(Backend& backend, LuFactorization<F> const& factor,
   SolveInfo solve_info;
   std::vector<bool> active(count, true);
   auto upper_scale = scalar_at_precision<make_real_t<F>>(0, p.factor);
+  auto pivot_scale = component_magnitude(F(factor.packed()[0, 0]));
   for (std::size_t j = 0; j < n; ++j)
     for (std::size_t i = 0; i <= j; ++i)
-      upper_scale = std::max(upper_scale, component_magnitude(F(factor.packed()[i, j])));
+    {
+      auto magnitude = component_magnitude(F(factor.packed()[i, j]));
+      upper_scale = std::max(upper_scale, magnitude);
+      if (i == j) pivot_scale = std::min(pivot_scale, magnitude);
+    }
   auto target_exponent = std::min(std::int64_t{0}, math::frexp(upper_scale).exponent);
+  if constexpr (numeric_limits<make_real_t<F>>::is_bounded)
+  {
+    // Leave significand-sized exponent headroom when dividing by the smallest
+    // diagonal. This limits inflation for disparate pivots without sacrificing
+    // normalization of tiny RHS values against uniformly large factors.
+    using FR = make_real_t<F>;
+    auto pivot_exponent = math::frexp(pivot_scale).exponent;
+    std::int64_t headroom = numeric_limits<FR>::max_exponent - numeric_limits<FR>::digits(p.factor);
+    target_exponent = std::min(target_exponent, pivot_exponent + headroom);
+  }
   auto initial = correction(backend, factor, b, p, active, target_exponent, solve_info);
   if (!initial)
   {
@@ -179,6 +204,8 @@ LuRefinementResult<W, R> run(Backend& backend, LuFactorization<F> const& factor,
       return result;
     }
     // Publish only after every new value and the recomputed diagnostics pass.
+    // This owns a finite W iterate already at p.working, so copying it at the
+    // same precision cannot return a numerical conversion failure.
     auto next = pack<W>(*result.solution, p.working, solve_info);
     std::vector<bool> changed(count, false);
     for (std::size_t j = 0; j < count; ++j)
