@@ -1,5 +1,6 @@
 #include "mpfr.hpp"
 #include "decompositions_impl.hpp"
+#include "diagnostics_impl.hpp"
 #include "precision_scope.hpp"
 #include <mplapack_mpfr.h>
 #include <uni20/backend/lapack/lapack_error_presentation.hpp>
@@ -132,7 +133,8 @@ void getrs_impl(std::size_t n, std::size_t nrhs, std::span<Scalar const> a, std:
 mpfr_srcptr query_real(mpfrxx::mpfr_class const& x) { return x.mpfr_data(); }
 mpfr_srcptr query_real(mpfrxx::mpc_class const& x) { return mpc_realref(x.mpc_data()); }
 
-template <class Provider, class Call> void with_workspace(char const* routine, Call&& call)
+template <class Provider, class Call>
+mplapackint with_workspace(char const* routine, Call&& call, bool recoverable = false)
 {
   Provider query;
   mplapackint info = 0;
@@ -148,11 +150,12 @@ template <class Provider, class Call> void with_workspace(char const* routine, C
   std::vector<Provider> work(static_cast<std::size_t>(length));
   call(work.data(), static_cast<mplapackint>(length), info);
   if (info < 0) require_success(info);
-  if (info > 0)
+  if (info > 0 && !recoverable)
   {
     CHECK(std::in_range<blas_int>(info), "MPLAPACK INFO exceeds LAPACK integer range");
     trace::raise(lapack::LapackError(routine, static_cast<blas_int>(info), "failed to converge"));
   }
+  return info;
 }
 
 struct DecompositionAdapter
@@ -167,6 +170,10 @@ struct DecompositionAdapter
     template <class P, class S> static void unpack_values(std::vector<P> const& values, std::span<S> out, Precision p)
     {
       unpack(values, out, p);
+    }
+    template <class P, class Call> static auto workspace_info(Call&& call)
+    {
+      return with_workspace<P>("gelss", std::forward<Call>(call), true);
     }
     template <class P, class Call> static void workspace(char const* routine, Call&& call)
     {
@@ -260,5 +267,24 @@ void eigen(std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> values, s
            bool compute_vectors, Precision p)
 {
   detail::eigen_impl<DecompositionAdapter>(n, a, values, vectors, compute_vectors, p);
+}
+
+std::size_t gelss(std::size_t m, std::size_t n, std::size_t nrhs, std::span<mpreal> a, std::span<mpreal> b,
+                  std::span<mpreal> values, mpreal const& cutoff, std::size_t& rank, Precision p)
+{
+  return detail::gelss_impl<DecompositionAdapter>(m, n, nrhs, a, b, values, cutoff, rank, p);
+}
+mpreal gecon(std::size_t n, std::span<mpreal const> a, mpreal const& anorm, char norm, Precision p)
+{
+  return detail::gecon_impl<DecompositionAdapter>(n, a, anorm, norm, p);
+}
+std::size_t gelss(std::size_t m, std::size_t n, std::size_t nrhs, std::span<mpcomplex> a, std::span<mpcomplex> b,
+                  std::span<mpreal> values, mpreal const& cutoff, std::size_t& rank, Precision p)
+{
+  return detail::gelss_impl<DecompositionAdapter>(m, n, nrhs, a, b, values, cutoff, rank, p);
+}
+mpreal gecon(std::size_t n, std::span<mpcomplex const> a, mpreal const& anorm, char norm, Precision p)
+{
+  return detail::gecon_impl<DecompositionAdapter>(n, a, anorm, norm, p);
 }
 } // namespace uni20::mplapack

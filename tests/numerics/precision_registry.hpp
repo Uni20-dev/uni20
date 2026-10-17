@@ -48,6 +48,8 @@ enum class PrecisionProbe
   ProviderLogDeterminantPreservesExtendedExponentRange,
   CpuLeastSquares,
   ProviderLeastSquares,
+  ProviderSvdLeastSquares,
+  ProviderLuCondition,
   DecompositionFactors,
   DecompositionSpectrum,
   DecompositionAccuracyImprovesWithPrecision,
@@ -105,6 +107,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalLinalg", "ProviderLogDeterminantPreservesExtendedExponentRange", "lapack_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "CpuLeastSquares", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "ProviderLeastSquares", "lapack"},
+    ProbeDescription{"NumericalLinalg", "ProviderSvdLeastSquares", "lapack"},
+    ProbeDescription{"NumericalLinalg", "ProviderLuCondition", "lapack"},
     ProbeDescription{"NumericalLinalg", "DecompositionFactors", "lapack"},
     ProbeDescription{"NumericalLinalg", "DecompositionSpectrum", "lapack"},
     ProbeDescription{"NumericalLinalg", "DecompositionAccuracyImprovesWithPrecision", "lapack"},
@@ -129,7 +133,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
   else
   {
     using enum PrecisionProbe;
-    bool const decomposition = probe == ProviderLeastSquares || probe == DecompositionFactors ||
+    bool const decomposition = probe == ProviderLeastSquares || probe == ProviderSvdLeastSquares ||
+                               probe == ProviderLuCondition || probe == DecompositionFactors ||
                                probe == DecompositionSpectrum || probe == DecompositionAccuracyImprovesWithPrecision;
     if (decomposition)
     {

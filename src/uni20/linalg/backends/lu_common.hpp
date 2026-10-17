@@ -3,9 +3,31 @@
 #include "linear_solve_common.hpp"
 #include <algorithm>
 #include <span>
+#include <uni20/linalg/lu_info.hpp>
 
 namespace uni20::linalg::detail
 {
+// Capture both norms in a column traversal before LU overwrites the original.
+template <class Matrix, Real R> void capture_lu_norms(Matrix const& a, LuNorms<R>* norms, R const& zero)
+{
+  if (!norms) return;
+  *norms = {zero, zero};
+  std::vector<R> row_sums(std::size_t(a.extent(0)), zero);
+  for (std::size_t j = 0; j < std::size_t(a.extent(1)); ++j)
+  {
+    R sum = zero;
+    for (std::size_t i = 0; i < std::size_t(a.extent(0)); ++i)
+    {
+      R magnitude = math::abs(typename Matrix::value_type(a[i, j]));
+      sum += magnitude;
+      row_sums[i] += magnitude;
+    }
+    norms->one = std::max(norms->one, sum);
+  }
+  for (auto const& sum : row_sums)
+    norms->infinity = std::max(norms->infinity, sum);
+}
+
 // Mathematical magnitude = scale * unit, with unit in [1,sqrt(2)]. Never
 // multiply these parts: the magnitude of finite complex components can overflow.
 template <Real R> struct LuMagnitude

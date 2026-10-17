@@ -760,12 +760,13 @@ candidates to add only when an algorithm or example needs them:
 
 | Operation | LAPACK routines | Status/reason |
 | --- | --- | --- |
+| LU conditioning | `gecon` | `lu_rcond_op` estimates one-/infinity-norm reciprocal conditioning from reusable factors and captured original norms. Native and configured MPLAPACK providers share the API; no CPU estimator fallback. |
 | symmetric tridiagonal eigensystem | `sterf`, `steqr` | Implemented for Lanczos projected diagonalization. |
 | real and complex Schur decomposition | `gees`, `hseqr`, `trexc` | Implemented for Arnoldi restarts and reordering. |
 | nonsymmetric eigensystem | `geev` | Implemented for projected Ritz extraction and validation. |
 | symmetric/Hermitian dense eigensystem | `syev`, `heev`, then `syevd`/`heevd` | `syev`/`heev` implemented with in-place and preserving value APIs; divide-and-conquer variants remain future work. |
 | QR/LQ factorization | `geqrf`, `orgqr`, `gelqf`, `orglq` | Reduced real/complex QR and LQ are dispatched through destructive-workspace, preserving and consuming Tensor APIs. Complex Q uses `ungqr`/`unglq`; MPFR/MPC adds explicit-precision provider packing. |
-| SVD and least squares | `gesvd`, `gesdd`, `gesvdx`, `gelsd` | Exact real and complex SVD is dispatched through `gesvd`. Tensor APIs cover singular values only, either factor separately, or both factors; preserving and consuming Async forms mirror them. Reduced consuming factors may reuse the input allocation through `JOBU='O'` or `JOBVT='O'`. Dense `truncated_svd` is a Tensor policy layer over reduced exact SVD rather than a new mdspan kernel. [Full-column-rank least squares](least_squares.md) dispatches through reduced QR with recoverable diagnostics. Divide-and-conquer, selected-provider, and rank-revealing least-squares Tensor APIs remain future coverage. |
+| SVD and least squares | `gesvd`, `gesdd`, `gesvdx`, `gelss`, `gelsd` | Exact real and complex SVD is dispatched through `gesvd`. Tensor APIs cover singular values only, either factor separately, or both factors; preserving and consuming Async forms mirror them. Reduced consuming factors may reuse the input allocation through `JOBU='O'` or `JOBVT='O'`. Dense `truncated_svd` is a Tensor policy layer over reduced exact SVD rather than a new mdspan kernel. [Full-column-rank least squares](least_squares.md) dispatches through reduced QR with recoverable diagnostics. `svd_least_squares` adds rank-aware minimum-norm solves through `gelss`, with epsilon-based truncation, residuals and recoverable nonconvergence. Divide-and-conquer and pivoted-QR least-squares methods remain future coverage. |
 
 Do not expose every backend wrapper through mdspan immediately. Add wrappers
 when a Uni20 algorithm or example needs them, and keep unused wrappers in a

@@ -12,7 +12,7 @@
 namespace uni20::linalg
 {
 
-/// \brief Numerical outcome of a square solve, LU factorization or log-determinant.
+/// \brief Numerical outcome of a square solve, LU factorization, condition estimate or log-determinant.
 enum class SolveStatus
 {
   /// \brief Finite output was produced, or the problem was an empty no-op.

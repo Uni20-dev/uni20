@@ -37,7 +37,7 @@ for eligibility, runtime decline, and error handling, and
 
 ## Working Precision
 
-`gemm`, `assign_product`, `add_product`, square solves, LU factorization, and
+`gemm`, `assign_product`, `add_product`, square solves, QR/SVD least squares, LU factorization, and
 matrix-form logarithmic determinants, QR/LQ, self-adjoint and general eigensystems,
 SVD and truncated SVD accept an explicit `Precision` for both
 fixed and runtime scalar types. For example, the native GEMM above also accepts:
@@ -55,6 +55,9 @@ GEMM includes the output default when `beta` is nonzero. Differing finite
 defaults require an explicit choice. These arguments do not extend provider
 coverage to other operations. See the [generic precision contract](../tensor/scalar_policy.md#generic-precision),
 [square solves](linear_solve.md#working-precision), [least squares](least_squares.md), and [LU precision policy](lu.md#precision-and-providers).
+
+`lu_rcond` always uses its owning LU factors' precision and retained original
+norms (or an explicitly supplied norm); it does not take a new precision.
 
 For decompositions, the input matrix alone supplies the inferred precision;
 preexisting output defaults do not participate. Approximation requires finite

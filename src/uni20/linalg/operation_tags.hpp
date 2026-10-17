@@ -22,6 +22,12 @@ struct least_squares_op
     static constexpr std::string_view name = "least_squares";
 };
 
+/// \brief Preserving minimum-norm SVD least squares with explicit rank diagnostics.
+struct svd_least_squares_op
+{
+    static constexpr std::string_view name = "svd_least_squares";
+};
+
 /// \brief Accessor-respecting element copy operation tag.
 struct copy_op
 {
@@ -131,6 +137,13 @@ struct matrix_norm_op
     MatrixNorm kind;
 };
 
+/// \brief Reciprocal condition estimate from successful packed LU and an original matrix norm.
+struct lu_rcond_op
+{
+    static constexpr std::string_view name = "lu_rcond";
+    MatrixNorm norm = MatrixNorm::One;
+};
+
 /// \brief Destructive dense general linear-system solve operation tag.
 /// \details Backends overwrite coefficient and right-hand-side work matrices
 ///          while solving `coefficients * solution = right_hand_sides`.
@@ -144,8 +157,10 @@ struct linear_solve_op
 };
 
 /// \brief Fixed-output packed LU factorization with zero-based row-swap pivots.
-/// \details Numerical failure writes SolveInfo and completes dispatch; declines
-///          preserve the matrix, pivots and diagnostics.
+/// \details Arguments are (matrix, pivots, nullable LuNorms<Real>*, SolveInfo&,
+///          SolveOptions<Real> const&), then precision for runtime scalars.
+///          Numerical failure writes SolveInfo and completes dispatch; declines
+///          preserve the matrix, pivots, norms and diagnostics.
 struct lu_factor_op
 {
     static constexpr std::string_view name = "lu_factor";

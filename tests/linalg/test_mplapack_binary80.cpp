@@ -12,14 +12,15 @@ using namespace uni20::linalg;
 
 namespace
 {
-static_assert(std::same_as<HostStorage::backend_selector_type,
-                           backend_list<LapackBackend, BlasBackend, CpuReferenceBackend>>);
+static_assert(
+    std::same_as<HostStorage::backend_selector_type, backend_list<LapackBackend, BlasBackend, CpuReferenceBackend>>);
 using ComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160>&>()));
 using ConstComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160> const&>()));
 constexpr auto complex_lu_acceptance =
     UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
 static_assert(probe_dispatch_kernel_types<LapackBackend, lu_factor_op, ComplexDescriptor&, std::span<std::size_t>,
-                                          SolveInfo&, SolveOptions<float80> const&>() == complex_lu_acceptance);
+                                          LuNorms<float80>*, SolveInfo&, SolveOptions<float80> const&>() ==
+              complex_lu_acceptance);
 static_assert(probe_dispatch_kernel_types<LapackBackend, lu_solve_op, ConstComplexDescriptor&,
                                           std::span<std::size_t const>, ComplexDescriptor&, SolveInfo&>() ==
               complex_lu_acceptance);

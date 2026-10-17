@@ -57,6 +57,13 @@ solution references, retained low bits, extended exponent range and a 512-bit
 accuracy oracle when MPFR is configured. CPU probes include finite MPFR/MPC
 arithmetic without requiring the MPLAPACK provider.
 
+`ProviderSvdLeastSquares` and `ProviderLuCondition` independently force
+`LapackBackend` across the configured real/complex scalar cases. They test
+minimum-norm solutions, epsilon-based rank decisions, original norms,
+conditioning, retained precision and extended exponents, with independent
+512-bit rational oracles for accuracy. Unsupported binary80 complex providers
+and disabled MPLAPACK cells remain visible in the coverage report.
+
 1. **Correctness:** run the same deterministic mathematical problem across the
    case list, using exact analytic data or an independent higher-precision oracle.
    Include nonzero imaginary components in complex tests.

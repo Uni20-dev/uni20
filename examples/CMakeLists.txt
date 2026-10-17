@@ -5,6 +5,8 @@ endfunction()
 
 uni20_add_example(dense_decomposition_precision_example linalg/dense_decomposition_precision_example.cpp uni20_linalg)
 add_test(NAME DenseDecompositionPrecisionExample COMMAND dense_decomposition_precision_example)
+uni20_add_example(rank_aware_numerics_example linalg/rank_aware_numerics_example.cpp uni20_linalg)
+add_test(NAME RankAwareNumericsExample COMMAND rank_aware_numerics_example)
 uni20_add_example(least_squares_precision_example linalg/least_squares_precision_example.cpp uni20_linalg)
 add_test(NAME LeastSquaresPrecisionExample COMMAND least_squares_precision_example)
 

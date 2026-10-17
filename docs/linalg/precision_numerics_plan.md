@@ -10,12 +10,11 @@ solves. No scalar-specific backend selectors are introduced.
 | Stage | Deliverable | Status |
 | --- | --- | --- |
 | 1 | Full-column-rank QR least squares, recoverable status and residual norms | Initial synchronous implementation available |
-| 2 | SVD-based minimum-norm least squares and numerical rank | Planned |
-| 3 | Reciprocal condition estimates from reusable LU factors | Planned |
+| 2 | SVD-based minimum-norm least squares and numerical rank | Synchronous GELSS implementation available |
+| 3 | Reciprocal condition estimates from reusable LU factors | Synchronous GECON implementation available |
 | 4 | QR diagnostics, backward error and iterative refinement | Design needed |
 | 5 | Extract right-half-plane complex log-Gamma and log-absolute Barnes G | Separate scalar-math work |
 
-Stages 2 and 3 may be implemented together when their contracts are settled.
 Stage 5 is independent of the matrix work. Tridiagonal and Schur provider
 coverage remains on the MPLAPACK roadmap; the immediate least-squares consumer
 takes priority. Bethe owns physical convergence, continuation acceptance,
@@ -72,30 +71,46 @@ accuracy. Provider-disabled builds must retain native long-double support.
 
 ## 2. Numerical rank and minimum-norm solutions
 
-Add an explicitly selected SVD method with a documented singular-value cutoff
-and minimum-norm solution semantics. Rank-deficient input can have a successful
-solution; keep rank separate from algorithm convergence status. Report the
-cutoff and numerical rank, with singular values where requested. Recoverable
-nonconvergence needs a provider status path rather than the strict SVD wrapper.
+[`svd_least_squares_with_info`](least_squares.md#svd-minimum-norm-least-squares)
+selects GELSS explicitly, preserving the QR interface. It accepts rectangular,
+rank-deficient and underdetermined inputs and returns a minimum-norm solution
+for the retained singular directions. Rank is separate from algorithm convergence;
+positive provider INFO is recoverable nonconvergence. Report the applied relative
+cutoff and numerical rank, with singular values when requested.
 
-LAPACK/MPLAPACK `gelss` is a suitable first provider; `gelsd` and pivoted-QR
-`gelsy` are later alternatives, not four mandatory initial implementations.
-Settle the default cutoff and underdetermined/empty semantics before coding.
-See [LAPACK least squares](https://www.netlib.org/lapack/lug/node27.html).
+The default relative cutoff is working-precision epsilon, without a dimension
+multiplier. A finite nonnegative override is supported. Zero disables relative
+truncation, while provider safe-minimum safeguards remain. Truncating a nonzero
+singular value changes the least-squares problem. Zero RHS columns still compute
+rank; zero rows or columns give rank zero with the documented empty solution and
+residual conventions. `gelsd` and pivoted-QR `gelsy` remain optional later methods.
+
+Native float32/64, binary128, MPFR/MPC and supported binary80 providers are
+covered through `LapackBackend`. There is no CPU SVD least-squares fallback in
+this slice. Provider-disabled extended types retain the CPU QR option where
+full-column rank is appropriate.
 
 ## 3. LU condition estimates
 
-Extend reusable LU with 1-norm/infinity-norm reciprocal condition estimates
-through `gecon`, including MPFR and supported binary80 providers. This avoids
-Bethe's current extra identity RHS columns and explicit inverse construction.
-The original matrix norm is required: decide whether factorization retains
-these norms or the estimate accepts a separately supplied norm. Name the norm
-in the result and keep its arithmetic at factor precision.
+[`lu_rcond_with_info`](lu.md#reciprocal-condition-estimates) estimates reciprocal
+conditioning in the one- or infinity-norm through GECON, including MPFR/MPC and
+supported binary80 providers. It avoids identity RHS columns and explicit
+inverse construction. The result names its norm and uses factor precision.
+Estimates are diagnostics, not bounds or automatic rejection criteria.
 
-CPU coverage needs either a suitable inverse-norm estimator with transposed
-solves or an explicitly documented alternative. Do not silently claim provider
-coverage through a fallback. Test known diagonal conditions, scaling,
-nontrivial factors and precision-dependent cases. Estimates are not bounds.
+`LuOptions<Real>::retain_norms` defaults to true. LU captures both original
+norms after conversion to factor precision and before factorization overwrites
+A. The opt-out avoids this pass; callers can supply an original norm explicitly
+later. Overflow of a diagnostic norm does not invalidate the factors. Estimation
+reports an unavailable numerical result separately, preserving LU reuse.
+
+The current condition estimator requires a configured GECON provider. Native
+long-double CPU LU/solve remains available without MPLAPACK; a future CPU
+condition estimator would need transposed solves and a suitable inverse-norm
+algorithm. There is no silent inverse-construction or narrowing fallback.
+Shared tests cover diagonal conditions, scaling, nontrivial pivoted factors,
+precision-sensitive data and improved accuracy. The runnable
+`rank_aware_numerics_example` covers both stages.
 
 ## 4. Further diagnostics
 

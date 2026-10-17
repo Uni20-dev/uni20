@@ -12,8 +12,8 @@ namespace uni20::linalg
 /// \brief Accept logical host workspaces for finite-precision MPFR/MPC LU.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mpfr_detail::RuntimeScalar<typename A::value_type>
-consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
-                                    SolveOptions<mpreal> const&, Precision)
+consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, LuNorms<mpreal>*,
+                                    SolveInfo&, SolveOptions<mpreal> const&, Precision)
 {
   return kernel_types_yes;
 }
@@ -21,8 +21,8 @@ consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std:
 /// \brief Convert values at the backend boundary and compute portable owning factors.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mpfr_detail::RuntimeScalar<typename A::value_type>
-KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
-                         SolveOptions<mpreal> const& options, Precision p)
+KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
+                         LuNorms<mpreal>* norms, SolveInfo& info, SolveOptions<mpreal> const& options, Precision p)
 {
   (void)p.bit_count();
   detail::require_lu_shape(a, pivots.size());
@@ -41,6 +41,7 @@ KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std
     info.status = SolveStatus::nonfinite_result;
     return KernelAttempt::success;
   }
+  detail::capture_lu_norms(work.mdspan(), norms, mpreal(0, p));
   auto scale = detail::lu_input_scale(work.mdspan(), mpreal(0, p));
   auto tolerance = options.relative_pivot_tolerance.at(p);
   std::vector<std::size_t> provider_pivots;
