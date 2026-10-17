@@ -3,10 +3,10 @@
 #include "numeric_limits.hpp"
 #include "scalar_concepts.hpp"
 #include "types.hpp"
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include "mpreal.hpp"
 #endif
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 #include "mpcomplex.hpp"
 #endif
 
@@ -46,7 +46,7 @@ struct scalar_format_options
 
 namespace detail
 {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 // Decimal rounding of an exact rational must not pass through a binary float:
 // even an arbitrarily wide temporary can move a decimal halfway case off its tie.
 inline std::string format_exact_decimal(exact_constant const& value, scalar_format_options const& options)
@@ -168,7 +168,7 @@ template <typename T> [[nodiscard]] int effective_precision(scalar_format_option
   return 'g';
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 inline bool scalar_signbit(mpreal const& value) { return uni20::signbit(value); }
 #endif
 
@@ -306,7 +306,7 @@ template <typename T> [[nodiscard]] T parse_builtin_real(std::string_view text)
 template <Real T> [[nodiscard]] std::string format_real(T value, scalar_format_options const& options = {})
 {
   using real_type = std::remove_cv_t<T>;
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   if constexpr (std::same_as<real_type, mpreal>)
   {
     if (options.normalize_negative_zero && value == 0) value = mpreal(value.precision());
@@ -384,7 +384,7 @@ template <RealOrComplex T>
 /// \throws std::out_of_range if the literal overflows or underflows the target type.
 /// \ingroup core_math
 template <Real T>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   requires(!std::same_as<std::remove_cv_t<T>, mpreal>)
 #endif
 [[nodiscard]] T parse_real(std::string_view text)
@@ -402,7 +402,7 @@ template <Real T>
   }
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 /// \brief Parse an arbitrary-precision real at explicit working precision.
 template <Real T>
   requires std::same_as<std::remove_cv_t<T>, mpreal>
@@ -433,7 +433,7 @@ template <Real T> std::istream& read_real(std::istream& stream, T& value)
 
   try
   {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     if constexpr (std::same_as<std::remove_cv_t<T>, mpreal>)
       value = parse_real<T>(token, value.precision());
     else

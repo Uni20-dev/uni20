@@ -6,7 +6,7 @@ namespace uni20::test
 // Force one provider: a successful CPU fallback must not certify its adapter.
 template <class C> auto lu_provider()
 {
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
   if constexpr (C::binary80_provider)
     return linalg::MplapackBinary80Backend{};
   else
@@ -53,7 +53,7 @@ template <class C, class Backend> void check_lu_gap(Backend backend)
 UNI20_PRECISION_TEST(NumericalLinalg, CpuLuResolvesSmallGap) { check_lu_gap<TypeParam>(linalg::CpuReferenceBackend{}); }
 UNI20_PRECISION_TEST(NumericalLinalg, ProviderLuResolvesSmallGap) { check_lu_gap<TypeParam>(lu_provider<TypeParam>()); }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <class C, class Backend> void check_lu_accuracy(Backend backend)
 {
   testing::Test::RecordProperty("backend", std::string(Backend::name));

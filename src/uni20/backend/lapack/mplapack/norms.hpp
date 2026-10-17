@@ -17,7 +17,7 @@
 #include <uni20/config.hpp>
 #include <uni20/core/types.hpp>
 
-#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 // clang-format off
 #include <mplapack_config.h>
 #include <mplapack_binary128.h>
@@ -27,7 +27,7 @@
 namespace uni20::lapack::unchecked
 {
 
-#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 
 [[nodiscard]] inline uni20::float128 lange(char norm, blas_int m, blas_int n, uni20::float128* a, blas_int lda,
                                            uni20::float128* work)

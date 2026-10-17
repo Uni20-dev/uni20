@@ -1,15 +1,14 @@
 # Scalar Type Policy
 
 Optional [arbitrary-precision real scalars](mpreal.md) use `uni20::mpreal`
-with explicit runtime `Precision` when `UNI20_ENABLE_MPFR=ON`. This first
-layer provides scalar arithmetic and exact constants. `UNI20_ENABLE_MPC=ON`
-additionally supplies MPC-backed `complex<mpreal>` and `make_complex_t<mpreal>`;
-these names are unavailable in a real-only build. Default-constructed MPFR/MPC
+with explicit runtime `Precision` when `UNI20_ENABLE_MPREAL=ON`. The same
+scalar-family option supplies MPC-backed `complex<mpreal>` and `make_complex_t<mpreal>`;
+there is no separate complex-scalar switch. Default-constructed MPFR/MPC
 scalars are exact zero; explicit `uninitialized` supplies an unset placeholder.
 They hold exact rationals until finite working precision is supplied. Their
 precision cannot be described by type-only numerical limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
 allocation and dense backend integration are separate from scalar support.
-`UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a
+`UNI20_BACKEND_MPLAPACK=ON` adds a
 [matrix-product, solve and dense-decomposition provider](../linalg/mplapack_mpfr.md), selected through
 `BlasBackend` and `LapackBackend`, without extending
 the type-only `LapackScalar` concepts or generic Krylov support.
@@ -131,9 +130,12 @@ runtime precision to `uni20::float32`, `uni20::float64`, or the conditional
 `uni20::configured_scalar_precision_choices()` expose the available set for
 help text, diagnostics, examples, and future language bindings.
 
-To enable fp128, configure with `UNI20_ENABLE_MPLAPACK=ON`. CMake prefers a
-compatible installed MPLAPACK 3.0.0 or newer package and otherwise fetches the
-pinned 3.0.0 release with only its binary128 backend enabled. See [MPLAPACK
+To enable fp128 scalars, configure with `UNI20_ENABLE_FLOAT128=ON`; add
+`UNI20_BACKEND_MPLAPACK=ON` for the linear-algebra kernels. Scalar arithmetic
+currently uses MPLAPACK's binary128 support even with kernels disabled. CMake
+prefers a compatible installed MPLAPACK 3.0.0 or newer package and otherwise
+fetches the pinned 3.0.0 release. See [scalar configuration](../linalg/scalar_configuration.md)
+for the independent family/backend choices, and [MPLAPACK
 Binary128 Setup](../linalg/mplapack_binary128.md) for dependency selection,
 optional system-package, and validation commands.
 

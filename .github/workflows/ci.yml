@@ -46,7 +46,8 @@ jobs:
             libbenchmark-dev \
             libgtest-dev \
             libgmp-dev \
-            libmpfr-dev
+            libmpfr-dev \
+            libmpc-dev
 
       - name: Use minimum supported CMake
         run: |
@@ -59,7 +60,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DUNI20_BUILD_CLI=ON \
-            -DUNI20_ENABLE_MPFR=ON \
+            -DUNI20_ENABLE_MPREAL=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \
@@ -128,8 +129,12 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   ubuntu-mplapack-binary128:
-    name: Ubuntu MPLAPACK Binary128 and MPFR
+    name: Ubuntu wide scalars (MPLAPACK kernels ${{ matrix.mplapack }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mplapack: ["ON", "OFF"]
 
     env:
       OPENBLAS_NUM_THREADS: "1"
@@ -162,11 +167,10 @@ jobs:
             -DUNI20_BUILD_BENCH=OFF \
             -DUNI20_BUILD_ASM=OFF \
             -DUNI20_BUILD_PYTHON=OFF \
-            -DUNI20_ENABLE_MPLAPACK=ON \
-            -DUNI20_ENABLE_MPLAPACK_BINARY80=ON \
-            -DUNI20_ENABLE_MPFR=ON \
-            -DUNI20_ENABLE_MPC=ON \
-            -DUNI20_ENABLE_MPLAPACK_MPFR=ON \
+            -DUNI20_ENABLE_FLOAT128=ON \
+            -DUNI20_ENABLE_FLOAT80=ON \
+            -DUNI20_ENABLE_MPREAL=ON \
+            -DUNI20_BACKEND_MPLAPACK=${{ matrix.mplapack }} \
             -DUNI20_BUILD_CLI=ON \
             -DUNI20_USE_SYSTEM_MPLAPACK=OFF \
             -DUNI20_USE_SYSTEM_TBB=OFF \
@@ -192,7 +196,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: numerical-precision-mplapack
+          name: numerical-precision-mplapack-${{ matrix.mplapack }}
           path: |
             build/precision.xml
             build/precision.md
@@ -243,8 +247,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_COMPILER=clang++-19 \
             -DUNI20_BUILD_CLI=ON \
-            -DUNI20_ENABLE_MPFR=ON \
-            -DUNI20_ENABLE_MPC=ON \
+            -DUNI20_ENABLE_FLOAT80=OFF \
+            -DUNI20_ENABLE_MPREAL=ON \
             -DUNI20_BLAS_VENDOR=OpenBLAS \
             -DUNI20_BUILD_COMBINED_TESTS=OFF \
             -DUNI20_BUILD_BENCH=OFF \

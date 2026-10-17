@@ -141,7 +141,7 @@ TEST(AsyncSelfAdjointEighTest, ConsumingFailurePropagatesToBothOutputsAndInput)
   EXPECT_THROW((void)matrix.get_wait(scheduler), std::runtime_error);
 }
 
-#if UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 TEST(AsyncSelfAdjointEighTest, SupportsConfiguredFloat128Backend)
 {
   using real_type = uni20::float128;

@@ -16,7 +16,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | `f128` | optional `uni20::float128` |
 | `cf128` | optional `uni20::complex<uni20::float128>` |
 
-With `UNI20_ENABLE_MPLAPACK=ON`, Uni20 enables the optional MPLAPACK binary128
+With `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON`, Uni20 enables the optional MPLAPACK binary128
 backend for maintained matrix-free eigensolvers and exponential actions. CMake
 prefers a compatible installed MPLAPACK package and otherwise fetches the pinned
 3.0.0 release. Ordinary typed tests focus on the stable `s`, `d`, `c`, and `z`
@@ -224,7 +224,7 @@ operator.
 
 ### Optional MPLAPACK Binary128 Algorithm Inventory
 
-These entry points are available only when `UNI20_ENABLE_MPLAPACK=ON` and the
+These entry points are available only when `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON` and the
 configured MPLAPACK package provides a real binary128 type. The table records
 intended algorithm-level scalar coverage; dedicated stress-test coverage is
 tracked separately in [Krylov Precision Validation](precision_validation.md).

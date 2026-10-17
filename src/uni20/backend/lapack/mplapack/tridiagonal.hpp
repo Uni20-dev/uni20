@@ -12,7 +12,7 @@
 #include <uni20/config.hpp>
 #include <uni20/core/types.hpp>
 
-#if !(UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK)
+#if !(UNI20_HAS_MPLAPACK_FLOAT128)
 #error "uni20/backend/lapack/mplapack/tridiagonal.hpp requires MPLAPACK float128 support"
 #endif
 

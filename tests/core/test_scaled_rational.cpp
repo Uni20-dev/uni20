@@ -46,7 +46,7 @@ bool compact_operations()
   auto p = Precision::bits(80);
   auto huge = power_of_two(1'000'000'000, p), tiny = power_of_two(-1'000'000'000, p);
   bool valid = mpreal{1} / huge == tiny && mpreal{1} / tiny == huge;
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
   using C = complex<mpreal>;
   C a(huge, huge), b(mpreal{1}, mpreal{-1});
   valid = valid && a * b == C(2 * huge, mpreal(0, p));
@@ -108,7 +108,7 @@ TEST(ScaledRational, CorrectRoundingAndRangeFlagsMatchMpfr)
       }
 }
 
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 TEST(ScaledRational, ComplexProductsAndQuotientsMatchExactOracle)
 {
   using C = complex<mpreal>;

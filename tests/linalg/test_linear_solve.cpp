@@ -254,18 +254,19 @@ template <class Scalar, class Backend> struct SolveCase
 
 template <class Case> class RecoverableSolveTest : public testing::Test {};
 
-using SolveCases =
-    testing::Types<SolveCase<float, CpuReferenceBackend>, SolveCase<float, LapackBackend>,
-                   SolveCase<double, CpuReferenceBackend>, SolveCase<double, LapackBackend>,
-                   SolveCase<long double, CpuReferenceBackend>, SolveCase<uni20::complex<double>, CpuReferenceBackend>,
-                   SolveCase<uni20::complex<double>, LapackBackend>
+using SolveCases = testing::Types<
+    SolveCase<float, CpuReferenceBackend>, SolveCase<float, LapackBackend>, SolveCase<double, CpuReferenceBackend>,
+    SolveCase<double, LapackBackend>, SolveCase<long double, CpuReferenceBackend>,
+    SolveCase<uni20::complex<double>, CpuReferenceBackend>, SolveCase<uni20::complex<double>, LapackBackend>
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
-                   ,
-                   SolveCase<uni20::float128, CpuReferenceBackend>, SolveCase<uni20::float128, LapackBackend>,
-                   SolveCase<uni20::complex<uni20::float128>, CpuReferenceBackend>,
-                   SolveCase<uni20::complex<uni20::float128>, LapackBackend>
+    ,
+    SolveCase<uni20::float128, CpuReferenceBackend>, SolveCase<uni20::complex<uni20::float128>, CpuReferenceBackend>
 #endif
-                   >;
+#if UNI20_HAS_MPLAPACK_FLOAT128
+    ,
+    SolveCase<uni20::float128, LapackBackend>, SolveCase<uni20::complex<uni20::float128>, LapackBackend>
+#endif
+    >;
 TYPED_TEST_SUITE(RecoverableSolveTest, SolveCases);
 
 TYPED_TEST(RecoverableSolveTest, SuccessAndNativePrecision)

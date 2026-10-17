@@ -1,6 +1,7 @@
 #include <uni20/common/gtest.hpp>
 
 #include <bit>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -173,10 +174,11 @@ TEST(Float128FloatingEqDeathTest, CheckRejectsClearlyDifferentRealAndComplexValu
 
 #endif
 
-#if UNI20_HAS_FLOAT80
+#if LDBL_MANT_DIG == 64 && LDBL_MIN_EXP == -16381 && LDBL_MAX_EXP == 16384
 namespace
 {
-using Real80 = uni20::float80;
+// Native long double comparisons must work even with UNI20_ENABLE_FLOAT80=OFF.
+using Real80 = long double;
 using Limits80 = uni20::numeric_limits<Real80>;
 using Ulp80 = uni20::check::FloatingULP<Real80>;
 using uni20::check::float_abs_distance;

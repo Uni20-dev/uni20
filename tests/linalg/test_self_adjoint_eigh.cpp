@@ -228,7 +228,7 @@ TEST(SelfAdjointEighTest, EmptyMatrixHasEmptyEigensystem)
   EXPECT_EQ(result.eigenvectors.cols(), 0);
 }
 
-#if UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 TEST(SelfAdjointEighTest, MplapackFloat128RealAndComplexPaths)
 {
   using real_type = uni20::float128;

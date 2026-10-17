@@ -16,8 +16,8 @@ selects fixed floating-point formats; applications choose MPFR precision explici
 Install development packages, then enable the optional scalar layer:
 
 ```sh
-sudo apt install libgmp-dev libmpfr-dev
-cmake -S . -B build_codex/mpfr -DUNI20_ENABLE_MPFR=ON
+sudo apt install libgmp-dev libmpfr-dev libmpc-dev
+cmake -S . -B build_codex/mpfr -DUNI20_ENABLE_MPREAL=ON
 cmake --build build_codex/mpfr --target uni20_mpfr_tests mpreal_example
 ctest --test-dir build_codex/mpfr --output-on-failure -R 'MpReal'
 ```
@@ -32,11 +32,12 @@ support, including in cross builds. Consumers linking `uni20_core` inherit the
 required includes and libraries. With the option off, those dependencies are
 not searched for or linked.
 
-MPC is not needed for real-only scalars. Install `libmpc-dev` and set
-`UNI20_ENABLE_MPC=ON` together with `UNI20_ENABLE_MPFR=ON` for complex scalars.
+The same option enables real and complex arbitrary-precision scalars together.
+MPC is required even if the consuming application uses only real values.
 Custom installations accept `UNI20_MPC_INCLUDE_DIR` and `UNI20_MPC_LIBRARY`.
-The MPFR scalar option is independent of
-`UNI20_ENABLE_MPLAPACK`, which currently selects binary128 dense kernels.
+The scalar option is independent of `UNI20_BACKEND_MPLAPACK`; enabling both
+automatically selects MPLAPACK's MPFR component. See
+[scalar configuration](../linalg/scalar_configuration.md).
 
 ## Explicit working precision and value semantics
 

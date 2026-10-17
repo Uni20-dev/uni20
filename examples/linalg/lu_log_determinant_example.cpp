@@ -32,7 +32,7 @@ int main()
   fmt::print("Making the first column zero gives a singular diagnostic and the conventional (0, -infinity).\n");
   if (singular.info.status != SolveStatus::singular || !singular.value || singular.value->phase != 0) return 1;
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   auto p = Precision::bits(256);
   DenseMatrix<mpreal> tiny(2, 2, Precision::exact());
   tiny[0, 0] = mpreal(exact_constant("1e-1000"));

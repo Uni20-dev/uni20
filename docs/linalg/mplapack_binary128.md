@@ -12,14 +12,18 @@ MPLAPACK 3.0.0 release. Configure the ordinary fetched path with:
 ```bash
 cmake -S . -B ./build_codex/build_gcc13_debug_mplapack \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DUNI20_ENABLE_MPLAPACK=ON
+  -DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON
 ```
 
-By default the fetched build enables only the reference binary128 backend.
-`UNI20_ENABLE_MPLAPACK_MPFR=ON` independently adds the
-[arbitrary-precision MPFR/MPC backend](mplapack_mpfr.md). MPLAPACK's
+The fetched build selects reference components for the enabled scalar families:
+binary128, native binary80 when available (`UNI20_ENABLE_FLOAT80=AUTO`), and
+the [MPFR/MPC backend](mplapack_mpfr.md) when `UNI20_ENABLE_MPREAL=ON`. MPLAPACK's
 other scalar backends, optimized duplicate library, examples, tests,
 benchmarks, CUDA, and OpenCL targets remain disabled.
+
+With `UNI20_BACKEND_MPLAPACK=OFF`, `float128` and `complex256` still work:
+the binary128 package supplies scalar headers and math, but Uni20 does not
+register its BLAS/LAPACK kernels. See [scalar configuration](scalar_configuration.md).
 
 ## Dependency Selection
 
@@ -80,7 +84,7 @@ Then require that installed package when configuring Uni20:
 ```bash
 cmake -S . -B ./build_codex/build_gcc13_debug_mplapack \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DUNI20_ENABLE_MPLAPACK=ON \
+  -DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON \
   -DUNI20_USE_SYSTEM_MPLAPACK=ON \
   -DCMAKE_PREFIX_PATH="$PWD/build_codex/mplapack_binary128_install"
 ```
@@ -91,7 +95,7 @@ MPLAPACK itself:
 ```bash
 cmake -S . -B ./build_codex/build_gcc13_debug_mplapack \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DUNI20_ENABLE_MPLAPACK=ON \
+  -DUNI20_ENABLE_FLOAT128=ON -DUNI20_BACKEND_MPLAPACK=ON \
   -DUNI20_USE_SYSTEM_MPLAPACK=ON \
   -Dmplapack_DIR="$PWD/build_codex/mplapack_binary128"
 ```

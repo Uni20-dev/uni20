@@ -11,7 +11,7 @@
 #include <uni20/core/numeric_limits.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/core/scalar_traits.hpp>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include "detail/mpreal_ulp.hpp"
 #endif
 
@@ -40,14 +40,18 @@ concept IeeeBinaryReal =
     detail::has_ieee_binary_interchange_layout_v<std::remove_cvref_t<T>>;
 
 /// \brief Real scalar with an implemented ordering of adjacent representable values.
-/// \details Supports IEEE binary interchange formats and configured native fp80.
+/// \details Supports IEEE binary interchange formats and native extended long double,
+///          independently of whether the optional float80 alias is enabled.
 ///          Unlike IeeeBinaryReal, this does not require a padding-free object representation.
 template <typename T>
-concept UlpOrderedReal = IeeeBinaryReal<T>
-#if UNI20_HAS_FLOAT80
-                         || std::same_as<std::remove_cvref_t<T>, uni20::float80>
-#endif
-    ;
+concept UlpOrderedReal =
+    IeeeBinaryReal<T> ||
+    (std::same_as<std::remove_cvref_t<T>, long double> && uni20::numeric_limits<long double>::is_iec559 &&
+     uni20::numeric_limits<long double>::radix == 2 && uni20::numeric_limits<long double>::digits() == 64 &&
+     uni20::numeric_limits<long double>::min_exponent == -16381 &&
+     uni20::numeric_limits<long double>::max_exponent == 16384 &&
+     uni20::numeric_limits<long double>::denorm_min() > 0 &&
+     uni20::numeric_limits<long double>::denorm_min() < uni20::numeric_limits<long double>::min());
 
 namespace detail
 {
@@ -105,7 +109,7 @@ template <UlpOrderedReal T> constexpr ulp_uint_t<T> ulp_distance_magnitude(T a, 
 ///  * Returns 0 if `a == b` (including +0 vs -0).
 ///  * Returns `max<long long>` if either value is NaN or if infinities differ.
 ///  * Saturates when the finite distance exceeds the signed diagnostic range.
-/// \tparam T IEEE binary interchange or configured native fp80 scalar type.
+/// \tparam T IEEE binary interchange or native extended long double scalar type.
 template <UlpOrderedReal T> inline long long float_distance(T a, T b)
 {
   if (std::isnan(a) || std::isnan(b))
@@ -173,7 +177,7 @@ struct FloatingULP<T>
     }
 };
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 /// \brief Compare MPFR values on a shared runtime-precision grid.
 /// \details Approximate operands must have matching precision. An exact operand
 ///          is rounded to the other's precision, nearest with ties to even;
@@ -193,16 +197,10 @@ template <> struct FloatingULP<mpreal>
 /// \details Uses the same grid and exact-value rules as FloatingULP<mpreal>.
 ///          Finite distances saturate at +/- max<long long>; incomparable pairs
 ///          return max<long long>. Saturation never relaxes the comparator's tolerance.
-inline long long float_distance(mpreal const& a, mpreal const& b)
-{
-  return detail::compare_mpreal(a, b, 0).distance;
-}
+inline long long float_distance(mpreal const& a, mpreal const& b) { return detail::compare_mpreal(a, b, 0).distance; }
 
 /// \brief Absolute diagnostic step distance, with the same saturation as float_distance.
-inline long long float_abs_distance(mpreal const& a, mpreal const& b)
-{
-  return std::llabs(float_distance(a, b));
-}
+inline long long float_abs_distance(mpreal const& a, mpreal const& b) { return std::llabs(float_distance(a, b)); }
 #endif
 
 /// \brief ULP comparator for complex numbers over floating point.

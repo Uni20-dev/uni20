@@ -125,7 +125,7 @@ TEST(Lu, FailedRhsDoesNotInvalidateFactors)
   check(LapackBackend{});
 }
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 TEST(Lu, RuntimePrecisionAndComplex)
 {
   auto p = Precision::bits(512);
@@ -302,8 +302,7 @@ TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
     S storage[27]{};
     for (auto strides : {std::array<std::size_t, 2>{2, 11}, std::array<std::size_t, 2>{11, 2}})
     {
-      stdex::mdspan<S, E, stdex::layout_stride> padded(
-          storage, stdex::layout_stride::mapping<E>(E(3, 3), strides));
+      stdex::mdspan<S, E, stdex::layout_stride> padded(storage, stdex::layout_stride::mapping<E>(E(3, 3), strides));
       check(padded);
     }
   };
@@ -338,7 +337,7 @@ TEST(Lu, NumericalFailureNeverFallsBack)
   EXPECT_FALSE(called);
 }
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 TEST(Lu, FactorPrecisionOwnsReusePolicy)
 {
   auto p = Precision::bits(256), q = Precision::bits(128);
@@ -401,7 +400,7 @@ TEST(Lu, FactorsArePortableBetweenHostBackends)
   };
   check.template operator()<float>();
   check.template operator()<double>();
-#if UNI20_ENABLE_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
   check.template operator()<float128>();
 #endif
 }

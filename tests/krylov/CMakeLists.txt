@@ -49,7 +49,7 @@ if(TARGET uni20_backend_cublas AND TARGET uni20_backend_cusolver)
   )
 endif()
 
-if(UNI20_ENABLE_MPLAPACK)
+if(UNI20_HAS_MPLAPACK_FLOAT128)
   add_executable(uni20_krylov_mplapack_binary128_tests
     test_mplapack_binary128_dense_subspace.cpp
     test_mplapack_binary128_krylov_solvers.cpp

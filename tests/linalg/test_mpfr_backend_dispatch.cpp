@@ -1,6 +1,6 @@
 #include <uni20/config.hpp>
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <gtest/gtest.h>
 #include <span>
 #include <string>
@@ -34,7 +34,7 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
       probe_dispatch_kernel_types<LapackBackend, lu_factor_op, M, Pivots, SolveInfo, Options, Precision>();
   constexpr auto reuse =
       probe_dispatch_kernel_types<LapackBackend, lu_solve_op, R, ConstPivots, M, SolveInfo, Precision>();
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   static_assert(gemm == KernelTypeAcceptance::maybe); // Exact arithmetic declines at runtime.
   static_assert(solve == KernelTypeAcceptance::yes);
   static_assert(factor == KernelTypeAcceptance::yes);
@@ -49,7 +49,7 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
   // raw runtime-scalar descriptors still require explicit working precision.
   static_assert(!LapackScalar<S>);
   static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M>() == KernelTypeAcceptance::no);
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
   static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M, Precision>() == KernelTypeAcceptance::yes);
 #else
   static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M, Precision>() == KernelTypeAcceptance::no);
@@ -64,11 +64,11 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
   return true;
 }
 static_assert(provider_acceptance_is_operation_specific<mpreal>());
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 static_assert(provider_acceptance_is_operation_specific<complex<mpreal>>());
 #endif
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 template <class S> class MpfrBackendDispatch : public testing::Test {};
 using Scalars = testing::Types<mpreal, complex<mpreal>>;
 TYPED_TEST_SUITE(MpfrBackendDispatch, Scalars);

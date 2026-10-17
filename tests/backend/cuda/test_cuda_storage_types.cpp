@@ -1,10 +1,10 @@
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/tensor/tensor.hpp>
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <uni20/core/mpreal.hpp>
 #endif
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 #include <uni20/core/mpcomplex.hpp>
 #endif
 
@@ -33,10 +33,10 @@ template <class T> consteval bool rejects_cuda_storage()
 
 static_assert(rejects_cuda_storage<std::unique_ptr<double>>());
 static_assert(rejects_cuda_storage<std::string>());
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 static_assert(rejects_cuda_storage<uni20::mpreal>());
 #endif
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 static_assert(rejects_cuda_storage<uni20::complex<uni20::mpreal>>());
 template <class R>
 concept CanMakeComplexCudaProxy = requires { typename uni20::cuda::CudaComplexReference<R>; };

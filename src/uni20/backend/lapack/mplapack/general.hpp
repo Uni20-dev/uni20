@@ -14,7 +14,7 @@
 
 #include <memory>
 
-#if !(UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK)
+#if !(UNI20_HAS_MPLAPACK_FLOAT128)
 #error "uni20/backend/lapack/mplapack/general.hpp requires MPLAPACK float128 support"
 #endif
 

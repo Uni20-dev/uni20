@@ -35,7 +35,7 @@ enum class ScalarPrecision
 {
   Float32,
   Float64
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   ,
   Float128
 #endif
@@ -68,7 +68,7 @@ struct DenseRealMatrix
 
 template <typename Scalar> using RealOf = uni20::make_real_t<Scalar>;
 
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
 using ReferenceReal = uni20::float128;
 #else
 using ReferenceReal = double;
@@ -119,7 +119,7 @@ void print_usage(char const* program)
   fmt::print("  --matrix=PATH          real symmetric Matrix Market coordinate file\n");
   fmt::print("  --vector=PATH          real Matrix Market column-vector file\n");
   fmt::print("  --precision=float|double");
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   fmt::print("|float128");
 #endif
   fmt::print(", default double\n");
@@ -163,10 +163,10 @@ void print_usage(char const* program)
     else if (argument == "--precision=float128" || argument == "--precision=quad" ||
              argument == "--precision=binary128")
     {
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
       options.precision = ScalarPrecision::Float128;
 #else
-      throw std::invalid_argument("float128 precision requires a UNI20_HAS_FLOAT128 build");
+      throw std::invalid_argument("float128 precision requires a UNI20_HAS_MPLAPACK_FLOAT128 build");
 #endif
     }
     else if (starts_with(argument, "--matrix="))
@@ -896,7 +896,7 @@ template <typename Real> [[nodiscard]] bool demo_check_passes(DemoResult<Real> c
   numeric.float32_precision = uni20::numeric_limits<float>::max_digits10();
   numeric.float64_precision = uni20::numeric_limits<double>::max_digits10();
   numeric.long_double_precision = uni20::numeric_limits<long double>::max_digits10();
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   numeric.float128_precision = uni20::numeric_limits<uni20::float128>::max_digits10();
 #endif
   return numeric;
@@ -922,7 +922,7 @@ template <typename Real> [[nodiscard]] std::string_view scalar_name()
   {
     return "complex<double>";
   }
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
   else if constexpr (std::is_same_v<Real, uni20::float128>)
   {
     return "complex<float128>";
@@ -1035,7 +1035,7 @@ int main(int argc, char** argv)
         return run<float>(options);
       case ScalarPrecision::Float64:
         return run<double>(options);
-#if UNI20_HAS_FLOAT128
+#if UNI20_HAS_MPLAPACK_FLOAT128
       case ScalarPrecision::Float128:
         return run<uni20::float128>(options);
 #endif

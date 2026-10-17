@@ -6,10 +6,10 @@
 #include "numeric_limits.hpp"
 #include "runtime_precision.hpp"
 #include "scalar_concepts.hpp"
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include "mpreal.hpp"
 #endif
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 #include "mpcomplex.hpp"
 #endif
 #include <cmath>
@@ -124,7 +124,7 @@ template <Integer I> constexpr bool isfinite(I const& x) noexcept
 template <Real R> constexpr bool isfinite(R const& x)
 {
   using value_type = std::remove_cvref_t<R>;
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
   if constexpr (std::same_as<value_type, mpreal>) return uni20::isfinite(x);
 #endif
   if (!(x == x))
@@ -192,10 +192,10 @@ template <Scalar S, class Value>
 namespace detail::scalar_math
 {
 template <class T>
-concept native_argument = std::integral<T> || std::same_as<T, float> || std::same_as<T, double> ||
-                          std::same_as<T, long double>
+concept native_argument =
+    std::integral<T> || std::same_as<T, float> || std::same_as<T, double> || std::same_as<T, long double>
 #if UNI20_HAS_FLOAT128
-                          || std::same_as<T, uni20::float128>
+    || std::same_as<T, uni20::float128>
 #endif
     ;
 
@@ -215,42 +215,38 @@ template <class Result, class Arg> consteval bool preserves_real_precision()
 // The deleted exact-match fallback rejects conversion-only classes, even when
 // an associated namespace supplies standard floating overloads. Actual scalar
 // overloads (including constrained templates and hidden friends) outrank it.
-#define UNI20_SCALAR_MATH_ADL(NAME)                                                                            \
-  namespace NAME##_adl                                                                                       \
-  {                                                                                                         \
-  template <class... Args> void NAME(Args const&...) = delete;                                                 \
-  template <class... Args>                                                                                   \
-  constexpr auto call(Args const&... args) noexcept(noexcept(NAME(args...))) -> decltype(NAME(args...))        \
-  {                                                                                                         \
-    return NAME(args...);                                                                                    \
-  }                                                                                                         \
+#define UNI20_SCALAR_MATH_ADL(NAME)                                                                                    \
+  namespace NAME##_adl                                                                                                 \
+  {                                                                                                                    \
+    template <class... Args> void NAME(Args const&...) = delete;                                                       \
+    template <class... Args>                                                                                           \
+    constexpr auto call(Args const&... args) noexcept(noexcept(NAME(args...))) -> decltype(NAME(args...))              \
+    {                                                                                                                  \
+      return NAME(args...);                                                                                            \
+    }                                                                                                                  \
   }
 
-#define UNI20_SCALAR_MATH_DISPATCH_TO(NAME, NATIVE, RESULT_CHECK)                                           \
-  UNI20_SCALAR_MATH_ADL(NAME)                                                                               \
-  struct NAME##_fn                                                                                          \
-  {                                                                                                         \
-      template <class... Args>                                                                              \
-      constexpr auto operator()(Args const&... args) const                                                  \
-          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))              \
-      {                                                                                                     \
-        return NAME##_adl::call(args...);                                                                   \
-      }                                                                                                     \
-      template <class... Args>                                                                              \
-        requires((native_argument<Args> && ...) &&                                                          \
-                 !requires(Args const&... args) { NAME##_adl::call(args...); })                             \
-      constexpr auto operator()(Args const&... args) const                                                  \
-          noexcept(noexcept(NATIVE::NAME(args...))) -> decltype(NATIVE::NAME(args...))                      \
-        requires((RESULT_CHECK<decltype(NATIVE::NAME(args...)), Args>()) && ...)                            \
-      {                                                                                                     \
-        return NATIVE::NAME(args...);                                                                       \
-      }                                                                                                     \
+#define UNI20_SCALAR_MATH_DISPATCH_TO(NAME, NATIVE, RESULT_CHECK)                                                      \
+  UNI20_SCALAR_MATH_ADL(NAME)                                                                                          \
+  struct NAME##_fn                                                                                                     \
+  {                                                                                                                    \
+      template <class... Args>                                                                                         \
+      constexpr auto operator()(Args const&... args) const                                                             \
+          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                         \
+      {                                                                                                                \
+        return NAME##_adl::call(args...);                                                                              \
+      }                                                                                                                \
+      template <class... Args>                                                                                         \
+        requires((native_argument<Args> && ...) && !requires(Args const&... args) { NAME##_adl::call(args...); })      \
+                constexpr auto operator()(Args const&... args) const                                                   \
+                noexcept(noexcept(NATIVE::NAME(args...))) -> decltype(NATIVE::NAME(args...))                           \
+                  requires((RESULT_CHECK<decltype(NATIVE::NAME(args...)), Args>()) && ...)                             \
+      {                                                                                                                \
+        return NATIVE::NAME(args...);                                                                                  \
+      }                                                                                                                \
   };
 
-template <class Result, class Arg> consteval bool predicate_result()
-{
-  return std::same_as<Result, bool>;
-}
+template <class Result, class Arg> consteval bool predicate_result() { return std::same_as<Result, bool>; }
 template <class Result, class Arg> consteval bool preserves_components()
 {
   return preserves_real_precision<typename Result::value_type, Arg>();
@@ -260,16 +256,16 @@ template <class Result, class Arg> consteval bool preserves_components()
 template <class Result, class Arg> consteval bool utility_result() { return true; }
 // Provider-only functions have no native fallback. Availability is determined
 // solely by an actual overload in the scalar's associated namespace.
-#define UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(NAME)                                                             \
-  UNI20_SCALAR_MATH_ADL(NAME)                                                                                \
-  struct NAME##_fn                                                                                          \
-  {                                                                                                        \
-      template <class... Args>                                                                              \
-      constexpr auto operator()(Args const&... args) const                                                   \
-          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                \
-      {                                                                                                    \
-        return NAME##_adl::call(args...);                                                                    \
-      }                                                                                                    \
+#define UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(NAME)                                                                      \
+  UNI20_SCALAR_MATH_ADL(NAME)                                                                                          \
+  struct NAME##_fn                                                                                                     \
+  {                                                                                                                    \
+      template <class... Args>                                                                                         \
+      constexpr auto operator()(Args const&... args) const                                                             \
+          noexcept(noexcept(NAME##_adl::call(args...))) -> decltype(NAME##_adl::call(args...))                         \
+      {                                                                                                                \
+        return NAME##_adl::call(args...);                                                                              \
+      }                                                                                                                \
   };
 
 #define UNI20_SCALAR_MATH_DISPATCH_POLICY(NAME, CHECK) UNI20_SCALAR_MATH_DISPATCH_TO(NAME, std, CHECK)
@@ -380,16 +376,18 @@ struct real_fn
       requires(Real<T> || std::integral<T>)
     constexpr T operator()(T const& value) const
     {
-      if constexpr (std::integral<T>) return value;
-      else return uni20::conj(value);
+      if constexpr (std::integral<T>)
+        return value;
+      else
+        return uni20::conj(value);
     }
     template <class T>
       requires(!Real<T> && !std::integral<T>)
-    constexpr auto operator()(T const& value) const
-        noexcept(noexcept(std::remove_cvref_t<decltype(real_adl::call(value))>(real_adl::call(value))))
-        -> std::remove_cvref_t<decltype(real_adl::call(value))>
-      requires std::constructible_from<std::remove_cvref_t<decltype(real_adl::call(value))>,
-                                       decltype(real_adl::call(value))>
+              constexpr auto operator()(T const& value) const
+              noexcept(noexcept(std::remove_cvref_t<decltype(real_adl::call(value))>(real_adl::call(value))))
+                  -> std::remove_cvref_t<decltype(real_adl::call(value))>
+                requires std::constructible_from<std::remove_cvref_t<decltype(real_adl::call(value))>,
+                                                 decltype(real_adl::call(value))>
     {
       return std::remove_cvref_t<decltype(real_adl::call(value))>(real_adl::call(value));
     }
@@ -401,16 +399,18 @@ struct imag_fn
       requires(Real<T> || std::integral<T>)
     constexpr T operator()(T const& value) const
     {
-      if constexpr (native_argument<T>) return T{};
-      else return uni20::scalar_like(value, 0);
+      if constexpr (native_argument<T>)
+        return T{};
+      else
+        return uni20::scalar_like(value, 0);
     }
     template <class T>
       requires(!Real<T> && !std::integral<T>)
-    constexpr auto operator()(T const& value) const
-        noexcept(noexcept(std::remove_cvref_t<decltype(imag_adl::call(value))>(imag_adl::call(value))))
-        -> std::remove_cvref_t<decltype(imag_adl::call(value))>
-      requires std::constructible_from<std::remove_cvref_t<decltype(imag_adl::call(value))>,
-                                       decltype(imag_adl::call(value))>
+              constexpr auto operator()(T const& value) const
+              noexcept(noexcept(std::remove_cvref_t<decltype(imag_adl::call(value))>(imag_adl::call(value))))
+                  -> std::remove_cvref_t<decltype(imag_adl::call(value))>
+                requires std::constructible_from<std::remove_cvref_t<decltype(imag_adl::call(value))>,
+                                                 decltype(imag_adl::call(value))>
     {
       return std::remove_cvref_t<decltype(imag_adl::call(value))>(imag_adl::call(value));
     }
@@ -422,8 +422,10 @@ struct conj_fn
       requires(Real<T> || std::integral<T>)
     constexpr T operator()(T const& value) const
     {
-      if constexpr (std::integral<T>) return value;
-      else return uni20::conj(value);
+      if constexpr (std::integral<T>)
+        return value;
+      else
+        return uni20::conj(value);
     }
     template <class T>
       requires(!Real<T> && !std::integral<T>)

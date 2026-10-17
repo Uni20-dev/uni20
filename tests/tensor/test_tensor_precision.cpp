@@ -60,7 +60,8 @@ TEST(TensorPrecision, UninitializedResetPreservesOptionalDefault)
     using Extents = typename decltype(a)::extents_type;
     a.reset_shape(uninitialized, Extents(2, 3));
     EXPECT_FALSE(a.default_precision_if_set());
-    for (auto const& value : a.storage()) EXPECT_FALSE(value.initialized());
+    for (auto const& value : a.storage())
+      EXPECT_FALSE(value.initialized());
     // Ordinary zero initialization still needs a default, and failure preserves a.
     EXPECT_THROW(a.reset_shape(Extents(3, 4)), std::logic_error);
     EXPECT_EQ(a.extent(0), 2);
@@ -72,16 +73,17 @@ TEST(TensorPrecision, UninitializedResetPreservesOptionalDefault)
       a.default_precision(p);
       a.reset_shape(uninitialized, Extents(1, 2));
       EXPECT_EQ(a.default_precision(), p);
-      for (auto const& value : a.storage()) EXPECT_FALSE(value.initialized());
+      for (auto const& value : a.storage())
+        EXPECT_FALSE(value.initialized());
     }
   };
   check.operator()<mpreal>();
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
   check.operator()<complex<mpreal>>();
 #endif
 }
 
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 TEST(TensorPrecision, ViewsFollowParentDefaultsAndMaterializationCopiesThem)
 {
   auto p = Precision::bits(256), q = Precision::bits(80);

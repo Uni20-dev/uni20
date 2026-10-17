@@ -6,8 +6,8 @@
  * \brief Read-only lazy conjugation views for tensor-level objects.
  */
 
-#include <uni20/core/scalar_concepts.hpp>
 #include <uni20/core/runtime_precision.hpp>
+#include <uni20/core/scalar_concepts.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
 #include <uni20/tensor/concepts.hpp>
 
@@ -28,15 +28,14 @@ template <TensorView Tensor> class ConstTensorView {
     using async_alias_tag = void;
 
     /// \brief Bind a read-only view to an existing tensor.
-    explicit constexpr ConstTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
-    {}
+    explicit constexpr ConstTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor)) {}
 
     /// \brief Bind a read-only view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
     ///          callers must not resolve the view until the tensor is constructed.
     explicit constexpr ConstTensorView(tensor_type const* tensor) noexcept : tensor_(tensor) {}
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Read the parent's current default precision without converting elements.
     /// \pre The parent is constructed and readable, including its async epoch when applicable.
     [[nodiscard]] Precision default_precision() const
@@ -108,15 +107,14 @@ template <TensorView Tensor> class ConjugatedTensorView {
     using async_alias_tag = void;
 
     /// \brief Bind a lazy conjugating view to an existing tensor.
-    explicit constexpr ConjugatedTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor))
-    {}
+    explicit constexpr ConjugatedTensorView(tensor_type const& tensor) noexcept : tensor_(std::addressof(tensor)) {}
 
     /// \brief Bind a conjugating view to externally retained tensor storage.
     /// \warning The pointer may identify reserved but unconstructed storage;
     ///          callers must not resolve the view until the tensor is constructed.
     explicit constexpr ConjugatedTensorView(tensor_type const* tensor) noexcept : tensor_(tensor) {}
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Read the parent's current default precision without converting elements.
     /// \pre The parent is constructed and readable, including its async epoch when applicable.
     [[nodiscard]] Precision default_precision() const

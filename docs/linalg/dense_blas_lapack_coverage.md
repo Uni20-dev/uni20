@@ -205,7 +205,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 
 ## Optional MPLAPACK Binary128 Dense Inventory
 
-These rows are available only when `UNI20_ENABLE_MPLAPACK=ON` and the configured
+These rows are available only when `UNI20_ENABLE_FLOAT128=ON` and `UNI20_BACKEND_MPLAPACK=ON` and the configured
 MPLAPACK package provides a real binary128 type. This table covers dense
 provider/helper support; algorithm-level binary128 coverage remains in
 [Krylov Algorithms](../krylov/algorithms.md).

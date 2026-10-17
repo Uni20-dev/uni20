@@ -548,7 +548,7 @@ TEST(KrylovMatrixFreeInterface, NativeSolveCanBeReenteredFromMatvecCallback)
 
 } // namespace
 
-#if UNI20_ENABLE_MPC
+#if UNI20_HAS_MPREAL
 TEST(KrylovMatrixFreeInterface, RitzRealityUsesRuntimePrecision)
 {
   using namespace uni20;

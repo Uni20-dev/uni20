@@ -320,7 +320,7 @@ TEST(AsyncSvdTest, PartialDispatchFailurePropagatesToEveryResult)
   EXPECT_THROW((void)singular_values.get_wait(scheduler), uni20::linalg::KernelDispatchError);
 }
 
-#if UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 TEST(AsyncSvdTest, SupportsConfiguredFloat128Backend)
 {
   using real_type = uni20::float128;

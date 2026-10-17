@@ -1,7 +1,7 @@
 #pragma once
 
 #include <uni20/config.hpp>
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 #include "linear_solve_mpfr.hpp"
 #endif
 

@@ -147,6 +147,6 @@ KernelAttempt try_kernel(LapackBackend, lq_op const&, LMdspec& l, QMdspec& q, Ma
 
 } // namespace uni20::linalg
 
-#if UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_HAS_MPLAPACK_MPREAL
 #include "decompositions_mpfr.hpp"
 #endif

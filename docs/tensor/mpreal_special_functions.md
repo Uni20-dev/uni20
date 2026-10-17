@@ -1,6 +1,6 @@
 # MPFR special functions and elementary extensions
 
-Include `<uni20/core/math.hpp>` and enable `UNI20_ENABLE_MPFR`. The real
+Include `<uni20/core/math.hpp>` and enable `UNI20_ENABLE_MPREAL`. The real
 functions below accept `mpreal` through both `uni20::name(...)` and the generic
 `uni20::math::name(...)` interface. They require MPFR 4.2 or newer, the same
 minimum as the numerical utilities. This surface does not add MPC overloads.

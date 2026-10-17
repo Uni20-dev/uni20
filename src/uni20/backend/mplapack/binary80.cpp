@@ -10,7 +10,7 @@
 
 namespace uni20::mplapack
 {
-#if UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
 static_assert(std::is_same_v<mplapack_binary80_t, long double>,
               "Configured complex binary80 LU requires the native long-double provider");
 #endif
@@ -145,7 +145,7 @@ std::size_t getrf(std::size_t n, std::span<float80> a, std::vector<std::size_t>&
 {
   return getrf_impl(n, a, pivots);
 }
-#if UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
 std::size_t getrf(std::size_t n, std::span<complex160> a, std::vector<std::size_t>& pivots)
 {
   return getrf_impl(n, a, pivots);
@@ -156,7 +156,7 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<float80 const> a, std::spa
 {
   getrs_impl(n, nrhs, a, pivots, b);
 }
-#if UNI20_HAS_MPLAPACK_BINARY80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
 void getrs(std::size_t n, std::size_t nrhs, std::span<complex160 const> a, std::span<std::size_t const> pivots,
            std::span<complex160> b)
 {

@@ -88,7 +88,7 @@ KernelAttempt try_kernel(CpuReferenceBackend, gemm_op const&, OutputMdspan& outp
   return detail::try_cpu_gemm(output, alpha, lhs, rhs, beta);
 }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 /// \brief Consider runtime-precision scalars for exact CPU GEMM.
 /// \details Finite operation precisions require a backend that explicitly converts its inputs.
 template <MutableRankedMdspecLike<2> C, Scalar S, RankedMdspecLike<2> A, RankedMdspecLike<2> B>

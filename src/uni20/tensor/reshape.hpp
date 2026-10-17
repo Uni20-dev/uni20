@@ -300,7 +300,7 @@ class IndirectReshapedTensorView {
       CHECK(tensor_ != nullptr);
     }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Read the parent's current default precision without converting elements.
     /// \pre The parent is constructed and readable, including its async epoch when applicable.
     [[nodiscard]] Precision default_precision() const
@@ -398,7 +398,7 @@ template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::
   {
     // Retain the parent so later default changes are visible without a metadata cache.
     return IndirectReshapedTensorView<std::remove_reference_t<Tensor>, LayoutPolicy, Extents...>{tensor,
-                                                                                            requested_extents...};
+                                                                                                 requested_extents...};
   }
   else
   {

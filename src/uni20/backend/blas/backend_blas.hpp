@@ -25,6 +25,6 @@
 #include <uni20/backend/blas/openblas/backend_openblas.hpp>
 #endif
 
-#if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
+#if UNI20_HAS_MPLAPACK_FLOAT128
 #include <uni20/backend/blas/mplapack_binary128.hpp>
 #endif

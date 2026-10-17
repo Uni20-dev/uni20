@@ -7,7 +7,7 @@
  */
 
 #include <uni20/core/runtime_precision.hpp>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 #include <uni20/core/exact_constant.hpp>
 #endif
 
@@ -21,7 +21,7 @@ namespace uni20::linalg
 template <class Value, class Scalar>
 concept OperationScalar =
     std::convertible_to<Value, Scalar>
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     || (has_runtime_precision_v<Scalar> && ExactRationalSource<Value> && std::constructible_from<Scalar, Value>)
 #endif
     ;

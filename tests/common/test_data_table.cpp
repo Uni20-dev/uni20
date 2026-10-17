@@ -27,7 +27,7 @@ static_assert(!p::DataTableValue<uni20::complex<double>>);
 static_assert(!CanAppend<p::data_table<uni20::half_int>, double>);
 static_assert(CanAppend<p::data_table<std::optional<uni20::half_int>>, std::nullopt_t>);
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
 template <typename T>
 concept CanDeclareColumn = requires { typename p::data_column<T>; };
 static_assert(p::DataTableValue<uni20::mpreal>);

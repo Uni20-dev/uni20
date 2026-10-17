@@ -55,7 +55,7 @@ template <typename ElementType> class HostBuffer {
       }
     }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     /// \brief Allocate elements with a default working precision for initialization and growth.
     HostBuffer(size_type size, StorageInitialization initialization, Precision precision)
       requires has_runtime_precision_v<value_type>
@@ -66,13 +66,19 @@ template <typename ElementType> class HostBuffer {
     }
 
     /// \brief Working precision used for future initialization, independent of element precisions.
-    Precision default_precision() const requires has_runtime_precision_v<value_type> { return precision_.get(); }
-    std::optional<Precision> default_precision_if_set() const noexcept requires has_runtime_precision_v<value_type>
+    Precision default_precision() const
+      requires has_runtime_precision_v<value_type>
+    {
+      return precision_.get();
+    }
+    std::optional<Precision> default_precision_if_set() const noexcept
+      requires has_runtime_precision_v<value_type>
     {
       return precision_.value;
     }
     /// \brief Change the default without converting existing elements.
-    void default_precision(Precision precision) requires has_runtime_precision_v<value_type>
+    void default_precision(Precision precision)
+      requires has_runtime_precision_v<value_type>
     {
       precision_.value = precision;
     }
@@ -83,7 +89,7 @@ template <typename ElementType> class HostBuffer {
     {
       try
       {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
         if constexpr (has_runtime_precision_v<value_type>) precision_.value = value.precision();
 #endif
         std::fill_n(data_, size_, value);
@@ -196,17 +202,19 @@ template <typename ElementType> class HostBuffer {
   private:
     void initialize_elements(value_type* data, size_type count, StorageInitialization initialization)
     {
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
       if constexpr (has_runtime_precision_v<value_type>)
       {
         if (initialization == StorageInitialization::Uninitialized)
         {
-          for (size_type i = 0; i < count; ++i) data[i] = value_type(uninitialized);
+          for (size_type i = 0; i < count; ++i)
+            data[i] = value_type(uninitialized);
         }
         else if (count != 0)
         {
           auto p = this->default_precision();
-          for (size_type i = 0; i < count; ++i) data[i] = value_type(p);
+          for (size_type i = 0; i < count; ++i)
+            data[i] = value_type(p);
         }
       }
       else
@@ -319,18 +327,18 @@ struct HostStorage
       return storage_t<ElementType>(size, initialization);
     }
 
-#if UNI20_ENABLE_MPFR
+#if UNI20_HAS_MPREAL
     template <typename ElementType>
       requires has_runtime_precision_v<ElementType>
-    [[nodiscard]] static auto make_storage(std::size_t size, StorageInitialization initialization, Precision p)
-        -> storage_t<ElementType>
+    [[nodiscard]] static auto make_storage(std::size_t size, StorageInitialization initialization,
+                                           Precision p) -> storage_t<ElementType>
     {
       return storage_t<ElementType>(size, initialization, p);
     }
     template <typename ElementType>
       requires has_runtime_precision_v<ElementType>
     [[nodiscard]] static auto make_storage_like(storage_t<ElementType> const& source, std::size_t size,
-                                               StorageInitialization initialization) -> storage_t<ElementType>
+                                                StorageInitialization initialization) -> storage_t<ElementType>
     {
       if (auto p = source.default_precision_if_set()) return storage_t<ElementType>(size, initialization, *p);
       return storage_t<ElementType>(size, initialization);
@@ -349,11 +357,11 @@ struct HostStorage
     }
 
     using backend_selector_type = linalg::backend_list<
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
         linalg::MplapackBinary80Backend,
 #endif
         linalg::LapackBackend,
-#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_BACKEND_BLAS || UNI20_HAS_MPLAPACK_MPREAL
         linalg::BlasBackend,
 #endif
         linalg::CpuReferenceBackend>;
@@ -362,11 +370,11 @@ struct HostStorage
     [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
     {
       return backend_selector_type{
-#if UNI20_ENABLE_MPLAPACK_BINARY80
+#if UNI20_HAS_MPLAPACK_FLOAT80
           linalg::MplapackBinary80Backend{},
 #endif
           linalg::LapackBackend{},
-#if UNI20_BACKEND_BLAS || UNI20_ENABLE_MPLAPACK_MPFR
+#if UNI20_BACKEND_BLAS || UNI20_HAS_MPLAPACK_MPREAL
           linalg::BlasBackend{},
 #endif
           linalg::CpuReferenceBackend{}};
