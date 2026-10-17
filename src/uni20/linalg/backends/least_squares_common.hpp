@@ -170,7 +170,7 @@ KernelAttempt run(X& x, A& a, B& b, std::span<make_real_t<typename A::value_type
   auto xa = acquire_host_write_access_sync(x);
   auto xs = xa.mdspan();
   packed_detail::unpack(solution, xs);
-  std::copy(norms.begin(), norms.end(), residuals.begin());
+  std::copy_n(norms.begin(), nrhs, residuals.begin());
   return KernelAttempt::success;
 }
 } // namespace uni20::linalg::least_squares_detail

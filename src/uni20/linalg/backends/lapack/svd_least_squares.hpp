@@ -154,7 +154,7 @@ KernelAttempt try_kernel(LapackBackend, svd_least_squares_op const&, X& x, A& a,
   auto xa = acquire_host_write_access_sync(x);
   auto xs = xa.mdspan();
   packed_detail::unpack(solution, xs);
-  std::copy(norms.begin(), norms.end(), residuals.begin());
+  std::copy_n(norms.begin(), nrhs, residuals.begin());
   diagnostics = {.rank = rank,
                  .relative_cutoff = std::move(cutoff),
                  .singular_values = options.return_singular_values ? std::move(singular) : std::vector<R>{}};
