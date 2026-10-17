@@ -78,6 +78,11 @@ result precision: native results must match their type, while runtime conversion
 happens inside the backend. Approximation-only operations require finite precision.
 Async operations infer defaults after awaiting their readable inputs.
 
+[LU refinement](../linalg/lu_refinement.md) explicitly separates factor, working
+and residual scalar/precision roles. Each fixed role still requires its native
+precision. The solver owns the conversions between its distinct workspaces;
+individual LU kernels retain their existing factor-precision contract.
+
 This does not add a precision argument to every numerical operation or expand
 provider coverage. Fixed kernels retain type-defined precision; runtime kernels
 receive the resolved precision through dispatch. The [MPLAPACK integration](../linalg/mplapack_mpfr.md)

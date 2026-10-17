@@ -323,6 +323,9 @@ public frontends or weakening the existing tensor and async contracts.
    working-precision policy, ordinary `LapackBackend`, real/complex support
    and synchronous provider precision scopes. Further diagnostics follow the
    [numerical infrastructure plan](precision_numerics_plan.md).
+   [LU refinement](lu_refinement.md) now reuses GETRF/GETRS with separate
+   factor, working and residual arithmetic. Its diagnostics and updates use
+   scalar host arithmetic; MPLAPACK eligibility depends on the factor scalar.
 5. **Remaining dense capabilities.** Add tridiagonal eigensolvers, Schur
    decomposition/reordering and any further routines required by projected
    algorithms. Their precision and scalar eligibility need explicit coverage;

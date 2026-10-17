@@ -1,9 +1,11 @@
 # Precision-generic numerical infrastructure
 
-This plan connects current Bethe requirements to Uni20's dense linear algebra
-and scalar-math interfaces. It builds on the standard `BlasBackend` and
-`LapackBackend` families, generic `Precision` arguments and recoverable square
-solves. No scalar-specific backend selectors are introduced.
+This plan develops shared numerical infrastructure for Bethe, iMPS and other
+Uni20 consumers. Dense solves are the first implementation, while iterative
+refinement must also accommodate matrix-free tensor-network operators. It
+builds on the standard `BlasBackend` and `LapackBackend` families, generic
+`Precision` arguments and recoverable square solves. No scalar-specific backend
+selectors are introduced.
 
 ## Sequence and boundaries
 
@@ -12,13 +14,15 @@ solves. No scalar-specific backend selectors are introduced.
 | 1 | Full-column-rank QR least squares, recoverable status and residual norms | Initial synchronous implementation available |
 | 2 | SVD-based minimum-norm least squares and numerical rank | Synchronous GELSS implementation available |
 | 3 | Reciprocal condition estimates from reusable LU factors | Synchronous GECON implementation available |
-| 4 | QR diagnostics, backward error and iterative refinement | Design needed |
+| 4a | Dense LU refinement with distinct factor, working and residual precisions; backward error | Initial synchronous implementation available |
+| 4b | Mixed-precision GMRES and GMRES-based refinement, including matrix-free iMPS operators | Planned separate follow-up |
 | 5 | Extract right-half-plane complex log-Gamma and log-absolute Barnes G | Separate scalar-math work |
 
 Stage 5 is independent of the matrix work. Tridiagonal and Schur provider
-coverage remains on the MPLAPACK roadmap; the immediate least-squares consumer
-takes priority. Bethe owns physical convergence, continuation acceptance,
-step selection and decisions to repeat at higher precision.
+coverage remains on the MPLAPACK roadmap. Applications own physical convergence,
+continuation or tensor-update acceptance, step selection and decisions to repeat
+at higher precision. Additional QR condition diagnostics can follow a concrete
+consumer rather than block refinement.
 
 ## 1. Full-column-rank least squares
 
@@ -112,18 +116,142 @@ Shared tests cover diagonal conditions, scaling, nontrivial pivoted factors,
 precision-sensitive data and improved accuracy. The runnable
 `rank_aware_numerics_example` covers both stages.
 
-## 4. Further diagnostics
+## 4. Mixed-precision refinement and diagnostics
 
-A triangular 1-norm/infinity-norm estimate for R is not generally the
-corresponding estimate for A. For full-column-rank reduced QR, their 2-norm
-condition numbers agree. State which matrix and norm each diagnostic describes.
+This is a solver layer above provider kernels. A GERFS wrapper alone does not
+provide the intended precision control or matrix-free extension. No convergence
+guarantee follows merely from selecting three precisions. The dense stage is
+implemented in
+[three-precision LU refinement](lu_refinement.md); the operator/GMRES extensions
+below remain design work.
 
-Backward error and refinement need original A and B as well as factors. Specify
-normwise versus componentwise measures and the residual-evaluation precision.
-Keep evaluation precision explicit and leave automatic precision escalation
-to applications. Async variants should resolve defaults after input epochs
-become readable and keep every provider precision scope within one synchronous
-call on its executing thread.
+The immediate PR is stage 4a: dense LU-based refinement and its diagnostics.
+Three precision roles already apply to that algorithm; GMRES is not required.
+Stage 4b is separate work, covering both a mixed-precision GMRES solver and its
+use for refinement corrections. Its matrix-free/iMPS requirements are recorded
+below to guide separation of responsibilities, not as prerequisites for 4a.
+Keep residual evaluation, correction and updates separate internally without
+requiring a public generic correction-solver framework in the first PR.
+
+### Precision roles
+
+Full bibliographic entries and their roles in the implementation and follow-up
+work are collected in the References section of [LU refinement](lu_refinement.md).
+
+[Carson and Higham (2018)](https://doi.org/10.1137/17M1140819) distinguish
+factorization precision, working precision for the solution and its updates,
+and residual-evaluation precision. Their correction equation can use the LU
+factors directly or a preconditioned GMRES solve. [Amestoy et al.
+(2024)](https://doi.org/10.1137/23M1549079) extend GMRES refinement to five
+precisions by separating the preconditioned matrix-vector operation from the
+remaining GMRES arithmetic. The first LU interface needs only the three roles;
+the later GMRES interface can supply its own additional policy without padding
+the LU options with unused settings.
+
+| Role | Initial dense implementation | Extension boundary |
+| --- | --- | --- |
+| Factorization and factor storage | LU at the selected factor scalar/precision | Other factorizations and approximate preconditioners |
+| Solution and updates | Accumulate the iterate at the selected working scalar/precision | Output rounding specified independently when needed |
+| Residual evaluation | Evaluate original `b - A*x` at the selected residual scalar/precision | Matrix-free application and contraction accumulation |
+| Correction solve | Convert the residual explicitly and solve with existing LU factors | Krylov correction with its own arithmetic and tolerances |
+| Preconditioner application | Initially the factor-precision triangular solve | Arithmetic independent of stored factor precision |
+
+For fixed types, the scalar type selects the arithmetic; `Precision::bits(53)`
+does not turn a `float` workspace into `double`. Runtime types select a finite
+precision per workspace. A policy therefore needs both scalar families and
+precision values, with named roles rather than an unlabelled list of bit counts.
+Use configured native arithmetic for fixed types; do not silently route them
+through MPFR. Distinguish stored data precision from arithmetic and accumulation
+precision, and report unavailable backend combinations explicitly.
+
+The current `lu_solve` requires matching factor/RHS scalar types and executes at
+factor precision. Preserve that ordinary solve contract. The refinement layer
+needs explicit workspace conversions for its initial LU correction adapter;
+later higher-precision application of stored lower-precision factors needs a
+separate operation contract. Neither promotion nor relabelling of factors
+constitutes a new, more accurate factorization.
+
+### Original problem and operator boundary
+
+Retain the original A and B independently of the lower-precision factor copy.
+Residual evaluation must use that original problem, not the rounded factors or
+a matrix reconstructed from them. Higher-precision arithmetic can reduce error
+when applying stored inputs, but cannot recover data lost before the solver was
+called. The same distinction applies to rounded or truncated MPS tensors.
+
+Separate residual evaluation, correction solving and vector updates so that
+the outer loop can later operate through Uni20's existing
+[matrix-free vector boundary](../krylov/algorithms.md#matrix-free-boundary).
+An operator must actually evaluate at its declared precision, not merely cast
+a low-precision result. Matrix-free GMRES, mixed vector types and additional
+scalar support remain implementation work; existing eigensolver interfaces do
+not imply those capabilities are already available.
+
+For iMPS transfer/environment equations, the tensor layer supplies the operator,
+fixed-point projection or gauge constraint, and a compatible right-hand side.
+For example, with a normalized transfer operator T and a fixed-point projector
+P, an application may solve the projected problem using `I - T + P`. Increasing
+arithmetic precision cannot remove the nullspace of the unprojected `I - T`.
+Keep this mathematical problem definition separate from numerical preconditioning.
+Preserve symmetry metadata and block structure throughout; do not materialize a
+dense transfer matrix as an implicit solver fallback. See the
+[uniform-MPS tangent-space notes](https://arxiv.org/abs/1810.07006) for context.
+
+### Diagnostics and stopping
+
+Specify normwise versus componentwise backward error, residual-evaluation
+precision, per-RHS stopping and the meaning of each reported estimate before
+coding the API. A matrix-free matvec alone does not provide `abs(A)*abs(x)` for
+componentwise error or an operator norm for normwise error; these capabilities
+must be supplied, estimated with an explicit label, or reported unavailable.
+Do not substitute an unlabeled residual norm for backward error.
+
+Distinguish target attainment, stagnation, iteration limits, correction-solver
+failure and nonfinite arithmetic. Low-precision factorization failure need not
+mean the original problem is singular. Inner Krylov convergence and outer
+refinement convergence are different diagnostics. Recompute the final residual
+of the returned iterate rather than relying only on an inner recurrence.
+The dense implementation retains the last finite, diagnosed iterate on later
+failure. Its default target is componentwise backward error at most working
+epsilon, with at most ten corrections per RHS and configurable overrides.
+No automatic precision escalation or retry is implied.
+
+Keep operator-approximation, tensor-truncation and physical-convergence criteria
+in the application. Refinement diagnostics describe the algebraic problem
+actually supplied, not a certified error in the physical result.
+
+### Implementation sequence and evidence
+
+1. **Implemented:** `LuRefinementPrecision<Factor, Working, Residual>` selects
+   finite role precisions, with native arguments required for fixed types.
+   Reusable dense backward-error diagnostics and synchronous `lu_refine_with_info`
+   support one-shot or supplied LU factors. Same-precision refinement is a
+   special case. See the operation contract for publication and stopping rules.
+2. In the separate GMRES follow-up, implement independently chosen inner
+   arithmetic/preconditioner application and integrate matrix-free and
+   block-sparse vectors. Then add GMRES-based refinement using the shared
+   residual and diagnostic components. Settle its operator and precision API
+   with its own numerical implementation and validation evidence.
+3. Add async scheduling and heterogeneous execution through existing dispatch
+   and scheduler mechanisms. Resolve precision defaults after input epochs are
+   readable; provider precision scopes stay within one synchronous call on the
+   executing thread. Explicit adaptive policies and least-squares refinement
+   can follow independently.
+
+Shared numerical tests must compare against independent higher-precision or
+analytic solutions and verify the arithmetic roles, not just the final scalar
+type. Cover real/complex fixed types and MPFR, successful improvement, an
+insufficient residual precision, stagnation, low-precision factor failure and
+input preservation. Use selected informative precision combinations rather than
+an exhaustive Cartesian product. A later operator test should exercise a
+projected transfer problem and verify that symmetry structure survives.
+
+Least-squares refinement needs its own mathematical contract. [Carson, Higham
+and Pranesh (2020)](https://doi.org/10.1137/20M1316822) study a QR-preconditioned
+augmented-system approach; do not extend square-system formulas through normal
+equations. A triangular one-/infinity-norm estimate for R is also not generally
+that for A, although their two-norm condition numbers agree for full-column-rank
+reduced QR. Name the matrix and norm in every future QR diagnostic.
 
 ## 5. Complex Gamma/Barnes extraction
 
