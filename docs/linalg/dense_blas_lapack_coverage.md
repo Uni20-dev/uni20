@@ -18,11 +18,13 @@ Keep this inventory synchronized with provider declarations and with any
 helpers promoted from the quarantined survey into operation-tag linalg
 backends.
 
-The optional [MPFR/MPC backend](mplapack_mpfr.md) adds `Rgemm`, `Cgemm`,
+The optional [MPFR/MPC provider](mplapack_mpfr.md) adds `Rgemm`, `Cgemm`,
 `Rgetrf`, `Cgetrf`, `Rgetrs` and `Cgetrs` through explicit-precision provider
 arrays. These support dispatched matrix products, square solves and reusable
 [LU/log determinants](lu.md) for `mpreal`
-and `complex<mpreal>`. They do not imply arbitrary-precision coverage of the
+and `complex<mpreal>` through `BlasBackend` and `LapackBackend` respectively.
+The provider-specific selector has been removed; operation acceptance remains
+limited to these kernels. They do not imply arbitrary-precision coverage of the
 other routines in this inventory or of the projected Krylov path.
 
 The optional [binary80 adapter](mplapack_binary80.md) covers real and complex

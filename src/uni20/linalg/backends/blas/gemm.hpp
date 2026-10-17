@@ -6,6 +6,12 @@
  * \brief BLAS backend adapter for operation-tag GEMM dispatch.
  */
 
+#include <uni20/config.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "mpfr.hpp"
+#endif
+
+#if UNI20_BACKEND_BLAS
 #include <uni20/linalg/blas/gemm.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/matrix_product_shape.hpp>
@@ -234,3 +240,5 @@ KernelAttempt try_kernel(BlasBackend backend, assign_product_op const&,
 }
 
 } // namespace uni20::linalg
+
+#endif // UNI20_BACKEND_BLAS

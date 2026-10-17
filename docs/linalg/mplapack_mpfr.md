@@ -1,7 +1,8 @@
 # MPLAPACK arbitrary-precision matrix products and solves
 
-The optional CPU backend connects `mpreal` and `complex<mpreal>` tensors to
-MPLAPACK's serial MPFR/MPC routines. It currently supports GEMM and general square
+The optional CPU provider connects `mpreal` and `complex<mpreal>` tensors to
+MPLAPACK's serial MPFR/MPC routines through `BlasBackend` and `LapackBackend`.
+It currently supports GEMM and general square
 solves using LU factorization, including [owning reusable LU and log determinants](lu.md).
 It does not extend the native LAPACK scalar traits,
 Krylov support, other factorization APIs, or GPU arithmetic.
@@ -94,10 +95,16 @@ With zero `beta`, old output elements may be unset; with zero `alpha` or zero
 inner dimension, input elements are not numerically read. Shape requirements
 still apply. Output storage must not overlap either input.
 
-Every operation also accepts `MplapackMpfrBackend{}` as its first argument.
-When enabled, the host storage selector includes it automatically. An explicit
-MPLAPACK-only selector cannot execute exact GEMM; use the ordinary selector for
-CPU fallback. Bare-mdspan
+Products accept `BlasBackend{}` as their first argument; square solves and
+reusable LU accept `LapackBackend{}`. The host storage selector chooses these
+families automatically. The scalar-specific kernels select MPLAPACK and keep
+its object representation and thread-local defaults at the provider boundary.
+There is no separate MPFR backend selector. `UNI20_BACKEND_BLAS=OFF` disables
+native BLAS kernels but does not disable explicitly configured MPLAPACK MPFR
+products; the host selector still includes `BlasBackend` for those kernels.
+
+An explicit BLAS-only selector cannot execute exact GEMM; use the ordinary
+selector for CPU fallback. Bare-mdspan
 kernel dispatch needs an explicit trailing `Precision`, because mdspans do not
 carry tensor defaults. Host-readable transforming accessors are packed through
 logical element access; a conjugating view is not bypassed through its pointer.
@@ -179,6 +186,7 @@ runtime-precision tensors without specifying coefficient precision.
 
 ## Examples and validation
 
+- `generic_precision_example`: one square-solve interface for native and MPFR scalars.
 - `tensor_precision_example`: construction defaults, inherited view defaults and bulk conversion.
 - `mplapack_mpfr_example`: a complex 400-bit solve which becomes singular at
   113 bits, with a separately evaluated 512-bit residual.
@@ -190,3 +198,51 @@ restoration and exceptional exits. Tensor-level tests cover logical conjugation,
 precision selection, solve diagnostics, independently evaluated residuals and
 consumers scheduled before their inputs are published. Fixed-precision tests
 remain separate regressions; enabling MPFR does not change their arithmetic.
+Dispatch tests verify BLAS/LAPACK family selection, explicit async selectors,
+exact GEMM fallback, and type-level rejection when the provider or requested
+operation is unavailable.
+
+## Integration roadmap
+
+The shared precision API and backend-family selection are implemented. The
+remaining work extends routine coverage without introducing scalar-specific
+public frontends or weakening the existing tensor and async contracts.
+
+1. **Completed: shared precision and backend selection.** Fixed and runtime
+   scalar types use the same precision arguments. MPFR GEMM specializes
+   `BlasBackend`; MPFR square solves and reusable LU specialize `LapackBackend`.
+   Logical host packing is shared between these kernels. Provider arrays,
+   integer lowering, conversion, and synchronous precision scopes remain in
+   `backend/mplapack/`.
+2. **Routine capabilities and scalar traits.** Audit callers of the broad
+   `BlasScalar`/`LapackScalar` concepts before admitting runtime scalars there.
+   Several current raw wrappers and projected algorithms assume that all of
+   their native routines and workspaces are available. Replace those assumptions
+   with the capabilities each operation actually requires. Backend type probes
+   remain the authority for an operation on concrete operands; adding GEMM or LU
+   must not accidentally admit QR, SVD, eigensolvers or Krylov algorithms.
+   Apply the same audit to binary80, whose limited provider coverage still uses
+   a separate selector, before consolidating that adapter into these families.
+3. **Workspace-query operations.** Extend the provider boundary with the first
+   additional routine, initially reduced real QR (`Rgeqrf`/`Rorgqr`). Query and
+   execution must each establish the selected precision on the executing thread;
+   queried lengths need checked provider-integer conversion. Construct real,
+   complex, integer and auxiliary workspaces in the provider representation as
+   required. No precision scope may cross an await. Shared query/packing helpers
+   should be introduced with an actual caller, rather than speculative APIs.
+4. **Broader decompositions.** Add LQ, Hermitian/symmetric eigensystems, exact
+   SVD, and general eigensystems in separate operation-sized changes, following
+   consumer needs. Extend the existing frontends, result types and failure
+   contracts. Each addition needs real/complex coverage where the API supports
+   it, explicit provider tests, precision-ladder accuracy checks, and recorded
+   unsupported combinations in the numerical coverage report.
+5. **Projected algorithms and allocation costs.** Enable MPFR Krylov paths only
+   once their required dense routines, constants, tolerances and workspaces are
+   precision-generic and validated. Remove redundant host/provider packing where
+   measurements justify it; preserve logical accessor semantics and the owning
+   factorization contract. Provider-internal threading and GPU execution require
+   their own contracts and are outside the current serial CPU adapter.
+
+MPLAPACK's upstream routine inventory is broader than Uni20's wrappers. Current
+implemented provider coverage remains exactly real/complex GEMM, GETRF and GETRS;
+the [dense coverage inventory](dense_blas_lapack_coverage.md) records that boundary.

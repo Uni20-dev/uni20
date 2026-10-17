@@ -21,9 +21,6 @@
 #if UNI20_ENABLE_MPLAPACK_BINARY80
 #include <uni20/linalg/backends/mplapack/binary80.hpp>
 #endif
-#if UNI20_ENABLE_MPLAPACK_MPFR
-#include <uni20/linalg/backends/mplapack/mpfr.hpp>
-#endif
 
 #include <concepts>
 #include <type_traits>

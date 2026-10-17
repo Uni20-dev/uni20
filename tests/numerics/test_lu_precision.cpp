@@ -6,13 +6,8 @@ namespace uni20::test
 // Force one provider: a successful CPU fallback must not certify its adapter.
 template <class C> auto lu_provider()
 {
-#if UNI20_ENABLE_MPLAPACK_MPFR
-  if constexpr (C::runtime)
-    return linalg::MplapackMpfrBackend{};
-  else
-#endif
 #if UNI20_ENABLE_MPLAPACK_BINARY80
-      if constexpr (C::binary80_provider)
+  if constexpr (C::binary80_provider)
     return linalg::MplapackBinary80Backend{};
   else
 #endif

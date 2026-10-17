@@ -141,8 +141,8 @@ operations select from the materialized host workspace:
 | --- | --- | --- |
 | `CpuReferenceBackend` | native real/complex, including configured float80/float128 | Accessor-respecting partial-pivot LU and triangular substitution. |
 | `LapackBackend` | native LAPACK scalars; optional binary128 | GETRF and GETRS with direct compatible storage. |
+| `LapackBackend` | mpreal and complex&lt;mpreal&gt; | Optional finite-precision MPLAPACK MPFR/MPC GETRF and GETRS, with explicit provider packing. |
 | `MplapackBinary80Backend` | float80; complex160 with a compatible provider type | Optional binary80 provider via value-preserving conversion; [complex arithmetic restriction](mplapack_binary80.md). |
-| `MplapackMpfrBackend` | mpreal and complex&lt;mpreal&gt; | Optional finite-precision MPFR/MPC GETRF and GETRS. |
 
 Providers may be mixed between factorization and reuse when their scalar
 coverage permits it. Backend kernels consume the same packed factors and

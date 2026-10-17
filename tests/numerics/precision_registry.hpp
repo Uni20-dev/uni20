@@ -129,6 +129,11 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
         probe == ProviderLogDeterminantPreservesExtendedExponentRange;
     if constexpr (C::runtime)
       if (cpu_lu) return {"unsupported", "CPU LU declines runtime-precision scalars"};
+#if !UNI20_BACKEND_BLAS
+    if constexpr (!C::runtime && !C::binary80_provider)
+      if (probe == ProviderGemmRetainsIncrement)
+        return {"unavailable", "configure UNI20_BACKEND_BLAS for native provider GEMM"};
+#endif
 #if !UNI20_ENABLE_MPLAPACK_BINARY80
     if constexpr (C::binary80_provider)
       if (provider) return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_BINARY80"};

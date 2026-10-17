@@ -1,5 +1,10 @@
 #pragma once
 
+#include <uni20/config.hpp>
+#if UNI20_ENABLE_MPLAPACK_MPFR
+#include "linear_solve_mpfr.hpp"
+#endif
+
 /**
  * \file linear_solve.hpp
  * \ingroup linalg

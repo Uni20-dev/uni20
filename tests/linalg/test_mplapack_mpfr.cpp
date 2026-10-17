@@ -45,11 +45,11 @@ constexpr auto gemm_coefficient_forms = std::array{requires(DenseMatrix<S> & out
                                                             Beta beta){linalg::gemm(out, alpha, a, a, beta);
 } // namespace
 , requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta) {
-  linalg::gemm(linalg::MplapackMpfrBackend{}, out, alpha, a, a, beta);
+  linalg::gemm(linalg::BlasBackend{}, out, alpha, a, a, beta);
 }, requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta, Precision p) {
   linalg::gemm(out, alpha, a, a, beta, p);
 }, requires(DenseMatrix<S>& out, DenseMatrix<S> const& a, Alpha alpha, Beta beta, Precision p) {
-  linalg::gemm(linalg::MplapackMpfrBackend{}, out, alpha, a, a, beta, p);
+  linalg::gemm(linalg::BlasBackend{}, out, alpha, a, a, beta, p);
 }
 }
 ;
@@ -504,13 +504,13 @@ TEST(MpfrLinalg, SyncGemmAcceptsNumericCoefficientsInEveryForm)
     linalg::gemm(out, 0.5_mp, a, b, quarter);
     EXPECT_EQ((out[0, 0]), S{7});
     out[0, 0] = S{4};
-    linalg::gemm(linalg::MplapackMpfrBackend{}, out, 0.5_mp, a, b, quarter);
+    linalg::gemm(linalg::BlasBackend{}, out, 0.5_mp, a, b, quarter);
     EXPECT_EQ((out[0, 0]), S{7});
     out[0, 0] = S{4};
     linalg::gemm(out, quarter, a, b, 0.5_mp, p);
     EXPECT_EQ((out[0, 0]), S{5});
     out[0, 0] = S{4};
-    linalg::gemm(linalg::MplapackMpfrBackend{}, out, quarter, a, b, 0.5_mp, p);
+    linalg::gemm(linalg::BlasBackend{}, out, quarter, a, b, 0.5_mp, p);
     EXPECT_EQ((out[0, 0]), S{5});
   };
   check.operator()<mpreal>();

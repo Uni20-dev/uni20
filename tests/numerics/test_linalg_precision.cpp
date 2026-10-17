@@ -67,13 +67,8 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderGemmRetainsIncrement)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "blas_or_mplapack");
-#if UNI20_ENABLE_MPLAPACK_MPFR
-  if constexpr (C::runtime)
-    check_product<C>(linalg::MplapackMpfrBackend{});
-  else
-#endif
 #if UNI20_ENABLE_MPLAPACK_BINARY80
-      if constexpr (C::binary80_provider)
+  if constexpr (C::binary80_provider)
     check_product<C>(linalg::MplapackBinary80Backend{});
   else
 #endif
@@ -112,13 +107,8 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
 {
   using C = TypeParam;
   this->RecordProperty("backend", "lapack_or_mplapack");
-#if UNI20_ENABLE_MPLAPACK_MPFR
-  if constexpr (C::runtime)
-    check_solve<C>(linalg::MplapackMpfrBackend{}, false);
-  else
-#endif
 #if UNI20_ENABLE_MPLAPACK_BINARY80
-      if constexpr (C::binary80_provider)
+  if constexpr (C::binary80_provider)
     check_solve<C>(linalg::MplapackBinary80Backend{}, false);
   else
 #endif
@@ -131,7 +121,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
 #if UNI20_ENABLE_MPLAPACK_MPFR
   if constexpr (C::runtime)
-    check_solve<C>(linalg::MplapackMpfrBackend{}, true);
+    check_solve<C>(linalg::LapackBackend{}, true);
   else
 #endif
     check_solve<C>(linalg::CpuReferenceBackend{}, true);
@@ -169,7 +159,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, SolveAccuracyImprovesWithPrecision)
   this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
 #if UNI20_ENABLE_MPLAPACK_MPFR
   if constexpr (C::runtime)
-    check_solve_accuracy<C>(linalg::MplapackMpfrBackend{});
+    check_solve_accuracy<C>(linalg::LapackBackend{});
   else
 #endif
     check_solve_accuracy<C>(linalg::CpuReferenceBackend{});
