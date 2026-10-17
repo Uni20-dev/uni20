@@ -523,16 +523,16 @@ void gelsy(blas_int m, blas_int n, blas_int nrhs, Scalar* a, blas_int lda, Scala
   }
 }
 
-/// \brief Compute a real dense QR factorization through the configured LAPACK backend.
-template <uni20::LapackReal Scalar>
+/// \brief Compute a real or complex dense QR factorization through the configured LAPACK backend.
+template <uni20::LapackScalar Scalar>
 void geqrf(blas_int m, blas_int n, Scalar* a, blas_int lda, Scalar* tau, Scalar* work, blas_int lwork)
 {
   blas_int const info = unchecked::geqrf(m, n, a, lda, tau, work, lwork);
   detail::check_invalid_argument("geqrf", info);
 }
 
-/// \brief Compute a real dense LQ factorization through the configured LAPACK backend.
-template <uni20::LapackReal Scalar>
+/// \brief Compute a real or complex dense LQ factorization through the configured LAPACK backend.
+template <uni20::LapackScalar Scalar>
 void gelqf(blas_int m, blas_int n, Scalar* a, blas_int lda, Scalar* tau, Scalar* work, blas_int lwork)
 {
   blas_int const info = unchecked::gelqf(m, n, a, lda, tau, work, lwork);
@@ -555,16 +555,16 @@ void gerqf(blas_int m, blas_int n, Scalar* a, blas_int lda, Scalar* tau, Scalar*
   detail::check_invalid_argument("gerqf", info);
 }
 
-/// \brief Generate an explicit real Q factor from a QR factorization.
-template <uni20::LapackReal Scalar>
+/// \brief Generate an explicit orthogonal or unitary Q factor from a QR factorization.
+template <uni20::LapackScalar Scalar>
 void orgqr(blas_int m, blas_int n, blas_int k, Scalar* a, blas_int lda, Scalar* tau, Scalar* work, blas_int lwork)
 {
   blas_int const info = unchecked::orgqr(m, n, k, a, lda, tau, work, lwork);
   detail::check_invalid_argument("orgqr", info);
 }
 
-/// \brief Generate an explicit real Q factor from an LQ factorization.
-template <uni20::LapackReal Scalar>
+/// \brief Generate an explicit orthogonal or unitary Q factor from an LQ factorization.
+template <uni20::LapackScalar Scalar>
 void orglq(blas_int m, blas_int n, blas_int k, Scalar* a, blas_int lda, Scalar* tau, Scalar* work, blas_int lwork)
 {
   blas_int const info = unchecked::orglq(m, n, k, a, lda, tau, work, lwork);

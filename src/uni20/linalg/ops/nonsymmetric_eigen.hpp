@@ -4,9 +4,13 @@
  * \file nonsymmetric_eigen.hpp
  * \ingroup linalg
  * \brief Fixed-output dense nonsymmetric eigensystem operation.
+ * \details Precision may be inferred from the input matrix or supplied explicitly.
+ *          Fixed results require their native precision; runtime decompositions
+ *          require finite precision. Owning results record the selected default.
  */
 
 #include <uni20/linalg/backends/lapack/nonsymmetric_eigen.hpp>
+#include <uni20/linalg/decomposition_precision.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/tensor/concepts.hpp>
@@ -31,28 +35,35 @@ namespace uni20::linalg
 ///       are not rolled back and no partial-result API is provided.
 /// \note `compute_right_vectors`: If false, vector elements are unchanged and their dimensions
 ///       are ignored; a tensor of a supported type is still required.
-template <class BackendSelector, uni20::MutableRankedTensorView<2> MatrixTensor, class EigenScalar,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<2> MatrixTensor, class EigenScalar,
           uni20::MutableRankedTensorView<2> RightEigenvectorTensor>
 void nonsymmetric_eigen(BackendSelector&& selector, MatrixTensor&& matrix_work, std::span<EigenScalar> eigenvalues,
-                        RightEigenvectorTensor&& right_eigenvectors, bool compute_right_vectors)
+                        RightEigenvectorTensor&& right_eigenvectors, bool compute_right_vectors,
+                        std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
   auto right_eigenvector_descriptor = uni20::mdspec_of(right_eigenvectors);
-  dispatch_kernel(std::forward<BackendSelector>(selector),
-                  nonsymmetric_eigen_op{.compute_right_vectors = compute_right_vectors}, matrix_descriptor, eigenvalues,
-                  right_eigenvector_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+      std::forward<BackendSelector>(selector), nonsymmetric_eigen_op{.compute_right_vectors = compute_right_vectors}, p,
+      matrix_descriptor, eigenvalues, right_eigenvector_descriptor);
+
+  uni20::detail::record_output_precision(matrix_work, p);
+  if (compute_right_vectors) uni20::detail::record_output_precision(right_eigenvectors, p);
 }
 
 /// \brief Apply the destructive `nonsymmetric_eigen` contract using tensor storage policy.
 template <uni20::MutableRankedTensorView<2> MatrixTensor, class EigenScalar,
           uni20::MutableRankedTensorView<2> RightEigenvectorTensor>
 void nonsymmetric_eigen(MatrixTensor&& matrix_work, std::span<EigenScalar> eigenvalues,
-                        RightEigenvectorTensor&& right_eigenvectors, bool compute_right_vectors)
+                        RightEigenvectorTensor&& right_eigenvectors, bool compute_right_vectors,
+                        std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   auto operation = nonsymmetric_eigen_op{.compute_right_vectors = compute_right_vectors};
   auto selector = select_backend(operation, matrix_work, right_eigenvectors);
   nonsymmetric_eigen(selector, std::forward<MatrixTensor>(matrix_work), eigenvalues,
-                     std::forward<RightEigenvectorTensor>(right_eigenvectors), compute_right_vectors);
+                     std::forward<RightEigenvectorTensor>(right_eigenvectors), compute_right_vectors, p);
 }
 
 } // namespace uni20::linalg

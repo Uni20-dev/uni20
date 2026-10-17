@@ -426,8 +426,8 @@ workspaces, and Schur reordering indices.
 | `lu_factor`, `lu_factor_with_info` | Preserve a square matrix and return reusable packed LU with zero-based row swaps. | Owns read-only column-major host factors; the recoverable result contains factors only on success. See [LU](../linalg/lu.md). | Synchronous only. |
 | `lu_solve`, `lu_solve_inplace`, `lu_solve_inplace_with_info` | Reuse completed factors for one or more RHS columns. | Factors remain unchanged on success or failure. Preserving solves return an owner; in-place forms overwrite the RHS. Factor precision determines solve precision. | Synchronous only. |
 | `slogdet`, `slogdet_with_info` | Signed or complex-phase logarithmic determinant of a matrix or completed LU. | Matrix form factors once; factor form reduces in O(n). Singular returns phase zero and negative-infinite log magnitude. | Synchronous only. |
-| `qr_factorization`, `lq_factorization` | Reduced real QR or LQ using a destructive matrix workspace. | Factor outputs may resize; the matrix workspace is overwritten. | No direct wrapper; use async `qr` or `lq`. |
-| `qr(matrix)`, `lq(matrix)` | Preserve or consume a real matrix and return owning reduced factors. | Preserving calls materialize column-major host work. Consuming calls use an exact column-major host tensor directly as destructive workspace and otherwise materialize. QR returns `Q: m x k`, `R: k x n`; LQ returns `L: m x k`, `Q: k x n`, where `k = min(m,n)`. | Preserving and consuming forms return two independent Async outputs. |
+| `qr_factorization`, `lq_factorization` | Reduced real or complex QR or LQ using a destructive matrix workspace. | Factor outputs may resize; the matrix workspace is overwritten. | No direct wrapper; use async `qr` or `lq`. |
+| `qr(matrix)`, `lq(matrix)` | Preserve or consume a real or complex matrix and return owning reduced factors. | Preserving calls materialize column-major host work. Consuming calls use an exact column-major host tensor directly as destructive workspace and otherwise materialize. QR returns `Q: m x k`, `R: k x n`; LQ returns `L: m x k`, `Q: k x n`, where `k = min(m,n)`. | Preserving and consuming forms return two independent Async outputs. |
 | `matrix_exponential` | Compute into a fixed rank-two output. | Caller supplies compatible output. | Implemented for Async input and output; `time` may be immediate or Async. |
 | `self_adjoint_eigh` | Destructive LAPACK-style workspace operation. | Matrix workspace is overwritten; eigenvalue output may resize. | No direct wrapper. |
 | `eigh(matrix)` | Preserving value operation returning eigenvalues and eigenvectors. | Materializes work storage and returns two owners. | Implemented; returns two independent Async outputs. |
@@ -443,13 +443,14 @@ workspaces, and Schur reordering indices.
 | `reorder_schur` | Reorder an existing Schur form. | In-place mutation of Schur form and optionally vectors. | No value API yet; no application-level async wrapper. |
 | `symmetric_tridiagonal_eigen` | Tridiagonal eigensystem over caller-provided spans and tensor output. | LAPACK-style mutable work/output buffers. | No value API yet; no application-level async wrapper. |
 
-`gemm`, `assign_product`, `add_product`, square solves, LU factorization, and
-matrix-form `slogdet` accept a working precision through the same API for fixed
-and runtime scalar types. Their existing Async forms accept it too. Fixed types
-reject mismatched precision requests; omitted runtime precision is inferred from
-participating tensor defaults after the inputs become readable. This does not
-add precision arguments or MPFR provider support to the other operations in the
-table. See [generic precision](scalar_policy.md#generic-precision) and
+`gemm`, `assign_product`, `add_product`, square solves, LU factorization,
+matrix-form `slogdet`, QR/LQ, eigensystems, SVD and truncated SVD accept a working
+precision through the same API for fixed and runtime scalar types. Their existing
+Async forms accept it too. Fixed types reject mismatched precision requests;
+omitted runtime precision is inferred from participating tensor defaults after
+the inputs become readable. Schur, tridiagonal eigensystems and matrix
+exponentials still need separate runtime-precision integration.
+See [generic precision](scalar_policy.md#generic-precision) and
 [dense operation contracts](../linalg/dense_operation_contracts.md#working-precision).
 
 Preserving Async `solve`, `qr`, `lq`, `eigh`, exact SVD, and truncated SVD overloads
@@ -667,6 +668,13 @@ Unhandled coroutine exceptions propagate to every output `WriteBuffer` passed
 to the task. Reads of those output epochs observe the failure. Synchronous
 `CHECK` and `PANIC` still identify internal logic errors and may terminate the
 process; bindings must validate user input before entering such paths.
+
+Precision validation inside a scheduled decomposition follows the same rule.
+A preserving call leaves its input readable when the requested precision is
+invalid. A consuming call has enrolled the input as a writer, so the input and
+all result epochs observe the precision error. It does not promise rejection
+before consumption or input preservation. Validation before `take()` inside
+the coroutine would still propagate the exception to that input writer epoch.
 
 ## Adding an Async Operation
 

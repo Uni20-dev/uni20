@@ -9,8 +9,8 @@ scalars are exact zero; explicit `uninitialized` supplies an unset placeholder.
 They hold exact rationals until finite working precision is supplied. Their
 precision cannot be described by type-only numerical limits. Their `Real`/`Complex` traits do not imply BLAS/LAPACK support. Tensor
 allocation and dense backend integration are separate from scalar support.
-`UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a narrowly scoped
-[matrix-product and LU-solve provider](../linalg/mplapack_mpfr.md), selected through
+`UNI20_ENABLE_MPLAPACK_MPFR=ON` adds a
+[matrix-product, solve and dense-decomposition provider](../linalg/mplapack_mpfr.md), selected through
 `BlasBackend` and `LapackBackend`, without extending
 the type-only `LapackScalar` concepts or generic Krylov support.
 
@@ -70,7 +70,8 @@ following their parent's default. Host tensor constructors and
 `at_precision(tensor, p)` accept precision for fixed types too, validating the
 match before allocation or copying.
 
-The matrix-product, GEMM, square-solve, LU and log-determinant interfaces accept
+The matrix-product, GEMM, square-solve, LU, log-determinant, QR/LQ, self-adjoint
+and general eigensystem, SVD and truncated-SVD interfaces accept
 the same explicit precision argument for native and runtime scalars. Omitting it
 selects precision from participating tensor defaults; exact defaults are neutral,
 and different finite defaults require an override. An explicit request fixes the

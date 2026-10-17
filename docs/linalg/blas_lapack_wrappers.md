@@ -5,8 +5,8 @@
 The direct descriptors below describe the native provider ABI. Optional
 [MPFR/MPC kernels](mplapack_mpfr.md) use the same `BlasBackend`/`LapackBackend`
 families, but pack logical values into owning provider objects instead of using
-native pointers directly. Their current coverage is GEMM, square solves and
-reusable LU; the [MPFR roadmap](mplapack_mpfr.md#integration-roadmap) tracks further
+native pointers directly. Their current coverage includes GEMM, square solves,
+reusable LU, QR/LQ, self-adjoint and general eigensystems, and SVD; the [MPFR roadmap](mplapack_mpfr.md#integration-roadmap) tracks further
 routine and workspace support.
 
 This layer is below tensor front-end dispatch and above the existing raw

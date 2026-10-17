@@ -45,10 +45,15 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
   static_assert(factor == KernelTypeAcceptance::no);
   static_assert(reuse == KernelTypeAcceptance::no);
 #endif
-  // A shared backend name must not enable unrelated routines or bypass the
-  // explicit working precision required by raw runtime-scalar descriptors.
+  // Tensor-level support does not imply a native raw-pointer LAPACK ABI, and
+  // raw runtime-scalar descriptors still require explicit working precision.
+  static_assert(!LapackScalar<S>);
   static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M>() == KernelTypeAcceptance::no);
+#if UNI20_ENABLE_MPLAPACK_MPFR
+  static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M, Precision>() == KernelTypeAcceptance::yes);
+#else
   static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, M, M, M, Precision>() == KernelTypeAcceptance::no);
+#endif
   static_assert(probe_dispatch_kernel_types<BlasBackend, gemm_op, M, S, R, R, S>() == KernelTypeAcceptance::no);
   static_assert(probe_dispatch_kernel_types<LapackBackend, linear_solve_op, M, M, SolveInfo, Options>() ==
                 KernelTypeAcceptance::no);

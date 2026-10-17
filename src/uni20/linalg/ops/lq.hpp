@@ -3,11 +3,15 @@
 /**
  * \file lq.hpp
  * \ingroup linalg
- * \brief Destructive-workspace and value-producing reduced real LQ factorizations.
+ * \brief Destructive-workspace and value-producing reduced real or complex LQ factorizations.
+ * \details Precision may be inferred from the input matrix or supplied explicitly.
+ *          Fixed results require their native precision; runtime decompositions
+ *          require finite precision. Owning results record the selected default.
  */
 
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/linalg/backends/lapack/lq.hpp>
+#include <uni20/linalg/decomposition_precision.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/tensor/concepts.hpp>
@@ -29,7 +33,8 @@ using lq_matrix_extents = stdex::dextents<uni20::index_type, 2>;
 template <class LTensor, class QTensor, class MatrixTensor>
 concept CompatibleLqTensors =
     uni20::MutableRankedTensorView<LTensor, 2> && uni20::MutableRankedTensorView<QTensor, 2> &&
-    uni20::MutableRankedTensorView<MatrixTensor, 2> && uni20::LapackReal<uni20::tensor_element_t<MatrixTensor>> &&
+    uni20::MutableRankedTensorView<MatrixTensor, 2> &&
+    detail::DecompositionScalar<uni20::tensor_element_t<MatrixTensor>> &&
     std::same_as<uni20::tensor_element_t<LTensor>, uni20::tensor_element_t<MatrixTensor>> &&
     std::same_as<uni20::tensor_element_t<QTensor>, uni20::tensor_element_t<MatrixTensor>>;
 
@@ -44,14 +49,19 @@ void prepare_lq(LTensor& l, QTensor& q, MatrixTensor const& matrix_work)
   uni20::prepare_output(q, lq_matrix_extents{rank, cols});
 }
 
-template <class BackendSelector, uni20::MutableRankedTensorView<2> LTensor, uni20::MutableRankedTensorView<2> QTensor,
-          uni20::MutableRankedTensorView<2> MatrixTensor>
-void dispatch_lq(BackendSelector&& selector, LTensor& l, QTensor& q, MatrixTensor& matrix_work)
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<2> LTensor,
+          uni20::MutableRankedTensorView<2> QTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
+void dispatch_lq(BackendSelector&& selector, LTensor& l, QTensor& q, MatrixTensor& matrix_work, Precision p)
 {
   auto l_descriptor = uni20::mdspec_of(l);
   auto q_descriptor = uni20::mdspec_of(q);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
-  dispatch_kernel(std::forward<BackendSelector>(selector), lq_op{}, l_descriptor, q_descriptor, matrix_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+      std::forward<BackendSelector>(selector), lq_op{}, p, l_descriptor, q_descriptor, matrix_descriptor);
+
+  uni20::detail::record_output_precision(l, p);
+  uni20::detail::record_output_precision(q, p);
+  uni20::detail::record_output_precision(matrix_work, p);
 }
 } // namespace detail
 
@@ -62,20 +72,23 @@ void dispatch_lq(BackendSelector&& selector, LTensor& l, QTensor& q, MatrixTenso
 /// \pre The two outputs and input workspace do not overlap.
 template <KernelBackendSelector BackendSelector, class LTensor, class QTensor, class MatrixTensor>
   requires detail::CompatibleLqTensors<LTensor, QTensor, MatrixTensor>
-void lq_factorization(BackendSelector&& selector, LTensor&& l, QTensor&& q, MatrixTensor&& matrix_work)
+void lq_factorization(BackendSelector&& selector, LTensor&& l, QTensor&& q, MatrixTensor&& matrix_work,
+                      std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   detail::prepare_lq(l, q, matrix_work);
-  detail::dispatch_lq(std::forward<BackendSelector>(selector), l, q, matrix_work);
+  detail::dispatch_lq(std::forward<BackendSelector>(selector), l, q, matrix_work, p);
 }
 
 /// \brief Compute reduced LQ in a destructive workspace using tensor storage policy.
 template <class LTensor, class QTensor, class MatrixTensor>
   requires detail::CompatibleLqTensors<LTensor, QTensor, MatrixTensor>
-void lq_factorization(LTensor&& l, QTensor&& q, MatrixTensor&& matrix_work)
+void lq_factorization(LTensor&& l, QTensor&& q, MatrixTensor&& matrix_work, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   detail::prepare_lq(l, q, matrix_work);
   auto selector = select_backend(lq_op{}, l, q, matrix_work);
-  detail::dispatch_lq(selector, l, q, matrix_work);
+  detail::dispatch_lq(selector, l, q, matrix_work, p);
 }
 
 /// \brief Owning reduced factors returned by `lq`.
@@ -98,13 +111,13 @@ template <class MatrixTensor> consteval bool can_use_lq_storage_as_workspace()
   return std::same_as<std::remove_cvref_t<MatrixTensor>, lq_matrix_tensor_t<MatrixTensor>>;
 }
 
-template <class BackendSelector, uni20::OwningTensor MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
-[[nodiscard]] auto lq_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work)
+[[nodiscard]] auto lq_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, Precision p)
 {
   lq_matrix_tensor_t<MatrixTensor> l;
   lq_matrix_tensor_t<MatrixTensor> q;
-  lq_factorization(std::forward<BackendSelector>(selector), l, q, matrix_work);
+  lq_factorization(std::forward<BackendSelector>(selector), l, q, matrix_work, p);
   return LqResult<decltype(l), decltype(q)>{.l = std::move(l), .q = std::move(q)};
 }
 
@@ -115,56 +128,60 @@ template <class MatrixTensor> [[nodiscard]] constexpr auto select_lq_backend()
 }
 } // namespace detail
 
-/// \brief Preserve a real matrix and return its reduced LQ factorization through an explicit selector.
+/// \brief Preserve a real or complex matrix and return its reduced LQ factorization through an explicit selector.
 template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
-  requires uni20::LapackReal<uni20::tensor_element_t<MatrixTensor>>
-[[nodiscard]] auto lq(BackendSelector&& selector, MatrixTensor const& matrix)
+  requires detail::DecompositionScalar<uni20::tensor_element_t<MatrixTensor>>
+[[nodiscard]] auto lq(BackendSelector&& selector, MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work));
+  return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
 }
 
-/// \brief Preserve a real matrix and return its reduced LQ factorization.
+/// \brief Preserve a real or complex matrix and return its reduced LQ factorization.
 template <uni20::RankedTensorView<2> MatrixTensor>
-  requires uni20::LapackReal<uni20::tensor_element_t<MatrixTensor>>
-[[nodiscard]] auto lq(MatrixTensor const& matrix)
+  requires detail::DecompositionScalar<uni20::tensor_element_t<MatrixTensor>>
+[[nodiscard]] auto lq(MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_lq_backend<decltype(matrix_work)>();
-  return detail::lq_from_work_matrix(std::move(selector), std::move(matrix_work));
+  return detail::lq_from_work_matrix(std::move(selector), std::move(matrix_work), p);
 }
 
-/// \brief Consume an owning real matrix and return its reduced LQ factorization through an explicit selector.
-/// \details An exact column-major host tensor is moved directly into the
+/// \brief Consume an owning real or complex matrix and return its reduced LQ factorization through an explicit
+/// selector. \details An exact column-major host tensor is moved directly into the
 ///          destructive workspace. Other owning tensor views are materialized.
 template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedTensorView<MatrixTensor, 2> &&
-           uni20::LapackReal<uni20::tensor_element_t<MatrixTensor>> && (!std::is_lvalue_reference_v<MatrixTensor>) &&
-           (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto lq(BackendSelector&& selector, MatrixTensor&& matrix)
+           detail::DecompositionScalar<uni20::tensor_element_t<MatrixTensor>> &&
+           (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
+[[nodiscard]] auto lq(BackendSelector&& selector, MatrixTensor&& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_use_lq_storage_as_workspace<MatrixTensor>())
   {
-    return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::forward<MatrixTensor>(matrix));
+    return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::forward<MatrixTensor>(matrix), p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-    return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work));
+    return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
   }
 }
 
-/// \brief Consume an owning real matrix and return its reduced LQ factorization.
+/// \brief Consume an owning real or complex matrix and return its reduced LQ factorization.
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedTensorView<MatrixTensor, 2> &&
-           uni20::LapackReal<uni20::tensor_element_t<MatrixTensor>> && (!std::is_lvalue_reference_v<MatrixTensor>) &&
-           (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto lq(MatrixTensor&& matrix)
+           detail::DecompositionScalar<uni20::tensor_element_t<MatrixTensor>> &&
+           (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
+[[nodiscard]] auto lq(MatrixTensor&& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   using work_type = std::conditional_t<detail::can_use_lq_storage_as_workspace<MatrixTensor>(),
                                        std::remove_cvref_t<MatrixTensor>, detail::lq_matrix_tensor_t<MatrixTensor>>;
   auto selector = detail::select_lq_backend<work_type>();
-  return uni20::linalg::lq(std::move(selector), std::forward<MatrixTensor>(matrix));
+  return uni20::linalg::lq(std::move(selector), std::forward<MatrixTensor>(matrix), p);
 }
 
 } // namespace uni20::linalg

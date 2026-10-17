@@ -9,6 +9,14 @@ namespace uni20::linalg::detail
 /// \details Fixed scalar types encode precision in their type; runtime scalar
 ///          kernels receive the concrete operation precision explicitly.
 template <class S, class Selector, class Operation, class... Args>
+  requires((has_runtime_precision_v<S> &&
+            requires(Selector&& selector, Operation const& op, Precision p, Args&&... args) {
+              dispatch_kernel(std::forward<Selector>(selector), op, std::forward<Args>(args)..., p);
+            }) ||
+           (!has_runtime_precision_v<S> &&
+            requires(Selector&& selector, Operation const& op, Args&&... args) {
+              dispatch_kernel(std::forward<Selector>(selector), op, std::forward<Args>(args)...);
+            }))
 void dispatch_at_precision(Selector&& selector, Operation const& operation, Precision p, Args&&... args)
 {
   require_precision<S>(p);
