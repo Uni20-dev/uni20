@@ -5,6 +5,10 @@ independent factor, working and residual scalar/precision roles. It is included
 by `<uni20/linalg/linalg.hpp>`. Native scalars use native arithmetic; MPFR/MPC
 values use explicit finite precision without changing ambient defaults.
 
+The three precision roles follow the framework of Carson and Higham (2018),
+`[CarsonHigham2018]` in the references below. The stopping and scaling
+policies of this implementation are specified below.
+
 ```cpp
 using namespace uni20;
 using namespace uni20::linalg;
@@ -161,3 +165,15 @@ residual arithmetic, checking the permitted cross-family precision conversions.
 
 Mixed-precision GMRES, matrix-free iMPS operators and async execution are separate
 work in the [numerical infrastructure plan](precision_numerics_plan.md).
+
+## References
+
+The first two papers provide the background for the implemented LU refinement.
+The GMRES and least-squares entries support planned extensions.
+
+| Key | Reference | Relevance |
+| --- | --- | --- |
+| `[Higham1997]` | N. J. Higham, ["Iterative refinement for linear systems and LAPACK"](https://doi.org/10.1093/imanum/17.4.495), *IMA Journal of Numerical Analysis* **17**(4), 495–509 (1997). | Analysis of fixed- and mixed-precision iterative refinement and its stability. |
+| `[CarsonHigham2018]` | E. Carson and N. J. Higham, ["Accelerating the Solution of Linear Systems by Iterative Refinement in Three Precisions"](https://doi.org/10.1137/17M1140819), *SIAM Journal on Scientific Computing* **40**(2), A817–A847 (2018). | Three precision roles, LU-based corrections, and the GMRES-based extension; analysis of forward, normwise backward and componentwise backward errors. |
+| `[AmestoyEtAl2024]` | P. Amestoy, A. Buttari, N. J. Higham, J.-Y. L'Excellent, T. Mary and B. Vieublé, ["Five-Precision GMRES-Based Iterative Refinement"](https://doi.org/10.1137/23M1549079), *SIAM Journal on Matrix Analysis and Applications* **45**(1), 529–552 (2024). | Separates precision for the preconditioned matrix-vector product from the remaining GMRES arithmetic, guiding the future GMRES precision policy. |
+| `[CarsonHighamPranesh2020]` | E. Carson, N. J. Higham and S. Pranesh, ["Three-Precision GMRES-Based Iterative Refinement for Least Squares Problems"](https://doi.org/10.1137/20M1316822), *SIAM Journal on Scientific Computing* **42**(6), A4063–A4083 (2020). | QR-preconditioned augmented-system refinement for a future least-squares extension. |

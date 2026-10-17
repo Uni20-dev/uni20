@@ -135,6 +135,9 @@ requiring a public generic correction-solver framework in the first PR.
 
 ### Precision roles
 
+Full bibliographic entries and their roles in the implementation and follow-up
+work are collected in the References section of [LU refinement](lu_refinement.md).
+
 [Carson and Higham (2018)](https://doi.org/10.1137/17M1140819) distinguish
 factorization precision, working precision for the solution and its updates,
 and residual-evaluation precision. Their correction equation can use the LU
