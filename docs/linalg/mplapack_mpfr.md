@@ -3,7 +3,8 @@
 The optional CPU provider connects `mpreal` and `complex<mpreal>` tensors to
 MPLAPACK's serial MPFR/MPC routines through `BlasBackend` and `LapackBackend`.
 It supports real and complex GEMM, square solves, [reusable LU and log determinants](lu.md),
-reduced QR/LQ, symmetric/Hermitian eigensystems, SVD, and general eigensystems.
+reduced QR/LQ, [full-rank least squares](least_squares.md), symmetric/Hermitian
+eigensystems, SVD, and general eigensystems.
 It does not extend the native raw-pointer LAPACK scalar traits, Krylov support,
 Schur routines, or GPU arithmetic.
 
@@ -192,7 +193,7 @@ runtime-precision tensors without specifying coefficient precision.
 
 The ordinary tensor APIs support real `mpreal` and `complex<mpreal>` through
 `LapackBackend`. Fixed scalar types use the same precision arguments where their
-provider is available. Binary80 decompositions are not yet wired.
+provider is available, including configured binary80 decompositions.
 
 ```cpp
 #include <uni20/linalg/ops/qr.hpp>
@@ -314,11 +315,15 @@ public frontends or weakening the existing tensor and async contracts.
    QR/LQ wrappers are included. The provider routines are `R/Cgeqrf`,
    `Rorgqr/Cungqr`, `R/Cgelqf`, `Rorglq/Cunglq`, `Rsyev/Cheev`, `R/Cgesvd`
    and `R/Cgeev`.
-4. **Remaining dense capabilities.** Add tridiagonal eigensolvers, Schur
+4. **Least squares and diagnostics.** [Full-column-rank least squares](least_squares.md)
+   reuses provider QR with recoverable diagonal checks and residual norms.
+   Rank-aware solving and LU condition estimates follow the
+   [numerical infrastructure plan](precision_numerics_plan.md).
+5. **Remaining dense capabilities.** Add tridiagonal eigensolvers, Schur
    decomposition/reordering and any further routines required by projected
    algorithms. Their precision and scalar eligibility need explicit coverage;
    dense QR/SVD support does not automatically enable them.
-5. **Projected algorithms and allocation costs.** Enable MPFR Krylov paths only
+6. **Projected algorithms and allocation costs.** Enable MPFR Krylov paths only
    once their required dense routines, constants, tolerances and workspaces are
    precision-generic and validated. Remove redundant host/provider packing where
    measurements justify it; preserve logical accessor semantics and the owning

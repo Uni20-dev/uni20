@@ -51,6 +51,12 @@ a separate 512-bit analytic oracle checks improved QR/eigenvalue/SVD accuracy.
 
 ## Evidence required for numerical support
 
+The least-squares probes force CPU and LAPACK independently, covering
+inconsistent rectangular fits, complex residual orthogonality, exact-rational
+solution references, retained low bits, extended exponent range and a 512-bit
+accuracy oracle when MPFR is configured. CPU probes include finite MPFR/MPC
+arithmetic without requiring the MPLAPACK provider.
+
 1. **Correctness:** run the same deterministic mathematical problem across the
    case list, using exact analytic data or an independent higher-precision oracle.
    Include nonzero imaginary components in complex tests.

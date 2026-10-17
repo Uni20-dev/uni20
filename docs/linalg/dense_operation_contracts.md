@@ -54,7 +54,7 @@ with exact defaults neutral.
 GEMM includes the output default when `beta` is nonzero. Differing finite
 defaults require an explicit choice. These arguments do not extend provider
 coverage to other operations. See the [generic precision contract](../tensor/scalar_policy.md#generic-precision),
-[square solves](linear_solve.md#working-precision), and [LU precision policy](lu.md#precision-and-providers).
+[square solves](linear_solve.md#working-precision), [least squares](least_squares.md), and [LU precision policy](lu.md#precision-and-providers).
 
 For decompositions, the input matrix alone supplies the inferred precision;
 preexisting output defaults do not participate. Approximation requires finite

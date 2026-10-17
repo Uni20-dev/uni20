@@ -426,6 +426,7 @@ workspaces, and Schur reordering indices.
 | `lu_factor`, `lu_factor_with_info` | Preserve a square matrix and return reusable packed LU with zero-based row swaps. | Owns read-only column-major host factors; the recoverable result contains factors only on success. See [LU](../linalg/lu.md). | Synchronous only. |
 | `lu_solve`, `lu_solve_inplace`, `lu_solve_inplace_with_info` | Reuse completed factors for one or more RHS columns. | Factors remain unchanged on success or failure. Preserving solves return an owner; in-place forms overwrite the RHS. Factor precision determines solve precision. | Synchronous only. |
 | `slogdet`, `slogdet_with_info` | Signed or complex-phase logarithmic determinant of a matrix or completed LU. | Matrix form factors once; factor form reduces in O(n). Singular returns phase zero and negative-infinite log magnitude. | Synchronous only. |
+| `least_squares_with_info`, `least_squares` | Full-column-rank QR fit of rectangular `A * X` to `B`. | Preserves inputs; returns an owning solution and recoverable diagnostics/residual norms, or a strict solution. See [least squares](../linalg/least_squares.md). | Synchronous only. |
 | `qr_factorization`, `lq_factorization` | Reduced real or complex QR or LQ using a destructive matrix workspace. | Factor outputs may resize; the matrix workspace is overwritten. | No direct wrapper; use async `qr` or `lq`. |
 | `qr(matrix)`, `lq(matrix)` | Preserve or consume a real or complex matrix and return owning reduced factors. | Preserving calls materialize column-major host work. Consuming calls use an exact column-major host tensor directly as destructive workspace and otherwise materialize. QR returns `Q: m x k`, `R: k x n`; LQ returns `L: m x k`, `Q: k x n`, where `k = min(m,n)`. | Preserving and consuming forms return two independent Async outputs. |
 | `matrix_exponential` | Compute into a fixed rank-two output. | Caller supplies compatible output. | Implemented for Async input and output; `time` may be immediate or Async. |
@@ -444,7 +445,7 @@ workspaces, and Schur reordering indices.
 | `symmetric_tridiagonal_eigen` | Tridiagonal eigensystem over caller-provided spans and tensor output. | LAPACK-style mutable work/output buffers. | No value API yet; no application-level async wrapper. |
 
 `gemm`, `assign_product`, `add_product`, square solves, LU factorization,
-matrix-form `slogdet`, QR/LQ, eigensystems, SVD and truncated SVD accept a working
+matrix-form `slogdet`, least squares, QR/LQ, eigensystems, SVD and truncated SVD accept a working
 precision through the same API for fixed and runtime scalar types. Their existing
 Async forms accept it too. Fixed types reject mismatched precision requests;
 omitted runtime precision is inferred from participating tensor defaults after

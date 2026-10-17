@@ -28,6 +28,7 @@ general eigensystems through `LapackBackend`.
 | GEMM | `Rgemm` | `Cgemm` |
 | LU and square solve | `Rgetrf`, `Rgetrs` | `Cgetrf`, `Cgetrs` |
 | Reduced QR | `Rgeqrf`, `Rorgqr` | `Cgeqrf`, `Cungqr` |
+| Full-column-rank least squares | Reduced QR above, then scalar triangular solve | Reduced QR above, then scalar triangular solve |
 | Reduced LQ | `Rgelqf`, `Rorglq` | `Cgelqf`, `Cunglq` |
 | Self-adjoint eigensystem | `Rsyev` | `Cheev` |
 | SVD, including values-only and one-sided factors | `Rgesvd` | `Cgesvd` |
