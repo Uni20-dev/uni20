@@ -10,14 +10,15 @@
 
 namespace uni20::linalg
 {
-/// \brief Numerical outcome of full-column-rank QR least squares.
+/// \brief Numerical outcome of QR or SVD least squares.
 enum class LeastSquaresStatus
 {
   success,
   zero_diagonal,
   small_diagonal,
   nonfinite_input,
-  nonfinite_result
+  nonfinite_result,
+  nonconvergence
 };
 
 /// \brief Completed numerical attempt; success does not certify rank or conditioning.
@@ -26,6 +27,8 @@ struct LeastSquaresInfo
     LeastSquaresStatus status = LeastSquaresStatus::success;
     /// \brief Zero-based QR column rejected by the diagonal policy, not a numerical rank.
     std::optional<std::size_t> column = {};
+    /// \brief Provider nonconvergence count for an SVD attempt, when available.
+    std::optional<std::size_t> unconverged = {};
     [[nodiscard]] bool succeeded() const noexcept { return this->status == LeastSquaresStatus::success; }
 };
 

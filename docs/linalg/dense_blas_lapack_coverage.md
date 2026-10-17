@@ -20,13 +20,16 @@ backends.
 
 The optional [MPFR/MPC provider](mplapack_mpfr.md) uses explicit-precision
 provider arrays. It supplies real/complex GEMM through `BlasBackend`, and square
-solves, reusable LU/log determinants, QR/LQ, self-adjoint eigensystems, SVD and
+solves, reusable LU/log determinants, LU condition estimates, QR/LQ, QR and SVD
+least squares, self-adjoint eigensystems, SVD and
 general eigensystems through `LapackBackend`.
 
 | MPFR/MPC operation | Real provider | Complex provider |
 | --- | --- | --- |
 | GEMM | `Rgemm` | `Cgemm` |
 | LU and square solve | `Rgetrf`, `Rgetrs` | `Cgetrf`, `Cgetrs` |
+| LU reciprocal condition estimate (one/infinity norm) | `Rgecon` | `Cgecon` |
+| Rank-aware minimum-norm least squares | `Rgelss` | `Cgelss` |
 | Reduced QR | `Rgeqrf`, `Rorgqr` | `Cgeqrf`, `Cungqr` |
 | Full-column-rank least squares | Reduced QR above, then scalar triangular solve | Reduced QR above, then scalar triangular solve |
 | Reduced LQ | `Rgelqf`, `Rorglq` | `Cgelqf`, `Cunglq` |
@@ -36,12 +39,13 @@ general eigensystems through `LapackBackend`.
 
 Operation acceptance remains specific to these kernels. This coverage does not
 imply MPFR Schur, tridiagonal, other surveyed routines or projected Krylov support.
-Native float32/64 and binary128 also support complex QR/LQ through their
+Native float32/64 and binary128 also have active real/complex GELSS and GECON
+operation adapters, and support complex QR/LQ through their
 `geqrf`/`ungqr` and `gelqf`/`unglq` provider wrappers.
 
 The optional [binary80 adapter](mplapack_binary80.md) covers real and complex
 GEMM through `BlasBackend` and real LU/solve, QR/LQ, self-adjoint/general
-eigensystems and all SVD forms through `LapackBackend`. Its decomposition
+eigensystems and all SVD forms, GELSS and GECON through `LapackBackend`. Its decomposition
 routines match the MPFR table above. Complex LU and decompositions require a
 `long double` provider; they are disabled for distinct `_Float64x` because its
 generic complex division can silently overflow. This does not extend the broad
@@ -120,7 +124,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense real general-band equilibration | yes | yes | n/a | n/a | Dense projected general-band row/column scaling diagnostics through LAPACK `gbequ`/`gbequb`. |
 | Dense real general-band reciprocal condition estimate | yes | yes | n/a | n/a | Dense projected general-band one-norm reciprocal condition estimate through LAPACK `gbtrf`/`gbcon`. |
 | Dense real general tridiagonal solve, condition, and refinement | yes | yes | n/a | n/a | Dense projected reusable general tridiagonal LU solve plus diagnostics through LAPACK `gtsv`/`gttrf`/`gttrs`/`gtcon`/`gtrfs`/`gtsvx`. |
-| Dense general reciprocal condition estimate | yes | yes | yes | yes | Dense projected one-norm reciprocal condition estimate through LAPACK `gecon`. |
+| Dense general reciprocal condition estimate | yes | yes | yes | yes | Active `lu_rcond_op` provides one-/infinity-norm estimates from reusable factors through `gecon`; the older dense projected helper exposes one-norm only. |
 | Dense real triangular solve | yes | yes | n/a | n/a | Dense projected triangular solve through LAPACK `trtrs`. |
 | Dense real triangular refined solve | yes | yes | n/a | n/a | Dense projected triangular solve through LAPACK `trtrs` followed by `trrfs`, returning forward/backward error estimates. |
 | Dense real triangular inverse | yes | yes | n/a | n/a | Dense projected triangular inverse through LAPACK `trtri`. |
@@ -128,7 +132,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense real Sylvester equation solve | yes | yes | n/a | n/a | Dense projected Sylvester equation solve through LAPACK `trsyl`, returning LAPACK's scale factor and perturbation diagnostic. |
 | Dense general inverse | yes | yes | yes | yes | Dense projected utility inverse through LAPACK `getrf`/`getri`. |
 | Dense real least-squares solve | yes | yes | n/a | n/a | Dense projected least-squares/minimum-norm solve through LAPACK `gels`. |
-| Dense real SVD least-squares solve | yes | yes | n/a | n/a | Dense projected least-squares solve with singular values and rank through LAPACK `gelss`; default rank threshold is `100 * uni20::numeric_limits<Scalar>::epsilon()`. |
+| Dense SVD least-squares solve | yes | yes | yes | yes | Active `svd_least_squares_op` calls `gelss` with working-precision epsilon as the default relative cutoff, reporting rank and optional singular values. The quarantined real projected helper retains its separate `100 * epsilon()` policy. |
 | Dense real divide-and-conquer SVD least-squares solve | yes | yes | n/a | n/a | Dense projected least-squares solve with singular values and rank through LAPACK `gelsd`; default rank threshold is `100 * uni20::numeric_limits<Scalar>::epsilon()`. |
 | Dense real rank-revealing least-squares solve | yes | yes | n/a | n/a | Dense projected least-squares solve with column pivoting through LAPACK `gelsy`; default rank threshold is `100 * uni20::numeric_limits<Scalar>::epsilon()`. |
 | Dense real symmetric positive definite solve | yes | yes | n/a | n/a | Dense projected SPD solve through LAPACK `potrf`/`potrs`. |
@@ -218,6 +222,7 @@ provider/helper support; algorithm-level binary128 coverage remains in
 | Dense vector and matrix primitives | yes | yes | Scalar-generic Krylov host-side helpers. |
 | MPBLAS wrapper surface | yes | yes | Current wrapper surface covers projected `gemm`, `gemv`, rank-update, symmetric-rank, and Hermitian-rank operations used by active paths. |
 | Checked LAPACK norms, core LU, orthogonal factorizations, and SVD wrappers | yes | yes | Provider wrappers cover `lange`, `lansy`/`lanhe`, `lantr`, `gesv`, `getrf`, `getrs`, `getri`, `gecon`, real `geqrf`/`orgqr` and `gelqf`/`orglq`, plus `gesvd`, `gesdd`, and `gesvdx`. |
+| Dispatched SVD least squares and LU conditioning | yes | yes | `svd_least_squares_op` uses `Rgelss`/`Cgelss`; `lu_rcond_op` uses `Rgecon`/`Cgecon`, with shared precision probes. |
 | Tensor/linalg CPU helper probes | yes | n/a | Current probes cover dispatched real one-norm evaluation, dense solve, reduced QR/LQ, tensor reductions, and matrix-exponential prescaling in binary128 over `uni20::DenseMatrix`. |
 | Broad dense projected real helper inventory | regression | n/a | Quarantined API inventory exercised by the optional MPLAPACK binary128 regression target. |
 | Dense projected complex eigensystem and Schur helper inventory | n/a | regression | Quarantined API inventory exercised by the optional MPLAPACK binary128 regression target. |

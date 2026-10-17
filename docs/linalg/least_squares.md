@@ -1,7 +1,7 @@
-# Full-column-rank least squares
+# Least squares
 
 Include `<uni20/linalg/ops/least_squares.hpp>` or `<uni20/linalg/linalg.hpp>`.
-The synchronous interface minimizes `||A X - B||_2` independently for each RHS
+The full-column-rank QR interface minimizes `||A X - B||_2` independently for each RHS
 column. `A` is `m x n` with `m >= n`, `B` is `m x nrhs`, and the owning host
 solution is `n x nrhs`. Both inputs are preserved, including their precision
 defaults. Real and complex inputs use the same API and must have matching scalar
@@ -99,9 +99,94 @@ cancellation; it is neither a forward-error bound nor certified backward error.
 
 Zero RHS columns succeed without inspecting values. With zero unknowns, each
 residual is the norm of its RHS column; with zero rows it is zero. Finite precision
-and shape/option validation still apply. Underdetermined, rank-revealing, reusable
-QR-factor and async interfaces are subsequent work in the
-[numerical infrastructure plan](precision_numerics_plan.md).
+and shape/option validation still apply. Reusable QR-factor and async interfaces
+remain subsequent work in the [numerical infrastructure plan](precision_numerics_plan.md).
 
 Run `least_squares_precision_example` for an inconsistent rectangular fit and
 recoverable diagonal rejection, at native and optional arbitrary precision.
+
+## SVD minimum-norm least squares
+
+Include `<uni20/linalg/ops/svd_least_squares.hpp>` or the linalg umbrella. This
+explicitly selected method accepts tall, square, wide and rank-deficient A:
+
+```cpp
+auto result = svd_least_squares_with_info(a, b, p,
+    {.return_singular_values = true});
+if (result.info.succeeded()) {
+    auto const& x = *result.solution;
+    auto rank = result.diagnostics->rank;
+    auto cutoff = result.diagnostics->relative_cutoff;
+    auto const& singular_values = result.diagnostics->singular_values;
+}
+auto x = svd_least_squares(a, b, p); // Strict convenience.
+```
+
+The same precision, input preservation, scalar matching and host-readable view
+contracts apply as for QR. Every overload accepts an optional first backend
+selector. `SvdLeastSquaresOptions<Real>` has two fields:
+
+| Field | Default and meaning |
+| --- | --- |
+| `relative_cutoff` | Absent means `numeric_limits<Real>::epsilon(p)` at working precision. An explicit value must be finite and nonnegative. |
+| `return_singular_values` | False. When true, retain the `min(m,n)` singular values in descending order, before truncation. |
+
+The cutoff is relative to the largest singular value. **There is no dimension
+multiplier.** A positive singular value at or below `cutoff * largest` is
+excluded from the solution. Zero disables this relative truncation, but the
+provider's safe-minimum safeguards still apply; it does not promise inversion
+of every representable nonzero singular value. The reported cutoff is the
+actual working-precision relative value, not the provider's internal absolute
+underflow floor.
+
+For the retained singular directions, the method computes the minimum-norm
+least-squares solution. Rank deficiency, including rank zero, is successful.
+Discarding a nonzero singular value changes the problem: the returned solution
+minimizes the truncated problem and need not minimize the original residual.
+The caller chooses this regularization policy. QR never switches to SVD
+automatically, and the existing `least_squares` names keep their QR behavior.
+
+`SvdLeastSquaresResult<Scalar>` contains `info`, optional `solution`,
+`residual_norms`, and optional `diagnostics`. Diagnostics contain `rank`,
+`relative_cutoff`, and the optional singular-value vector. Solution and
+diagnostics are present exactly on success. Residuals are recomputed against
+the **converted original A and B**, including directions discarded by SVD;
+they have the same arithmetic limitations as the QR residuals.
+
+In addition to `nonfinite_input` and `nonfinite_result`, SVD can return
+`LeastSquaresStatus::nonconvergence`. `info.unconverged` records the provider's
+count of unconverged bidiagonal off-diagonals when available. No solution,
+residuals or rank diagnostics are published on failure, and dispatch does not
+retry it. Shape, options, allocation and provider-availability errors remain
+ordinary errors. SVD does not use the QR diagonal-rejection statuses.
+
+Empty dimensions are supported: zero unknowns return the norms of B; zero rows
+give a zero minimum-norm solution; both give rank zero. **Zero RHS columns still
+compute rank from A**, unlike the QR no-op contract. They therefore inspect A
+and can report nonfinite input or SVD nonconvergence.
+
+### SVD providers and dispatch
+
+`LapackBackend` calls `gelss`/`Rgelss`/`Cgelss`. It packs column-major input and
+padded RHS work internally; callers always supply ordinary `m x nrhs` B.
+Coverage is native float32/64, configured binary128, MPFR/MPC, and binary80
+subject to its complex-provider restriction. The raw complex GELSS wrappers
+also cover native float32/64 and binary128. This slice has no CPU-reference SVD
+least-squares kernel: disabling MPLAPACK leaves native float32/64 available,
+while extended types can still use the separate CPU QR method when full rank
+is appropriate. No type is silently narrowed or routed through a different
+algorithm.
+
+Direct `svd_least_squares_op` dispatch takes `(solution, A, B, residual_span,
+info, diagnostics, options)` and trailing precision for runtime scalars. Writable
+outputs must not overlap inputs or each other. Declines preserve all arguments;
+numerical failure publishes only `info`.
+
+`rank_aware_numerics_example` demonstrates a wide minimum-norm solution, a
+precision-dependent rank cutoff, and LU conditioning. Shared numerical tests
+force each configured provider at float32/64/80/128 and MPFR 128/256 bits,
+including supported complex types. They compare against independent rational
+solutions, verify improving accuracy and test values beyond double's exponent
+range.
+
+Provider contract: [LAPACK GELSS](https://www.netlib.org/lapack/double/dgelss.f).

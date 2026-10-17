@@ -217,6 +217,21 @@ namespace uni20::lapack::unchecked
   return static_cast<blas_int>(mplapack_info);
 }
 
+/// \brief Unchecked complex binary128 minimum-norm SVD least squares.
+[[nodiscard]] inline blas_int gelss(blas_int m, blas_int n, blas_int nrhs, uni20::complex<uni20::float128>* a,
+                                    blas_int lda, uni20::complex<uni20::float128>* b, blas_int ldb, uni20::float128* s,
+                                    uni20::float128 rcond, blas_int& rank, uni20::complex<uni20::float128>* work,
+                                    blas_int lwork, uni20::float128* rwork)
+{
+  UNI20_EXTERNAL_API_CALL(LAPACK, Cgelss, m, n, nrhs, a, lda, b, ldb, s, rcond, rank, work, lwork);
+  mplapackint provider_rank = 0, info = 0;
+  Cgelss(static_cast<mplapackint>(m), static_cast<mplapackint>(n), static_cast<mplapackint>(nrhs), a,
+         static_cast<mplapackint>(lda), b, static_cast<mplapackint>(ldb), s, rcond, provider_rank, work,
+         static_cast<mplapackint>(lwork), rwork, info);
+  rank = static_cast<blas_int>(provider_rank);
+  return static_cast<blas_int>(info);
+}
+
 [[nodiscard]] inline blas_int gelsd(blas_int m, blas_int n, blas_int nrhs, uni20::float128* a, blas_int lda,
                                     uni20::float128* b, blas_int ldb, uni20::float128* s, uni20::float128 rcond,
                                     blas_int& rank, uni20::float128* work, blas_int lwork, blas_int* iwork)

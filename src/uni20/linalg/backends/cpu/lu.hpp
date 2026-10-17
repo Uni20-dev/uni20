@@ -9,7 +9,8 @@ namespace uni20::linalg
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && RealOrComplex<typename A::value_type> &&
            (!has_runtime_precision_v<typename A::value_type>)
-consteval auto kernel_accepts_types(CpuReferenceBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
+consteval auto kernel_accepts_types(CpuReferenceBackend, lu_factor_op const&, A&, std::span<std::size_t>,
+                                    LuNorms<make_real_t<typename A::value_type>>*, SolveInfo&,
                                     SolveOptions<make_real_t<typename A::value_type>> const&)
 {
   return kernel_types_yes;
@@ -19,7 +20,8 @@ consteval auto kernel_accepts_types(CpuReferenceBackend, lu_factor_op const&, A&
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && RealOrComplex<typename A::value_type> &&
            (!has_runtime_precision_v<typename A::value_type>)
-KernelAttempt try_kernel(CpuReferenceBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
+KernelAttempt try_kernel(CpuReferenceBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
+                         LuNorms<make_real_t<typename A::value_type>>* norms, SolveInfo& info,
                          SolveOptions<make_real_t<typename A::value_type>> const& options)
 {
   detail::require_lu_shape(a, pivots.size());
@@ -34,6 +36,7 @@ KernelAttempt try_kernel(CpuReferenceBackend, lu_factor_op const&, A& a, std::sp
     info.status = SolveStatus::nonfinite_input;
     return KernelAttempt::success;
   }
+  detail::capture_lu_norms(s, norms, R{});
   auto scale = detail::lu_input_scale(s, R{});
   auto n = pivots.size();
   // Public factors are column-major; direct kernel callers may supply other layouts.

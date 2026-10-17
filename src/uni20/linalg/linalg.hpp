@@ -6,11 +6,11 @@
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/linalg/ops/gemm.hpp>
 #include <uni20/linalg/ops/gemv.hpp>
-#include <uni20/linalg/ops/linear_solve.hpp>
 #include <uni20/linalg/ops/least_squares.hpp>
-#include <uni20/linalg/ops/lu.hpp>
-#include <uni20/linalg/ops/slogdet.hpp>
+#include <uni20/linalg/ops/linear_solve.hpp>
 #include <uni20/linalg/ops/lq.hpp>
+#include <uni20/linalg/ops/lu.hpp>
+#include <uni20/linalg/ops/lu_rcond.hpp>
 #include <uni20/linalg/ops/matrix_exponential.hpp>
 #include <uni20/linalg/ops/matrix_norm.hpp>
 #include <uni20/linalg/ops/matrix_product.hpp>
@@ -19,7 +19,9 @@
 #include <uni20/linalg/ops/qr.hpp>
 #include <uni20/linalg/ops/schur.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
+#include <uni20/linalg/ops/slogdet.hpp>
 #include <uni20/linalg/ops/svd.hpp>
+#include <uni20/linalg/ops/svd_least_squares.hpp>
 #include <uni20/linalg/ops/tridiagonal_eigen.hpp>
 #include <uni20/linalg/ops/truncated_svd.hpp>
 #include <uni20/tensor/conjugate_inplace.hpp>

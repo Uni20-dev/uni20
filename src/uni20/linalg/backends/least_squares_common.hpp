@@ -53,6 +53,39 @@ bool check_diagonal(Matrix const& a, R const& scale, R const& tolerance, LeastSq
   return true;
 }
 
+// Recompute against the original converted inputs, independently of factorization.
+template <class S>
+bool residual_norms(DenseMatrix<S> const& av, DenseMatrix<S> const& bv, DenseMatrix<S> const& solution,
+                    std::vector<make_real_t<S>>& norms, Precision p)
+{
+  using R = make_real_t<S>;
+  std::size_t m = av.extent(0), n = av.extent(1), nrhs = bv.extent(1);
+  auto zero = scalar_at_precision<R>(0, p);
+  norms.assign(nrhs, zero);
+  // Reuse one RHS-sized scratch vector while accumulating along contiguous columns.
+  std::vector<S> error(m);
+  for (std::size_t j = 0; j < nrhs; ++j)
+  {
+    for (std::size_t i = 0; i < m; ++i)
+      error[i] = -bv[i, j];
+    for (std::size_t k = 0; k < n; ++k)
+    {
+      S const& value = solution[k, j];
+      for (std::size_t i = 0; i < m; ++i)
+        error[i] += av[i, k] * value;
+    }
+    for (std::size_t i = 0; i < m; ++i)
+    {
+      norms[j] = math::hypot(norms[j], math::abs(error[i]));
+      if (!uni20::isfinite(norms[j]))
+      {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Both implementations transform owned A and B into an upper triangular system.
 // Conversion, checks, back substitution and residual reporting are shared.
 template <class X, class A, class B, class Factor>
@@ -128,28 +161,11 @@ KernelAttempt run(X& x, A& a, B& b, std::span<make_real_t<typename A::value_type
     info.status = LeastSquaresStatus::nonfinite_result;
     return KernelAttempt::success;
   }
-  std::vector<R> norms(nrhs, zero);
-  // Reuse one RHS-sized scratch vector while accumulating along contiguous columns.
-  std::vector<S> error(m);
-  for (std::size_t j = 0; j < nrhs; ++j)
+  std::vector<R> norms;
+  if (!residual_norms(av, bv, solution, norms, p))
   {
-    for (std::size_t i = 0; i < m; ++i)
-      error[i] = -bv[i, j];
-    for (std::size_t k = 0; k < n; ++k)
-    {
-      S const& value = solution[k, j];
-      for (std::size_t i = 0; i < m; ++i)
-        error[i] += av[i, k] * value;
-    }
-    for (std::size_t i = 0; i < m; ++i)
-    {
-      norms[j] = math::hypot(norms[j], math::abs(error[i]));
-      if (!uni20::isfinite(norms[j]))
-      {
-        info.status = LeastSquaresStatus::nonfinite_result;
-        return KernelAttempt::success;
-      }
-    }
+    info.status = LeastSquaresStatus::nonfinite_result;
+    return KernelAttempt::success;
   }
   auto xa = acquire_host_write_access_sync(x);
   auto xs = xa.mdspan();

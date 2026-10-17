@@ -1,8 +1,9 @@
-# Reusable LU factors and logarithmic determinants
+# Reusable LU factors, condition estimates and logarithmic determinants
 
 `<uni20/linalg/ops/lu.hpp>` provides synchronous, owning LU factorization and
 repeated solves. `<uni20/linalg/ops/slogdet.hpp>` adds signed real or unit-phase
-complex log determinants. Both are included by `<uni20/linalg/linalg.hpp>`.
+complex log determinants. `<uni20/linalg/ops/lu_rcond.hpp>` adds reciprocal
+condition estimates. All are included by `<uni20/linalg/linalg.hpp>`.
 
 ```cpp
 using namespace uni20::linalg;
@@ -31,6 +32,8 @@ its data; copies are independent. Its accessors are read-only:
   triangle, including its diagonal, stores U.
 - `pivots()` gives zero-based row swaps in elimination order: at step `k`,
   exchange rows `k` and `pivots()[k]`. Applying these swaps to A gives **P A = L U**.
+- `norms()` returns optional original one- and infinity-norms, measured after
+  conversion to factor precision; capture is enabled by default.
 - `precision()` gives the factors' working precision for both fixed and runtime
   scalar types.
 
@@ -62,7 +65,7 @@ The existing `SolveStatus` vocabulary applies:
 | `nonfinite_result` | Conversion or numerical arithmetic produced a nonfinite value. |
 
 The optional `pivot` index is zero-based. Factorization takes
-`SolveOptions<Real>{.relative_pivot_tolerance = tolerance}`. Zero is the default,
+`LuOptions<Real>{.relative_pivot_tolerance = tolerance}`. Zero is the default,
 rejecting only zero pivots. A positive tolerance rejects a pivot when its
 mathematical magnitude divided by the maximum original entry magnitude is at
 most the tolerance. Complex magnitudes are represented in scaled form so that
@@ -76,9 +79,74 @@ unchanged and reusable.** Nothing is retried automatically at a new precision.
 A numerical failure is a completed dispatch attempt, so backend fallback does
 not run on modified factorization or RHS workspaces.
 
+## Reciprocal condition estimates
+
+```cpp
+auto factors = lu_factor(a); // Original norms retained by default.
+auto result = lu_rcond_with_info(factors, MatrixNorm::One);
+if (result.info.succeeded()) {
+    auto reciprocal_condition = *result.estimate;
+    // Application policy decides whether this sensitivity is acceptable.
+}
+auto rcond_inf = lu_rcond(factors, MatrixNorm::Infinity); // Strict convenience.
+```
+
+`LuConditionResult<Real>` holds `info`, the selected `norm`, and optional
+`estimate`. It estimates `1 / (norm(A) * norm(inv(A)))` using GECON without
+forming the inverse. The default is the induced one-norm; infinity-norm is the
+other supported choice. Complex entries use mathematical magnitude, not
+`abs(real) + abs(imag)`. Results use factor precision. No separate precision
+argument is needed: a higher-precision estimate of lower-precision factors
+would not repair those factors.
+
+A small estimate suggests sensitivity to perturbations; it is not a forward or
+backward error bound, a pivot rejection rule, or a convergence test. Zero can
+be a successful estimate, including provider underflow or a condition too poor
+for its safe triangular solves. Empty factors have reciprocal condition one.
+The application owns any decision to recompute at higher precision.
+
+The original norms are accumulated together in a column traversal before LU
+overwrites A, after conversion to the operation precision. Capture costs O(n²)
+work and O(n) temporary storage; the factor retains two real scalars. It can be
+disabled when unnecessary:
+
+```cpp
+auto factors = lu_factor(a, LuOptions<Real>{.retain_norms = false});
+auto estimate = lu_rcond_with_info(factors, MatrixNorm::One, original_one_norm);
+```
+
+The supplied norm must describe the original A **at factor precision**, in the
+requested norm; it is converted to that precision by the backend. Calling the
+retained-norm overload when capture was disabled is an ordinary error. A
+nonfinite original norm or condition result reports `nonfinite_result`, with
+no estimate. **Norm overflow never invalidates otherwise usable factors.**
+Factorization can succeed with an infinite captured norm; solves and log
+determinants remain available. A later condition-estimation failure preserves
+the factor object. Negative supplied norms and unsupported norm choices are
+ordinary errors.
+
+`LapackBackend` provides GECON for native float32/64, configured binary128,
+MPFR/MPC and binary80 with its existing complex-provider restriction. Any
+successful Uni20 LU may supply the factors, including CPU-produced factors
+when GECON supports that scalar. This slice has no CPU-reference condition
+estimator. With MPLAPACK disabled, native long-double LU/solves remain available
+but condition estimates for that type do not; dispatch reports unavailable
+support, without narrowing or explicitly constructing an inverse as a fallback.
+
+Direct `lu_rcond_op{norm}` dispatch takes `(estimate, packed_factors,
+original_norm, SolveInfo&)`, followed by finite precision for runtime scalars.
+Factors must already describe a successful LU at that precision. Declines
+preserve all arguments; numerical failures modify only `SolveInfo`. Row
+permutations need not be applied: both induced norms of the inverse are
+invariant under the resulting column permutation. See the
+[LAPACK GECON contract](https://www.netlib.org/lapack/double/dgecon.f).
+
+Run `rank_aware_numerics_example` for conditioning, rank truncation and the norm
+capture opt-out in the same precision-generic example.
+
 ## Logarithmic determinant
 
-`slogdet(a)` factors once; `slogdet(factors)` only reduces the stored diagonal.
+`slogdet(a)` factors once with norm capture disabled; `slogdet(factors)` only reduces the stored diagonal.
 Both return `LogDeterminant<Scalar>{phase, log_absolute}`. The phase is a real
 sign or a complex unit value, not an angle or a choice of complex logarithm
 branch. Swap parity contributes its sign. The reduction sums logarithms with
@@ -103,14 +171,14 @@ exact matrix that was rounded before factorization.
 ## Precision and providers
 
 Native scalars use their own precision. Every supported scalar also accepts an
-explicit `Precision` before optional solve options; for fixed types it must
+explicit `Precision` before optional operation options; for fixed types it must
 exactly match `precision_of(a)`. For `mpreal` and `complex<mpreal>`, omitting it
 uses the matrix's finite construction default:
 
 ```cpp
 auto p = uni20::Precision::bits(512);
 auto factors = lu_factor(a, p);
-auto attempt = lu_factor_with_info(a, p, SolveOptions<uni20::mpreal>{});
+auto attempt = lu_factor_with_info(a, p, LuOptions<uni20::mpreal>{});
 auto determinant = slogdet(a, p);
 auto x = lu_solve(factors, b); // Always uses factors.precision().
 ```

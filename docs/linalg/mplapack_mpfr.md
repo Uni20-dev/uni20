@@ -3,7 +3,7 @@
 The optional CPU provider connects `mpreal` and `complex<mpreal>` tensors to
 MPLAPACK's serial MPFR/MPC routines through `BlasBackend` and `LapackBackend`.
 It supports real and complex GEMM, square solves, [reusable LU and log determinants](lu.md),
-reduced QR/LQ, [full-rank least squares](least_squares.md), symmetric/Hermitian
+reduced QR/LQ, [QR and SVD least squares](least_squares.md), [LU condition estimates](lu.md#reciprocal-condition-estimates), symmetric/Hermitian
 eigensystems, SVD, and general eigensystems.
 It does not extend the native raw-pointer LAPACK scalar traits, Krylov support,
 Schur routines, or GPU arithmetic.
@@ -317,7 +317,11 @@ public frontends or weakening the existing tensor and async contracts.
    and `R/Cgeev`.
 4. **Least squares and diagnostics.** [Full-column-rank least squares](least_squares.md)
    reuses provider QR with recoverable diagonal checks and residual norms.
-   Rank-aware solving and LU condition estimates follow the
+   SVD minimum-norm solving now calls `R/Cgelss`, with epsilon as the default
+   relative cutoff and recoverable nonconvergence. `lu_rcond_with_info` calls
+   `R/Cgecon` using the original norms captured by LU. Both share the finite
+   working-precision policy, ordinary `LapackBackend`, real/complex support
+   and synchronous provider precision scopes. Further diagnostics follow the
    [numerical infrastructure plan](precision_numerics_plan.md).
 5. **Remaining dense capabilities.** Add tridiagonal eigensolvers, Schur
    decomposition/reordering and any further routines required by projected

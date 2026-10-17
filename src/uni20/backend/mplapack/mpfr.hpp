@@ -79,4 +79,21 @@ void svd(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpreal>
 /// \brief Complex counterpart of the packed general eigensystem.
 void eigen(std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> values, std::span<mpcomplex> vectors,
            bool compute_vectors, Precision p);
+
+/// \brief Packed GELSS; B has max(m,n) rows, values has min(m,n) entries.
+/// \details Returns zero on success or a positive nonconvergence count. Rank and
+///          outputs are published only on success. Requires nonzero m and n.
+std::size_t gelss(std::size_t m, std::size_t n, std::size_t nrhs, std::span<mpreal> a, std::span<mpreal> b,
+                  std::span<mpreal> values, mpreal const& cutoff, std::size_t& rank, Precision p);
+/// \brief Estimate reciprocal condition from packed successful LU and the original matrix norm.
+/// \details Norm is '1' or 'I'; returns one for an empty matrix. Factors are preserved.
+mpreal gecon(std::size_t n, std::span<mpreal const> a, mpreal const& anorm, char norm, Precision p);
+/// \brief Packed GELSS; B has max(m,n) rows, values has min(m,n) entries.
+/// \details Returns zero on success or a positive nonconvergence count. Rank and
+///          outputs are published only on success. Requires nonzero m and n.
+std::size_t gelss(std::size_t m, std::size_t n, std::size_t nrhs, std::span<mpcomplex> a, std::span<mpcomplex> b,
+                  std::span<mpreal> values, mpreal const& cutoff, std::size_t& rank, Precision p);
+/// \brief Estimate reciprocal condition from packed successful LU and the original matrix norm.
+/// \details Norm is '1' or 'I'; returns one for an empty matrix. Factors are preserved.
+mpreal gecon(std::size_t n, std::span<mpcomplex const> a, mpreal const& anorm, char norm, Precision p);
 } // namespace uni20::mplapack

@@ -87,7 +87,10 @@ auto slogdet_matrix_impl(Backend&& backend, A const& a, SolveOptions<make_real_t
                          Precision p)
 {
   using S = tensor_element_t<A>;
-  auto attempt = lu_factor_impl(std::forward<Backend>(backend), a, options, p);
+  auto attempt = lu_factor_impl(
+      std::forward<Backend>(backend), a,
+      LuOptions<make_real_t<S>>{.relative_pivot_tolerance = options.relative_pivot_tolerance, .retain_norms = false},
+      p);
   if (attempt.factor) return slogdet_with_info(*attempt.factor);
   LogDeterminantResult<S> result{.info = attempt.info, .value = {}};
   if (attempt.info.status == SolveStatus::singular) result.value = zero_determinant<S>(p);

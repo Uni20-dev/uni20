@@ -229,14 +229,16 @@ TEST(Lu, DirectDeclineAndStridedCpuFactors)
   a[1, 1] = 3;
   std::size_t pivots[2] = {71, 72};
   SolveInfo info{.status = SolveStatus::small_pivot, .pivot = 17};
-  EXPECT_EQ(try_kernel(LapackBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<double>{}),
+  EXPECT_EQ(try_kernel(LapackBackend{}, lu_factor_op{}, a, std::span(pivots), static_cast<LuNorms<double>*>(nullptr),
+                       info, SolveOptions<double>{}),
             KernelAttempt::unsupported_layout);
   EXPECT_EQ(info.status, SolveStatus::small_pivot);
   EXPECT_EQ(info.pivot, 17);
   EXPECT_EQ(pivots[0], 71);
   EXPECT_EQ(pivots[1], 72);
   EXPECT_EQ((a[1, 0]), 1);
-  EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<double>{}),
+  EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots),
+                       static_cast<LuNorms<double>*>(nullptr), info, SolveOptions<double>{}),
             KernelAttempt::success);
   EXPECT_TRUE(info.succeeded());
   double rhs_data[4] = {4, 0, 7, 0};
@@ -265,7 +267,8 @@ TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
       }
     std::size_t pivots[3];
     SolveInfo info;
-    ASSERT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<R>{}),
+    ASSERT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), static_cast<LuNorms<R>*>(nullptr),
+                         info, SolveOptions<R>{}),
               KernelAttempt::success);
     ASSERT_TRUE(info.succeeded());
     for (std::size_t k = 0; k < 3; ++k)
@@ -289,7 +292,8 @@ TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
     a[1, 0] = S{1};
     a[0, 1] = S(numeric_limits<R>::max());
     a[1, 1] = S(-numeric_limits<R>::max());
-    EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), info, SolveOptions<R>{}),
+    EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_factor_op{}, a, std::span(pivots), static_cast<LuNorms<R>*>(nullptr),
+                         info, SolveOptions<R>{}),
               KernelAttempt::success);
     EXPECT_EQ(info.status, SolveStatus::nonfinite_result);
   };

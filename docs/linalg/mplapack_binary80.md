@@ -3,7 +3,7 @@
 `UNI20_ENABLE_FLOAT80=ON` together with `UNI20_BACKEND_MPLAPACK=ON`
 enables real and complex binary80 GEMM
 and real square solves, [reusable LU and logarithmic determinants](lu.md),
-QR/LQ, [full-rank least squares](least_squares.md), self-adjoint eigensystems,
+QR/LQ, [QR and SVD least squares](least_squares.md), LU condition estimates, self-adjoint eigensystems,
 SVD and general eigensystems. Complex
 LU and decompositions require a compatible provider type, as described below:
 
@@ -43,6 +43,8 @@ Native CPU paths remain available where they implement the operation.
 | --- | --- | --- |
 | GEMM | `Rgemm` | `Cgemm` (always) |
 | LU/solve | `Rgetrf`, `Rgetrs` | `Cgetrf`, `Cgetrs` |
+| LU condition estimates | `Rgecon` | `Cgecon` |
+| SVD least squares | `Rgelss` | `Cgelss` |
 | Reduced QR/LQ | `Rgeqrf`/`Rorgqr`, `Rgelqf`/`Rorglq` | `Cgeqrf`/`Cungqr`, `Cgelqf`/`Cunglq` |
 | Self-adjoint eigensystem | `Rsyev` | `Cheev` |
 | SVD | `Rgesvd` | `Cgesvd` |

@@ -14,7 +14,8 @@ namespace uni20::linalg
 template <MutableRankedStridedMdspecLike<2> A>
   requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
            DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
-consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
+consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>,
+                                    LuNorms<make_real_t<typename A::value_type>>*, SolveInfo&,
                                     SolveOptions<make_real_t<typename A::value_type>> const&)
 {
   return kernel_types_maybe;
@@ -24,7 +25,8 @@ consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std:
 template <MutableRankedStridedMdspecLike<2> A>
   requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
            DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
-KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
+KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
+                         LuNorms<make_real_t<typename A::value_type>>* norms, SolveInfo& info,
                          SolveOptions<make_real_t<typename A::value_type>> const& options)
 {
   detail::require_lu_shape(a, pivots.size());
@@ -33,6 +35,7 @@ KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std
   if (!uni20::blas::is_valid_blas_int(n)) return KernelAttempt::unsupported_shape;
   if (n == 0)
   {
+    if (norms) *norms = {};
     info = {};
     return KernelAttempt::success;
   }
@@ -47,6 +50,7 @@ KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std
     info.status = SolveStatus::nonfinite_input;
     return KernelAttempt::success;
   }
+  detail::capture_lu_norms(s, norms, make_real_t<typename A::value_type>{});
   auto scale = detail::lu_input_scale(s, make_real_t<typename A::value_type>{});
   auto code = uni20::lapack::unchecked::getrf(n, n, matrix->data, matrix->leading_dimension, provider_pivots.data());
   uni20::lapack::detail::check_invalid_argument("getrf", code);

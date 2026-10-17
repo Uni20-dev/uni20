@@ -106,6 +106,14 @@ extern "C"
   void dgels_(char const* trans, blas_int const* m, blas_int const* n, blas_int const* nrhs, double* a,
               blas_int const* lda, double* b, blas_int const* ldb, double* work, blas_int const* lwork, blas_int* info);
 
+  void cgelss_(blas_int const* m, blas_int const* n, blas_int const* nrhs, uni20::complex<float>* a,
+               blas_int const* lda, uni20::complex<float>* b, blas_int const* ldb, float* s, float const* rcond,
+               blas_int* rank, uni20::complex<float>* work, blas_int const* lwork, float* rwork, blas_int* info);
+
+  void zgelss_(blas_int const* m, blas_int const* n, blas_int const* nrhs, uni20::complex<double>* a,
+               blas_int const* lda, uni20::complex<double>* b, blas_int const* ldb, double* s, double const* rcond,
+               blas_int* rank, uni20::complex<double>* work, blas_int const* lwork, double* rwork, blas_int* info);
+
   void sgelss_(blas_int const* m, blas_int const* n, blas_int const* nrhs, float* a, blas_int const* lda, float* b,
                blas_int const* ldb, float* s, float const* rcond, blas_int* rank, float* work, blas_int const* lwork,
                blas_int* info);
@@ -1088,6 +1096,28 @@ extern "C"
   blas_int info = 0;
   UNI20_EXTERNAL_API_CALL(LAPACK, dgelss_, m, n, nrhs, a, lda, b, ldb, s, rcond, rank, work, lwork);
   detail::dgelss_(&m, &n, &nrhs, a, &lda, b, &ldb, s, &rcond, &rank, work, &lwork, &info);
+  return info;
+}
+
+/// \brief Unchecked complex minimum-norm SVD least squares; positive INFO reports nonconvergence.
+[[nodiscard]] inline blas_int gelss(blas_int m, blas_int n, blas_int nrhs, uni20::complex<float>* a, blas_int lda,
+                                    uni20::complex<float>* b, blas_int ldb, float* s, float rcond, blas_int& rank,
+                                    uni20::complex<float>* work, blas_int lwork, float* rwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, cgelss_, m, n, nrhs, a, lda, b, ldb, s, rcond, rank, work, lwork);
+  detail::cgelss_(&m, &n, &nrhs, a, &lda, b, &ldb, s, &rcond, &rank, work, &lwork, rwork, &info);
+  return info;
+}
+
+/// \brief Unchecked complex minimum-norm SVD least squares; positive INFO reports nonconvergence.
+[[nodiscard]] inline blas_int gelss(blas_int m, blas_int n, blas_int nrhs, uni20::complex<double>* a, blas_int lda,
+                                    uni20::complex<double>* b, blas_int ldb, double* s, double rcond, blas_int& rank,
+                                    uni20::complex<double>* work, blas_int lwork, double* rwork)
+{
+  blas_int info = 0;
+  UNI20_EXTERNAL_API_CALL(LAPACK, zgelss_, m, n, nrhs, a, lda, b, ldb, s, rcond, rank, work, lwork);
+  detail::zgelss_(&m, &n, &nrhs, a, &lda, b, &ldb, s, &rcond, &rank, work, &lwork, rwork, &info);
   return info;
 }
 

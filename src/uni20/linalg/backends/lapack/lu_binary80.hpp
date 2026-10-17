@@ -11,8 +11,8 @@ namespace uni20::linalg
 /// \brief Accept logical host workspaces for native binary80 LU.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
-consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, SolveInfo&,
-                                    SolveOptions<float80> const&)
+consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std::span<std::size_t>, LuNorms<float80>*,
+                                    SolveInfo&, SolveOptions<float80> const&)
 {
   return kernel_types_yes;
 }
@@ -20,8 +20,8 @@ consteval auto kernel_accepts_types(LapackBackend, lu_factor_op const&, A&, std:
 /// \brief Convert values at the backend boundary and compute portable owning factors.
 template <MutableRankedMdspecLike<2> A>
   requires HostWritableMdspec<A> && mplapack_binary80_detail::Binary80LuScalar<typename A::value_type>
-KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots, SolveInfo& info,
-                         SolveOptions<float80> const& options)
+KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std::size_t> pivots,
+                         LuNorms<float80>* norms, SolveInfo& info, SolveOptions<float80> const& options)
 {
   detail::require_lu_shape(a, pivots.size());
   detail::require_solve_options(options);
@@ -34,6 +34,7 @@ KernelAttempt try_kernel(LapackBackend, lu_factor_op const&, A& a, std::span<std
     return KernelAttempt::success;
   }
   auto work = mplapack_binary80_detail::pack(s);
+  detail::capture_lu_norms(work.mdspan(), norms, float80{0});
   auto scale = detail::lu_input_scale(work.mdspan(), float80{0});
   auto tolerance = options.relative_pivot_tolerance;
   std::vector<std::size_t> provider_pivots;

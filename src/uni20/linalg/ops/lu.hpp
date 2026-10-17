@@ -42,14 +42,18 @@ template <RealOrComplex S> class LuFactorization {
     std::span<std::size_t const> pivots() const& noexcept { return pivots_; }
     /// \brief Finite working precision used for these factors and subsequent solves.
     Precision precision() const { return precision_of(factors_); }
+    /// \brief Original norms at factor precision, absent only when capture was disabled.
+    std::optional<LuNorms<make_real_t<S>>> const& norms() const& noexcept { return norms_; }
 
   private:
     friend struct detail::LuFactorAccess;
-    LuFactorization(DenseMatrix<S>&& factors, std::vector<std::size_t>&& pivots)
-        : factors_(std::move(factors)), pivots_(std::move(pivots))
+    LuFactorization(DenseMatrix<S>&& factors, std::vector<std::size_t>&& pivots,
+                    std::optional<LuNorms<make_real_t<S>>>&& norms)
+        : factors_(std::move(factors)), pivots_(std::move(pivots)), norms_(std::move(norms))
     {}
     DenseMatrix<S> factors_;
     std::vector<std::size_t> pivots_;
+    std::optional<LuNorms<make_real_t<S>>> norms_;
 };
 
 /// \brief Completed factorization attempt; factor is present exactly on success.
@@ -63,31 +67,36 @@ namespace detail
 {
 struct LuFactorAccess
 {
-    template <class S> static auto make(DenseMatrix<S>&& factors, std::vector<std::size_t>&& pivots)
+    template <class S>
+    static auto make(DenseMatrix<S>&& factors, std::vector<std::size_t>&& pivots,
+                     std::optional<LuNorms<make_real_t<S>>>&& norms)
     {
-      return LuFactorization<S>(std::move(factors), std::move(pivots));
+      return LuFactorization<S>(std::move(factors), std::move(pivots), std::move(norms));
     }
 };
 
 template <KernelBackendSelector Backend, RankedTensorView<2> A>
-auto lu_factor_impl(Backend&& backend, A const& a, SolveOptions<make_real_t<tensor_element_t<A>>> const& options,
+auto lu_factor_impl(Backend&& backend, A const& a, LuOptions<make_real_t<tensor_element_t<A>>> const& options,
                     Precision p)
 {
   using S = tensor_element_t<A>;
   ERROR_IF(a.extent(0) != a.extent(1), "LU requires a square matrix");
-  detail::require_solve_options(options);
+  SolveOptions<make_real_t<S>> pivot_options{options.relative_pivot_tolerance};
+  detail::require_solve_options(pivot_options);
   require_precision<S>(p);
   (void)p.bit_count();
   auto work = make_tensor<ColumnMajor>(a);
   std::vector<std::size_t> pivots(std::size_t(a.extent(0)));
   LuFactorizationResult<S> result{.info = {}, .factor = {}};
+  std::optional<LuNorms<make_real_t<S>>> norms;
+  if (options.retain_norms) norms.emplace();
   auto descriptor = mdspec_of(work);
   dispatch_at_precision<S>(std::forward<Backend>(backend), lu_factor_op{}, p, descriptor, std::span(pivots),
-                           result.info, options);
+                           norms ? &*norms : nullptr, result.info, pivot_options);
   if (result.info.succeeded())
   {
     uni20::detail::record_output_precision(work, p);
-    result.factor = LuFactorAccess::make(std::move(work), std::move(pivots));
+    result.factor = LuFactorAccess::make(std::move(work), std::move(pivots), std::move(norms));
   }
   return result;
 }
@@ -103,7 +112,7 @@ inline void require_lu_success(SolveInfo const& info)
 template <KernelBackendSelector Backend, RankedTensorView<2> A>
   requires RealOrComplex<tensor_element_t<A>>
 [[nodiscard]] auto lu_factor_with_info(Backend&& backend, A const& a, Precision p,
-                                       SolveOptions<make_real_t<tensor_element_t<A>>> const& options = {})
+                                       LuOptions<make_real_t<tensor_element_t<A>>> const& options = {})
 {
   return detail::lu_factor_impl(std::forward<Backend>(backend), a, options, p);
 }
@@ -115,18 +124,28 @@ template <KernelBackendSelector Backend, RankedTensorView<2> A>
 template <KernelBackendSelector Backend, RankedTensorView<2> A>
   requires RealOrComplex<tensor_element_t<A>>
 [[nodiscard]] auto lu_factor_with_info(Backend&& backend, A const& a,
-                                       SolveOptions<make_real_t<tensor_element_t<A>>> const& options = {})
+                                       LuOptions<make_real_t<tensor_element_t<A>>> const& options = {})
 {
   return detail::lu_factor_impl(std::forward<Backend>(backend), a, options, precision_of(a));
 }
 
 /// \brief Factor with the default backend for the materialized host workspace.
-template <RankedTensorView<2> A, class... Options>
+template <RankedTensorView<2> A>
   requires RealOrComplex<tensor_element_t<A>>
-[[nodiscard]] auto lu_factor_with_info(A const& a, Options const&... options)
+[[nodiscard]] auto lu_factor_with_info(A const& a, LuOptions<make_real_t<tensor_element_t<A>>> const& options = {})
 {
   auto backend = select_backend_for<DenseMatrix<tensor_element_t<A>>>(lu_factor_op{});
-  return lu_factor_with_info(backend, a, options...);
+  return lu_factor_with_info(backend, a, options);
+}
+
+/// \brief Factor at explicit precision with the default host backend.
+template <RankedTensorView<2> A>
+  requires RealOrComplex<tensor_element_t<A>>
+[[nodiscard]] auto lu_factor_with_info(A const& a, Precision p,
+                                       LuOptions<make_real_t<tensor_element_t<A>>> const& options = {})
+{
+  auto backend = select_backend_for<DenseMatrix<tensor_element_t<A>>>(lu_factor_op{});
+  return lu_factor_with_info(backend, a, p, options);
 }
 
 /// \brief Return completed owning factors; numerical failure uses the terminal error policy.

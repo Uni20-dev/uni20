@@ -14,12 +14,13 @@ optional multiprecision support, and linear-algebra design background.
   outputs, matrix norms, destructive eigensystems, and Schur block reordering.
 - [Square Linear Solves](linear_solve.md) describes strict and recoverable
   frontends, pivot policy, workspace ownership, and backend diagnostics.
-- [Least Squares](least_squares.md) describes preserving full-rank QR solves,
-  recoverable diagnostics, residual norms and generic precision.
+- [Least Squares](least_squares.md) describes preserving full-rank QR and minimum-norm SVD solves,
+  rank/cutoff diagnostics, residual norms and generic precision.
 - [Numerical Infrastructure Plan](precision_numerics_plan.md) sequences
   rank-aware solving, conditioning and complex Gamma/Barnes extraction.
-- [Reusable LU and Logarithmic Determinants](lu.md) describes owning factors,
-  repeated solves and signed or complex-phase log determinants.
+- [Reusable LU, Conditioning and Logarithmic Determinants](lu.md) describes
+  owning factors, repeated solves, reciprocal condition estimates and signed
+  or complex-phase log determinants.
 - [Mdspan Linear Algebra Dispatch](mdspan_dispatch.md) tracks implemented
   operation-tag vertical slices and the remaining dense-operation sequence.
 - [BLAS/LAPACK Mdspan Wrappers](blas_lapack_wrappers.md) describes the

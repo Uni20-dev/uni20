@@ -30,8 +30,8 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
   constexpr auto gemm = probe_dispatch_kernel_types<BlasBackend, gemm_op, M, S, R, R, S, Precision>();
   constexpr auto solve =
       probe_dispatch_kernel_types<LapackBackend, linear_solve_op, M, M, SolveInfo, Options, Precision>();
-  constexpr auto factor =
-      probe_dispatch_kernel_types<LapackBackend, lu_factor_op, M, Pivots, SolveInfo, Options, Precision>();
+  constexpr auto factor = probe_dispatch_kernel_types<LapackBackend, lu_factor_op, M, Pivots, LuNorms<mpreal>*,
+                                                      SolveInfo, Options, Precision>();
   constexpr auto reuse =
       probe_dispatch_kernel_types<LapackBackend, lu_solve_op, R, ConstPivots, M, SolveInfo, Precision>();
 #if UNI20_HAS_MPLAPACK_MPREAL
@@ -57,8 +57,9 @@ template <class S> consteval bool provider_acceptance_is_operation_specific()
   static_assert(probe_dispatch_kernel_types<BlasBackend, gemm_op, M, S, R, R, S>() == KernelTypeAcceptance::no);
   static_assert(probe_dispatch_kernel_types<LapackBackend, linear_solve_op, M, M, SolveInfo, Options>() ==
                 KernelTypeAcceptance::no);
-  static_assert(probe_dispatch_kernel_types<LapackBackend, lu_factor_op, M, Pivots, SolveInfo, Options>() ==
-                KernelTypeAcceptance::no);
+  static_assert(
+      probe_dispatch_kernel_types<LapackBackend, lu_factor_op, M, Pivots, LuNorms<mpreal>*, SolveInfo, Options>() ==
+      KernelTypeAcceptance::no);
   static_assert(probe_dispatch_kernel_types<LapackBackend, lu_solve_op, R, ConstPivots, M, SolveInfo>() ==
                 KernelTypeAcceptance::no);
   return true;
