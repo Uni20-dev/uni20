@@ -119,8 +119,8 @@ KernelAttempt try_lq(LMdspan& l, QMdspan& q, MatrixMdspan& matrix_work)
 /// \brief Report eligibility for a host-accessible reduced real or complex LQ factorization.
 template <uni20::MutableRankedMdspecLike<2> LMdspec, uni20::MutableRankedMdspecLike<2> QMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
-  requires uni20::HostWritableMdspec<LMdspec> && uni20::HostWritableMdspec<QMdspec> &&
-           uni20::HostWritableMdspec<MatrixMdspec>
+  requires LapackScalar<typename MatrixMdspec::value_type> && uni20::HostWritableMdspec<LMdspec> &&
+           uni20::HostWritableMdspec<QMdspec> && uni20::HostWritableMdspec<MatrixMdspec>
 consteval auto kernel_accepts_types(LapackBackend const&, lq_op const&, LMdspec&, QMdspec&, MatrixMdspec&)
 {
   using l_span = uni20::host_write_mdspan_t<LMdspec>;
@@ -136,8 +136,8 @@ consteval auto kernel_accepts_types(LapackBackend const&, lq_op const&, LMdspec&
 /// \brief Resolve host access and compute reduced LQ through LAPACK `gelqf` and `orglq`/`unglq`.
 template <uni20::MutableRankedMdspecLike<2> LMdspec, uni20::MutableRankedMdspecLike<2> QMdspec,
           uni20::MutableRankedStridedMdspecLike<2> MatrixMdspec>
-  requires uni20::HostWritableMdspec<LMdspec> && uni20::HostWritableMdspec<QMdspec> &&
-           uni20::HostWritableMdspec<MatrixMdspec>
+  requires LapackScalar<typename MatrixMdspec::value_type> && uni20::HostWritableMdspec<LMdspec> &&
+           uni20::HostWritableMdspec<QMdspec> && uni20::HostWritableMdspec<MatrixMdspec>
 KernelAttempt try_kernel(LapackBackend, lq_op const&, LMdspec& l, QMdspec& q, MatrixMdspec& matrix_work)
 {
   return lapack_detail::with_host_write_mdspans(
@@ -147,6 +147,6 @@ KernelAttempt try_kernel(LapackBackend, lq_op const&, LMdspec& l, QMdspec& q, Ma
 
 } // namespace uni20::linalg
 
-#if UNI20_HAS_MPLAPACK_MPREAL
-#include "decompositions_mpfr.hpp"
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+#include "decompositions_packed.hpp"
 #endif

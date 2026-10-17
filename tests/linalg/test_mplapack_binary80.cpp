@@ -12,19 +12,19 @@ using namespace uni20::linalg;
 
 namespace
 {
+static_assert(std::same_as<HostStorage::backend_selector_type,
+                           backend_list<LapackBackend, BlasBackend, CpuReferenceBackend>>);
 using ComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160>&>()));
 using ConstComplexDescriptor = decltype(mdspec_of(std::declval<DenseMatrix<complex160> const&>()));
 constexpr auto complex_lu_acceptance =
-    UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
-static_assert(probe_dispatch_kernel_types<MplapackBinary80Backend, lu_factor_op, ComplexDescriptor&,
-                                          std::span<std::size_t>, SolveInfo&, SolveOptions<float80> const&>() ==
-              complex_lu_acceptance);
-static_assert(probe_dispatch_kernel_types<MplapackBinary80Backend, lu_solve_op, ConstComplexDescriptor&,
+    UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
+static_assert(probe_dispatch_kernel_types<LapackBackend, lu_factor_op, ComplexDescriptor&, std::span<std::size_t>,
+                                          SolveInfo&, SolveOptions<float80> const&>() == complex_lu_acceptance);
+static_assert(probe_dispatch_kernel_types<LapackBackend, lu_solve_op, ConstComplexDescriptor&,
                                           std::span<std::size_t const>, ComplexDescriptor&, SolveInfo&>() ==
               complex_lu_acceptance);
-static_assert(probe_dispatch_kernel_types<MplapackBinary80Backend, linear_solve_op, ComplexDescriptor&,
-                                          ComplexDescriptor&, SolveInfo&, SolveOptions<float80> const&>() ==
-              complex_lu_acceptance);
+static_assert(probe_dispatch_kernel_types<LapackBackend, linear_solve_op, ComplexDescriptor&, ComplexDescriptor&,
+                                          SolveInfo&, SolveOptions<float80> const&>() == complex_lu_acceptance);
 
 template <class Factor, class Solve, class SolveFromFactors>
 void check_complex_exponent_range(Factor factorize, Solve solve_once, SolveFromFactors solve_factors)
@@ -78,13 +78,13 @@ TEST(Binary80Linalg, PreservesPrecisionAndExponentRange)
     DenseMatrix<float80> a(1, 1), b(1, 1), c(1, 1);
     a[0, 0] = value;
     b[0, 0] = 1;
-    gemm(MplapackBinary80Backend{}, c, 1, a, b, 0);
+    gemm(BlasBackend{}, c, 1, a, b, 0);
     EXPECT_EQ((c[0, 0]), value);
-    auto f = lu_factor(MplapackBinary80Backend{}, a);
+    auto f = lu_factor(LapackBackend{}, a);
     EXPECT_EQ((f.packed()[0, 0]), value);
-    auto x = lu_solve(MplapackBinary80Backend{}, f, a);
+    auto x = lu_solve(LapackBackend{}, f, a);
     EXPECT_EQ((x[0, 0]), 1);
-    auto once = solve(MplapackBinary80Backend{}, a, a);
+    auto once = solve(LapackBackend{}, a, a);
     EXPECT_EQ((once[0, 0]), 1);
   }
   DenseMatrix<complex160> a(2, 2), identity(2, 2), product;
@@ -93,7 +93,7 @@ TEST(Binary80Linalg, PreservesPrecisionAndExponentRange)
   a[1, 0] = {4, -1};
   a[1, 1] = {5, 2};
   identity[0, 0] = identity[1, 1] = complex160{1};
-  assign_product(MplapackBinary80Backend{}, product, uni20::conj(a), identity);
+  assign_product(BlasBackend{}, product, uni20::conj(a), identity);
   for (std::size_t i = 0; i < 2; ++i)
     for (std::size_t j = 0; j < 2; ++j)
       EXPECT_EQ((product[i, j]), uni20::conj(a[i, j]));
@@ -101,9 +101,9 @@ TEST(Binary80Linalg, PreservesPrecisionAndExponentRange)
   auto default_result = slogdet(a);
   EXPECT_LT(abs(default_result.phase - cpu.phase), 1e-18L);
   EXPECT_LT(abs(default_result.log_absolute - cpu.log_absolute), 1e-18L);
-#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
-  auto f = lu_factor(MplapackBinary80Backend{}, a);
-  auto x = lu_solve(MplapackBinary80Backend{}, f, a);
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX
+  auto f = lu_factor(LapackBackend{}, a);
+  auto x = lu_solve(LapackBackend{}, f, a);
   for (std::size_t i = 0; i < 2; ++i)
     for (std::size_t j = 0; j < 2; ++j)
       EXPECT_LT(abs(x[i, j] - identity[i, j]), 1e-18L);
@@ -121,12 +121,12 @@ TEST(Binary80Linalg, ComplexDefaultSolveAndLogdetPreserveExponentRange)
                                [](auto const& f, auto const& b) { return lu_solve(f, b); });
 }
 
-#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX_LU
+#if UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX
 TEST(Binary80Linalg, ComplexProviderSolveAndLogdetPreserveExponentRange)
 {
-  check_complex_exponent_range([](auto const& a) { return lu_factor_with_info(MplapackBinary80Backend{}, a); },
-                               [](auto const& a, auto const& b) { return solve(MplapackBinary80Backend{}, a, b); },
-                               [](auto const& f, auto const& b) { return lu_solve(MplapackBinary80Backend{}, f, b); });
+  check_complex_exponent_range([](auto const& a) { return lu_factor_with_info(LapackBackend{}, a); },
+                               [](auto const& a, auto const& b) { return solve(LapackBackend{}, a, b); },
+                               [](auto const& f, auto const& b) { return lu_solve(LapackBackend{}, f, b); });
 }
 #endif
 
@@ -136,14 +136,14 @@ TEST(Binary80Linalg, ZeroCoefficientsAndEmptyInnerExtent)
   for (std::size_t i = 0; i < 2; ++i)
     for (std::size_t j = 0; j < 2; ++j)
       a[i, j] = b[i, j] = c[i, j] = complex160{numeric_limits<float80>::quiet_NaN(), 0};
-  gemm(MplapackBinary80Backend{}, c, 0, a, b, 0);
+  gemm(BlasBackend{}, c, 0, a, b, 0);
   for (std::size_t i = 0; i < 2; ++i)
     for (std::size_t j = 0; j < 2; ++j)
       EXPECT_EQ((c[i, j]), complex160{});
   a = DenseMatrix<complex160>(2, 0);
   b = DenseMatrix<complex160>(0, 2);
   c[0, 0] = {3, 4};
-  gemm(MplapackBinary80Backend{}, c, 1, a, b, 2);
+  gemm(BlasBackend{}, c, 1, a, b, 2);
   EXPECT_EQ((c[0, 0]), (complex160{6, 8}));
 }
 
@@ -156,7 +156,7 @@ TEST(Binary80Linalg, AsyncDeferredProductAndSolve)
   a[0, 0] = 2;
   b[0, 0] = 1 + 0x1p-60L;
   Async<DenseMatrix<float80>> av(std::move(a)), bv(std::move(b)), product;
-  assign_product(MplapackBinary80Backend{}, product, av, bv);
-  auto result = solve(MplapackBinary80Backend{}, av, product);
+  assign_product(BlasBackend{}, product, av, bv);
+  auto result = solve(LapackBackend{}, av, product);
   EXPECT_EQ((result.get_wait()[0, 0]), 1 + 0x1p-60L);
 }

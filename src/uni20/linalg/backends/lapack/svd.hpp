@@ -514,9 +514,10 @@ KernelAttempt try_svd(svd_op const& op, SingularValueMdspan& singular_values, Ot
 
 /// \brief Report eligibility for host-accessible mdspec SVD operands.
 template <lapack_detail::SvdOperation Operation, uni20::MutableStridedMdspecLike... Mdspans>
-  requires(uni20::HostWritableMdspec<Mdspans> && ...) && requires {
-    lapack_detail::svd_acceptance(Operation{}, std::type_identity<uni20::host_write_mdspan_t<Mdspans>>{}...);
-  }
+  requires(LapackScalar<typename Mdspans::value_type> && ...) && (uni20::HostWritableMdspec<Mdspans> && ...) &&
+          requires {
+            lapack_detail::svd_acceptance(Operation{}, std::type_identity<uni20::host_write_mdspan_t<Mdspans>>{}...);
+          }
 consteval auto kernel_accepts_types(LapackBackend const&, Operation const&, Mdspans&...)
 {
   constexpr auto acceptance =
@@ -529,9 +530,10 @@ consteval auto kernel_accepts_types(LapackBackend const&, Operation const&, Mdsp
 
 /// \brief Resolve host access and run a LAPACK SVD operation.
 template <lapack_detail::SvdOperation Operation, uni20::MutableStridedMdspecLike... Mdspans>
-  requires(uni20::HostWritableMdspec<Mdspans> && ...) && requires {
-    lapack_detail::svd_acceptance(Operation{}, std::type_identity<uni20::host_write_mdspan_t<Mdspans>>{}...);
-  }
+  requires(LapackScalar<typename Mdspans::value_type> && ...) && (uni20::HostWritableMdspec<Mdspans> && ...) &&
+          requires {
+            lapack_detail::svd_acceptance(Operation{}, std::type_identity<uni20::host_write_mdspan_t<Mdspans>>{}...);
+          }
 KernelAttempt try_kernel(LapackBackend, Operation const& operation, Mdspans&... mdspans)
 {
   return lapack_detail::with_host_write_mdspans(
@@ -540,6 +542,6 @@ KernelAttempt try_kernel(LapackBackend, Operation const& operation, Mdspans&... 
 
 } // namespace uni20::linalg
 
-#if UNI20_HAS_MPLAPACK_MPREAL
-#include "decompositions_mpfr.hpp"
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+#include "decompositions_packed.hpp"
 #endif

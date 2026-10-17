@@ -10,7 +10,7 @@ namespace uni20::linalg::detail
 {
 /// \brief Scalar families admitted by dense decomposition frontends; leaf probes decide provider availability.
 template <class S>
-concept DecompositionScalar = LapackScalar<S> || has_runtime_precision_v<S>;
+concept DecompositionScalar = RealOrComplex<S>;
 
 /// \brief Resolve and validate finite working precision before consuming or resizing tensors.
 template <TensorView A> Precision decomposition_precision(A const& a, std::optional<Precision> requested)

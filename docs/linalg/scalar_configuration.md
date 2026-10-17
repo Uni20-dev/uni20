@@ -84,7 +84,8 @@ fetch its components even if a scalar was auto-detected.
 Scalar availability does not promise every numerical operation supports that
 type. See [binary80](mplapack_binary80.md), [binary128](mplapack_binary128.md),
 and [arbitrary-precision coverage](mplapack_mpfr.md). For example, binary80
-complex LU remains disabled for providers with unsafe generic complex division.
+complex LU and decompositions remain disabled for providers with unsafe generic
+complex division.
 
 ## Updating older build trees
 

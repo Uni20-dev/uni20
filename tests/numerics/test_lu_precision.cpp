@@ -3,17 +3,6 @@
 
 namespace uni20::test
 {
-// Force one provider: a successful CPU fallback must not certify its adapter.
-template <class C> auto lu_provider()
-{
-#if UNI20_HAS_MPLAPACK_FLOAT80
-  if constexpr (C::binary80_provider)
-    return linalg::MplapackBinary80Backend{};
-  else
-#endif
-    return linalg::LapackBackend{};
-}
-
 template <class C, class Backend> void check_lu_gap(Backend backend)
 {
   testing::Test::RecordProperty("backend", std::string(Backend::name));
@@ -51,7 +40,7 @@ template <class C, class Backend> void check_lu_gap(Backend backend)
 }
 
 UNI20_PRECISION_TEST(NumericalLinalg, CpuLuResolvesSmallGap) { check_lu_gap<TypeParam>(linalg::CpuReferenceBackend{}); }
-UNI20_PRECISION_TEST(NumericalLinalg, ProviderLuResolvesSmallGap) { check_lu_gap<TypeParam>(lu_provider<TypeParam>()); }
+UNI20_PRECISION_TEST(NumericalLinalg, ProviderLuResolvesSmallGap) { check_lu_gap<TypeParam>(linalg::LapackBackend{}); }
 
 #if UNI20_HAS_MPREAL
 template <class C, class Backend> void check_lu_accuracy(Backend backend)
@@ -84,7 +73,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, CpuLuAccuracyImprovesWithPrecision)
 }
 UNI20_PRECISION_TEST(NumericalLinalg, ProviderLuAccuracyImprovesWithPrecision)
 {
-  check_lu_accuracy<TypeParam>(lu_provider<TypeParam>());
+  check_lu_accuracy<TypeParam>(linalg::LapackBackend{});
 }
 #endif
 
@@ -125,7 +114,7 @@ UNI20_PRECISION_TEST(NumericalLinalg, CpuLogDeterminantRetainsPrecision)
 }
 UNI20_PRECISION_TEST(NumericalLinalg, ProviderLogDeterminantRetainsPrecision)
 {
-  check_logdet_precision<TypeParam>(lu_provider<TypeParam>());
+  check_logdet_precision<TypeParam>(linalg::LapackBackend{});
 }
 
 template <class C, class Backend> void check_logdet_range(Backend backend)
@@ -156,6 +145,6 @@ UNI20_PRECISION_TEST(NumericalLinalg, CpuLogDeterminantPreservesExtendedExponent
 }
 UNI20_PRECISION_TEST(NumericalLinalg, ProviderLogDeterminantPreservesExtendedExponentRange)
 {
-  check_logdet_range<TypeParam>(lu_provider<TypeParam>());
+  check_logdet_range<TypeParam>(linalg::LapackBackend{});
 }
 } // namespace uni20::test

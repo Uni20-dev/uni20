@@ -110,7 +110,8 @@ KernelAttempt try_linear_solve(CoefficientMdspan& coefficients, RhsMdspan& right
 /// \brief Report eligibility for a host-accessible LAPACK general solve.
 template <uni20::MutableRankedStridedMdspecLike<2> CoefficientMdspec,
           uni20::MutableRankedStridedMdspecLike<2> RhsMdspec>
-  requires uni20::HostWritableMdspec<CoefficientMdspec> && uni20::HostWritableMdspec<RhsMdspec>
+  requires LapackScalar<typename CoefficientMdspec::value_type> && uni20::HostWritableMdspec<CoefficientMdspec> &&
+           uni20::HostWritableMdspec<RhsMdspec>
 consteval auto kernel_accepts_types(LapackBackend const&, linear_solve_op const&, CoefficientMdspec&, RhsMdspec&,
                                     SolveInfo&,
                                     SolveOptions<uni20::make_real_t<typename CoefficientMdspec::value_type>> const&)
@@ -127,7 +128,8 @@ consteval auto kernel_accepts_types(LapackBackend const&, linear_solve_op const&
 /// \brief Resolve host access and solve a general system through LAPACK LU factorization.
 template <uni20::MutableRankedStridedMdspecLike<2> CoefficientMdspec,
           uni20::MutableRankedStridedMdspecLike<2> RhsMdspec>
-  requires uni20::HostWritableMdspec<CoefficientMdspec> && uni20::HostWritableMdspec<RhsMdspec>
+  requires LapackScalar<typename CoefficientMdspec::value_type> && uni20::HostWritableMdspec<CoefficientMdspec> &&
+           uni20::HostWritableMdspec<RhsMdspec>
 KernelAttempt try_kernel(LapackBackend, linear_solve_op const&, CoefficientMdspec& coefficients,
                          RhsMdspec& right_hand_sides, SolveInfo& info,
                          SolveOptions<uni20::make_real_t<typename CoefficientMdspec::value_type>> const& options)

@@ -279,7 +279,8 @@ remain separate regressions; enabling MPFR does not change their arithmetic.
 Dispatch tests verify BLAS/LAPACK family selection, explicit async selectors,
 exact GEMM fallback, and type-level rejection when the provider or requested
 operation is unavailable. The shared numerical cases cover real and complex
-float32, float64, binary128, MPFR-128 and MPFR-256 decompositions. They check
+float32, float64, configured binary80/binary128, MPFR-128 and MPFR-256
+decompositions (subject to the binary80 complex-provider restriction). They check
 reconstruction, orthogonality, eigenpair residuals, small spectral gaps and
 accuracy against an independent 512-bit reference. Separate API tests cover
 storage transfer, exact/missing defaults, selected-triangle reads, empty factors,
@@ -297,15 +298,16 @@ public frontends or weakening the existing tensor and async contracts.
    Logical host packing is shared between these kernels. Provider arrays,
    integer lowering, conversion, and synchronous precision scopes remain in
    `backend/mplapack/`.
-2. **Routine capabilities and scalar traits.** Audit callers of the broad
-   `BlasScalar`/`LapackScalar` concepts before admitting runtime scalars there.
-   Several current raw wrappers and projected algorithms assume that all of
-   their native routines and workspaces are available. Replace those assumptions
-   with the capabilities each operation actually requires. Backend type probes
-   remain the authority for an operation on concrete operands; enabling a dense
-   leaf must not accidentally admit other routines or projected algorithms.
-   Apply the same audit to binary80, whose limited provider coverage still uses
-   a separate selector, before consolidating that adapter into these families.
+2. **Completed: binary80 family integration and dense capability boundaries.**
+   Binary80 GEMM uses `BlasBackend`; its solves, LU and decompositions use
+   `LapackBackend`. Packed MPFR and binary80 decomposition kernels share logical
+   packing and provider algorithms, with per-operation capability checks.
+   Raw-pointer wrappers retain their narrow `BlasScalar`/`LapackScalar` gates;
+   partial packed-provider coverage does not admit unrelated raw routines or
+   projected algorithms. Binary80 complex LU/decompositions remain disabled for
+   providers with unsafe `_Float64x` complex division. Continue replacing broad
+   scalar requirements with actual operation requirements when extending the
+   projected algorithms below.
 3. **Completed: dense decomposition batch.** Real/complex QR and LQ, symmetric/
    Hermitian eigensystems, all SVD output forms and general eigensystems share
    the precision interface and provider workspace handling. Native complex

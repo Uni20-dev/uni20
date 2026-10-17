@@ -1,4 +1,5 @@
 #include "mpfr.hpp"
+#include "decompositions_impl.hpp"
 #include "precision_scope.hpp"
 #include <mplapack_mpfr.h>
 #include <uni20/backend/lapack/lapack_error_presentation.hpp>
@@ -154,197 +155,24 @@ template <class Provider, class Call> void with_workspace(char const* routine, C
   }
 }
 
-std::size_t auxiliary_size(std::size_t count, std::size_t factor)
+struct DecompositionAdapter
 {
-  if (count > std::numeric_limits<std::size_t>::max() / factor)
-    throw std::length_error("MPLAPACK auxiliary workspace size overflow");
-  return std::max<std::size_t>(1, count * factor);
-}
-
-template <class Scalar>
-void orthogonal_factor_impl(bool lq, std::size_t m, std::size_t n, std::span<Scalar> a, std::span<Scalar> q,
-                            std::span<Scalar> triangular, Precision p)
-{
-  auto k = std::min(m, n);
-  require_size(a.size(), m, n);
-  require_size(q.size(), lq ? k : m, lq ? n : k);
-  require_size(triangular.size(), lq ? m : k, lq ? k : n);
-  auto pm = provider_integer(m), pn = provider_integer(n), pk = provider_integer(k);
-  detail::precision_scope scope(p);
-  if (!k) return;
-  using P = provider_scalar<Scalar>;
-  auto av = pack(std::span<Scalar const>(a));
-  std::vector<P> tau(k);
-  with_workspace<P>(lq ? "gelqf" : "geqrf", [&](P* work, mplapackint length, mplapackint& info) {
-    if constexpr (std::same_as<Scalar, mpreal>)
+    template <class S> using scalar = provider_scalar<S>;
+    using real = mpfrxx::mpfr_class;
+    using precision_scope = detail::precision_scope;
+    static auto integer(std::size_t n) { return provider_integer(n); }
+    static void check_size(std::size_t actual, std::size_t rows, std::size_t cols) { require_size(actual, rows, cols); }
+    template <class S> static auto pack_values(std::span<S const> values) { return pack(values); }
+    template <class P> static auto get_value(P const& value, Precision p) { return get(value, p); }
+    template <class P, class S> static void unpack_values(std::vector<P> const& values, std::span<S> out, Precision p)
     {
-      if (lq)
-        Rgelqf(pm, pn, av.data(), pm, tau.data(), work, length, info);
-      else
-        Rgeqrf(pm, pn, av.data(), pm, tau.data(), work, length, info);
+      unpack(values, out, p);
     }
-    else
+    template <class P, class Call> static void workspace(char const* routine, Call&& call)
     {
-      if (lq)
-        Cgelqf(pm, pn, av.data(), pm, tau.data(), work, length, info);
-      else
-        Cgeqrf(pm, pn, av.data(), pm, tau.data(), work, length, info);
+      with_workspace<P>(routine, std::forward<Call>(call));
     }
-  });
-  auto tr = lq ? m : k, tc = lq ? k : n;
-  for (std::size_t j = 0; j < tc; ++j)
-    for (std::size_t i = 0; i < tr; ++i)
-      triangular[i + j * tr] = (lq ? i >= j : i <= j) ? get(av[i + j * m], p) : Scalar(0, p);
-  with_workspace<P>(lq ? "orglq" : "orgqr", [&](P* work, mplapackint length, mplapackint& info) {
-    if constexpr (std::same_as<Scalar, mpreal>)
-    {
-      if (lq)
-        Rorglq(pk, pn, pk, av.data(), pm, tau.data(), work, length, info);
-      else
-        Rorgqr(pm, pk, pk, av.data(), pm, tau.data(), work, length, info);
-    }
-    else
-    {
-      if (lq)
-        Cunglq(pk, pn, pk, av.data(), pm, tau.data(), work, length, info);
-      else
-        Cungqr(pm, pk, pk, av.data(), pm, tau.data(), work, length, info);
-    }
-  });
-  auto qr = lq ? k : m, qc = lq ? n : k;
-  for (std::size_t j = 0; j < qc; ++j)
-    for (std::size_t i = 0; i < qr; ++i)
-      q[i + j * qr] = get(av[i + j * m], p);
-  unpack(av, a, p);
-}
-
-template <class Scalar>
-void eigh_impl(std::size_t n, std::span<Scalar> a, std::span<mpreal> values, bool vectors, char triangle, Precision p)
-{
-  require_size(a.size(), n, n);
-  require_size(values.size(), n, 1);
-  if (triangle != 'U' && triangle != 'L') throw std::invalid_argument("invalid eigensystem triangle");
-  auto pn = provider_integer(n);
-  detail::precision_scope scope(p);
-  if (!n) return;
-  using P = provider_scalar<Scalar>;
-  auto av = pack(std::span<Scalar const>(a));
-  std::vector<mpfrxx::mpfr_class> w(n);
-  char job = vectors ? 'V' : 'N';
-  std::vector<mpfrxx::mpfr_class> rwork;
-  if constexpr (!std::same_as<Scalar, mpreal>) rwork.resize(auxiliary_size(n, 3));
-  with_workspace<P>("eigh", [&](P* work, mplapackint length, mplapackint& info) {
-    if constexpr (std::same_as<Scalar, mpreal>)
-      Rsyev(&job, &triangle, pn, av.data(), pn, w.data(), work, length, info);
-    else
-      Cheev(&job, &triangle, pn, av.data(), pn, w.data(), work, length, rwork.data(), info);
-  });
-  unpack(av, a, p);
-  unpack(w, values, p);
-}
-
-template <class Scalar>
-void svd_impl(std::size_t m, std::size_t n, std::span<Scalar> a, std::span<mpreal> values, std::span<Scalar> u,
-              std::span<Scalar> vh, char jobu, char jobvt, Precision p)
-{
-  auto k = std::min(m, n);
-  auto valid_job = [](char job) { return job == 'A' || job == 'S' || job == 'N' || job == 'O'; };
-  if (!valid_job(jobu) || !valid_job(jobvt) || (jobu == 'O' && jobvt == 'O'))
-    throw std::invalid_argument("invalid SVD vector request");
-  auto uc = jobu == 'A' ? m : jobu == 'S' ? k : 0;
-  auto vr = jobvt == 'A' ? n : jobvt == 'S' ? k : 0;
-  require_size(a.size(), m, n);
-  require_size(values.size(), k, 1);
-  require_size(u.size(), m, uc);
-  require_size(vh.size(), vr, n);
-  auto pm = provider_integer(m), pn = provider_integer(n);
-  auto ldu = std::max<mplapackint>(1, uc ? pm : 1);
-  auto ldvt = std::max<mplapackint>(1, provider_integer(vr));
-  detail::precision_scope scope(p);
-  if (!k)
-  {
-    for (std::size_t j = 0; j < uc; ++j)
-      for (std::size_t i = 0; i < m; ++i)
-        u[i + j * m] = Scalar(i == j ? 1 : 0, p);
-    for (std::size_t j = 0; j < n; ++j)
-      for (std::size_t i = 0; i < vr; ++i)
-        vh[i + j * vr] = Scalar(i == j ? 1 : 0, p);
-    return;
-  }
-  using P = provider_scalar<Scalar>;
-  auto av = pack(std::span<Scalar const>(a));
-  std::vector<P> uv(std::max<std::size_t>(1, u.size())), vv(std::max<std::size_t>(1, vh.size()));
-  std::vector<mpfrxx::mpfr_class> w(k), rwork;
-  if constexpr (!std::same_as<Scalar, mpreal>) rwork.resize(auxiliary_size(k, 5));
-  with_workspace<P>("gesvd", [&](P* work, mplapackint length, mplapackint& info) {
-    if constexpr (std::same_as<Scalar, mpreal>)
-      Rgesvd(&jobu, &jobvt, pm, pn, av.data(), pm, w.data(), uv.data(), ldu, vv.data(), ldvt, work, length, info);
-    else
-      Cgesvd(&jobu, &jobvt, pm, pn, av.data(), pm, w.data(), uv.data(), ldu, vv.data(), ldvt, work, length,
-             rwork.data(), info);
-  });
-  unpack(av, a, p);
-  unpack(w, values, p);
-  uv.resize(u.size());
-  vv.resize(vh.size());
-  unpack(uv, u, p);
-  unpack(vv, vh, p);
-}
-
-template <class Scalar>
-void eigen_impl(std::size_t n, std::span<Scalar> a, std::span<mpcomplex> values, std::span<mpcomplex> vectors,
-                bool compute_vectors, Precision p)
-{
-  require_size(a.size(), n, n);
-  require_size(values.size(), n, 1);
-  require_size(vectors.size(), compute_vectors ? n : 0, n);
-  auto pn = provider_integer(n);
-  detail::precision_scope scope(p);
-  if (!n) return;
-  using P = provider_scalar<Scalar>;
-  auto av = pack(std::span<Scalar const>(a));
-  std::vector<P> vl(1), vr(std::max<std::size_t>(1, vectors.size()));
-  char job = compute_vectors ? 'V' : 'N';
-  auto ldvr = compute_vectors ? pn : mplapackint{1};
-  if constexpr (std::same_as<Scalar, mpreal>)
-  {
-    std::vector<P> wr(n), wi(n);
-    with_workspace<P>("geev", [&](P* work, mplapackint length, mplapackint& info) {
-      Rgeev("N", &job, pn, av.data(), pn, wr.data(), wi.data(), vl.data(), 1, vr.data(), ldvr, work, length, info);
-    });
-    for (std::size_t j = 0; j < n; ++j)
-      values[j] = mpcomplex(get(wr[j], p), get(wi[j], p));
-    if (compute_vectors)
-      for (std::size_t j = 0; j < n; ++j)
-      {
-        if (wi[j] == 0)
-          for (std::size_t i = 0; i < n; ++i)
-            vectors[i + j * n] = mpcomplex(get(vr[i + j * n], p), mpreal(0, p));
-        else
-        {
-          CHECK(wi[j] > 0 && j + 1 < n, "invalid conjugate eigenvector pair");
-          for (std::size_t i = 0; i < n; ++i)
-          {
-            auto v = mpcomplex(get(vr[i + j * n], p), get(vr[i + (j + 1) * n], p));
-            vectors[i + j * n] = v;
-            vectors[i + (j + 1) * n] = uni20::conj(v);
-          }
-          ++j;
-        }
-      }
-  }
-  else
-  {
-    std::vector<P> w(n);
-    std::vector<mpfrxx::mpfr_class> rwork(auxiliary_size(n, 2));
-    with_workspace<P>("geev", [&](P* work, mplapackint length, mplapackint& info) {
-      Cgeev("N", &job, pn, av.data(), pn, w.data(), vl.data(), 1, vr.data(), ldvr, work, length, rwork.data(), info);
-    });
-    unpack(w, values, p);
-    if (compute_vectors) unpack(vr, vectors, p);
-  }
-  unpack(av, a, p);
-}
+};
 
 } // namespace
 
@@ -379,58 +207,58 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<mpcomplex const> a, std::s
 void qr(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> q, std::span<mpreal> triangular,
         Precision p)
 {
-  orthogonal_factor_impl(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> q, std::span<mpreal> triangular,
         Precision p)
 {
-  orthogonal_factor_impl(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<mpreal> a, std::span<mpreal> values, bool vectors, char triangle, Precision p)
 {
-  eigh_impl(n, a, values, vectors, triangle, p);
+  detail::eigh_impl<DecompositionAdapter>(n, a, values, vectors, triangle, p);
 }
 
 void svd(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> values, std::span<mpreal> u,
          std::span<mpreal> vh, char jobu, char jobvt, Precision p)
 {
-  svd_impl(m, n, a, values, u, vh, jobu, jobvt, p);
+  detail::svd_impl<DecompositionAdapter>(m, n, a, values, u, vh, jobu, jobvt, p);
 }
 
 void eigen(std::size_t n, std::span<mpreal> a, std::span<mpcomplex> values, std::span<mpcomplex> vectors,
            bool compute_vectors, Precision p)
 {
-  eigen_impl(n, a, values, vectors, compute_vectors, p);
+  detail::eigen_impl<DecompositionAdapter>(n, a, values, vectors, compute_vectors, p);
 }
 
 void qr(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> q, std::span<mpcomplex> triangular,
         Precision p)
 {
-  orthogonal_factor_impl(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> q, std::span<mpcomplex> triangular,
         Precision p)
 {
-  orthogonal_factor_impl(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<mpcomplex> a, std::span<mpreal> values, bool vectors, char triangle, Precision p)
 {
-  eigh_impl(n, a, values, vectors, triangle, p);
+  detail::eigh_impl<DecompositionAdapter>(n, a, values, vectors, triangle, p);
 }
 
 void svd(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpreal> values, std::span<mpcomplex> u,
          std::span<mpcomplex> vh, char jobu, char jobvt, Precision p)
 {
-  svd_impl(m, n, a, values, u, vh, jobu, jobvt, p);
+  detail::svd_impl<DecompositionAdapter>(m, n, a, values, u, vh, jobu, jobvt, p);
 }
 
 void eigen(std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> values, std::span<mpcomplex> vectors,
            bool compute_vectors, Precision p)
 {
-  eigen_impl(n, a, values, vectors, compute_vectors, p);
+  detail::eigen_impl<DecompositionAdapter>(n, a, values, vectors, compute_vectors, p);
 }
 } // namespace uni20::mplapack

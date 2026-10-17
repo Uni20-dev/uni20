@@ -117,7 +117,11 @@ UNI20_PRECISION_TEST(NumericalLinalg, DecompositionAccuracyImprovesWithPrecision
   auto expected = (3 + root) / 2;
   auto check = [&](auto actual, mpreal const& reference) {
     auto error = abs(widen(actual) - reference);
-    auto lower = Precision::bits(C::digits() <= 24 ? 12 : C::digits() <= 53 ? 24 : C::digits() <= 113 ? 53 : 113);
+    auto lower = Precision::bits(C::digits() <= 24    ? 12
+                                 : C::digits() <= 53  ? 24
+                                 : C::digits() <= 64  ? 53
+                                 : C::digits() <= 113 ? 64
+                                                      : 113);
     auto previous = abs(reference.at(lower).at(oracle) - reference);
     EXPECT_LT(error, previous / 8);
     EXPECT_LE(error, widen(C::epsilon()) * 8);

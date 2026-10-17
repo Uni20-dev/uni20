@@ -15,7 +15,7 @@
 #include <uni20/tensor/output.hpp>
 #include <uni20/tensor/precision.hpp>
 #if UNI20_HAS_MPLAPACK_FLOAT80
-#include <uni20/linalg/backends/mplapack/binary80.hpp>
+#include <uni20/linalg/backends/blas/binary80.hpp>
 #endif
 
 #if UNI20_BACKEND_BLAS || UNI20_HAS_MPLAPACK_MPREAL
