@@ -137,7 +137,7 @@ Diagnostics follow the ordinary output-by-reference kernel convention.
   MPLAPACK binary128 use this path for compatible column-major workspaces.
 - `LapackBackend` also selects the scalar-specific [MPFR/MPC adapter](mplapack_mpfr.md),
   which packs provider objects and establishes working precision per call.
-  [Binary80](mplapack_binary80.md) retains its dedicated adapter selector.
+  [Binary80](mplapack_binary80.md) uses the same LAPACK family with its own scalar adapter.
 - CPU reference uses accessor-respecting partial-pivoted Gaussian elimination,
   including row-major workspaces and native long double.
 - A dispatch decline preserves `A`, `B`, and `SolveInfo`.
@@ -145,8 +145,9 @@ Diagnostics follow the ordinary output-by-reference kernel convention.
   `KernelAttempt::success`. Dispatch must **not** retry another backend on
   partially overwritten workspaces.
 
-Least squares, rank-revealing solves, condition estimates, and iterative
-refinement are separate future work, not options hidden in this square solve.
+[Full-column-rank least squares](least_squares.md) has a separate preserving
+interface. Rank-revealing solves, condition estimates and iterative refinement
+remain subsequent work; they are not options hidden in this square solve.
 
 For repeated right-hand sides and logarithmic determinants, use the separate
 [owning LU factorization](lu.md) API. It guarantees reusable packed factors;

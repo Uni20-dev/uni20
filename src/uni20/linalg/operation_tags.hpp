@@ -16,6 +16,12 @@
 namespace uni20::linalg
 {
 
+/// \brief Preserving full-column-rank least squares with fixed solution and diagnostic outputs.
+struct least_squares_op
+{
+    static constexpr std::string_view name = "least_squares";
+};
+
 /// \brief Accessor-respecting element copy operation tag.
 struct copy_op
 {

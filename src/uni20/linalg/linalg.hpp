@@ -7,6 +7,7 @@
 #include <uni20/linalg/ops/gemm.hpp>
 #include <uni20/linalg/ops/gemv.hpp>
 #include <uni20/linalg/ops/linear_solve.hpp>
+#include <uni20/linalg/ops/least_squares.hpp>
 #include <uni20/linalg/ops/lu.hpp>
 #include <uni20/linalg/ops/slogdet.hpp>
 #include <uni20/linalg/ops/lq.hpp>
