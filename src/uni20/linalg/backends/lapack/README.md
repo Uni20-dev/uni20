@@ -12,14 +12,16 @@ This directory contains LAPACK operation-tag backend adapters.
 - `linear_solve_mpfr.hpp`, `lu_mpfr.hpp`: optional scalar specializations of
   `LapackBackend`, included by the corresponding operation headers. They pack
   logical MPFR/MPC values and pass working precision to the MPLAPACK provider.
-- `lq.hpp`: reduced real LQ factorization through `gelqf` and `orglq`.
+- `decompositions_mpfr.hpp`: optional MPFR/MPC QR/LQ, eigensystem and SVD kernels,
+  sharing logical packing and explicit precision at the provider boundary.
+- `lq.hpp`: reduced real or complex LQ factorization through `gelqf` and `orglq`/`unglq`.
 - `tridiagonal_eigen.hpp`: symmetric tridiagonal eigenvalues and eigenvectors
   through `sterf` and `steqr`.
 - `nonsymmetric_eigen.hpp`: real and complex nonsymmetric eigensystems through
   `geev`, including real conjugate-pair unpacking.
 - `self_adjoint_eigh.hpp`: real symmetric and complex Hermitian eigensystems
   through `syev`/`heev`.
-- `qr.hpp`: reduced real QR factorization through `geqrf` and `orgqr`.
+- `qr.hpp`: reduced real or complex QR factorization through `geqrf` and `orgqr`/`ungqr`.
 - `svd.hpp`: exact real and complex singular value decompositions through
   `gesvd`, including values-only, one-sided, complete, and reduced-factor
   input-overwrite jobs.

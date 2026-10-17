@@ -38,7 +38,8 @@ for eligibility, runtime decline, and error handling, and
 ## Working Precision
 
 `gemm`, `assign_product`, `add_product`, square solves, LU factorization, and
-matrix-form logarithmic determinants accept an explicit `Precision` for both
+matrix-form logarithmic determinants, QR/LQ, self-adjoint and general eigensystems,
+SVD and truncated SVD accept an explicit `Precision` for both
 fixed and runtime scalar types. For example, the native GEMM above also accepts:
 
 ```cpp
@@ -53,6 +54,17 @@ GEMM includes the output default when `beta` is nonzero. Differing finite
 defaults require an explicit choice. These arguments do not extend provider
 coverage to other operations. See the [generic precision contract](../tensor/scalar_policy.md#generic-precision),
 [square solves](linear_solve.md#working-precision), and [LU precision policy](lu.md#precision-and-providers).
+
+For decompositions, the input matrix alone supplies the inferred precision;
+preexisting output defaults do not participate. Approximation requires finite
+precision, including for all-exact inputs and empty shapes. `qr(A, p)`,
+`lq(A, p)`, `eigh(A, p[, triangle])`, `svd(A, p[, options])`,
+`singular_values(A, p)` and `svd_left/right(A, p[, extent])` apply it explicitly.
+Destructive forms place `p` before optional settings; `nonsymmetric_eigen`
+places it after the required vector flag. Owning outputs and successful
+workspaces record `p`; output views preserve parent defaults.
+See [MPFR decompositions](mplapack_mpfr.md#dense-decompositions) for provider
+coverage, workspace handling and async behavior.
 
 ## Norms and Initialization
 

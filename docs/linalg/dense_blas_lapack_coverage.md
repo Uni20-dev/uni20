@@ -18,14 +18,25 @@ Keep this inventory synchronized with provider declarations and with any
 helpers promoted from the quarantined survey into operation-tag linalg
 backends.
 
-The optional [MPFR/MPC provider](mplapack_mpfr.md) adds `Rgemm`, `Cgemm`,
-`Rgetrf`, `Cgetrf`, `Rgetrs` and `Cgetrs` through explicit-precision provider
-arrays. These support dispatched matrix products, square solves and reusable
-[LU/log determinants](lu.md) for `mpreal`
-and `complex<mpreal>` through `BlasBackend` and `LapackBackend` respectively.
-The provider-specific selector has been removed; operation acceptance remains
-limited to these kernels. They do not imply arbitrary-precision coverage of the
-other routines in this inventory or of the projected Krylov path.
+The optional [MPFR/MPC provider](mplapack_mpfr.md) uses explicit-precision
+provider arrays. It supplies real/complex GEMM through `BlasBackend`, and square
+solves, reusable LU/log determinants, QR/LQ, self-adjoint eigensystems, SVD and
+general eigensystems through `LapackBackend`.
+
+| MPFR/MPC operation | Real provider | Complex provider |
+| --- | --- | --- |
+| GEMM | `Rgemm` | `Cgemm` |
+| LU and square solve | `Rgetrf`, `Rgetrs` | `Cgetrf`, `Cgetrs` |
+| Reduced QR | `Rgeqrf`, `Rorgqr` | `Cgeqrf`, `Cungqr` |
+| Reduced LQ | `Rgelqf`, `Rorglq` | `Cgelqf`, `Cunglq` |
+| Self-adjoint eigensystem | `Rsyev` | `Cheev` |
+| SVD, including values-only and one-sided factors | `Rgesvd` | `Cgesvd` |
+| General eigenvalues/right eigenvectors | `Rgeev` | `Cgeev` |
+
+Operation acceptance remains specific to these kernels. This coverage does not
+imply MPFR Schur, tridiagonal, other surveyed routines or projected Krylov support.
+Native float32/64 and binary128 also support complex QR/LQ through their
+`geqrf`/`ungqr` and `gelqf`/`unglq` provider wrappers.
 
 The optional [binary80 adapter](mplapack_binary80.md) covers real and complex
 GEMM and real LU/solve. Complex `Cgetrf`/`Cgetrs` require a `long double` provider;
@@ -136,9 +147,9 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense real symmetric indefinite reciprocal condition estimate | yes | yes | n/a | n/a | Dense projected symmetric indefinite one-norm reciprocal condition estimate through LAPACK `sytrf`/`sycon`. |
 | Dense real symmetric indefinite factorized reciprocal condition estimate | yes | yes | n/a | n/a | Dense projected symmetric indefinite one-norm reciprocal condition estimate from reusable Bunch-Kaufman factors through LAPACK `sycon`. |
 | Dense real compact QR factor application | yes | yes | n/a | n/a | Dense projected Householder QR factor application through LAPACK `ormqr`. |
-| Dense real QR factorization | yes | yes | n/a | n/a | Active `qr_op` dispatch computes reduced QR through LAPACK `geqrf`/`orgqr`. `qr_factorization` exposes destructive workspace semantics; `qr` preserves its input and returns owning column-major factors. |
+| Dense real/complex QR factorization | yes | yes | yes | yes | Active `qr_op` dispatch computes reduced QR through LAPACK `geqrf` and `orgqr`/`ungqr`. `qr_factorization` exposes destructive workspace semantics; `qr` preserves its input and returns owning column-major factors. |
 | Dense real compact LQ factor application | yes | yes | n/a | n/a | Dense projected Householder LQ factor application through LAPACK `ormlq`. |
-| Dense real LQ factorization | yes | yes | n/a | n/a | Active `lq_op` dispatch computes reduced LQ through LAPACK `gelqf`/`orglq`. `lq_factorization` exposes destructive workspace semantics; `lq` preserves its input and returns owning column-major factors. |
+| Dense real/complex LQ factorization | yes | yes | yes | yes | Active `lq_op` dispatch computes reduced LQ through LAPACK `gelqf` and `orglq`/`unglq`. `lq_factorization` exposes destructive workspace semantics; `lq` preserves its input and returns owning column-major factors. |
 | Dense real compact QL factor application | yes | yes | n/a | n/a | Dense projected Householder QL factor application through LAPACK `ormql`. |
 | Dense real QL factorization | yes | yes | n/a | n/a | Dense projected reduced QL through LAPACK `geqlf`/`orgql`. |
 | Dense real compact RQ factor application | yes | yes | n/a | n/a | Dense projected Householder RQ factor application through LAPACK `ormrq`. |

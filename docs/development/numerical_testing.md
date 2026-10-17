@@ -42,6 +42,13 @@ Float128 means a 113-bit significand, not MPLAPACK's fallback alias to a narrowe
 `long double`. That alias mode is reported as unavailable for this case.
 Float80 similarly requires Uni20's native 64-bit-significand format detection.
 
+Dense decomposition probes force `LapackBackend` for real/complex QR, LQ,
+self-adjoint eigensystems, SVD and general eigenanalysis. They cover float32/64,
+optional binary128 and MPFR at 128/256 bits; binary80 remains explicitly
+unsupported for this operation family. Reconstruction and orthogonality use
+scalar loops independent of provider GEMM. Spectral gaps detect narrowing, and
+a separate 512-bit analytic oracle checks improved QR/eigenvalue/SVD accuracy.
+
 ## Evidence required for numerical support
 
 1. **Correctness:** run the same deterministic mathematical problem across the

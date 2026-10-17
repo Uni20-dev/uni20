@@ -1,11 +1,11 @@
-# MPLAPACK arbitrary-precision matrix products and solves
+# MPLAPACK arbitrary-precision dense linear algebra
 
 The optional CPU provider connects `mpreal` and `complex<mpreal>` tensors to
 MPLAPACK's serial MPFR/MPC routines through `BlasBackend` and `LapackBackend`.
-It currently supports GEMM and general square
-solves using LU factorization, including [owning reusable LU and log determinants](lu.md).
-It does not extend the native LAPACK scalar traits,
-Krylov support, other factorization APIs, or GPU arithmetic.
+It supports real and complex GEMM, square solves, [reusable LU and log determinants](lu.md),
+reduced QR/LQ, symmetric/Hermitian eigensystems, SVD, and general eigensystems.
+It does not extend the native raw-pointer LAPACK scalar traits, Krylov support,
+Schur routines, or GPU arithmetic.
 
 ## Configuration
 
@@ -172,7 +172,10 @@ It establishes both real and complex defaults, nearest-even rounding and the
 wrapper's cached rounding state. It accounts for first-use initialization and
 restores the prior defaults, override state and exponent bounds on normal and
 exceptional exits. No scope crosses an await or a handoff to another thread.
-This first slice uses routines with no workspace-query calls.
+Workspace queries and their subsequent execution run inside the same synchronous
+precision scope. Query results are converted directly from the provider's MPFR
+representation into checked integer lengths; they never pass through `double`.
+All numerical workspace objects are constructed while the scope is active.
 
 Include the corresponding headers under `<uni20/linalg/async/>` for scheduled
 products and solves. `assign_product(output, a, b[, p])`, explicit-coefficient
@@ -184,8 +187,75 @@ subsequent operations through the same alias.
 Async `add_product` constructs exact unit coefficients and now works for
 runtime-precision tensors without specifying coefficient precision.
 
+## Dense decompositions
+
+The ordinary tensor APIs support real `mpreal` and `complex<mpreal>` through
+`LapackBackend`. Fixed scalar types use the same precision arguments where their
+provider is available. Binary80 decompositions are not yet wired.
+
+```cpp
+#include <uni20/linalg/ops/qr.hpp>
+#include <uni20/linalg/ops/lq.hpp>
+#include <uni20/linalg/ops/self_adjoint_eigh.hpp>
+#include <uni20/linalg/ops/svd.hpp>
+
+// A is a populated matrix; H is a square symmetric/Hermitian matrix.
+auto [q, r] = uni20::linalg::qr(A);              // Infer A's default.
+auto [l, q2] = uni20::linalg::lq(A, p);
+auto [u, s, vh] = uni20::linalg::svd(A, p);
+auto singular = uni20::linalg::singular_values(A, p);
+auto [w, v] = uni20::linalg::eigh(H, p);
+auto full = uni20::linalg::svd(A, p,
+    uni20::linalg::SvdOptions{.left = uni20::linalg::SvdVectorExtent::Full,
+                            .right = uni20::linalg::SvdVectorExtent::Full});
+```
+
+`svd_left` and `svd_right` also accept `p`, followed by an optional vector extent.
+`truncated_svd(A, p[, policy])` applies the existing truncation policy after SVD
+and preserves precision defaults on the smaller owning factors. Cutoff values
+obey the scalar arithmetic rules: exact thresholds are precision-neutral;
+approximate thresholds used in arithmetic must match the factor precision.
+Empty or identically zero diagnostics can remain exact zero.
+The explicit-precision form of `eigh` accepts an optional triangle after `p`.
+Existing settings-only calls retain their behavior. An explicit selector, when
+used, is always the first argument. Destructive `qr_factorization`,
+`lq_factorization`, `self_adjoint_eigh` and `singular_value_decomposition` expose
+the same precision policy; for APIs with settings, `p` precedes those settings.
+The fixed-output `nonsymmetric_eigen` takes `p` after its `compute_right_vectors`
+flag and returns complex eigenvalues/vectors for either real or complex input.
+
+These algorithms require finite working precision, even for exact input or an
+empty matrix. An exact or absent input default requires an explicit override.
+Only the matrix input supplies an inferred default: output defaults do not
+participate. Exact input elements are rounded at the provider boundary. Owning
+results and successful destructive workspaces record the selected precision;
+structural output views retain their parent's default. Fixed-type precision
+mismatches are rejected before consuming input or resizing outputs.
+
+QR/LQ produce reduced factors with orthogonal or unitary Q. Self-adjoint
+factorization reads only the selected triangle. SVD returns nonnegative singular
+values in descending order and `Vh`, the adjoint of V. Its full empty factors
+are identity matrices. General eigenvalues are unsorted; real conjugate pairs
+are unpacked into actual complex vector columns. Provider convergence failures
+use the same `LapackError` and error policy as native decompositions. Workspaces
+are not rollback buffers after a numerical failure.
+
+Preserving calls leave inputs unchanged. Consuming calls keep the existing
+storage-transfer rules, including reduced SVD factors adopting input storage and
+row-major self-adjoint eigensystems reusing storage with the appropriate triangle
+and conjugation adjustments. Provider packing remains necessary even when the
+Uni20 output adopts input storage.
+
+Include the matching headers under `linalg/async/` for preserving and consuming
+QR/LQ, self-adjoint eigensystems and all SVD forms. Precision inference happens
+after the input becomes readable; an explicit request is copied into the
+coroutine frame. General nonsymmetric eigenanalysis retains its synchronous
+fixed-output API; no new async or preserving interface is implied.
+
 ## Examples and validation
 
+- `dense_decomposition_precision_example`: QR/LQ, SVD and eigensystems of one matrix
+  at native and runtime precision, with labeled reconstruction errors.
 - `generic_precision_example`: one square-solve interface for native and MPFR scalars.
 - `tensor_precision_example`: construction defaults, inherited view defaults and bulk conversion.
 - `mplapack_mpfr_example`: a complex 400-bit solve which becomes singular at
@@ -200,7 +270,12 @@ consumers scheduled before their inputs are published. Fixed-precision tests
 remain separate regressions; enabling MPFR does not change their arithmetic.
 Dispatch tests verify BLAS/LAPACK family selection, explicit async selectors,
 exact GEMM fallback, and type-level rejection when the provider or requested
-operation is unavailable.
+operation is unavailable. The shared numerical cases cover real and complex
+float32, float64, binary128, MPFR-128 and MPFR-256 decompositions. They check
+reconstruction, orthogonality, eigenpair residuals, small spectral gaps and
+accuracy against an independent 512-bit reference. Separate API tests cover
+storage transfer, exact/missing defaults, selected-triangle reads, empty factors,
+logical conjugation, provider-context restoration and asynchronous precision.
 
 ## Integration roadmap
 
@@ -219,23 +294,20 @@ public frontends or weakening the existing tensor and async contracts.
    Several current raw wrappers and projected algorithms assume that all of
    their native routines and workspaces are available. Replace those assumptions
    with the capabilities each operation actually requires. Backend type probes
-   remain the authority for an operation on concrete operands; adding GEMM or LU
-   must not accidentally admit QR, SVD, eigensolvers or Krylov algorithms.
+   remain the authority for an operation on concrete operands; enabling a dense
+   leaf must not accidentally admit other routines or projected algorithms.
    Apply the same audit to binary80, whose limited provider coverage still uses
    a separate selector, before consolidating that adapter into these families.
-3. **Workspace-query operations.** Extend the provider boundary with the first
-   additional routine, initially reduced real QR (`Rgeqrf`/`Rorgqr`). Query and
-   execution must each establish the selected precision on the executing thread;
-   queried lengths need checked provider-integer conversion. Construct real,
-   complex, integer and auxiliary workspaces in the provider representation as
-   required. No precision scope may cross an await. Shared query/packing helpers
-   should be introduced with an actual caller, rather than speculative APIs.
-4. **Broader decompositions.** Add LQ, Hermitian/symmetric eigensystems, exact
-   SVD, and general eigensystems in separate operation-sized changes, following
-   consumer needs. Extend the existing frontends, result types and failure
-   contracts. Each addition needs real/complex coverage where the API supports
-   it, explicit provider tests, precision-ladder accuracy checks, and recorded
-   unsupported combinations in the numerical coverage report.
+3. **Completed: dense decomposition batch.** Real/complex QR and LQ, symmetric/
+   Hermitian eigensystems, all SVD output forms and general eigensystems share
+   the precision interface and provider workspace handling. Native complex
+   QR/LQ wrappers are included. The provider routines are `R/Cgeqrf`,
+   `Rorgqr/Cungqr`, `R/Cgelqf`, `Rorglq/Cunglq`, `Rsyev/Cheev`, `R/Cgesvd`
+   and `R/Cgeev`.
+4. **Remaining dense capabilities.** Add tridiagonal eigensolvers, Schur
+   decomposition/reordering and any further routines required by projected
+   algorithms. Their precision and scalar eligibility need explicit coverage;
+   dense QR/SVD support does not automatically enable them.
 5. **Projected algorithms and allocation costs.** Enable MPFR Krylov paths only
    once their required dense routines, constants, tolerances and workspaces are
    precision-generic and validated. Remove redundant host/provider packing where
@@ -243,6 +315,6 @@ public frontends or weakening the existing tensor and async contracts.
    factorization contract. Provider-internal threading and GPU execution require
    their own contracts and are outside the current serial CPU adapter.
 
-MPLAPACK's upstream routine inventory is broader than Uni20's wrappers. Current
-implemented provider coverage remains exactly real/complex GEMM, GETRF and GETRS;
-the [dense coverage inventory](dense_blas_lapack_coverage.md) records that boundary.
+MPLAPACK's upstream routine inventory is broader than Uni20's wrappers.
+The [dense coverage inventory](dense_blas_lapack_coverage.md) records the
+implemented boundary separately from upstream availability.

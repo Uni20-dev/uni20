@@ -7,7 +7,7 @@ optional multiprecision support, and linear-algebra design background.
 
 - [Generic Precision](../tensor/scalar_policy.md#generic-precision) defines the
   shared fixed/runtime precision API used by products, square solves, LU, and
-  logarithmic determinants.
+  logarithmic determinants and dense decompositions.
 - [Dense Operation Contracts](dense_operation_contracts.md) explains fixed
   outputs, matrix norms, destructive eigensystems, and Schur block reordering.
 - [Square Linear Solves](linear_solve.md) describes strict and recoverable
@@ -26,7 +26,7 @@ optional multiprecision support, and linear-algebra design background.
 - [MPLAPACK Binary128](mplapack_binary128.md) is the build and validation guide
   for optional binary128 provider support.
 - [MPLAPACK MPFR/MPC](mplapack_mpfr.md) covers explicit-precision matrix products,
-  LU solves through the BLAS/LAPACK families, tensor defaults and per-call provider
+  LU solves and dense decompositions through the BLAS/LAPACK families, tensor defaults and per-call provider
   context in async execution. Its [roadmap](mplapack_mpfr.md#integration-roadmap)
   separates completed integration from further routine coverage.
 - [Tensor Contraction](tensor_contraction.md) defines the fixed-output dense

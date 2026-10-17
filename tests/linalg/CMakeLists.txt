@@ -1,3 +1,5 @@
+add_test_module(linalg_decompositions SOURCES test_mpfr_decompositions.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+
 add_test_module(lu SOURCES test_lu.cpp LIBS uni20_linalg)
 
 if(UNI20_ENABLE_MPLAPACK_BINARY80)

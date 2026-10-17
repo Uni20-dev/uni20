@@ -46,6 +46,9 @@ enum class PrecisionProbe
   ProviderLogDeterminantRetainsPrecision,
   CpuLogDeterminantPreservesExtendedExponentRange,
   ProviderLogDeterminantPreservesExtendedExponentRange,
+  DecompositionFactors,
+  DecompositionSpectrum,
+  DecompositionAccuracyImprovesWithPrecision,
   ProjectedTridiagonalResolvesGap,
   LanczosResolvesGapAndResidual,
   ArnoldiResolvesGap,
@@ -98,6 +101,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalLinalg", "ProviderLogDeterminantRetainsPrecision", "lapack_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "CpuLogDeterminantPreservesExtendedExponentRange", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "ProviderLogDeterminantPreservesExtendedExponentRange", "lapack_or_mplapack"},
+    ProbeDescription{"NumericalLinalg", "DecompositionFactors", "lapack"},
+    ProbeDescription{"NumericalLinalg", "DecompositionSpectrum", "lapack"},
+    ProbeDescription{"NumericalLinalg", "DecompositionAccuracyImprovesWithPrecision", "lapack"},
     ProbeDescription{"NumericalKrylov", "ProjectedTridiagonalResolvesGap", "projected_lapack"},
     ProbeDescription{"NumericalKrylov", "LanczosResolvesGapAndResidual", "native_krylov_projected_lapack"},
     ProbeDescription{"NumericalKrylov", "ArnoldiResolvesGap", "native_krylov_projected_lapack"},
@@ -119,6 +125,20 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
   else
   {
     using enum PrecisionProbe;
+    bool const decomposition = probe == DecompositionFactors || probe == DecompositionSpectrum ||
+                               probe == DecompositionAccuracyImprovesWithPrecision;
+    if (decomposition)
+    {
+      if constexpr (C::binary80_provider) return {"unsupported", "binary80 decomposition provider not yet wired"};
+#if !UNI20_ENABLE_MPLAPACK_MPFR
+      if constexpr (C::runtime) return {"unavailable", "configure UNI20_ENABLE_MPLAPACK_MPFR"};
+#endif
+#if !UNI20_ENABLE_MPLAPACK
+      if constexpr (!C::runtime && !std::same_as<typename C::real_type, float> &&
+                    !std::same_as<typename C::real_type, double>)
+        return {"unavailable", "configure UNI20_ENABLE_MPLAPACK for binary128 decompositions"};
+#endif
+    }
     bool const cpu_lu = probe == CpuLuResolvesSmallGap || probe == CpuLuAccuracyImprovesWithPrecision ||
                         probe == CpuLogDeterminantRetainsPrecision ||
                         probe == CpuLogDeterminantPreservesExtendedExponentRange;
@@ -208,6 +228,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     }
     switch (probe)
     {
+      case DecompositionAccuracyImprovesWithPrecision:
       case StandardSpecialAccuracy:
       case StandardProviderAccuracy:
       case MathConstantsAccuracy:
