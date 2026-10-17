@@ -18,7 +18,9 @@ The matrix must be square. A right-hand side is a rank-two matrix, with one
 column per right-hand side and the same scalar type and row count as the factors.
 Inputs may be row-major or logical accessor views: factorization materializes
 their values into host storage. This initial API has no asynchronous, device,
-rectangular, transposed-solve, equilibration or iterative-refinement variant.
+rectangular, transposed-solve or equilibration variant. Separate
+[three-precision LU refinement](lu_refinement.md) composes these factors/solves
+with independent working and residual arithmetic.
 The runnable `lu_log_determinant_example` illustrates factor reuse and diagnostics.
 
 ## Ownership and permutation convention

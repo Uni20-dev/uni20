@@ -29,6 +29,7 @@ general eigensystems through `LapackBackend`.
 | GEMM | `Rgemm` | `Cgemm` |
 | LU and square solve | `Rgetrf`, `Rgetrs` | `Cgetrf`, `Cgetrs` |
 | LU reciprocal condition estimate (one/infinity norm) | `Rgecon` | `Cgecon` |
+| Three-precision LU refinement | Reuses `Rgetrf`/`Rgetrs`; host residual/update arithmetic | Reuses `Cgetrf`/`Cgetrs`; host residual/update arithmetic |
 | Rank-aware minimum-norm least squares | `Rgelss` | `Cgelss` |
 | Reduced QR | `Rgeqrf`, `Rorgqr` | `Cgeqrf`, `Cungqr` |
 | Full-column-rank least squares | Reduced QR above, then scalar triangular solve | Reduced QR above, then scalar triangular solve |
