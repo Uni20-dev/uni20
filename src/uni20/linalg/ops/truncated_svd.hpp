@@ -4,6 +4,9 @@
  * \file truncated_svd.hpp
  * \ingroup linalg
  * \brief Tensor-facing truncated dense singular value decompositions.
+ * \details Precision may be inferred from the input matrix or supplied explicitly.
+ *          Fixed results require their native precision; runtime decompositions
+ *          require finite precision. Owning results record the selected default.
  */
 
 #include <uni20/common/trace.hpp>
@@ -230,14 +233,15 @@ template <class ExactResult>
   using scalar_type = uni20::tensor_element_t<typename exact_type::left_singular_vector_tensor_type>;
   using real_type = uni20::tensor_element_t<typename exact_type::singular_value_tensor_type>;
 
+  auto const p = precision_of(exact.singular_values);
   auto truncation = select_svd_truncation(exact.singular_values, policy);
   auto const retained_rank = static_cast<uni20::index_type>(truncation.retained_rank);
   auto const rows = exact.left_singular_vectors.extent(0);
   auto const cols = exact.right_singular_vectors_adjoint.extent(1);
 
-  uni20::Tensor<scalar_type, 2> left_singular_vectors(uni20::uninitialized, rows, retained_rank);
-  uni20::Tensor<real_type, 1> singular_values(uni20::uninitialized, retained_rank);
-  uni20::Tensor<scalar_type, 2> right_singular_vectors_adjoint(uni20::uninitialized, retained_rank, cols);
+  uni20::Tensor<scalar_type, 2> left_singular_vectors(uni20::uninitialized, rows, retained_rank, p);
+  uni20::Tensor<real_type, 1> singular_values(uni20::uninitialized, retained_rank, p);
+  uni20::Tensor<scalar_type, 2> right_singular_vectors_adjoint(uni20::uninitialized, retained_rank, cols, p);
 
   for (uni20::index_type column = 0; column < retained_rank; ++column)
   {
@@ -274,12 +278,13 @@ template <uni20::Real Real>
 }
 
 /// \brief Preserve a matrix and return a truncated reduced SVD through an explicit selector.
-template <class BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto
 truncated_svd(BackendSelector&& selector, MatrixTensor const& matrix,
-              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {})
+              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {},
+              std::optional<Precision> requested = {})
 {
-  auto exact = svd(std::forward<BackendSelector>(selector), matrix);
+  auto exact = svd(std::forward<BackendSelector>(selector), matrix, SvdOptions{}, requested);
   return detail::truncate_svd_result(std::move(exact), policy);
 }
 
@@ -287,9 +292,10 @@ truncated_svd(BackendSelector&& selector, MatrixTensor const& matrix,
 template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto
 truncated_svd(MatrixTensor const& matrix,
-              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {})
+              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {},
+              std::optional<Precision> requested = {})
 {
-  auto exact = svd(matrix);
+  auto exact = svd(matrix, SvdOptions{}, requested);
   return detail::truncate_svd_result(std::move(exact), policy);
 }
 
@@ -297,14 +303,16 @@ truncated_svd(MatrixTensor const& matrix,
 /// \details The exact SVD may reuse compatible input storage as destructive
 ///          workspace. Truncation returns right-sized owning factors and does
 ///          not promise that the transferred allocation is retained.
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto
-truncated_svd(BackendSelector&& selector, MatrixTensor&& matrix,
-              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {})
+[[nodiscard]] auto truncated_svd(
+    BackendSelector&& selector, MatrixTensor&& matrix,
+    SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {},
+    std::optional<Precision> requested = {})
 {
-  auto exact = svd(std::forward<BackendSelector>(selector), std::forward<MatrixTensor>(matrix));
+  auto exact =
+      svd(std::forward<BackendSelector>(selector), std::forward<MatrixTensor>(matrix), SvdOptions{}, requested);
   return detail::truncate_svd_result(std::move(exact), policy);
 }
 
@@ -312,12 +320,29 @@ truncated_svd(BackendSelector&& selector, MatrixTensor&& matrix,
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto
-truncated_svd(MatrixTensor&& matrix,
-              SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {})
+[[nodiscard]] auto truncated_svd(
+    MatrixTensor&& matrix, SvdTruncationPolicy<uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>> policy = {},
+    std::optional<Precision> requested = {})
 {
-  auto exact = svd(std::forward<MatrixTensor>(matrix));
+  auto exact = svd(std::forward<MatrixTensor>(matrix), SvdOptions{}, requested);
   return detail::truncate_svd_result(std::move(exact), policy);
+}
+
+/// \brief Compute and truncate at explicit working precision; cutoff scalars retain their precision rules.
+template <RankedTensorView<2> Matrix>
+[[nodiscard]] auto truncated_svd(Matrix&& matrix, Precision p,
+                                 SvdTruncationPolicy<make_real_t<tensor_element_t<Matrix>>> policy = {})
+{
+  return uni20::linalg::truncated_svd(std::forward<Matrix>(matrix), std::move(policy), std::optional<Precision>{p});
+}
+
+/// \brief Compute and truncate at explicit working precision; cutoff scalars retain their precision rules.
+template <KernelBackendSelector Selector, RankedTensorView<2> Matrix>
+[[nodiscard]] auto truncated_svd(Selector&& selector, Matrix&& matrix, Precision p,
+                                 SvdTruncationPolicy<make_real_t<tensor_element_t<Matrix>>> policy = {})
+{
+  return uni20::linalg::truncated_svd(std::forward<Selector>(selector), std::forward<Matrix>(matrix), std::move(policy),
+                                      std::optional<Precision>{p});
 }
 
 } // namespace uni20::linalg

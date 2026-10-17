@@ -4,10 +4,14 @@
  * \file svd.hpp
  * \ingroup linalg
  * \brief Destructive and value-producing exact dense singular value decompositions.
+ * \details Precision may be inferred from the input matrix or supplied explicitly.
+ *          Fixed results require their native precision; runtime decompositions
+ *          require finite precision. Owning results record the selected default.
  */
 
 #include <uni20/linalg/backends/lapack/svd.hpp>
 #include <uni20/linalg/blas/mdspan_matrix.hpp>
+#include <uni20/linalg/decomposition_precision.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/tensor/copy.hpp>
@@ -51,53 +55,71 @@ template <uni20::MutableRankedTensorView<1> SingularValueTensor, uni20::MutableR
   return {.left = options.left, .right = options.right};
 }
 
-template <class BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
           uni20::MutableRankedTensorView<2> LeftTensor, uni20::MutableRankedTensorView<2> RightAdjointTensor,
           uni20::MutableRankedTensorView<2> MatrixTensor>
 void dispatch_svd(BackendSelector&& selector, svd_op operation, SingularValueTensor& singular_values,
                   LeftTensor& left_singular_vectors, RightAdjointTensor& right_singular_vectors_adjoint,
-                  MatrixTensor& matrix_work)
+                  MatrixTensor& matrix_work, Precision p)
 {
   auto value_descriptor = uni20::mdspec_of(singular_values);
   auto left_descriptor = uni20::mdspec_of(left_singular_vectors);
   auto right_descriptor = uni20::mdspec_of(right_singular_vectors_adjoint);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
-  dispatch_kernel(std::forward<BackendSelector>(selector), operation, value_descriptor, left_descriptor,
-                  right_descriptor, matrix_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
+                                                                       operation, p, value_descriptor, left_descriptor,
+                                                                       right_descriptor, matrix_descriptor);
+
+  uni20::detail::record_output_precision(singular_values, p);
+  uni20::detail::record_output_precision(left_singular_vectors, p);
+  uni20::detail::record_output_precision(right_singular_vectors_adjoint, p);
+  uni20::detail::record_output_precision(matrix_work, p);
 }
 
-template <class BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
           uni20::MutableRankedTensorView<2> MatrixTensor>
 void dispatch_singular_values(BackendSelector&& selector, SingularValueTensor& singular_values,
-                              MatrixTensor& matrix_work)
+                              MatrixTensor& matrix_work, Precision p)
 {
   auto value_descriptor = uni20::mdspec_of(singular_values);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
-  dispatch_kernel(std::forward<BackendSelector>(selector), singular_values_op{}, value_descriptor, matrix_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+      std::forward<BackendSelector>(selector), singular_values_op{}, p, value_descriptor, matrix_descriptor);
+
+  uni20::detail::record_output_precision(singular_values, p);
+  uni20::detail::record_output_precision(matrix_work, p);
 }
 
-template <class BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
           uni20::MutableRankedTensorView<2> LeftTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
 void dispatch_svd_left(BackendSelector&& selector, svd_left_op operation, SingularValueTensor& singular_values,
-                       LeftTensor& left_singular_vectors, MatrixTensor& matrix_work)
+                       LeftTensor& left_singular_vectors, MatrixTensor& matrix_work, Precision p)
 {
   auto value_descriptor = uni20::mdspec_of(singular_values);
   auto left_descriptor = uni20::mdspec_of(left_singular_vectors);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
-  dispatch_kernel(std::forward<BackendSelector>(selector), operation, value_descriptor, left_descriptor,
-                  matrix_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+      std::forward<BackendSelector>(selector), operation, p, value_descriptor, left_descriptor, matrix_descriptor);
+
+  uni20::detail::record_output_precision(singular_values, p);
+  uni20::detail::record_output_precision(left_singular_vectors, p);
+  uni20::detail::record_output_precision(matrix_work, p);
 }
 
-template <class BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
           uni20::MutableRankedTensorView<2> RightAdjointTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
 void dispatch_svd_right(BackendSelector&& selector, svd_right_op operation, SingularValueTensor& singular_values,
-                        RightAdjointTensor& right_singular_vectors_adjoint, MatrixTensor& matrix_work)
+                        RightAdjointTensor& right_singular_vectors_adjoint, MatrixTensor& matrix_work, Precision p)
 {
   auto value_descriptor = uni20::mdspec_of(singular_values);
   auto right_descriptor = uni20::mdspec_of(right_singular_vectors_adjoint);
   auto matrix_descriptor = uni20::mdspec_of(matrix_work);
-  dispatch_kernel(std::forward<BackendSelector>(selector), operation, value_descriptor, right_descriptor,
-                  matrix_descriptor);
+  detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+      std::forward<BackendSelector>(selector), operation, p, value_descriptor, right_descriptor, matrix_descriptor);
+
+  uni20::detail::record_output_precision(singular_values, p);
+  uni20::detail::record_output_precision(right_singular_vectors_adjoint, p);
+  uni20::detail::record_output_precision(matrix_work, p);
 }
 } // namespace detail
 
@@ -105,37 +127,40 @@ void dispatch_svd_right(BackendSelector&& selector, svd_right_op operation, Sing
 /// \details `matrix_work` is overwritten. Singular values are returned in
 ///          descending order. The right factor is `Vh`, the transpose for real
 ///          inputs and conjugate transpose for complex inputs. The workspace
-///          and outputs must lower to writable LAPACK column-major operands.
+///          and outputs must satisfy the selected backend: native LAPACK requires
+///          column-major operands; MPFR/MPC packs logical host elements.
 /// \pre Output storage and matrix workspace do not overlap.
-template <class BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
+template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
           uni20::MutableRankedTensorView<2> LeftTensor, uni20::MutableRankedTensorView<2> RightAdjointTensor,
           uni20::MutableRankedTensorView<2> MatrixTensor>
 void singular_value_decomposition(BackendSelector&& selector, SingularValueTensor&& singular_values,
                                   LeftTensor&& left_singular_vectors,
                                   RightAdjointTensor&& right_singular_vectors_adjoint, MatrixTensor&& matrix_work,
-                                  SvdOptions options = {})
+                                  SvdOptions options = {}, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   auto operation =
       detail::prepare_svd(singular_values, left_singular_vectors, right_singular_vectors_adjoint, matrix_work, options);
   detail::dispatch_svd(std::forward<BackendSelector>(selector), operation, singular_values, left_singular_vectors,
-                       right_singular_vectors_adjoint, matrix_work);
+                       right_singular_vectors_adjoint, matrix_work, p);
 }
 
 /// \brief Compute a destructive exact SVD using tensor storage policy.
-/// \details The workspace and outputs must lower to writable LAPACK
-///          column-major operands.
+/// \details Native LAPACK requires writable column-major operands; MPFR/MPC
+///          packs logical host elements.
 template <uni20::MutableRankedTensorView<1> SingularValueTensor, uni20::MutableRankedTensorView<2> LeftTensor,
           uni20::MutableRankedTensorView<2> RightAdjointTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
 void singular_value_decomposition(SingularValueTensor&& singular_values, LeftTensor&& left_singular_vectors,
                                   RightAdjointTensor&& right_singular_vectors_adjoint, MatrixTensor&& matrix_work,
-                                  SvdOptions options = {})
+                                  SvdOptions options = {}, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix_work, requested);
   auto operation =
       detail::prepare_svd(singular_values, left_singular_vectors, right_singular_vectors_adjoint, matrix_work, options);
   auto selector =
       select_backend(operation, singular_values, left_singular_vectors, right_singular_vectors_adjoint, matrix_work);
   detail::dispatch_svd(selector, operation, singular_values, left_singular_vectors, right_singular_vectors_adjoint,
-                       matrix_work);
+                       matrix_work, p);
 }
 
 /// \brief Owning left singular vectors and singular values returned by `svd_left`.
@@ -262,21 +287,21 @@ template <class MatrixTensor> [[nodiscard]] auto direct_column_major_svd_stage(M
   return stage;
 }
 
-template <class BackendSelector, uni20::OwningTensor MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
-[[nodiscard]] auto singular_values_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work)
+[[nodiscard]] auto singular_values_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, Precision p)
 {
   svd_value_tensor_t<MatrixTensor> values(
       uni20::uninitialized,
       svd_value_extents{static_cast<uni20::index_type>(std::min(matrix_work.extent(0), matrix_work.extent(1)))});
-  dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix_work);
+  dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix_work, p);
   return values;
 }
 
-template <class BackendSelector, uni20::OwningTensor MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
 [[nodiscard]] auto svd_left_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work,
-                                             SvdVectorExtent extent)
+                                             SvdVectorExtent extent, Precision p)
 {
   std::size_t const rows = static_cast<std::size_t>(matrix_work.extent(0));
   std::size_t const cols = static_cast<std::size_t>(matrix_work.extent(1));
@@ -284,15 +309,15 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
   std::size_t const left_cols = extent == SvdVectorExtent::Full ? rows : rank;
   svd_matrix_tensor_t<MatrixTensor> left(uni20::uninitialized, rows, left_cols);
   svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, rank);
-  dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix_work);
+  dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix_work, p);
   return SvdLeftResult<decltype(left), decltype(values)>{.left_singular_vectors = std::move(left),
                                                          .singular_values = std::move(values)};
 }
 
-template <class BackendSelector, uni20::OwningTensor MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
 [[nodiscard]] auto svd_right_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work,
-                                              SvdVectorExtent extent)
+                                              SvdVectorExtent extent, Precision p)
 {
   std::size_t const rows = static_cast<std::size_t>(matrix_work.extent(0));
   std::size_t const cols = static_cast<std::size_t>(matrix_work.extent(1));
@@ -300,15 +325,16 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
   std::size_t const right_rows = extent == SvdVectorExtent::Full ? cols : rank;
   svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, rank);
   svd_matrix_tensor_t<MatrixTensor> right(uni20::uninitialized, right_rows, cols);
-  dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right,
-                     matrix_work);
+  dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right, matrix_work,
+                     p);
   return SvdRightResult<decltype(values), decltype(right)>{.singular_values = std::move(values),
                                                            .right_singular_vectors_adjoint = std::move(right)};
 }
 
-template <class BackendSelector, uni20::OwningTensor MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
-[[nodiscard]] auto svd_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, SvdOptions options)
+[[nodiscard]] auto svd_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, SvdOptions options,
+                                        Precision p)
 {
   using scalar_type = uni20::tensor_element_t<MatrixTensor>;
   using real_type = uni20::make_real_t<scalar_type>;
@@ -316,7 +342,7 @@ template <class BackendSelector, uni20::OwningTensor MatrixTensor>
   uni20::Tensor<real_type, 1> singular_values;
   uni20::Tensor<scalar_type, 2> right_singular_vectors_adjoint;
   singular_value_decomposition(std::forward<BackendSelector>(selector), singular_values, left_singular_vectors,
-                               right_singular_vectors_adjoint, matrix_work, options);
+                               right_singular_vectors_adjoint, matrix_work, options, p);
   return SvdResult<decltype(left_singular_vectors), decltype(singular_values),
                    decltype(right_singular_vectors_adjoint)>{.left_singular_vectors = std::move(left_singular_vectors),
                                                              .singular_values = std::move(singular_values),
@@ -348,28 +374,28 @@ template <class MatrixTensor> [[nodiscard]] constexpr auto select_svd_backend(Sv
       svd_op{.left = options.left, .right = options.right});
 }
 
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
-[[nodiscard]] auto singular_values_from_consumed_matrix(BackendSelector&& selector, MatrixTensor&& matrix)
+[[nodiscard]] auto singular_values_from_consumed_matrix(BackendSelector&& selector, MatrixTensor&& matrix, Precision p)
 {
   if constexpr (can_transfer_svd_storage<MatrixTensor>())
   {
     if (direct_column_major_svd_stage(matrix))
     {
       svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, std::min(matrix.extent(0), matrix.extent(1)));
-      dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix);
+      dispatch_singular_values(std::forward<BackendSelector>(selector), values, matrix, p);
       return values;
     }
   }
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work));
+  return singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
 }
 
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (can_transfer_svd_storage<MatrixTensor>())
 [[nodiscard]] auto svd_left_from_transferable_matrix(BackendSelector&& selector, MatrixTensor&& matrix,
-                                                     SvdVectorExtent extent)
+                                                     SvdVectorExtent extent, Precision p)
 {
   using factor_type = svd_reuse_factor_t<MatrixTensor>;
   using value_type = svd_value_tensor_t<MatrixTensor>;
@@ -387,34 +413,44 @@ template <class BackendSelector, class MatrixTensor>
       auto values_span = values.mdspan();
       auto matrix_span = matrix.mdspan();
       auto operation = svd_left_op{.left = extent, .overwrite_input = true};
-      if constexpr (requires { dispatch_kernel(selector, operation, values_span, matrix_span); })
+      if constexpr (requires {
+                      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(selector, operation, p,
+                                                                                           values_span, matrix_span);
+                    })
       {
-        dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, matrix_span);
+        detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
+                                                                             operation, p, values_span, matrix_span);
         auto left =
             adopt_svd_factor<factor_type>(std::forward<MatrixTensor>(matrix), rows, rank, stage->nonunit_stride);
+        uni20::detail::record_output_precision(left, p);
+        uni20::detail::record_output_precision(values, p);
         return SvdLeftResult<factor_type, value_type>{.left_singular_vectors = std::move(left),
                                                       .singular_values = std::move(values)};
       }
     }
 
     auto left = make_svd_factor<factor_type>(rows, left_cols);
-    dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix);
+    dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix, p);
+    uni20::detail::record_output_precision(left, p);
+    uni20::detail::record_output_precision(values, p);
     return SvdLeftResult<factor_type, value_type>{.left_singular_vectors = std::move(left),
                                                   .singular_values = std::move(values)};
   }
 
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto left = make_svd_factor<factor_type>(rows, left_cols);
-  dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix_work);
+  dispatch_svd_left(std::forward<BackendSelector>(selector), svd_left_op{.left = extent}, values, left, matrix_work, p);
+  uni20::detail::record_output_precision(left, p);
+  uni20::detail::record_output_precision(values, p);
   return SvdLeftResult<factor_type, value_type>{.left_singular_vectors = std::move(left),
                                                 .singular_values = std::move(values)};
 }
 
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (can_transfer_svd_storage<MatrixTensor>())
 [[nodiscard]] auto svd_right_from_transferable_matrix(BackendSelector&& selector, MatrixTensor&& matrix,
-                                                      SvdVectorExtent extent)
+                                                      SvdVectorExtent extent, Precision p)
 {
   using factor_type = svd_reuse_factor_t<MatrixTensor>;
   using value_type = svd_value_tensor_t<MatrixTensor>;
@@ -432,34 +468,46 @@ template <class BackendSelector, class MatrixTensor>
       auto values_span = values.mdspan();
       auto matrix_span = matrix.mdspan();
       auto operation = svd_right_op{.right = extent, .overwrite_input = true};
-      if constexpr (requires { dispatch_kernel(selector, operation, values_span, matrix_span); })
+      if constexpr (requires {
+                      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(selector, operation, p,
+                                                                                           values_span, matrix_span);
+                    })
       {
-        dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, matrix_span);
+        detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
+                                                                             operation, p, values_span, matrix_span);
         auto right =
             adopt_svd_factor<factor_type>(std::forward<MatrixTensor>(matrix), rank, cols, stage->nonunit_stride);
+        uni20::detail::record_output_precision(right, p);
+        uni20::detail::record_output_precision(values, p);
         return SvdRightResult<value_type, factor_type>{.singular_values = std::move(values),
                                                        .right_singular_vectors_adjoint = std::move(right)};
       }
     }
 
     auto right = make_svd_factor<factor_type>(right_rows, cols);
-    dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right, matrix);
+    dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right, matrix,
+                       p);
+    uni20::detail::record_output_precision(right, p);
+    uni20::detail::record_output_precision(values, p);
     return SvdRightResult<value_type, factor_type>{.singular_values = std::move(values),
                                                    .right_singular_vectors_adjoint = std::move(right)};
   }
 
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto right = make_svd_factor<factor_type>(right_rows, cols);
-  dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right,
-                     matrix_work);
+  dispatch_svd_right(std::forward<BackendSelector>(selector), svd_right_op{.right = extent}, values, right, matrix_work,
+                     p);
+  uni20::detail::record_output_precision(right, p);
+  uni20::detail::record_output_precision(values, p);
   return SvdRightResult<value_type, factor_type>{.singular_values = std::move(values),
                                                  .right_singular_vectors_adjoint = std::move(right)};
 }
 
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (can_transfer_svd_storage<MatrixTensor>())
-[[nodiscard]] auto svd_from_transferable_matrix(BackendSelector&& selector, MatrixTensor&& matrix, SvdOptions options)
+[[nodiscard]] auto svd_from_transferable_matrix(BackendSelector&& selector, MatrixTensor&& matrix, SvdOptions options,
+                                                Precision p)
 {
   using factor_type = svd_reuse_factor_t<MatrixTensor>;
   using value_type = svd_value_tensor_t<MatrixTensor>;
@@ -483,8 +531,8 @@ template <class BackendSelector, class MatrixTensor>
     auto left_span = left.mdspan();
     auto right_span = right.mdspan();
     auto matrix_span = matrix_work.mdspan();
-    dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, left_span, right_span,
-                    matrix_span);
+    detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+        std::forward<BackendSelector>(selector), operation, p, values_span, left_span, right_span, matrix_span);
   }
   else if (options.left == SvdVectorExtent::Reduced && (options.right == SvdVectorExtent::Full || rows >= cols))
   {
@@ -493,9 +541,13 @@ template <class BackendSelector, class MatrixTensor>
     auto values_span = values.mdspan();
     auto right_span = right.mdspan();
     auto matrix_span = matrix.mdspan();
-    if constexpr (requires { dispatch_kernel(selector, operation, values_span, right_span, matrix_span); })
+    if constexpr (requires {
+                    detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+                        selector, operation, p, values_span, right_span, matrix_span);
+                  })
     {
-      dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, right_span, matrix_span);
+      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+          std::forward<BackendSelector>(selector), operation, p, values_span, right_span, matrix_span);
       left = adopt_svd_factor<factor_type>(std::forward<MatrixTensor>(matrix), rows, rank, stage->nonunit_stride);
     }
     else
@@ -503,8 +555,9 @@ template <class BackendSelector, class MatrixTensor>
       left = make_svd_factor<factor_type>(rows, left_cols);
       auto normal_operation = svd_op{.left = options.left, .right = options.right};
       auto left_span = left.mdspan();
-      dispatch_kernel(std::forward<BackendSelector>(selector), normal_operation, values_span, left_span, right_span,
-                      matrix_span);
+      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
+                                                                           normal_operation, p, values_span, left_span,
+                                                                           right_span, matrix_span);
     }
   }
   else if (options.right == SvdVectorExtent::Reduced)
@@ -514,9 +567,13 @@ template <class BackendSelector, class MatrixTensor>
     auto values_span = values.mdspan();
     auto left_span = left.mdspan();
     auto matrix_span = matrix.mdspan();
-    if constexpr (requires { dispatch_kernel(selector, operation, values_span, left_span, matrix_span); })
+    if constexpr (requires {
+                    detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+                        selector, operation, p, values_span, left_span, matrix_span);
+                  })
     {
-      dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, left_span, matrix_span);
+      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+          std::forward<BackendSelector>(selector), operation, p, values_span, left_span, matrix_span);
       right = adopt_svd_factor<factor_type>(std::forward<MatrixTensor>(matrix), rank, cols, stage->nonunit_stride);
     }
     else
@@ -524,8 +581,9 @@ template <class BackendSelector, class MatrixTensor>
       right = make_svd_factor<factor_type>(right_rows, cols);
       auto normal_operation = svd_op{.left = options.left, .right = options.right};
       auto right_span = right.mdspan();
-      dispatch_kernel(std::forward<BackendSelector>(selector), normal_operation, values_span, left_span, right_span,
-                      matrix_span);
+      detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
+                                                                           normal_operation, p, values_span, left_span,
+                                                                           right_span, matrix_span);
     }
   }
   else
@@ -537,10 +595,13 @@ template <class BackendSelector, class MatrixTensor>
     auto left_span = left.mdspan();
     auto right_span = right.mdspan();
     auto matrix_span = matrix.mdspan();
-    dispatch_kernel(std::forward<BackendSelector>(selector), operation, values_span, left_span, right_span,
-                    matrix_span);
+    detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
+        std::forward<BackendSelector>(selector), operation, p, values_span, left_span, right_span, matrix_span);
   }
 
+  uni20::detail::record_output_precision(left, p);
+  uni20::detail::record_output_precision(values, p);
+  uni20::detail::record_output_precision(right, p);
   return SvdResult<factor_type, value_type, factor_type>{.left_singular_vectors = std::move(left),
                                                          .singular_values = std::move(values),
                                                          .right_singular_vectors_adjoint = std::move(right)};
@@ -548,81 +609,93 @@ template <class BackendSelector, class MatrixTensor>
 } // namespace detail
 
 /// \brief Preserve a matrix and return its exact singular values through an explicit selector.
-template <class BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
-[[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor const& matrix)
+template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
+[[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor const& matrix,
+                                   std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work));
+  return detail::singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
 }
 
 /// \brief Preserve a matrix and return its exact singular values.
-template <uni20::RankedTensorView<2> MatrixTensor> [[nodiscard]] auto singular_values(MatrixTensor const& matrix)
+template <uni20::RankedTensorView<2> MatrixTensor>
+[[nodiscard]] auto singular_values(MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_singular_values_backend<decltype(matrix_work)>();
-  return detail::singular_values_from_work_matrix(std::move(selector), std::move(matrix_work));
+  return detail::singular_values_from_work_matrix(std::move(selector), std::move(matrix_work), p);
 }
 
 /// \brief Consume an owning matrix and return its exact singular values through an explicit selector.
 /// \details The input allocation is used directly as destructive workspace
 ///          when its layout is LAPACK-compatible.
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor&& matrix)
+[[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor&& matrix,
+                                   std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   return detail::singular_values_from_consumed_matrix(std::forward<BackendSelector>(selector),
-                                                      std::forward<MatrixTensor>(matrix));
+                                                      std::forward<MatrixTensor>(matrix), p);
 }
 
 /// \brief Consume an owning matrix and return its exact singular values.
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto singular_values(MatrixTensor&& matrix)
+[[nodiscard]] auto singular_values(MatrixTensor&& matrix, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   using work_type = std::conditional_t<detail::can_transfer_svd_storage<MatrixTensor>(),
                                        std::remove_cvref_t<MatrixTensor>, detail::svd_matrix_tensor_t<MatrixTensor>>;
   auto selector = detail::select_singular_values_backend<work_type>();
-  return detail::singular_values_from_consumed_matrix(std::move(selector), std::forward<MatrixTensor>(matrix));
+  return detail::singular_values_from_consumed_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), p);
 }
 
 /// \brief Preserve a matrix and return exact left singular vectors and singular values.
-template <class BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto svd_left(BackendSelector&& selector, MatrixTensor const& matrix,
-                            SvdVectorExtent extent = SvdVectorExtent::Reduced)
+                            SvdVectorExtent extent = SvdVectorExtent::Reduced, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::svd_left_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent);
+  return detail::svd_left_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent, p);
 }
 
 /// \brief Preserve a matrix and return exact left singular vectors and singular values.
 template <uni20::RankedTensorView<2> MatrixTensor>
-[[nodiscard]] auto svd_left(MatrixTensor const& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+[[nodiscard]] auto svd_left(MatrixTensor const& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced,
+                            std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_svd_left_backend<decltype(matrix_work)>(extent);
-  return detail::svd_left_from_work_matrix(std::move(selector), std::move(matrix_work), extent);
+  return detail::svd_left_from_work_matrix(std::move(selector), std::move(matrix_work), extent, p);
 }
 
 /// \brief Consume an owning matrix and return exact left singular vectors and singular values.
 /// \details A reduced left factor may adopt the input allocation through
 ///          LAPACK `JOBU='O'`. A full factor is allocated separately.
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
 [[nodiscard]] auto svd_left(BackendSelector&& selector, MatrixTensor&& matrix,
-                            SvdVectorExtent extent = SvdVectorExtent::Reduced)
+                            SvdVectorExtent extent = SvdVectorExtent::Reduced, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     return detail::svd_left_from_transferable_matrix(std::forward<BackendSelector>(selector),
-                                                     std::forward<MatrixTensor>(matrix), extent);
+                                                     std::forward<MatrixTensor>(matrix), extent, p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-    return detail::svd_left_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent);
+    return detail::svd_left_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent,
+                                             p);
   }
 }
 
@@ -630,60 +703,68 @@ template <class BackendSelector, class MatrixTensor>
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto svd_left(MatrixTensor&& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+[[nodiscard]] auto svd_left(MatrixTensor&& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced,
+                            std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     using factor_type = detail::svd_reuse_factor_t<MatrixTensor>;
     using value_type = detail::svd_value_tensor_t<MatrixTensor>;
     auto operation = svd_left_op{.left = extent};
     auto selector = select_backend_for<value_type, factor_type, std::remove_cvref_t<MatrixTensor>>(operation);
-    return detail::svd_left_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), extent);
+    return detail::svd_left_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), extent,
+                                                     p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
     auto selector = detail::select_svd_left_backend<decltype(matrix_work)>(extent);
-    return detail::svd_left_from_work_matrix(std::move(selector), std::move(matrix_work), extent);
+    return detail::svd_left_from_work_matrix(std::move(selector), std::move(matrix_work), extent, p);
   }
 }
 
 /// \brief Preserve a matrix and return exact singular values and right singular vectors.
-template <class BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
+template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto svd_right(BackendSelector&& selector, MatrixTensor const& matrix,
-                             SvdVectorExtent extent = SvdVectorExtent::Reduced)
+                             SvdVectorExtent extent = SvdVectorExtent::Reduced, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::svd_right_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent);
+  return detail::svd_right_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent, p);
 }
 
 /// \brief Preserve a matrix and return exact singular values and right singular vectors.
 template <uni20::RankedTensorView<2> MatrixTensor>
-[[nodiscard]] auto svd_right(MatrixTensor const& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+[[nodiscard]] auto svd_right(MatrixTensor const& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced,
+                             std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_svd_right_backend<decltype(matrix_work)>(extent);
-  return detail::svd_right_from_work_matrix(std::move(selector), std::move(matrix_work), extent);
+  return detail::svd_right_from_work_matrix(std::move(selector), std::move(matrix_work), extent, p);
 }
 
 /// \brief Consume an owning matrix and return exact singular values and right singular vectors.
 /// \details A reduced right factor may adopt the input allocation through
 ///          LAPACK `JOBVT='O'`. A full factor is allocated separately.
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
 [[nodiscard]] auto svd_right(BackendSelector&& selector, MatrixTensor&& matrix,
-                             SvdVectorExtent extent = SvdVectorExtent::Reduced)
+                             SvdVectorExtent extent = SvdVectorExtent::Reduced, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     return detail::svd_right_from_transferable_matrix(std::forward<BackendSelector>(selector),
-                                                      std::forward<MatrixTensor>(matrix), extent);
+                                                      std::forward<MatrixTensor>(matrix), extent, p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-    return detail::svd_right_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent);
+    return detail::svd_right_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), extent,
+                                              p);
   }
 }
 
@@ -691,21 +772,24 @@ template <class BackendSelector, class MatrixTensor>
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto svd_right(MatrixTensor&& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+[[nodiscard]] auto svd_right(MatrixTensor&& matrix, SvdVectorExtent extent = SvdVectorExtent::Reduced,
+                             std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     using factor_type = detail::svd_reuse_factor_t<MatrixTensor>;
     using value_type = detail::svd_value_tensor_t<MatrixTensor>;
     auto operation = svd_right_op{.right = extent};
     auto selector = select_backend_for<value_type, factor_type, std::remove_cvref_t<MatrixTensor>>(operation);
-    return detail::svd_right_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), extent);
+    return detail::svd_right_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), extent,
+                                                      p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
     auto selector = detail::select_svd_right_backend<decltype(matrix_work)>(extent);
-    return detail::svd_right_from_work_matrix(std::move(selector), std::move(matrix_work), extent);
+    return detail::svd_right_from_work_matrix(std::move(selector), std::move(matrix_work), extent, p);
   }
 }
 
@@ -714,42 +798,47 @@ template <class MatrixTensor>
 ///          `s` with length `k`, and `Vh` with shape `k x n`, where
 ///          `k = min(m,n)`. Full left and right extents are independently
 ///          selectable.
-template <class BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
-[[nodiscard]] auto svd(BackendSelector&& selector, MatrixTensor const& matrix, SvdOptions options = {})
+template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
+[[nodiscard]] auto svd(BackendSelector&& selector, MatrixTensor const& matrix, SvdOptions options = {},
+                       std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::svd_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), options);
+  return detail::svd_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), options, p);
 }
 
 /// \brief Preserve a matrix and return its exact singular value decomposition.
 /// \details Zero inner extent returns empty reduced factors; a requested
 ///          unconstrained full left or right factor is the identity matrix.
 template <uni20::RankedTensorView<2> MatrixTensor>
-[[nodiscard]] auto svd(MatrixTensor const& matrix, SvdOptions options = {})
+[[nodiscard]] auto svd(MatrixTensor const& matrix, SvdOptions options = {}, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_svd_backend<decltype(matrix_work)>(options);
-  return detail::svd_from_work_matrix(std::move(selector), std::move(matrix_work), options);
+  return detail::svd_from_work_matrix(std::move(selector), std::move(matrix_work), options, p);
 }
 
 /// \brief Consume an owning matrix and return its exact singular value decomposition.
 /// \details The supplied selector controls the destructive SVD
 ///          dispatch. Compatible reduced factors may adopt the input
 ///          allocation through a LAPACK overwrite job.
-template <class BackendSelector, class MatrixTensor>
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto svd(BackendSelector&& selector, MatrixTensor&& matrix, SvdOptions options = {})
+[[nodiscard]] auto svd(BackendSelector&& selector, MatrixTensor&& matrix, SvdOptions options = {},
+                       std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     return detail::svd_from_transferable_matrix(std::forward<BackendSelector>(selector),
-                                                std::forward<MatrixTensor>(matrix), options);
+                                                std::forward<MatrixTensor>(matrix), options, p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-    return detail::svd_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), options);
+    return detail::svd_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), options, p);
   }
 }
 
@@ -766,8 +855,9 @@ template <class BackendSelector, class MatrixTensor>
 template <class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
-[[nodiscard]] auto svd(MatrixTensor&& matrix, SvdOptions options = {})
+[[nodiscard]] auto svd(MatrixTensor&& matrix, SvdOptions options = {}, std::optional<Precision> requested = {})
 {
+  auto const p = detail::decomposition_precision(matrix, requested);
   if constexpr (detail::can_transfer_svd_storage<MatrixTensor>())
   {
     using factor_type = detail::svd_reuse_factor_t<MatrixTensor>;
@@ -775,14 +865,81 @@ template <class MatrixTensor>
     auto operation = svd_op{.left = options.left, .right = options.right};
     auto selector =
         select_backend_for<value_type, factor_type, factor_type, std::remove_cvref_t<MatrixTensor>>(operation);
-    return detail::svd_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), options);
+    return detail::svd_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), options, p);
   }
   else
   {
     auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
     auto selector = detail::select_svd_backend<decltype(matrix_work)>(options);
-    return detail::svd_from_work_matrix(std::move(selector), std::move(matrix_work), options);
+    return detail::svd_from_work_matrix(std::move(selector), std::move(matrix_work), options, p);
   }
+}
+
+/// \brief Compute SVD at explicit working precision with optional output settings.
+template <RankedTensorView<2> Matrix> [[nodiscard]] auto svd(Matrix&& matrix, Precision p, SvdOptions options = {})
+{
+  return uni20::linalg::svd(std::forward<Matrix>(matrix), options, std::optional<Precision>{p});
+}
+
+/// \brief Compute SVD at explicit working precision with optional output settings.
+template <KernelBackendSelector Selector, RankedTensorView<2> Matrix>
+[[nodiscard]] auto svd(Selector&& selector, Matrix&& matrix, Precision p, SvdOptions options = {})
+{
+  return uni20::linalg::svd(std::forward<Selector>(selector), std::forward<Matrix>(matrix), options,
+                            std::optional<Precision>{p});
+}
+
+/// \brief Compute left SVD factors at explicit working precision with optional output settings.
+template <RankedTensorView<2> Matrix>
+[[nodiscard]] auto svd_left(Matrix&& matrix, Precision p, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+{
+  return uni20::linalg::svd_left(std::forward<Matrix>(matrix), extent, std::optional<Precision>{p});
+}
+
+/// \brief Compute left SVD factors at explicit working precision with optional output settings.
+template <KernelBackendSelector Selector, RankedTensorView<2> Matrix>
+[[nodiscard]] auto svd_left(Selector&& selector, Matrix&& matrix, Precision p,
+                            SvdVectorExtent extent = SvdVectorExtent::Reduced)
+{
+  return uni20::linalg::svd_left(std::forward<Selector>(selector), std::forward<Matrix>(matrix), extent,
+                                 std::optional<Precision>{p});
+}
+
+/// \brief Compute right SVD factors at explicit working precision with optional output settings.
+template <RankedTensorView<2> Matrix>
+[[nodiscard]] auto svd_right(Matrix&& matrix, Precision p, SvdVectorExtent extent = SvdVectorExtent::Reduced)
+{
+  return uni20::linalg::svd_right(std::forward<Matrix>(matrix), extent, std::optional<Precision>{p});
+}
+
+/// \brief Compute right SVD factors at explicit working precision with optional output settings.
+template <KernelBackendSelector Selector, RankedTensorView<2> Matrix>
+[[nodiscard]] auto svd_right(Selector&& selector, Matrix&& matrix, Precision p,
+                             SvdVectorExtent extent = SvdVectorExtent::Reduced)
+{
+  return uni20::linalg::svd_right(std::forward<Selector>(selector), std::forward<Matrix>(matrix), extent,
+                                  std::optional<Precision>{p});
+}
+
+/// \brief Compute a destructive decomposition at explicit precision with optional output settings.
+template <MutableRankedTensorView<1> V, MutableRankedTensorView<2> L, MutableRankedTensorView<2> R,
+          MutableRankedTensorView<2> A>
+void singular_value_decomposition(V&& values, L&& left, R&& right, A&& matrix_work, Precision p,
+                                  SvdOptions options = {})
+{
+  uni20::linalg::singular_value_decomposition(std::forward<V>(values), std::forward<L>(left), std::forward<R>(right),
+                                              std::forward<A>(matrix_work), options, std::optional<Precision>{p});
+}
+
+/// \brief Compute a destructive decomposition at explicit precision with optional output settings.
+template <KernelBackendSelector Selector, MutableRankedTensorView<1> V, MutableRankedTensorView<2> L,
+          MutableRankedTensorView<2> R, MutableRankedTensorView<2> A>
+void singular_value_decomposition(Selector&& selector, V&& values, L&& left, R&& right, A&& matrix_work, Precision p,
+                                  SvdOptions options = {})
+{
+  uni20::linalg::singular_value_decomposition(std::forward<Selector>(selector), std::forward<V>(values),
+                                              std::forward<L>(left), std::forward<R>(right),
+                                              std::forward<A>(matrix_work), options, std::optional<Precision>{p});
 }
 
 } // namespace uni20::linalg
