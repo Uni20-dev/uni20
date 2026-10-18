@@ -17,10 +17,13 @@ optional multiprecision support, and linear-algebra design background.
 - [Least Squares](least_squares.md) describes preserving full-rank QR and minimum-norm SVD solves,
   rank/cutoff diagnostics, residual norms and generic precision.
 - [Numerical Infrastructure Plan](precision_numerics_plan.md) sequences
-  rank-aware solving, conditioning and complex Gamma/Barnes extraction.
+  rank-aware solving, conditioning, mixed-precision refinement for dense and
+  matrix-free problems, and complex Gamma/Barnes extraction.
 - [Reusable LU, Conditioning and Logarithmic Determinants](lu.md) describes
   owning factors, repeated solves, reciprocal condition estimates and signed
   or complex-phase log determinants.
+- [Three-Precision LU Refinement](lu_refinement.md) separates factor, working
+  and residual arithmetic, with backward-error diagnostics and recoverable stops.
 - [Mdspan Linear Algebra Dispatch](mdspan_dispatch.md) tracks implemented
   operation-tag vertical slices and the remaining dense-operation sequence.
 - [BLAS/LAPACK Mdspan Wrappers](blas_lapack_wrappers.md) describes the

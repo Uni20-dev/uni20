@@ -1,3 +1,5 @@
+add_test_module(lu_refine SOURCES test_lu_refine.cpp LIBS uni20_linalg)
+
 add_test_module(rank_aware SOURCES test_rank_aware.cpp LIBS uni20_linalg)
 
 add_test_module(least_squares SOURCES test_least_squares.cpp LIBS uni20_linalg)

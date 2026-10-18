@@ -164,6 +164,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | CPU and provider square solve | Nearly singular dyadic system with analytic solution, independent scalar residual |
 | Solve accuracy | Well-conditioned system with exact rational solution, compared with a 512-bit oracle |
 | CPU and provider reusable LU | Small-gap system, multiple RHS columns and repeated solves; rational solution against a 512-bit oracle |
+| CPU/provider float32-factor refinement | All configured real/complex working scalars, improved rational-solution accuracy, MPFR residuals at twice working precision; does not imply provider coverage for the working scalar |
 | CPU and provider log determinant | Near-one magnitude with an independent analytic logarithm bound; nontrivial complex phase; extended exponent range |
 | Extended-range solve | System scaled by `2^-1200`, independent of the small-gap test |
 | Projected tridiagonal eigensystem | Analytic closely spaced eigenvalues |

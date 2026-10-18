@@ -11,6 +11,7 @@
 #include <uni20/linalg/ops/lq.hpp>
 #include <uni20/linalg/ops/lu.hpp>
 #include <uni20/linalg/ops/lu_rcond.hpp>
+#include <uni20/linalg/ops/lu_refine.hpp>
 #include <uni20/linalg/ops/matrix_exponential.hpp>
 #include <uni20/linalg/ops/matrix_norm.hpp>
 #include <uni20/linalg/ops/matrix_product.hpp>
