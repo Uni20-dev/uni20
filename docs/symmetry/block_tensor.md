@@ -421,6 +421,11 @@ cross-boundary movement remains an explicit `repartition`. A permutation may
 resort its logical key index and expose permuted `layout_stride` blocks, but it
 does not move payload.
 
+An identity dense-axis mapping retains the original block descriptor and
+accessor, including compressed diagonal representation. `as_block_tensor_view`
+therefore provides an owned metadata descriptor for diagonal as well as ordinary
+blocks, without converting either representation to dense storage.
+
 The op-state lowers directly to the backend BLAS `op` when the provider can
 represent it. The baseline Fortran BLAS set is `N`/`T`/`C`; conjugate-only is a
 provider extension, for example OpenBLAS `CblasConjNoTrans` or its

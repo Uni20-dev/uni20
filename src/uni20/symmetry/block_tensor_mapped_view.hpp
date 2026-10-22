@@ -227,6 +227,16 @@ template <TensorView Block> auto make_read_only_block_view(Block const& block)
   return MdspecTensorView<mdspec_type, mdspec_type, storage_policy>{const_mdspec, const_mdspec};
 }
 
+// An identity map preserves the original mapping/accessor, including compressed
+// diagonal blocks which cannot be represented by a layout_stride descriptor.
+template <auto Permutation, TensorView Block> auto map_block(Block block)
+{
+  if constexpr (Permutation == make_identity_axis_permutation<std::tuple_size_v<decltype(Permutation)>>())
+    return block;
+  else
+    return permute_block(std::move(block), Permutation);
+}
+
 template <class SourceTensor, class = void> class BlockTensorAllocationContextBinding {
   public:
     explicit BlockTensorAllocationContextBinding(SourceTensor&) noexcept {}
@@ -272,8 +282,7 @@ class BlockTensorMappedView {
     using codomain_type = CodomainType;
     using source_mutable_access_block_type =
         decltype(std::declval<SourceTensor&>().block_by_ordinal(std::size_t{}));
-    using mutable_block_type = decltype(permute_block(std::declval<source_mutable_access_block_type>(),
-                                                      std::declval<decltype(DensePermutation) const&>()));
+    using mutable_block_type = decltype(map_block<DensePermutation>(std::declval<source_mutable_access_block_type>()));
     using const_block_type = decltype(make_read_only_block_view(std::declval<mutable_block_type const&>()));
     using allocation_context_binding_type = BlockTensorAllocationContextBinding<SourceTensor>;
 
@@ -462,7 +471,7 @@ class BlockTensorMappedView {
       {
         keys_.push_back(binding.key);
         auto source_block = source.block_by_ordinal(binding.source_ordinal);
-        blocks_.push_back(permute_block(std::move(source_block), DensePermutation));
+        blocks_.push_back(map_block<DensePermutation>(std::move(source_block)));
       }
     }
 

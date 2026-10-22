@@ -34,6 +34,14 @@ static_assert(uni20::krylov::KrylovVectorOps<uni20::krylov::BlockTensorVectorOps
 static_assert(!uni20::krylov::KrylovOperator<uni20::krylov::BlockTensorVectorOps<Tensor>, Tensor>);
 static_assert(uni20::krylov::KrylovMatrixFreeOperator<U1BlockDiagonalOps, Tensor, double>);
 
+template <class Source>
+concept CanBindBlockSpace = requires(uni20::krylov::BlockTensorVectorOps<Tensor>& ops, Source&& source) {
+  uni20::krylov::krylov_space<double>(ops, std::forward<Source>(source));
+};
+static_assert(CanBindBlockSpace<Tensor&> && CanBindBlockSpace<Tensor const&>);
+static_assert(!CanBindBlockSpace<Tensor> && !CanBindBlockSpace<Tensor const>);
+static_assert(CanBindBlockSpace<decltype(uni20::as_block_tensor_view(std::declval<Tensor&>()))>);
+
 auto make_prototype(uni20::Symmetry const& symmetry, uni20::BlockSpace const& space) -> Tensor
 {
   return Tensor(symmetry, uni20::Domain{space}, uni20::Codomain{space}, {Key{{0, 0}}, Key{{1, 1}}});
@@ -104,6 +112,13 @@ TEST(BlockTensorVectorOpsTest, CountsCompressedDiagonalDegreesOfFreedom)
   uni20::krylov::BlockTensorVectorOps<DiagonalTensor> ops(prototype);
   EXPECT_EQ(ops.problem_dimension(), 5);
   EXPECT_EQ(ops.vector_dimension(prototype), 5);
+  auto vector_space = uni20::krylov::krylov_space<double>(ops, prototype);
+  static_assert(uni20::DiagonalBlockTensorView<typename decltype(vector_space)::prototype_type>);
+  auto allocated = ops.allocate_like(vector_space.prototype);
+  EXPECT_EQ(ops.vector_dimension(allocated), 5);
+  EXPECT_TRUE(std::ranges::equal(allocated.storage().offsets(), prototype.storage().offsets()));
+  ops.set_zero(allocated);
+  EXPECT_EQ(ops.norm(allocated), 0.0);
 }
 
 TEST(BlockTensorVectorOpsTest, AllocatesCompletePackedVectorsFromTheirBoundaries)
@@ -118,13 +133,92 @@ TEST(BlockTensorVectorOpsTest, AllocatesCompletePackedVectorsFromTheirBoundaries
   uni20::krylov::BlockTensorVectorOps<CompleteTensor> ops(prototype);
   prototype.block_by_ordinal(0)[0, 0] = 7.0;
 
-  auto allocated = ops.allocate_like(prototype);
+  auto vector_space = uni20::krylov::krylov_space<double>(ops, uni20::as_block_tensor_view(prototype));
+  auto allocated = ops.allocate_like(vector_space.prototype);
   EXPECT_TRUE(allocated.has_all_legal_blocks());
   EXPECT_TRUE(std::ranges::equal(allocated.stored_keys(), prototype.stored_keys()));
   EXPECT_TRUE(std::ranges::equal(allocated.storage().offsets(), prototype.storage().offsets()));
   EXPECT_NE(allocated.storage().buffer().data(), prototype.storage().buffer().data());
   ops.set_zero(allocated);
   EXPECT_DOUBLE_EQ(ops.norm(allocated), 0.0);
+}
+
+// A context-requiring host policy exercises placement retention without CUDA.
+// No default allocation path exists, so losing the context cannot silently pass.
+struct AllocationContext
+{
+    std::size_t allocations = 0;
+};
+template <class T> struct ContextBuffer : uni20::HostBuffer<T>
+{
+    AllocationContext* context;
+    ContextBuffer(AllocationContext& ctx, std::size_t size, uni20::StorageInitialization initialization)
+        : uni20::HostBuffer<T>(size, initialization), context(&ctx)
+    {
+      ++ctx.allocations;
+    }
+};
+struct ContextHostStorage : uni20::HostStorage
+{
+    template <class T> using storage_t = ContextBuffer<T>;
+    template <class T>
+    static auto make_packed_storage(AllocationContext& ctx, std::size_t size, std::span<std::size_t const>,
+                                    uni20::StorageInitialization initialization) -> storage_t<T>
+    {
+      return {ctx, size, initialization};
+    }
+    template <class T> static auto make_handle(storage_t<T>& buffer) -> T* { return buffer.data(); }
+    template <class T> static auto make_handle(storage_t<T> const& buffer) -> T const* { return buffer.data(); }
+    template <class T> static auto allocation_context(storage_t<T> const& buffer) -> AllocationContext&
+    {
+      return *buffer.context;
+    }
+};
+
+template <class StoragePolicy> class BlockPrototypeContextTest : public ::testing::Test {};
+using ContextStorageTypes = ::testing::Types<uni20::PackedSparseBlockStorage<ContextHostStorage, 64>,
+                                            uni20::PackedCompleteBlockStorage<ContextHostStorage, 64>>;
+TYPED_TEST_SUITE(BlockPrototypeContextTest, ContextStorageTypes);
+
+TYPED_TEST(BlockPrototypeContextTest, RetainsContextThroughTemporaryViewsIncludingEmptySpaces)
+{
+  uni20::Symmetry const symmetry{"N:U(1)"};
+  using T = uni20::BlockTensor<double, uni20::Domain<uni20::BlockSpace>, uni20::Codomain<uni20::BlockSpace>, TypeParam>;
+  for (bool empty : {false, true})
+  {
+    auto const q0 = uni20::QNum::identity(symmetry);
+    uni20::BlockSpace const space = empty ? uni20::BlockSpace(symmetry, {})
+                                          : uni20::BlockSpace(symmetry, {{q0, 2}});
+    AllocationContext allocation;
+    auto prototype = [&] {
+      if constexpr (uni20::CompleteBlockStorage<TypeParam>)
+        return T(symmetry, uni20::Domain{space}, uni20::Codomain{space}, allocation);
+      else
+      {
+        std::vector<typename T::key_type> keys;
+        if (!empty) keys.push_back(typename T::key_type{{0, 0}});
+        return T(symmetry, uni20::Domain{space}, uni20::Codomain{space}, keys, allocation);
+      }
+    }();
+    uni20::krylov::BlockTensorVectorOps<T> ops(prototype);
+    auto retained = [&] {
+      auto temporary = uni20::as_block_tensor_view(prototype);
+      return uni20::krylov::krylov_space<double>(ops, temporary);
+    }();
+    EXPECT_EQ(allocation.allocations, 1);
+    EXPECT_EQ(&retained.prototype.allocation_context(), &allocation);
+    auto workspace = ops.allocate_like(retained.prototype);
+    EXPECT_EQ(allocation.allocations, 2);
+    EXPECT_EQ(&workspace.allocation_context(), &allocation);
+    EXPECT_TRUE(std::ranges::equal(workspace.storage().offsets(), prototype.storage().offsets()));
+    EXPECT_TRUE(std::ranges::equal(workspace.stored_keys(), prototype.stored_keys()));
+    EXPECT_EQ(workspace.domain(), prototype.domain());
+    EXPECT_EQ(workspace.codomain(), prototype.codomain());
+    if (!empty)
+    {
+      EXPECT_NE(workspace.storage().buffer().data(), prototype.storage().buffer().data());
+    }
+  }
 }
 
 TEST(BlockTensorVectorOpsTest, RunsU1BlockTensorThroughSymmetricLanczos)
@@ -197,9 +291,18 @@ TEST(BlockTensorVectorOpsTest, GmresPreservesU1BlocksAndBoundaries)
     uni20::copy(out, in);
   };
   uni20::krylov::IdentityPreconditioner preconditioner{ops};
-  uni20::krylov::GmresRefinementContext context{.working = uni20::krylov::krylov_space<double>(ops, x),
+  auto working_space = [&] {
+    auto temporary_view = uni20::as_block_tensor_view(std::as_const(x));
+    return uni20::krylov::krylov_space<double>(ops, temporary_view);
+  }();
+  static_assert(uni20::BorrowedBlockTensorView<typename decltype(working_space)::prototype_type>);
+  static_assert(std::same_as<typename decltype(working_space)::vector_type, Tensor>);
+  EXPECT_EQ(working_space.prototype.block(Key{{0, 0}}).mdspan().data_handle(),
+            x.block(Key{{0, 0}}).mdspan().data_handle());
+  uni20::krylov::GmresRefinementContext context{.working = std::move(working_space),
                                                 .inner = uni20::krylov::krylov_space<double>(ops, rhs),
-                                                .residual = uni20::krylov::krylov_space<double>(ops, rhs),
+                                                .residual = uni20::krylov::krylov_space<double>(
+                                                    ops, uni20::as_block_tensor_view(rhs)),
                                                 .inner_operator = ops,
                                                 .residual_operator = ops,
                                                 .preconditioner = preconditioner,

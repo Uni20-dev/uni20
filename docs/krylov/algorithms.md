@@ -70,6 +70,13 @@ codomain, stored-key pattern, scalar type, and storage policy. `allocate_like`
 reproduces that block structure, while vector operations remain blockwise and
 never form a symmetry-erasing dense projection. An application-specific
 operator may compose or derive from this adapter and supply `matvec`.
+For refinement, `KrylovVectorSpace` retains a prototype descriptor by value,
+separately from the owning work-vector type. `BlockTensorVectorOps::prototype_view`
+uses an identity block-tensor view; allocating from it preserves the frozen
+structure, storage policy and leaf allocation context. Temporary views are
+accepted without borrowing their metadata; the underlying resources must still
+outlive the solve. See the [refinement contract](gmres_refinement.md#mixed-precision-refinement).
+
 `BlockTensorMatrixFreeOps<Tensor, Operator>` is the direct composition: it owns
 an output-first callable, validates both vectors against the frozen structure,
 and then invokes `operation(output, input)`. The callable may retain immutable

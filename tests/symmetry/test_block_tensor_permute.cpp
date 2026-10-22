@@ -198,6 +198,28 @@ TEST(BlockTensorPermutationTest, AsyncMdspecPermutationPreservesEpochIdentityAnd
   EXPECT_EQ(&mdspec_of(block).data_descriptor().async_block(), &tensor.async_block(key));
 }
 
+TEST(BlockTensorPermutationTest, IdentityViewPreservesCompressedDiagonalMapping)
+{
+  Symmetry const sym{"N:U(1)"};
+  BlockSpace const space(sym, {{QNum::identity(sym), 3}}, "diagonal");
+  using Tensor = BlockTensor<double, Domain<BlockSpace>, Codomain<BlockSpace>, PackedDiagonalBlockStorage<>>;
+  Tensor::key_type const key{{0, 0}};
+  Tensor tensor(sym, Domain{space}, Codomain{space}, {key});
+  tensor.diagonal_values(key)[1] = 7.0;
+  auto view = [&] {
+    auto temporary = as_block_tensor_view(std::as_const(tensor));
+    return as_block_tensor_view(temporary);
+  }();
+  static_assert(DiagonalBlockTensorView<decltype(view)>);
+  static_assert(!MutableBlockTensorView<decltype(view)>);
+  auto block = view.block(key);
+  auto values = diagonal_components(mdspec_of(block));
+  EXPECT_EQ(values.data_handle(), tensor.diagonal_values(key).data());
+  EXPECT_EQ(values.extent(0), 3);
+  EXPECT_DOUBLE_EQ(values[1], 7.0);
+  EXPECT_DOUBLE_EQ((view.block(key)[0, 1]), 0.0);
+}
+
 TEST(BlockTensorPermutationTest, AsyncRankZeroPermutationPreservesScalarEpochIdentity)
 {
   Symmetry const sym{"N:U(1)"};

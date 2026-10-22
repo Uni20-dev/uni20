@@ -10,6 +10,42 @@ using namespace uni20::krylov;
 using V = DenseHostVector<double>;
 using IV = DenseHostVector<float>;
 
+template <class Source>
+concept CanBindDenseSpace = requires(DenseHostVectorAlgebra<double>& ops, Source&& source) {
+  krylov_space<double>(ops, std::forward<Source>(source));
+  krylov_space<double>(ops, std::forward<Source>(source), native_precision<double>());
+};
+static_assert(CanBindDenseSpace<V&> && CanBindDenseSpace<V const&>);
+static_assert(!CanBindDenseSpace<V> && !CanBindDenseSpace<V const>);
+static_assert(!CanBindDenseSpace<std::vector<double>>);
+static_assert(CanBindDenseSpace<std::span<double const>>);
+static_assert(CanBindDenseSpace<std::span<double, 2>>);
+
+TEST(GmresRefinement, RetainsTemporaryPrototypeViewsAndAllocatesOwningVectors)
+{
+  DenseHostVectorOps<double> ops(2, {2, 0, 0, 4});
+  V x{{0, 0}}, b{{1, 1}};
+  auto space = [&] {
+    auto view = std::span<double const>(x.values);
+    return krylov_space<double>(ops, view);
+  }();
+  static_assert(std::same_as<typename decltype(space)::prototype_type, std::span<double const>>);
+  static_assert(std::same_as<typename decltype(space)::vector_type, V>);
+  EXPECT_EQ(space.prototype.data(), x.values.data());
+  EXPECT_EQ(ops.allocation_count(), 0);
+  auto scratch = space.ops.allocate_like(space.prototype);
+  EXPECT_EQ(scratch.values.size(), x.values.size());
+  EXPECT_NE(scratch.values.data(), x.values.data());
+  IdentityPreconditioner preconditioner{ops};
+  DenseHostVectorTransfer transfer;
+  GmresRefinementContext context{space, krylov_space<double>(ops, std::span<double const>(x.values)),
+                                 krylov_space<double>(ops, std::as_const(b)), ops, ops, preconditioner, transfer};
+  auto info = gmres_refine_with_info(context, x, b);
+  ASSERT_TRUE(info.succeeded());
+  EXPECT_DOUBLE_EQ(x.values[0], 0.5);
+  EXPECT_DOUBLE_EQ(x.values[1], 0.25);
+}
+
 TEST(GmresRefinement, FloatCorrectionsRecoverDoubleAccuracy)
 {
   DenseHostVectorOps<double> ops(2, {3, 1, 1, 2});

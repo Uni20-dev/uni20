@@ -177,9 +177,34 @@ auto info = gmres_refine_with_info(context, x, b);
 
 For MPFR, pass a trailing finite precision to each `krylov_space<mpreal>` (or
 `krylov_space<complex<mpreal>>`). The spaces can have the same C++ vector type
-while using different precisions. Contexts borrow their operations and allocation
-prototypes, so these must outlive the solve. A prototype supplies structure;
-its initial numerical values are not used as a solution or RHS.
+while using different precisions. Contexts borrow their operations, which must
+outlive the solve. Each space **owns its prototype descriptor by value**, while
+the descriptor can borrow numerical storage and an allocation context. Those
+underlying resources must remain valid through the solve; replacing or
+structurally modifying an owner can invalidate its views. A prototype supplies
+structure; its numerical values are not used as a solution or RHS.
+
+`krylov_space` calls `ops.prototype_view(source)` to obtain this descriptor.
+The dense host adapter returns a read-only span; the block-tensor adapter uses
+the existing identity mapped view, retaining symmetry, boundaries, keys, block
+descriptors and leaf allocation context. Neither copies numerical payload.
+Named mutable/const owners and temporary borrowed views are accepted; temporary
+owners are rejected. For example:
+
+```cpp
+auto space = krylov_space<double>(ops, as_block_tensor_view(tensor));
+// The temporary view has gone away; space owns its descriptor.
+auto work = space.ops.allocate_like(space.prototype); // Independent owning tensor.
+```
+
+The descriptor type is independent of the space's `vector_type`, which is deduced
+from `ops.allocate_like(descriptor)`. Existing `KrylovVectorOps` continues to
+describe arithmetic on the owning vector type. An external adapter supplies
+`prototype_view(source)` returning a value, plus `vector_dimension(descriptor)`
+and `allocate_like(descriptor)`. It may retain only allocation metadata, retain
+a borrowed view, or explicitly use `std::reference_wrapper` if borrowing the
+entire prototype is its intended contract. The adapter is responsible for
+rejecting unsafe temporary owners and preserving its allocation policy.
 
 The transfer callback is `transfer(output, input, destination_precision)`.
 It must preserve the mathematical vector space and its metadata, with explicit

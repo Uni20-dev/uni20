@@ -21,6 +21,8 @@ namespace uni20::krylov
 ///          It must support working-to-residual, residual-to-inner,
 ///          inner-to-residual, residual-to-working, and residual-to-residual.
 ///          All callbacks are borrowed; no hidden thread-local precision is set.
+///          Spaces own their prototype descriptors; any underlying payload and
+///          allocation contexts must remain valid through the solve.
 template <class WorkingSpace, class InnerSpace, class ResidualSpace, class InnerOp, class ResidualOp,
           class Preconditioner, class Transfer>
 struct GmresRefinementContext

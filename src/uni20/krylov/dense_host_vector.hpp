@@ -7,6 +7,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -50,6 +51,23 @@ template <typename Scalar> class DenseHostVectorAlgebra {
       return x.values.size();
     }
 
+    /// \brief Retain a read-only allocation descriptor without copying vector elements.
+    [[nodiscard]] auto prototype_view(DenseHostVector<Scalar> const& x) const -> std::span<Scalar const>
+    {
+      return x.values;
+    }
+    auto prototype_view(DenseHostVector<Scalar> const&&) const = delete;
+
+    /// \brief Copy a borrowed span descriptor, including a temporary span.
+    template <class Element, std::size_t Extent>
+      requires std::same_as<std::remove_const_t<Element>, Scalar>
+    [[nodiscard]] auto prototype_view(std::span<Element, Extent> x) const -> std::span<Scalar const>
+    {
+      return x;
+    }
+
+    [[nodiscard]] std::size_t vector_dimension(std::span<Scalar const> x) const noexcept { return x.size(); }
+
     [[nodiscard]] int allocation_count() const noexcept { return allocation_count_; }
     [[nodiscard]] int copy_count() const noexcept { return copy_count_; }
     [[nodiscard]] int axpy_count() const noexcept { return axpy_count_; }
@@ -60,8 +78,14 @@ template <typename Scalar> class DenseHostVectorAlgebra {
 
     [[nodiscard]] DenseHostVector<Scalar> allocate_like(DenseHostVector<Scalar> const& x)
     {
+      return this->allocate_like(this->prototype_view(x));
+    }
+
+    /// \brief Allocate independent owning storage from a retained span's extent.
+    [[nodiscard]] DenseHostVector<Scalar> allocate_like(std::span<Scalar const> x)
+    {
       ++allocation_count_;
-      return DenseHostVector<Scalar>{std::vector<Scalar>(x.values.size())};
+      return DenseHostVector<Scalar>{std::vector<Scalar>(x.size())};
     }
 
     void copy(DenseHostVector<Scalar>& dst, DenseHostVector<Scalar> const& src)
