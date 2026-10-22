@@ -191,12 +191,20 @@ For an arena with maximum concurrency `M` and `R` reserved slots:
 - the reservation does not create application threads
 - unused reserved slots do not become ordinary worker capacity
 
+There is an important exception for `task_arena(1, 1)`: oneTBB 2022.3 adds a
+mandatory worker slot for enqueued work, allowing the worker and application
+thread to execute simultaneously. During that work, `max_concurrency()` can
+report two. A process-wide parallelism limit of one does not prevent this
+enqueue exception. Use `task_arena(1, 0)` when one simultaneous participant is
+required; zero reserved slots does not exclude application threads.
+
 Useful configurations are:
 
 | Construction | Interpretation |
 |---|---|
 | `task_arena(automatic, 1)` | Automatic total concurrency with one slot available to application threads |
-| `task_arena(1, 1)` | One simultaneous arena participant; enqueued work may use oneTBB's eventual-execution worker |
+| `task_arena(1, 1)` | Enqueue exception: may execute an application thread and a mandatory worker simultaneously |
+| `task_arena(1, 0)` | One simultaneous participant, either an application thread or a worker |
 | `task_arena(4, 1)` | At most four participants; at most three ordinary workers, with one slot reserved for application entry |
 | `task_arena(4, 0)` | At most four participants and no slot reserved specifically for application entry |
 | `task_arena(4, 4)` | No ordinary worker slots; generally unsuitable for asynchronously submitted work |
@@ -204,10 +212,13 @@ Useful configurations are:
 The current `TbbScheduler(int max_concurrency)` constructor uses:
 
 ```cpp
-arena_(max_concurrency, /*reserved_for_application_threads=*/1)
+arena_(max_concurrency, /*reserved_for_application_threads=*/max_concurrency == 1 ? 0 : 1)
 ```
 
 The argument is arena concurrency, not a request for that many worker threads.
+The constraints overload makes the same choice for an explicit
+`constraints.max_concurrency == 1`. Automatic concurrency retains the default
+reservation policy; request one explicitly when that limit is required.
 
 ### `global_control::max_allowed_parallelism`
 
@@ -226,10 +237,11 @@ This control is different from an arena limit:
 - reserved application-thread slots partition arena capacity between workers
   and application-thread entry
 
-For a strict Uni20 single-activation test, use both a global parallelism limit
-of one and a `TbbScheduler` arena concurrency of one. This limits simultaneous
-execution but does not guarantee OS-thread identity: Uni20 scheduler admission
-uses `task_arena::enqueue()`, for which oneTBB may still run one worker. Use
+`TbbScheduler{1}` uses an unreserved sole arena slot, so its single-participant
+limit does not depend on a global control. A global limit of one can additionally
+restrict ordinary worker participation elsewhere in the process. Neither
+setting guarantees OS-thread identity: Uni20 scheduler admission uses
+`task_arena::enqueue()`, for which oneTBB may still run one worker. Use
 `DebugScheduler` when deterministic calling-thread execution is required.
 
 ## Arena Constraints
@@ -375,15 +387,15 @@ simultaneous suspension points for the same already-suspended stack.
 
 ## The Single-Thread Case
 
-The single-participant case is not a fallback that bypasses TBB. It limits the
-arena to one simultaneously executing activation, but the participant may be
-an application thread or oneTBB's eventual-execution worker.
+The single-participant case uses `task_arena(1, 0)`, not a fallback that bypasses
+TBB. It limits the arena to one simultaneously executing activation, but the
+participant may be an application thread or a worker. Serial lightweight
+batches also enter that arena. A suspended synchronous wait is not an executing
+activation; other work can run while its stack is suspended.
 
 Consider:
 
 ```cpp
-oneapi::tbb::global_control serial{
-    oneapi::tbb::global_control::max_allowed_parallelism, 1};
 TbbScheduler scheduler{1};
 ```
 
@@ -391,13 +403,17 @@ For Uni20's non-blocking admission path, the timeline is:
 
 1. The application thread registers task A with `task_group::defer()` and
    publishes it with `task_arena::enqueue()` without entering the arena.
-2. A may execute on oneTBB's eventual-execution worker. If the requested epoch
-   is not already ready, the application thread calls `get_wait()` and enters
-   the arena with `execute()`.
-3. The wait suspends its synchronous TBB execution stack.
-4. A executes on whichever thread next participates in the arena, makes the
-   requested epoch readable, and resumes the saved suspension point.
-5. The application thread continues `get_wait()` and leaves `execute()`.
+2. A may execute on a worker without application-thread participation. If the
+   requested epoch is not already ready, the application thread calls
+   `get_wait()` through `execute()`.
+3. `execute()` enters the arena when possible. If its sole slot is occupied,
+   oneTBB may delegate the wait body to the arena instead; the application
+   thread need not itself participate.
+4. If A has not yet made the epoch readable, the wait suspends its synchronous
+   TBB execution stack, allowing A to execute and resume the saved suspension
+   point when the result becomes readable.
+5. Once the wait body completes, `execute()` and the application's `get_wait()`
+   return.
 
 This also works when the wait is nested inside a task:
 
@@ -416,7 +432,7 @@ remains trapped in A and B cannot run.
 
 ### Comparison with `DebugScheduler`
 
-`task_arena(1, 1)` with worker parallelism disabled is similar to
+`TbbScheduler{1}`, backed by `task_arena(1, 0)`, is similar to
 `DebugScheduler` in important ways:
 
 - only one task body executes at a time
