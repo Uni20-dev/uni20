@@ -6,6 +6,9 @@ set(_uni20_krylov_test_sources
     test_dense_subspace.cpp
     test_known_matrices.cpp
     test_krylov_exponential.cpp
+    test_gmres.cpp
+    test_gmres_diagnostics.cpp
+    test_gmres_refinement.cpp
     test_matrix_free_interface.cpp
     test_nonsymmetric_arnoldi.cpp
     test_symmetric_lanczos.cpp

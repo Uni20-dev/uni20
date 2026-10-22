@@ -15,7 +15,7 @@ selectors are introduced.
 | 2 | SVD-based minimum-norm least squares and numerical rank | Synchronous GELSS implementation available |
 | 3 | Reciprocal condition estimates from reusable LU factors | Synchronous GECON implementation available |
 | 4a | Dense LU refinement with distinct factor, working and residual precisions; backward error | Initial synchronous implementation available |
-| 4b | Mixed-precision GMRES and GMRES-based refinement, including matrix-free iMPS operators | Planned separate follow-up |
+| 4b | Mixed-precision GMRES and GMRES-based refinement, including matrix-free iMPS operators | Synchronous fixed right-preconditioned core available |
 | 5 | Extract right-half-plane complex log-Gamma and log-absolute Barnes G | Separate scalar-math work |
 
 Stage 5 is independent of the matrix work. Tridiagonal and Schur provider
@@ -121,17 +121,14 @@ precision-sensitive data and improved accuracy. The runnable
 This is a solver layer above provider kernels. A GERFS wrapper alone does not
 provide the intended precision control or matrix-free extension. No convergence
 guarantee follows merely from selecting three precisions. The dense stage is
-implemented in
-[three-precision LU refinement](lu_refinement.md); the operator/GMRES extensions
-below remain design work.
-
-The immediate PR is stage 4a: dense LU-based refinement and its diagnostics.
-Three precision roles already apply to that algorithm; GMRES is not required.
-Stage 4b is separate work, covering both a mixed-precision GMRES solver and its
-use for refinement corrections. Its matrix-free/iMPS requirements are recorded
-below to guide separation of responsibilities, not as prerequisites for 4a.
-Keep residual evaluation, correction and updates separate internally without
-requiring a public generic correction-solver framework in the first PR.
+implemented in [three-precision LU refinement](lu_refinement.md).
+Three precision roles apply to that algorithm without requiring GMRES.
+Stage 4b now supplies restarted fixed right-preconditioned GMRES and its use
+for matrix-free mixed-precision refinement corrections. See the
+[GMRES contract](../krylov/gmres_refinement.md). Flexible preconditioning, adaptive
+precision and asynchronous execution remain further work. Its matrix-free/iMPS
+requirements below guide separation of responsibilities.
+Residual evaluation, correction and updates remain separate internally.
 
 ### Precision roles
 
@@ -144,9 +141,9 @@ and residual-evaluation precision. Their correction equation can use the LU
 factors directly or a preconditioned GMRES solve. [Amestoy et al.
 (2024)](https://doi.org/10.1137/23M1549079) extend GMRES refinement to five
 precisions by separating the preconditioned matrix-vector operation from the
-remaining GMRES arithmetic. The first LU interface needs only the three roles;
-the later GMRES interface can supply its own additional policy without padding
-the LU options with unused settings.
+remaining GMRES arithmetic. The LU interface needs only the three roles;
+the GMRES interface supplies its own additional policy without padding the LU
+options with unused settings.
 
 | Role | Initial dense implementation | Extension boundary |
 | --- | --- | --- |
@@ -179,13 +176,13 @@ a matrix reconstructed from them. Higher-precision arithmetic can reduce error
 when applying stored inputs, but cannot recover data lost before the solver was
 called. The same distinction applies to rounded or truncated MPS tensors.
 
-Separate residual evaluation, correction solving and vector updates so that
-the outer loop can later operate through Uni20's existing
+Separate residual evaluation, correction solving and vector updates through
+Uni20's existing
 [matrix-free vector boundary](../krylov/algorithms.md#matrix-free-boundary).
 An operator must actually evaluate at its declared precision, not merely cast
-a low-precision result. Matrix-free GMRES, mixed vector types and additional
-scalar support remain implementation work; existing eigensolver interfaces do
-not imply those capabilities are already available.
+a low-precision result. The GMRES refinement context binds distinct vector spaces
+and explicit transfers. This does not extend the separate eigensolver scalar
+coverage.
 
 For iMPS transfer/environment equations, the tensor layer supplies the operator,
 fixed-point projection or gauge constraint, and a compatible right-hand side.
@@ -227,11 +224,15 @@ actually supplied, not a certified error in the physical result.
    Reusable dense backward-error diagnostics and synchronous `lu_refine_with_info`
    support one-shot or supplied LU factors. Same-precision refinement is a
    special case. See the operation contract for publication and stopping rules.
-2. In the separate GMRES follow-up, implement independently chosen inner
-   arithmetic/preconditioner application and integrate matrix-free and
-   block-sparse vectors. Then add GMRES-based refinement using the shared
-   residual and diagnostic components. Settle its operator and precision API
-   with its own numerical implementation and validation evidence.
+2. **Implemented:** restarted GMRES and matrix-free GMRES refinement separate
+   inner arithmetic, application callbacks, residual evaluation and working
+   updates. BlockTensor vector operations preserve symmetry metadata. Explicit
+   transfers support distinct native types and runtime precisions. Matrix-free
+   residual diagnostics remain separate from dense componentwise backward error;
+   optional original-operator 2-norm and conditioning information supplies
+   backward-error and solution-error estimates at residual precision.
+   Application-specific mixed-precision block/device transfers require their own
+   adapters and validation.
 3. Add async scheduling and heterogeneous execution through existing dispatch
    and scheduler mechanisms. Resolve precision defaults after input epochs are
    readable; provider precision scopes stay within one synchronous call on the
@@ -243,8 +244,9 @@ analytic solutions and verify the arithmetic roles, not just the final scalar
 type. Cover real/complex fixed types and MPFR, successful improvement, an
 insufficient residual precision, stagnation, low-precision factor failure and
 input preservation. Use selected informative precision combinations rather than
-an exhaustive Cartesian product. A later operator test should exercise a
-projected transfer problem and verify that symmetry structure survives.
+an exhaustive Cartesian product. The projected transfer example exercises the
+gauge constraint; the BlockTensor regression verifies that symmetry structure
+survives both GMRES and refinement.
 
 Least-squares refinement needs its own mathematical contract. [Carson, Higham
 and Pranesh (2020)](https://doi.org/10.1137/20M1316822) study a QR-preconditioned

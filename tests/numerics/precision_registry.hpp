@@ -60,6 +60,10 @@ enum class PrecisionProbe
   LanczosResolvesGapAndResidual,
   ArnoldiResolvesGap,
   ExponentialActionRetainsIncrement,
+  GmresRotationAndSolve,
+  GmresAccuracyImprovesWithPrecision,
+  GmresMixedRefinement,
+  GmresErrorDiagnostics,
   count
 };
 
@@ -121,7 +125,11 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalKrylov", "ProjectedTridiagonalResolvesGap", "projected_lapack"},
     ProbeDescription{"NumericalKrylov", "LanczosResolvesGapAndResidual", "native_krylov_projected_lapack"},
     ProbeDescription{"NumericalKrylov", "ArnoldiResolvesGap", "native_krylov_projected_lapack"},
-    ProbeDescription{"NumericalKrylov", "ExponentialActionRetainsIncrement", "native_krylov_projected_lapack"}};
+    ProbeDescription{"NumericalKrylov", "ExponentialActionRetainsIncrement", "native_krylov_projected_lapack"},
+    ProbeDescription{"NumericalKrylov", "GmresRotationAndSolve", "native_krylov"},
+    ProbeDescription{"NumericalKrylov", "GmresAccuracyImprovesWithPrecision", "native_krylov"},
+    ProbeDescription{"NumericalKrylov", "GmresMixedRefinement", "native_krylov_float32_inner"},
+    ProbeDescription{"NumericalKrylov", "GmresErrorDiagnostics", "native_krylov"}};
 static_assert(precision_probes.size() == static_cast<std::size_t>(PrecisionProbe::count));
 
 struct ProbeCoverage
@@ -264,6 +272,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case UtilityAccuracyImprovesWithPrecision:
       case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:
+      case GmresAccuracyImprovesWithPrecision:
       case SolveAccuracyImprovesWithPrecision:
       case CpuLuAccuracyImprovesWithPrecision:
       case ProviderLuAccuracyImprovesWithPrecision:

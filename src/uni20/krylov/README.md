@@ -9,6 +9,12 @@ norms and inner products.
 
 ## Contents
 
+- `gmres.hpp`: restarted fixed right-preconditioned GMRES with recoverable
+  results and true-residual acceptance.
+- `gmres_diagnostics.hpp`: optional operator 2-norm information and corresponding
+  backward-error and solution-error estimates.
+- `gmres_refinement.hpp`, `vector_space.hpp`: explicit working, inner and residual
+  spaces for matrix-free mixed-precision refinement.
 - `matrix_free.hpp`: matrix-free operator concepts, parameter types, result
   types, diagnostics, and dimension validation helpers.
 - `symmetric_lanczos.hpp`: real symmetric and complex Hermitian Lanczos

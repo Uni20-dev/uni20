@@ -1,5 +1,7 @@
 #include <uni20/krylov/block_tensor_vector.hpp>
 #include <uni20/krylov/symmetric_lanczos.hpp>
+#include <uni20/krylov/gmres.hpp>
+#include <uni20/krylov/gmres_refinement.hpp>
 #include <uni20/symmetry/block_space.hpp>
 #include <uni20/symmetry/block_tensor.hpp>
 #include <uni20/symmetry/block_tensor_contract.hpp>
@@ -161,6 +163,54 @@ TEST(BlockTensorVectorOpsTest, RunsU1BlockTensorThroughSymmetricLanczos)
     EXPECT_NEAR(ops.norm(result.eigenvectors[index]), 1.0, 1.0e-12);
     EXPECT_TRUE(std::ranges::equal(result.eigenvectors[index].stored_keys(), initial.stored_keys()));
   }
+}
+
+TEST(BlockTensorVectorOpsTest, GmresPreservesU1BlocksAndBoundaries)
+{
+  uni20::Symmetry const symmetry{"N:U(1)"};
+  auto const q0 = uni20::QNum::identity(symmetry);
+  auto const q1 = uni20::make_qnum(symmetry, {{"N", 1}});
+  uni20::BlockSpace const space(symmetry, {{q0, 2}, {q1, 1}}, "state");
+  Tensor x = make_prototype(symmetry, space);
+  Tensor rhs = make_prototype(symmetry, space);
+  Tensor matrix = make_prototype(symmetry, space);
+  fill(x, 0.0);
+  fill(rhs, 1.0);
+  fill_diagonal_operator(matrix);
+  U1BlockDiagonalOps ops(x, U1BlockDiagonalMatvec{.matrix = &matrix});
+  auto info = uni20::krylov::gmres_with_info<double>(ops, ops, x, rhs, {.relative_tolerance = 1e-13});
+  ASSERT_TRUE(info.succeeded());
+  EXPECT_EQ(x.symmetry(), rhs.symmetry());
+  EXPECT_EQ(x.domain(), rhs.domain());
+  EXPECT_EQ(x.codomain(), rhs.codomain());
+  EXPECT_TRUE(std::ranges::equal(x.stored_keys(), rhs.stored_keys()));
+  auto first = x.block(Key{{0, 0}});
+  EXPECT_NEAR((first[0, 0]), 1.0, 1e-13);
+  EXPECT_NEAR((first[0, 1]), 1.0, 1e-13);
+  EXPECT_NEAR((first[1, 0]), 1.0 / 3.0, 1e-13);
+  EXPECT_NEAR((first[1, 1]), 1.0 / 3.0, 1e-13);
+  EXPECT_NEAR((x.block(Key{{1, 1}})[0, 0]), 0.5, 1e-13);
+
+  fill(x, 0.0);
+  auto transfer = [](Tensor& out, Tensor const& in, uni20::Precision p) {
+    uni20::require_precision<double>(p);
+    uni20::copy(out, in);
+  };
+  uni20::krylov::IdentityPreconditioner preconditioner{ops};
+  uni20::krylov::GmresRefinementContext context{.working = uni20::krylov::krylov_space<double>(ops, x),
+                                                .inner = uni20::krylov::krylov_space<double>(ops, rhs),
+                                                .residual = uni20::krylov::krylov_space<double>(ops, rhs),
+                                                .inner_operator = ops,
+                                                .residual_operator = ops,
+                                                .preconditioner = preconditioner,
+                                                .transfer = transfer};
+  auto refined = uni20::krylov::gmres_refine_with_info(context, x, rhs);
+  ASSERT_TRUE(refined.succeeded());
+  EXPECT_EQ(x.symmetry(), rhs.symmetry());
+  EXPECT_EQ(x.domain(), rhs.domain());
+  EXPECT_EQ(x.codomain(), rhs.codomain());
+  EXPECT_TRUE(std::ranges::equal(x.stored_keys(), rhs.stored_keys()));
+  EXPECT_NEAR((x.block(Key{{1, 1}})[0, 0]), 0.5, 1e-14);
 }
 
 } // namespace

@@ -23,11 +23,33 @@ prefers a compatible installed MPLAPACK package and otherwise fetches the pinned
 paths, while maintained `MplapackBinary128*` targets cover selected binary128
 stress cases. The shared `NumericalKrylov/*` probes run the same small-gap and
 residual problems across supported precisions and explicitly report float80 and
-MPFR/MPC solver gaps. See [Krylov Precision Validation](precision_validation.md) for
-the test-level `f128` and `cf128` validation matrix.
+MPFR/MPC eigensolver/exponential gaps. See
+[Krylov Precision Validation](precision_validation.md) for the test-level `f128`
+and `cf128` validation matrix.
 
 Dense provider and quarantined helper coverage is tracked separately in
 [Dense BLAS/LAPACK Wrapper Coverage](../linalg/dense_blas_lapack_coverage.md).
+
+## Linear solves: GMRES and refinement
+
+`gmres_with_info` implements restarted fixed right-preconditioned GMRES, and
+`gmres_refine_with_info` adds matrix-free mixed-precision residual refinement.
+Both support configured real/complex float32/64/80/128 and MPFR/MPC, independently
+of projected LAPACK availability. See [the full operation contract](gmres_refinement.md)
+for callback precision, failure/publication rules, and the distinction between
+relative residual and backward error.
+
+GMRES defaults to a restart length of 30, 1000 Arnoldi steps, a relative target
+of `sqrt(epsilon)` and zero absolute tolerance. Refinement defaults to ten
+corrections and a relative target of working-precision epsilon. Both require a
+recomputed true residual for acceptance. Modified Gram-Schmidt performs a second
+pass when the first reduces the norm below its pre-orthogonalization value
+divided by `sqrt(2)`; a remaining Arnoldi extension at most epsilon times that
+original norm is treated as breakdown and checked against the true residual.
+Optional original-operator 2-norm, inverse 2-norm and condition estimates provide
+backward-error and solution-error estimates, without extra matvecs or changing
+the stopping policy. Refinement evaluates its outer diagnostics at residual
+precision; inner estimates are supplied independently.
 
 ## Matrix-Free Boundary
 
