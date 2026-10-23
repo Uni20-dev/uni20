@@ -83,10 +83,12 @@ class TbbScheduler : public IAsyncScheduler {
     ///                        Use task_arena::automatic for the oneTBB default.
     /// \param wait_options Blocking-wait watchdog policy.
     /// \param batch_options Lightweight-batch concurrency policy.
+    /// \note Explicit concurrency one shares its sole slot between application and worker threads;
+    ///       reserving that slot would let oneTBB add a second participant for enqueued work.
     explicit TbbScheduler(int max_concurrency = oneapi::tbb::task_arena::automatic,
                           TbbSchedulerWaitOptions wait_options = {}, TbbSchedulerBatchOptions batch_options = {})
-        : arena_(max_concurrency, /*reserved_for_application_threads=*/1, oneapi::tbb::task_arena::priority::normal,
-                 oneapi::tbb::task_arena::leave_policy::fast),
+        : arena_(max_concurrency, /*reserved_for_application_threads=*/max_concurrency == 1 ? 0 : 1,
+                 oneapi::tbb::task_arena::priority::normal, oneapi::tbb::task_arena::leave_policy::fast),
           wait_options_(std::move(wait_options)), batch_options_(std::move(batch_options)), paused_(false)
     {
       CHECK(!wait_options_.watchdog_timeout || wait_options_.watchdog_timeout->count() > 0);
@@ -99,8 +101,8 @@ class TbbScheduler : public IAsyncScheduler {
     /// \param batch_options Lightweight-batch concurrency policy.
     explicit TbbScheduler(oneapi::tbb::task_arena::constraints constraints, TbbSchedulerWaitOptions wait_options = {},
                           TbbSchedulerBatchOptions batch_options = {})
-        : arena_(constraints, /*reserved_for_application_threads=*/1, oneapi::tbb::task_arena::priority::normal,
-                 oneapi::tbb::task_arena::leave_policy::fast),
+        : arena_(constraints, /*reserved_for_application_threads=*/constraints.max_concurrency == 1 ? 0 : 1,
+                 oneapi::tbb::task_arena::priority::normal, oneapi::tbb::task_arena::leave_policy::fast),
           wait_options_(std::move(wait_options)), batch_options_(std::move(batch_options)), paused_(false)
     {
       CHECK(!wait_options_.watchdog_timeout || wait_options_.watchdog_timeout->count() > 0);
@@ -190,15 +192,16 @@ class TbbScheduler : public IAsyncScheduler {
     {
       if (batch.size() == 0) return;
 
-      arena_.initialize();
-      if (arena_.max_concurrency() == 1)
-      {
-        for (std::size_t index = 0; index < batch.size(); ++index)
-          batch(index);
-        return;
-      }
-
       arena_.execute([&] {
+        // Serial batches must occupy the same arena as coroutine activations.
+        // Running this loop outside execute() could overlap an enqueued task.
+        if (arena_.max_concurrency() == 1)
+        {
+          for (std::size_t index = 0; index < batch.size(); ++index)
+            batch(index);
+          return;
+        }
+
         if (!batch_options_.maximum_concurrency)
         {
           oneapi::tbb::parallel_for(std::size_t{0}, batch.size(), [&](std::size_t index) { batch(index); });

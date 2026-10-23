@@ -61,10 +61,12 @@ coroutines:
   rethrown after participating work joins.
 
 `DebugScheduler` executes indices deterministically using its configured
-`fifo`, `reverse`, or seeded `random` ordering. `TbbScheduler` executes a
-one-participant batch directly and otherwise uses a oneTBB `parallel_for`
-inside its arena. An optional `TbbSchedulerBatchOptions::maximum_concurrency`
-cap uses that many dynamic runners over the batch index space, independently
+`fifo`, `reverse`, or seeded `random` ordering. `TbbScheduler` executes every
+batch inside its arena, using a serial loop for one participant and a oneTBB
+`parallel_for` otherwise. This includes serial batches in the same concurrency
+budget as enqueued coroutine activations. An optional
+`TbbSchedulerBatchOptions::maximum_concurrency` cap uses that many dynamic
+runners over the batch index space, independently
 of the arena's coroutine-task concurrency. `TbbNumaScheduler` selects one
 managed arena for the batch; placement-aware partitioning across NUMA nodes
 remains a later policy.
