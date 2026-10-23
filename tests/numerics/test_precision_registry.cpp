@@ -4,6 +4,29 @@
 
 namespace uni20::test
 {
+#if UNI20_HAS_MPREAL
+TEST(NumericalOracle, PreservesExceptionalNativeValues)
+{
+  for_each_precision_case(PrecisionCases{}, []<class C>() {
+    if constexpr (C::available)
+      if constexpr (!C::is_complex && !C::runtime)
+      {
+        using R = typename C::real_type;
+        using L = numeric_limits<R>;
+        SCOPED_TRACE(C::name());
+        for (R x : {R(0), -R(0), L::infinity(), -L::infinity()})
+        {
+          auto reference = widen(x);
+          EXPECT_EQ(math::isinf(reference), math::isinf(x));
+          EXPECT_EQ(reference == 0, x == 0);
+          EXPECT_EQ(math::signbit(reference), math::signbit(x));
+        }
+        EXPECT_TRUE(math::isnan(widen(L::quiet_NaN())));
+      }
+  });
+}
+#endif
+
 TEST(NumericalCoverage, RegisteredProbesMatchDeclaredMatrix)
 {
   std::map<std::string, int> registered;

@@ -185,7 +185,8 @@ per-type provider selection and portable implementations; see
 [native exponential/logarithmic extensions](native_exponential_extensions.md).
 Native `compound` uses a detected typed provider or scaled, guarded integer
 exponentiation; see [native compound](native_compound.md). Native reciprocal
-functions remain deferred, with their unavailable signatures tested explicitly.
+functions also preserve all configured native formats, with scaled hyperbolic
+tails; see [native reciprocals and Catalan](native_reciprocal_math.md).
 
 - `exp10`.
 - `sinpi`, `cospi`, `tanpi`, and pi-scaled inverse trigonometric functions.

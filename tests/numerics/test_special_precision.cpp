@@ -1,4 +1,5 @@
 #include "precision_registry.hpp"
+#include <vector>
 
 namespace uni20::test
 {
@@ -126,6 +127,29 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderAccuracy)
   }
 }
 
+namespace
+{
+mpreal catalan_series()
+{
+  // Euler-transform sum (-1)^k/(2k+1)^2. Positive transformed coefficients
+  // are bounded by one, so the discarded tail is at most 2^-400. Extra
+  // reference precision protects the iterated finite differences.
+  auto p = Precision::bits(1024);
+  std::vector<mpreal> differences;
+  for (int k = 0; k < 400; ++k)
+    differences.push_back(mpreal(1, p) / ((2 * k + 1) * (2 * k + 1)));
+  auto result = mpreal(0, p), weight = mpreal(1, p) / 2;
+  for (int k = 0; k < 400; ++k)
+  {
+    result += differences[0] * weight;
+    for (int j = 0; j < 399 - k; ++j)
+      differences[j] -= differences[j + 1];
+    weight /= 2;
+  }
+  return result.at(Precision::bits(512));
+}
+} // namespace
+
 UNI20_PRECISION_TEST(NumericalScalar, MathConstantsAccuracy)
 {
   using C = TypeParam;
@@ -141,6 +165,10 @@ UNI20_PRECISION_TEST(NumericalScalar, MathConstantsAccuracy)
   accuracy<C>(value(pi<R>), pi<mpreal>.at(p));
   accuracy<C>(value(log_two<R>), log_two<mpreal>.at(p));
   accuracy<C>(value(euler_gamma<R>), euler_gamma<mpreal>.at(p));
+  auto catalan_reference = catalan_series();
+  accuracy<C>(value(catalan<R>), catalan_reference);
+  EXPECT_EQ(value(catalan<R>), scalar_at_precision<R>(catalan<mpreal>.at(p), C::precision()));
+  EXPECT_LT(abs(catalan_reference - catalan<mpreal>.at(p)), math::ldexp(mpreal(1, p), -390));
 }
 
 UNI20_PRECISION_TEST(NumericalScalar, LogGammaAccuracy)

@@ -4,6 +4,7 @@
 #include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
+#include "detail/native_reciprocal_math.hpp"
 #include "detail/native_special_math.hpp"
 #include "math_constants.hpp"
 #include "numeric_limits.hpp"
@@ -355,12 +356,12 @@ UNI20_SCALAR_MATH_DISPATCH_TO(tanpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(asinpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(acospi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(atanpi, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sec)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csc)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(cot)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sech)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csch)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(coth)
+UNI20_SCALAR_MATH_DISPATCH_TO(sec, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(csc, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(cot, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(sech, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(csch, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(coth, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(atan2pi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(compound, native_math, preserves_real_precision)
 #undef UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY
@@ -623,17 +624,17 @@ inline constexpr detail::scalar_math::asinpi_fn asinpi{};
 inline constexpr detail::scalar_math::acospi_fn acospi{};
 /// \brief Principal arctangent divided by pi.
 inline constexpr detail::scalar_math::atanpi_fn atanpi{};
-/// \brief Reciprocal cosine, evaluated directly by MPFR.
+/// \brief Reciprocal cosine, retaining the input type and precision.
 inline constexpr detail::scalar_math::sec_fn sec{};
-/// \brief Reciprocal sine, evaluated directly by MPFR.
+/// \brief Reciprocal sine, retaining the input type and precision.
 inline constexpr detail::scalar_math::csc_fn csc{};
-/// \brief Reciprocal tangent, evaluated directly by MPFR.
+/// \brief Reciprocal tangent, retaining the input type and precision.
 inline constexpr detail::scalar_math::cot_fn cot{};
-/// \brief Reciprocal hyperbolic cosine, evaluated directly by MPFR.
+/// \brief Reciprocal hyperbolic cosine, retaining the input type and precision.
 inline constexpr detail::scalar_math::sech_fn sech{};
-/// \brief Reciprocal hyperbolic sine, evaluated directly by MPFR.
+/// \brief Reciprocal hyperbolic sine, retaining the input type and precision.
 inline constexpr detail::scalar_math::csch_fn csch{};
-/// \brief Reciprocal hyperbolic tangent, evaluated directly by MPFR.
+/// \brief Reciprocal hyperbolic tangent, retaining the input type and precision.
 inline constexpr detail::scalar_math::coth_fn coth{};
 /// \brief Quadrant-aware arctangent divided by pi.
 inline constexpr detail::scalar_math::atan2pi_fn atan2pi{};

@@ -186,6 +186,11 @@ template <class R> mpreal widen(R value)
     return value.at(p);
   else
   {
+    // The significand reconstruction below handles finite nonzero values.
+    // Preserve signs/classes explicitly: fraction < 0 cannot detect -0.
+    if (value == 0) return mpreal(math::signbit(value) ? "-0" : "0", p);
+    if (math::isnan(value)) return mpreal("nan", p);
+    if (math::isinf(value)) return mpreal(math::signbit(value) ? "-inf" : "inf", p);
     int exponent = 0;
     using std::frexp;
     R fraction = frexp(value, &exponent);

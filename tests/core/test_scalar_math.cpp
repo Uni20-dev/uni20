@@ -86,16 +86,6 @@ static_assert(deferred_native_special_functions<uni20::float128>());
 #endif
 static_assert(deferred_native_special_functions<scalar_math_test::ConversionOnly<std::true_type>>());
 static_assert(!std::invocable<decltype(m::factorial), int>);
-template <class... F> consteval bool deferred_extensions(F...)
-{
-  return ((!std::invocable<F, float> && !std::invocable<F, double> && !std::invocable<F, long double>
-#if UNI20_HAS_FLOAT128
-           && !std::invocable<F, uni20::float128>
-#endif
-           && !std::invocable<F, scalar_math_test::ConversionOnly<std::true_type>>) &&
-          ...);
-}
-static_assert(deferred_extensions(m::sec, m::csc, m::cot, m::sech, m::csch, m::coth));
 static_assert(std::invocable<decltype(m::atan2pi), double, double>);
 static_assert(std::invocable<decltype(m::compound), double, int>);
 

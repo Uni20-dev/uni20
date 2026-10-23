@@ -192,12 +192,21 @@ float32/64/80/128 through detected libc routines or precision-preserving
 portable implementations. See their [value contracts, algorithms and numerical
 acceptance criteria](native_exponential_extensions.md).
 
+## Reciprocal functions
+
+`math::sec`, `csc`, `cot`, `sech`, `csch` and `coth` support all configured
+native formats and MPFR. Native hyperbolic reciprocals retain representable
+tails beyond the overflow of cosh/sinh. See [reciprocal functions and Catalan](native_reciprocal_math.md)
+for formulas, signed-zero behavior and numerical acceptance.
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,
-`uni20::log_two<Real>` and `uni20::euler_gamma<Real>`. It is also included by
+`uni20::log_two<Real>`, `uni20::euler_gamma<Real>` and `uni20::catalan<Real>`. It is also included by
 `math.hpp`. For native types these are `constexpr` values of type `Real`, using
-`std::numbers::pi_v<Real>`, `ln2_v<Real>` and `egamma_v<Real>`, respectively.
+`std::numbers::pi_v<Real>`, `ln2_v<Real>` and `egamma_v<Real>` for the first
+three. Catalan is assembled from a binary prefix and independently checked;
+see [native Catalan](native_reciprocal_math.md).
 This includes configured binary128 with the project's supported typed
 standard constants. No value is constructed by widening a double constant.
 
@@ -213,7 +222,7 @@ auto twice_pi = uni20::mpreal(2, p) * uni20::pi<uni20::mpreal>;
 
 The MPFR specializations remain precision-aware descriptors, including
 `catalan<mpreal>`. They require finite precision, explicitly or from an
-approximate operand. Native Catalan, integral and complex constant types are
+approximate operand. Integral and complex constant types are
 not provided. Constants are validated against wider MPFR values in the shared
 precision matrix, including binary128 where configured.
 
