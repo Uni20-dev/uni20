@@ -33,6 +33,9 @@ enum class PrecisionProbe
   PiScaledIdentities,
   PiScaledAccuracy,
   PiScaledPortableAccuracy,
+  CompoundIdentities,
+  CompoundAccuracy,
+  CompoundPortableAccuracy,
   ExponentialExtensionIdentities,
   ExponentialExtensionAccuracy,
   ExponentialExtensionPortableAccuracy,
@@ -105,6 +108,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "PiScaledIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "CompoundIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "CompoundAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "CompoundPortableAccuracy", "portable_native_math"},
     ProbeDescription{"NumericalScalar", "ExponentialExtensionIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ExponentialExtensionAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ExponentialExtensionPortableAccuracy", "portable_native_math"},
@@ -217,12 +223,14 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
     if (probe == PiScaledIdentities || probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy ||
+        probe == CompoundIdentities || probe == CompoundAccuracy || probe == CompoundPortableAccuracy ||
         probe == ExponentialExtensionIdentities || probe == ExponentialExtensionAccuracy ||
         probe == ExponentialExtensionPortableAccuracy)
     {
       if constexpr (C::is_complex) return {"not_applicable", "elementary extensions cover real scalars"};
       if constexpr (C::runtime)
-        if (probe == PiScaledPortableAccuracy || probe == ExponentialExtensionPortableAccuracy)
+        if (probe == PiScaledPortableAccuracy || probe == CompoundPortableAccuracy ||
+            probe == ExponentialExtensionPortableAccuracy)
           return {"not_applicable", "portable path covers native scalars"};
     }
     if (probe == StandardProviderIdentities || probe == StandardProviderAccuracy || probe == MathConstantsAccuracy)
@@ -290,6 +298,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case MathConstantsAccuracy:
       case PiScaledAccuracy:
       case PiScaledPortableAccuracy:
+      case CompoundAccuracy:
+      case CompoundPortableAccuracy:
       case ExponentialExtensionAccuracy:
       case ExponentialExtensionPortableAccuracy:
       case LogGammaAccuracy:

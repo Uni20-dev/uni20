@@ -159,6 +159,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native/MPFR compound | Original increment and integer exponent retention; signed64 limits; range and subnormal neighborhoods; independent exact rational references; public and portable paths |
 | Native/MPFR exponential extensions | Small-argument cancellation; logarithmic domain and range boundaries; public and direct portable probes; recorded maximum errors/worst inputs; independent radical and log-series accuracy references |
 | MPFR elementary extensions | Small-argument cancellation controls, large pi-scaled argument reduction, inverse and reciprocal identities, compound rounding without loss in `1+x` |
 | CPU matrix one-norm and tensor reductions | Retained increment, conjugating inner product, squared-norm identity |
@@ -271,3 +272,10 @@ Exponential extensions have separate `ExponentialExtensionIdentities`,
 Accuracy probes record per-function maximum grid errors and their inputs as XML
 properties. See the [acceptance table](../tensor/native_exponential_extensions.md#numerical-acceptance)
 for the measure, targets and separation of observed maxima from guarantees.
+
+Compound has `CompoundIdentities`, `CompoundAccuracy` and
+`CompoundPortableAccuracy` probes. The accuracy probes record the maximum
+reference-grid error, original input and integer exponent. Native and MPFR
+paths use the same represented-input reference; the native portable path is
+also tested directly. Selected 512-bit oracle results are repeated at 1024
+bits. See [native compound acceptance](../tensor/native_compound.md#acceptance-table).
