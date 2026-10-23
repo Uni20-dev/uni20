@@ -145,6 +145,36 @@ portable implementation explicitly. Thus a successful fallback does not count
 as validation of an unavailable libc provider. Core boundary tests run without
 MPFR; the wider 512-bit oracle checks are reported unavailable in that build.
 
+### Numerical acceptance
+
+The following acceptance criteria apply to configured native float32/64/80/128
+under round-to-nearest with gradual underflow. The reference is the function at
+the exact represented input, not at an intended real input before rounding.
+`PiScaledAccuracy` and `PiScaledPortableAccuracy` cover the public and portable
+paths separately in `tests/numerics/test_pi_math_precision.cpp`.
+
+| Region | Measure and intended criterion | Guarantee or evidence |
+| --- | --- | --- |
+| Integer/half-integer grids; quarter-integer tangent; inverse endpoints, axes and equal-magnitude diagonals | Exact value and specified zero/infinity sign | Value contract; core tests plus precision-matrix identities |
+| Ordinary non-dyadic sample (`i/37`, -128 <= i <= 128); both neighbors of quarter integers from -4 to 4 | Absolute error <= four output grid spacings against 512-bit MPFR | Empirical acceptance target, not a domain-wide bound |
+| Large arguments with representable quarter offsets; native minimum normal/subnormal multiples and largest finite values | Same absolute grid-spacing target, with exact checks for zeros and nonfinite results | Tests phase retention and exponent range separately from significand precision |
+| Selected nonzero analytic values at 1/8, 1/2 and 1/4 | Four-spacing target and error at least sixteen times smaller than the preceding precision's rounded reference | Precision-improvement evidence from radical/rational identities and an independent atan series |
+| Out-of-domain and nonfinite arguments | NaN classification, or the specified finite/infinite value and sign | Value contract, independently checked in core tests |
+
+For a finite nonzero result `r`, an output grid spacing is
+`next_up(abs(r)) - abs(r)`, evaluated in the wider reference type. This also
+gives an absolute measure in the subnormal region. No relative error is used
+at zeros; exact-zero signs have separate assertions. Pole-neighbor tests assess
+evaluation at the represented input, not the conditioning of an unrounded
+mathematical argument.
+
+The recorded GCC 13 and Clang 19 runs satisfy these thresholds for their
+configured portable paths. The tests do not record a per-function observed
+maximum, so no tighter measured bound is claimed. A provider unavailable on a
+test host has no numerical evidence from that run, even if its wiring is
+checked synthetically. Accuracy on a new libc provider must be measured on
+that provider before calling it validated.
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,
