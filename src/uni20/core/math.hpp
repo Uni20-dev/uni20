@@ -5,6 +5,7 @@
 #include "detail/native_digamma_math.hpp"
 #include "detail/native_dilog_math.hpp"
 #include "detail/native_exponential_math.hpp"
+#include "detail/native_expint_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
 #include "detail/native_reciprocal_math.hpp"
@@ -593,7 +594,8 @@ inline constexpr detail::scalar_math::erfc_fn erfc{};
 ///       see docs/tensor/native_special_functions.md for the provider limitation.
 inline constexpr detail::scalar_math::zeta_fn zeta{};
 /// \brief Real principal-value exponential integral Ei.
-/// \details Native evaluation uses std::expint.
+/// \details Native evaluation uses compensated series, a positive E1 continued
+///          fraction and positive-Ei asymptotics, with scaling at range boundaries.
 inline constexpr detail::scalar_math::expint_fn expint{};
 /// \brief Real part of the dilogarithm.
 /// \details Native real arguments use a bounded series with real continuation on x>1.
