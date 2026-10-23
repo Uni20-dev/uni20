@@ -123,7 +123,9 @@ Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
 Native `beta`, `zeta` and `expint` use advertised standard-library functions
 for float/double/long double, with native Beta restricted to positive arguments.
-Binary128 adapters for those three functions remain deferred.
+Binary128 Beta now uses a native Gamma-ratio implementation; binary128 zeta
+and Ei remain deferred. The [Beta investigation](native_beta.md) documents
+the fallback's accuracy and range contract separately from retained providers.
 See [native special functions](native_special_functions.md). The remaining
 native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
 it will not add Boost or use MPFR to implement native arithmetic.

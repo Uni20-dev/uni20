@@ -33,6 +33,9 @@ enum class PrecisionProbe
   PiScaledIdentities,
   PiScaledAccuracy,
   PiScaledPortableAccuracy,
+  BetaIdentities,
+  BetaAccuracy,
+  BetaPortableAccuracy,
   DigammaIdentities,
   DigammaAccuracy,
   FactorialIdentities,
@@ -116,6 +119,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "PiScaledIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "BetaIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "BetaAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "BetaPortableAccuracy", "portable_native_math"},
     ProbeDescription{"NumericalScalar", "DigammaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DigammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialIdentities", "scalar_math"},
@@ -238,7 +244,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == DigammaIdentities || probe == DigammaAccuracy || probe == FactorialIdentities ||
+    if (probe == BetaIdentities || probe == BetaAccuracy || probe == BetaPortableAccuracy ||
+        probe == DigammaIdentities || probe == DigammaAccuracy || probe == FactorialIdentities ||
         probe == FactorialAccuracy || probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities ||
         probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
         probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities || probe == CompoundAccuracy ||
@@ -247,10 +254,19 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     {
       if constexpr (C::is_complex) return {"not_applicable", "elementary extensions cover real scalars"};
       if constexpr (C::runtime)
-        if (probe == PiScaledPortableAccuracy || probe == CompoundPortableAccuracy ||
+        if (probe == BetaPortableAccuracy || probe == PiScaledPortableAccuracy || probe == CompoundPortableAccuracy ||
             probe == ExponentialExtensionPortableAccuracy)
           return {"not_applicable", "portable path covers native scalars"};
     }
+    if constexpr (!C::runtime && !C::is_complex)
+      if (probe == BetaAccuracy)
+      {
+#if defined(__cpp_lib_math_special_functions) && __cpp_lib_math_special_functions >= 201603L
+        using R = typename C::real_type;
+        if constexpr (std::same_as<R, float> || std::same_as<R, double> || std::same_as<R, long double>)
+          return {"not_applicable", "retained Beta provider has separate StandardProviderAccuracy coverage"};
+#endif
+      }
     if (probe == StandardProviderIdentities || probe == StandardProviderAccuracy || probe == MathConstantsAccuracy)
     {
       if constexpr (C::is_complex) return {"not_applicable", "real special functions and constants"};
@@ -260,7 +276,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
         {
           using R = typename C::real_type;
           if constexpr (!std::same_as<R, float> && !std::same_as<R, double> && !std::same_as<R, long double>)
-            return {"unsupported", "no native Beta/zeta/Ei provider for this extension type"};
+            return {"unsupported", "no standard zeta/Ei provider for this extension type"};
 #if !defined(__cpp_lib_math_special_functions) || __cpp_lib_math_special_functions < 201603L
           return {"unavailable", "standard library does not advertise mathematical special functions"};
 #endif
@@ -316,6 +332,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case MathConstantsAccuracy:
       case PiScaledAccuracy:
       case PiScaledPortableAccuracy:
+      case BetaAccuracy:
+      case BetaPortableAccuracy:
       case DigammaAccuracy:
       case FactorialAccuracy:
       case AgmAccuracy:
