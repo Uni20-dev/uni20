@@ -155,6 +155,9 @@ through scaled iteration; see [native AGM](native_agm.md).
 The typed `uni20::factorial<Real>(n[,p])` factory supports native formats and
 explicit-precision mpreal; see [native factorial](native_factorial.md).
 
+Native digamma also covers all configured real formats; see the
+[algorithm and acceptance criteria](native_digamma.md).
+
 ### Shared native implementations
 
 Binary128 coverage may require Uni20 implementations of functions such as

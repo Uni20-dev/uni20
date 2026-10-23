@@ -159,6 +159,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native/MPFR digamma | Absolute error near zeros, relative accuracy away from zeros, reflection/pole neighborhoods, full exponent range and independent harmonic identities |
 | Typed factorial | Every native finite order, exact-integer references, overflow boundaries and checked result precision |
 | Native/MPFR AGM | Extreme operand ratios, subnormal inputs, symmetry, equal-input identities and independent elliptic-integral series |
 | Native/MPFR reciprocal functions | Original-input phase, signed zeros, poles and hyperbolic tails beyond sinh/cosh overflow; full-range oracle scans and independent series references |
@@ -300,3 +301,10 @@ exact integers. Every finite native order is tested, plus the first overflowing
 one; MPFR cases use a precision-dependent finite order range. Correct rounding
 observed in a scan is distinct from the one-spacing-unit acceptance criterion.
 See [typed factorials](../tensor/native_factorial.md#contract-and-acceptance).
+
+`DigammaIdentities` and `DigammaAccuracy` cover the native and MPFR cases.
+The accuracy measure is absolute near zeros and relative away from them,
+with an explicit logarithmic scale for reflection cancellation. The shared
+probes include zero/pole neighbors, full native exponent ranges, independent
+integer and half-integer identities, and a 1024-bit check of the worst input.
+See [native digamma acceptance](../tensor/native_digamma.md#value-contract-and-numerical-acceptance).

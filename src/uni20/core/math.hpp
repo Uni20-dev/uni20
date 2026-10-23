@@ -2,6 +2,7 @@
 
 #include "detail/native_agm_math.hpp"
 #include "detail/native_compound_math.hpp"
+#include "detail/native_digamma_math.hpp"
 #include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
@@ -335,7 +336,7 @@ UNI20_SCALAR_MATH_DISPATCH(tgamma)
 UNI20_SCALAR_MATH_DISPATCH(erf)
 UNI20_SCALAR_MATH_DISPATCH(erfc)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(digamma)
+UNI20_SCALAR_MATH_DISPATCH_TO(digamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(beta, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
 UNI20_SCALAR_MATH_DISPATCH_TO(zeta, native_math, preserves_real_precision)
@@ -566,6 +567,10 @@ inline constexpr detail::scalar_math::lgamma_fn lgamma{};
 /// \details Undefined signs are zero; signed zero retains its one-sided pole sign.
 inline constexpr detail::scalar_math::lgamma_sign_fn lgamma_sign{};
 /// \brief Logarithmic derivative of Gamma.
+/// \details Negative integer poles give NaN; signed zero gives an infinity of the
+///          opposite sign. Native evaluation uses recurrence and scaled-phase reflection;
+///          MPFR retains its scalar precision contract. See docs/tensor/native_digamma.md
+///          for absolute/relative accuracy targets near zeros and poles.
 inline constexpr detail::scalar_math::digamma_fn digamma{};
 /// \brief Real Beta function.
 /// \details Native arguments must have the same real type and both be positive;

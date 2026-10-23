@@ -12,8 +12,9 @@ detected. `beta`, `zeta` and `expint` use advertised standard-library providers
 for float/double/long double. All four named constants, pi-scaled functions,
 exponential/logarithmic extensions, compound, reciprocals and AGM also support
 configured native formats; see the [native inventory](native_special_functions.md).
+Native [digamma](native_digamma.md) is available at each configured precision.
 The [typed factorial factory](native_factorial.md) selects native or MPFR
-results explicitly. Native digamma, upper Gamma, real dilogarithm and Airy Ai
+results explicitly. Native upper Gamma, real dilogarithm and Airy Ai
 remain separate work.
 Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check

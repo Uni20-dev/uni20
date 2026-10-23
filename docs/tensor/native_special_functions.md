@@ -199,6 +199,15 @@ native formats and MPFR. Native hyperbolic reciprocals retain representable
 tails beyond the overflow of cosh/sinh. See [reciprocal functions and Catalan](native_reciprocal_math.md)
 for formulas, signed-zero behavior and numerical acceptance.
 
+## Digamma
+
+`math::digamma(x)` supports all configured native formats through compensated
+recurrence, Bernoulli asymptotics and pi-scaled reflection. Negative nonintegers
+are supported; negative integer poles give NaN. Its accuracy criterion is
+absolute near zeros and relative away from them. See
+[native digamma](native_digamma.md) for regions, coefficients, tail bounds and
+independent validation.
+
 ## Arithmetic-geometric mean
 
 `math::agm(a,b)` supports matching native real types and MPFR. Native iteration
