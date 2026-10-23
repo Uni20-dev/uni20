@@ -152,6 +152,9 @@ integer-source checks and exact-storage costs are documented.
 Native `math::agm(a,b)` is also implemented for matching native real types
 through scaled iteration; see [native AGM](native_agm.md).
 
+The typed `uni20::factorial<Real>(n[,p])` factory supports native formats and
+explicit-precision mpreal; see [native factorial](native_factorial.md).
+
 ### Shared native implementations
 
 Binary128 coverage may require Uni20 implementations of functions such as

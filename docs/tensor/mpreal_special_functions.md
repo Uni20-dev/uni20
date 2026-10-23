@@ -9,8 +9,12 @@ Native float32/64/80/128 use their native implementations for `tgamma`, `erf`
 and `erfc`. `lgamma`, `lgamma_sign`, `bessel_j`, and `bessel_y` also have
 [native adapters](native_special_functions.md) where platform routines are
 detected. `beta`, `zeta` and `expint` use advertised standard-library providers
-for float/double/long double, and `pi`, `log_two`, `euler_gamma` have typed
-native constants. The other functions on this page have no native adapter yet.
+for float/double/long double. All four named constants, pi-scaled functions,
+exponential/logarithmic extensions, compound, reciprocals and AGM also support
+configured native formats; see the [native inventory](native_special_functions.md).
+The [typed factorial factory](native_factorial.md) selects native or MPFR
+results explicitly. Native digamma, upper Gamma, real dilogarithm and Airy Ai
+remain separate work.
 Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check
 availability with `std::invocable` on the `uni20::math` callable.
@@ -23,7 +27,7 @@ uses the other operand's precision. All-exact inputs either produce a supported
 exact rational result or throw `std::logic_error` when approximation is needed.
 Unset operands throw; no default or thread-local precision is changed.
 
-Except for `compound`, a trailing finite `Precision p` converts the numerical
+For functions with numerical scalar inputs, except for `compound`, a trailing finite `Precision p` converts the numerical
 inputs to `p` first, then evaluates at `p`, matching the existing elementary
 contract. This can change an exact rational input before the function is
 evaluated. Results always remain approximate in this mode, even at identities.

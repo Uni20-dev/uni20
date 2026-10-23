@@ -353,6 +353,12 @@ Other native mathematical constants can use typed `std::numbers` values.
 Do not widen an untyped double constant or a decimal double literal into a
 higher-precision scalar. Do not choose ambient precision for an MPFR constant.
 
+Use `uni20::factorial<Real>(n)` when the result type cannot be deduced from
+its integer argument. The form `uni20::factorial<Real>(n,p)` supports generic
+precision-aware code: fixed types validate p against their native precision;
+mpreal requires explicit finite or exact precision. See
+[typed factorials](native_factorial.md).
+
 ## Floating-Point Comparisons
 
 `uni20/common/floating_eq.hpp` provides ULP comparisons for binary32,
