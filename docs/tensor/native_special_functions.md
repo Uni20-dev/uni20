@@ -199,6 +199,13 @@ native formats and MPFR. Native hyperbolic reciprocals retain representable
 tails beyond the overflow of cosh/sinh. See [reciprocal functions and Catalan](native_reciprocal_math.md)
 for formulas, signed-zero behavior and numerical acceptance.
 
+## Arithmetic-geometric mean
+
+`math::agm(a,b)` supports matching native real types and MPFR. Native iteration
+keeps separate operand exponents until a common scale is safe, including
+minimum-subnormal/maximum input pairs. See [native AGM](native_agm.md) for
+domains, convergence, acceptance criteria and independent references.
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,

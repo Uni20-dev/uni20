@@ -33,6 +33,8 @@ enum class PrecisionProbe
   PiScaledIdentities,
   PiScaledAccuracy,
   PiScaledPortableAccuracy,
+  AgmIdentities,
+  AgmAccuracy,
   ReciprocalFunctionIdentities,
   ReciprocalFunctionAccuracy,
   CompoundIdentities,
@@ -110,6 +112,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "PiScaledIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "PiScaledPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "AgmIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "AgmAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ReciprocalFunctionIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ReciprocalFunctionAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "CompoundIdentities", "scalar_math"},
@@ -226,9 +230,10 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == PiScaledIdentities || probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy ||
-        probe == ReciprocalFunctionIdentities || probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities ||
-        probe == CompoundAccuracy || probe == CompoundPortableAccuracy || probe == ExponentialExtensionIdentities ||
+    if (probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities || probe == PiScaledAccuracy ||
+        probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
+        probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities || probe == CompoundAccuracy ||
+        probe == CompoundPortableAccuracy || probe == ExponentialExtensionIdentities ||
         probe == ExponentialExtensionAccuracy || probe == ExponentialExtensionPortableAccuracy)
     {
       if constexpr (C::is_complex) return {"not_applicable", "elementary extensions cover real scalars"};
@@ -302,6 +307,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case MathConstantsAccuracy:
       case PiScaledAccuracy:
       case PiScaledPortableAccuracy:
+      case AgmAccuracy:
       case ReciprocalFunctionAccuracy:
       case CompoundAccuracy:
       case CompoundPortableAccuracy:
