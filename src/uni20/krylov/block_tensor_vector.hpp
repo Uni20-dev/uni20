@@ -8,6 +8,7 @@
 
 #include <uni20/krylov/matrix_free.hpp>
 #include <uni20/symmetry/block_tensor_linear.hpp>
+#include <uni20/symmetry/block_tensor_permute.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -29,6 +30,14 @@ template <class Tensor> struct IsBlockTensorValue : std::false_type
 template <typename Scalar, class DomainType, class CodomainType, BlockTensorStorage Storage>
 struct IsBlockTensorValue<BlockTensor<Scalar, DomainType, CodomainType, Storage>> : std::true_type
 {};
+
+template <class View, class Tensor>
+concept CompatibleBlockVector =
+    BlockTensorView<View> && std::same_as<block_tensor_value_t<View>, typename Tensor::value_type> &&
+    std::same_as<block_tensor_domain_t<View>, typename Tensor::domain_type> &&
+    std::same_as<block_tensor_codomain_t<View>, typename Tensor::codomain_type> &&
+    std::same_as<typename block_tensor_type_t<View>::storage_policy, typename Tensor::storage_policy> &&
+    (DiagonalBlockTensorView<View> == DiagonalBlockTensorView<Tensor>);
 
 } // namespace detail
 
@@ -66,10 +75,23 @@ template <class Tensor> class BlockTensorVectorOps {
     /// \brief Validate a vector and return the frozen problem dimension.
     /// \throws std::invalid_argument If the vector does not belong to this
     ///         exact BlockTensor vector space.
-    [[nodiscard]] auto vector_dimension(tensor_type const& vector) const -> std::size_t
+    template <class Vector>
+      requires detail::CompatibleBlockVector<Vector, tensor_type>
+    [[nodiscard]] auto vector_dimension(Vector const& vector) const -> std::size_t
     {
       this->require_member(vector);
       return dimension_;
+    }
+
+    /// \brief Own prototype metadata while borrowing its numerical payload and allocation context.
+    /// \details Temporary borrowed views are accepted; temporary owners are not.
+    template <class Vector>
+      requires detail::CompatibleBlockVector<Vector, tensor_type> &&
+               (std::is_lvalue_reference_v<Vector&&> || BorrowedBlockTensorView<Vector>)
+    [[nodiscard]] auto prototype_view(Vector&& vector) const
+    {
+      this->require_member(vector);
+      return as_block_tensor_view(std::as_const(vector));
     }
 
     /// \brief Allocate a vector with the frozen structure and unspecified values.
@@ -90,6 +112,28 @@ template <class Tensor> class BlockTensorVectorOps {
       else
       {
         return tensor_type(uninitialized, symmetry_, domain_, codomain_, stored_keys_);
+      }
+    }
+
+    /// \brief Allocate owning workspace from retained view metadata and its leaf context.
+    template <BorrowedBlockTensorView View>
+      requires detail::CompatibleBlockVector<View, tensor_type>
+    [[nodiscard]] auto allocate_like(View const& view) const -> tensor_type
+    {
+      this->require_member(view);
+      if constexpr (CompleteBlockStorage<typename tensor_type::storage_policy>)
+      {
+        if constexpr (requires { view.allocation_context(); })
+          return tensor_type(uninitialized, symmetry_, domain_, codomain_, view.allocation_context());
+        else
+          return tensor_type(uninitialized, symmetry_, domain_, codomain_);
+      }
+      else
+      {
+        if constexpr (requires { view.allocation_context(); })
+          return tensor_type(uninitialized, symmetry_, domain_, codomain_, stored_keys_, view.allocation_context());
+        else
+          return tensor_type(uninitialized, symmetry_, domain_, codomain_, stored_keys_);
       }
     }
 
@@ -162,7 +206,9 @@ template <class Tensor> class BlockTensorVectorOps {
       return dimension;
     }
 
-    void require_member(tensor_type const& vector) const
+    template <class Vector>
+      requires detail::CompatibleBlockVector<Vector, tensor_type>
+    void require_member(Vector const& vector) const
     {
       if (vector.symmetry() != symmetry_ || vector.domain() != domain_ || vector.codomain() != codomain_)
       {

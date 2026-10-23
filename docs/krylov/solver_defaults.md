@@ -1,8 +1,8 @@
 # Krylov Solver Defaults
 
 This note records the current native Krylov default policy. Explicit user
-parameters always win; these defaults are only used when `krylov_dimension` or
-`retained_ritz_count` is zero.
+parameters always win. Eigensolver dimension defaults apply when
+`krylov_dimension` or `retained_ritz_count` is zero.
 
 For the full algorithm inventory, scalar coverage, parameter list, and internal
 tuning values, see [Krylov Algorithms](algorithms.md).
@@ -79,3 +79,21 @@ ARPACK comparison adapters can use the same default `ncv` formulas when
 `krylov_dimension == 0`. ARPACK does not expose a separate `nkeep`, so
 `retained_ritz_count` is necessarily a native-only control. Those adapters are
 benchmark/oracle infrastructure and should live outside core Uni20.
+
+## GMRES and refinement
+
+| Parameter | Default |
+| --- | --- |
+| GMRES restart length | 30, capped by problem dimension and iteration budget |
+| GMRES maximum Arnoldi steps | 1000 |
+| GMRES relative residual tolerance | `sqrt(epsilon)` at inner arithmetic precision |
+| GMRES absolute residual tolerance | Zero |
+| Outer refinement maximum corrections | 10 |
+| Outer relative residual tolerance | Working-precision epsilon |
+| Outer absolute residual tolerance | Zero |
+
+These are configurable Uni20 defaults, not universal tolerances prescribed by
+the refinement literature. Acceptance uses recomputed residuals of the original
+operator. Optional operator norm and conditioning information is absent by
+default and adds diagnostics without changing these stopping tolerances.
+See [GMRES and refinement](gmres_refinement.md) for full semantics.

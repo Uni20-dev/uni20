@@ -163,8 +163,27 @@ they are not registered as executable tests. Missing expected probes fail
 the registry check or report instead of becoming skips.
 `NumericalKrylov/*` covers projected tridiagonal eigensystems, Lanczos, Arnoldi,
 and Hermitian exponential action for the supported native and binary128 types.
-Float80 and MPFR/MPC end-to-end Krylov support remains unsupported; runtime
-Ritz-reality helper tests do not certify those solvers.
+Float80 and MPFR/MPC support for those eigensolver/exponential paths remains
+unsupported; runtime Ritz-reality helpers do not certify those solvers.
+
+`GmresRotationAndSolve`, `GmresAccuracyImprovesWithPrecision`, and
+`GmresMixedRefinement` cover the new GMRES paths across all twelve configured
+real/complex cases. These do not need projected LAPACK. The accuracy probe uses
+an independent 512-bit oracle when MPFR is configured; its unavailable status
+is recorded otherwise. Mixed refinement uses float32 inner corrections and
+checks recovery of the selected working precision. A separate runtime test
+uses 40-bit inner, 128-bit working and 256-bit residual MPFR spaces.
+`GmresErrorDiagnostics` verifies the optional 2-norm error formulas and retention
+of precision in their arithmetic for the same twelve real/complex cases.
+`GmresDiagnostics.*` covers partial information, supplied-bound provenance,
+zero RHS, invalid inputs, and representable estimates whose intermediate
+products or ratios would overflow/underflow without scaling.
+
+`Gmres.*` and `GmresRefinement.*` exercise restarts, initial guesses, breakdown,
+nonfinite publication, tiny residual conversion and independent precision
+contexts. `BlockTensorVectorOpsTest.GmresPreservesU1BlocksAndBoundaries` checks
+the block-sparse integration. GPU/distributed GMRES execution is not certified
+by these host tests.
 
 ## Optional MPLAPACK Binary128 Coverage
 
@@ -244,5 +263,5 @@ With `UNI20_ENABLE_MPREAL=ON`,
 `KrylovMatrixFreeInterface.RitzRealityUsesRuntimePrecision` checks the standalone
 Ritz-reality classifier at 80 and 256 bits, including all three classifications,
 precision-dependent classification of the same numerical value, and exact inputs
-with and without an explicit finite-precision tolerance. General MPFR/MPC Krylov
-solver support is not part of this validation.
+with and without an explicit finite-precision tolerance. MPFR/MPC eigensolver
+support is not part of this helper validation; GMRES coverage is described above.

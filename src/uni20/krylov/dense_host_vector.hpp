@@ -1,11 +1,13 @@
 #pragma once
 
 #include <uni20/krylov/matrix_free.hpp>
+#include <uni20/krylov/vector_space.hpp>
 #include <uni20/tensor/reductions.hpp>
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -19,17 +21,28 @@ template <typename Scalar> struct DenseHostVector
     std::vector<Scalar> values;
 };
 
-/// \brief Dense host matrix-free operator and vector operations for prototypes.
-template <typename Scalar> class DenseHostVectorOps {
-  public:
-    DenseHostVectorOps(std::size_t dimension, std::vector<Scalar> matrix)
-        : dimension_(dimension), matrix_(std::move(matrix))
+/// \brief Explicit precision conversion between dense prototype vector spaces.
+/// \details This adapter only handles DenseHostVector. Block and device vectors
+///          supply their own transfer preserving their structure and residency.
+struct DenseHostVectorTransfer
+{
+    template <RealOrComplex To, RealOrComplex From>
+      requires(Complex<To> == Complex<From>)
+    void operator()(DenseHostVector<To>& output, DenseHostVector<From> const& input, Precision p) const
     {
-      if (matrix_.size() != dimension_ * dimension_)
-      {
-        throw std::invalid_argument("dense Krylov operator matrix has the wrong size");
-      }
+      require_precision<To>(p);
+      (void)p.bit_count();
+      if (output.values.size() != input.values.size())
+        throw std::invalid_argument("Krylov transfer requires matching vector dimensions");
+      for (std::size_t i = 0; i < input.values.size(); ++i)
+        output.values[i] = gmres_detail::convert_scalar<To>(input.values[i], p);
     }
+};
+
+/// \brief Dense host vector algebra without an assembled operator.
+template <typename Scalar> class DenseHostVectorAlgebra {
+  public:
+    explicit DenseHostVectorAlgebra(std::size_t dimension) : dimension_(dimension) {}
 
     [[nodiscard]] std::size_t dimension() const noexcept { return dimension_; }
     [[nodiscard]] std::size_t problem_dimension() const noexcept { return dimension_; }
@@ -38,6 +51,23 @@ template <typename Scalar> class DenseHostVectorOps {
       return x.values.size();
     }
 
+    /// \brief Retain a read-only allocation descriptor without copying vector elements.
+    [[nodiscard]] auto prototype_view(DenseHostVector<Scalar> const& x) const -> std::span<Scalar const>
+    {
+      return x.values;
+    }
+    auto prototype_view(DenseHostVector<Scalar> const&&) const = delete;
+
+    /// \brief Copy a borrowed span descriptor, including a temporary span.
+    template <class Element, std::size_t Extent>
+      requires std::same_as<std::remove_const_t<Element>, Scalar>
+    [[nodiscard]] auto prototype_view(std::span<Element, Extent> x) const -> std::span<Scalar const>
+    {
+      return x;
+    }
+
+    [[nodiscard]] std::size_t vector_dimension(std::span<Scalar const> x) const noexcept { return x.size(); }
+
     [[nodiscard]] int allocation_count() const noexcept { return allocation_count_; }
     [[nodiscard]] int copy_count() const noexcept { return copy_count_; }
     [[nodiscard]] int axpy_count() const noexcept { return axpy_count_; }
@@ -45,12 +75,17 @@ template <typename Scalar> class DenseHostVectorOps {
     [[nodiscard]] int set_zero_count() const noexcept { return set_zero_count_; }
     [[nodiscard]] int inner_product_count() const noexcept { return inner_product_count_; }
     [[nodiscard]] int norm_count() const noexcept { return norm_count_; }
-    [[nodiscard]] int matvec_count() const noexcept { return matvec_count_; }
 
     [[nodiscard]] DenseHostVector<Scalar> allocate_like(DenseHostVector<Scalar> const& x)
     {
+      return this->allocate_like(this->prototype_view(x));
+    }
+
+    /// \brief Allocate independent owning storage from a retained span's extent.
+    [[nodiscard]] DenseHostVector<Scalar> allocate_like(std::span<Scalar const> x)
+    {
       ++allocation_count_;
-      return DenseHostVector<Scalar>{std::vector<Scalar>(x.values.size())};
+      return DenseHostVector<Scalar>{std::vector<Scalar>(x.size())};
     }
 
     void copy(DenseHostVector<Scalar>& dst, DenseHostVector<Scalar> const& src)
@@ -106,25 +141,6 @@ template <typename Scalar> class DenseHostVectorOps {
       return uni20::norm_host(uni20::linalg::CpuReferenceBackend{}, x_span);
     }
 
-    void matvec(DenseHostVector<Scalar>& y, DenseHostVector<Scalar> const& x)
-    {
-      if (x.values.size() != dimension_ || y.values.size() != dimension_)
-      {
-        throw std::invalid_argument("dense Krylov matvec vector has the wrong size");
-      }
-
-      ++matvec_count_;
-      for (std::size_t row = 0; row < dimension_; ++row)
-      {
-        Scalar value{};
-        for (std::size_t col = 0; col < dimension_; ++col)
-        {
-          value += matrix_[row * dimension_ + col] * x.values[col];
-        }
-        y.values[row] = value;
-      }
-    }
-
   private:
     static void require_same_size(DenseHostVector<Scalar> const& lhs, DenseHostVector<Scalar> const& rhs)
     {
@@ -142,7 +158,6 @@ template <typename Scalar> class DenseHostVectorOps {
     }
 
     std::size_t dimension_ = 0;
-    std::vector<Scalar> matrix_;
     int allocation_count_ = 0;
     int copy_count_ = 0;
     int axpy_count_ = 0;
@@ -150,6 +165,41 @@ template <typename Scalar> class DenseHostVectorOps {
     int set_zero_count_ = 0;
     int inner_product_count_ = 0;
     int norm_count_ = 0;
+};
+
+/// \brief Dense reference operator combined with host vector algebra for prototypes.
+template <typename Scalar> class DenseHostVectorOps : public DenseHostVectorAlgebra<Scalar> {
+  public:
+    DenseHostVectorOps(std::size_t dimension, std::vector<Scalar> matrix)
+        : DenseHostVectorAlgebra<Scalar>(dimension), matrix_(std::move(matrix))
+    {
+      if (matrix_.size() != dimension * dimension)
+        throw std::invalid_argument("dense Krylov operator matrix has the wrong size");
+    }
+
+    [[nodiscard]] int matvec_count() const noexcept { return matvec_count_; }
+
+    void matvec(DenseHostVector<Scalar>& y, DenseHostVector<Scalar> const& x)
+    {
+      if (x.values.size() != this->problem_dimension() || y.values.size() != this->problem_dimension())
+      {
+        throw std::invalid_argument("dense Krylov matvec vector has the wrong size");
+      }
+
+      ++matvec_count_;
+      for (std::size_t row = 0; row < this->problem_dimension(); ++row)
+      {
+        Scalar value{};
+        for (std::size_t col = 0; col < this->problem_dimension(); ++col)
+        {
+          value += matrix_[row * this->problem_dimension() + col] * x.values[col];
+        }
+        y.values[row] = value;
+      }
+    }
+
+  private:
+    std::vector<Scalar> matrix_;
     int matvec_count_ = 0;
 };
 

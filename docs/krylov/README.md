@@ -5,6 +5,9 @@ validation evidence, and supporting estimator rationale.
 
 ## Canonical Guides
 
+- [Matrix-free GMRES and refinement](gmres_refinement.md) defines fixed right
+  preconditioning, explicit precision roles, residual stopping and publication.
+
 - [Krylov Algorithms](algorithms.md) defines supported solvers, parameters,
   scalar behavior, and convergence semantics.
 - [Solver Defaults](solver_defaults.md) records public defaults separately from

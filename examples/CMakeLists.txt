@@ -3,6 +3,11 @@ function(uni20_add_example target source)
   target_link_libraries(${target} PRIVATE ${ARGN})
 endfunction()
 
+uni20_add_example(gmres_transfer_example krylov/gmres_transfer_example.cpp uni20_krylov)
+uni20_add_example(gmres_refinement_example krylov/gmres_refinement_example.cpp uni20_krylov)
+add_test(NAME GmresTransferExample COMMAND gmres_transfer_example)
+add_test(NAME GmresRefinementExample COMMAND gmres_refinement_example)
+
 uni20_add_example(dense_decomposition_precision_example linalg/dense_decomposition_precision_example.cpp uni20_linalg)
 add_test(NAME DenseDecompositionPrecisionExample COMMAND dense_decomposition_precision_example)
 uni20_add_example(rank_aware_numerics_example linalg/rank_aware_numerics_example.cpp uni20_linalg)
