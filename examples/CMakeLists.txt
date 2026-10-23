@@ -47,6 +47,9 @@ if(UNI20_HAS_MPLAPACK_MPREAL)
   add_test(NAME MplapackPrecisionExample COMMAND mplapack_precision_example)
 endif()
 
+uni20_add_example(native_exponential_math_example common/native_exponential_math_example.cpp uni20_core)
+add_test(NAME NativeExponentialMathExample COMMAND native_exponential_math_example)
+
 uni20_add_example(buildinfo_example common/buildinfo_example.cpp fmt::fmt uni20_core uni20_common)
 uni20_add_example(gtest_floating_eq_example common/gtest_floating_eq_example.cpp gtest fmt::fmt uni20_common)
 uni20_add_example(trace_example common/trace_example.cpp fmt::fmt mdspan uni20_common)

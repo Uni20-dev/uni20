@@ -175,6 +175,13 @@ test host has no numerical evidence from that run, even if its wiring is
 checked synthetically. Accuracy on a new libc provider must be measured on
 that provider before calling it validated.
 
+## Exponential and logarithmic extensions
+
+`exp10`, `exp2m1`, `exp10m1`, `log2p1` and `log10p1` support native
+float32/64/80/128 through detected libc routines or precision-preserving
+portable implementations. See their [value contracts, algorithms and numerical
+acceptance criteria](native_exponential_extensions.md).
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,

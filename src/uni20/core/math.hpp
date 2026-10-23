@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
 #include "detail/native_special_math.hpp"
@@ -342,11 +343,11 @@ UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(agm)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(factorial)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma_sign, native_math, preserves_components)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp2m1)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10m1)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log2p1)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log10p1)
+UNI20_SCALAR_MATH_DISPATCH_TO(exp10, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(exp2m1, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(exp10m1, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(log2p1, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(log10p1, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(sinpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(cospi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(tanpi, native_math, preserves_real_precision)
