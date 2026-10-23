@@ -176,17 +176,22 @@ implementation work; the current standard-library adapters remain in use.
 
 ## 4. Nonstandard elementary extensions
 
-Status: implemented for `mpreal` using MPFR 4.2 routines. Native implementations
-remain deferred, with their unavailable signatures tested explicitly.
+Status: implemented for `mpreal` using MPFR 4.2 routines. The seven pi-scaled
+forward/inverse trigonometric functions also support native float32/64/80/128,
+using detected libc families or same-precision portable implementations. See
+[native pi-scaled functions](native_special_functions.md#pi-scaled-trigonometric-functions).
+The other native implementations remain deferred, with their unavailable
+signatures tested explicitly.
 
 - `exp10`.
 - `sinpi`, `cospi`, `tanpi`, and pi-scaled inverse trigonometric functions.
 - `log2p1`, `log10p1`, `exp2m1`, `exp10m1`, and `compound` for `(1+x)^n`.
 - `sec`, `csc`, `cot`, `sech`, `csch`, `coth`.
 
-These routines fit the MPFR 4.2 minimum introduced by stage 2. Native support
-needs its own accurate implementation or provider. Multiplying a rounded pi
-into the argument is not an adequate replacement for a pi-scaled function's argument reduction contract.
+These routines fit the MPFR 4.2 minimum introduced by stage 2. Further native
+support needs its own accurate implementation or provider. Multiplying a rounded
+pi into the argument is not an adequate replacement for a pi-scaled function's
+argument reduction contract.
 Likewise, do not replace the small-argument functions with cancellation-prone
 compositions. `compound` rounds the result from the original input, matching
 the arithmetic-utility contract; the other extensions use explicit input

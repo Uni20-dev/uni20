@@ -95,9 +95,9 @@ template <class... F> consteval bool deferred_extensions(F...)
            && !std::invocable<F, scalar_math_test::ConversionOnly<std::true_type>>) &&
           ...);
 }
-static_assert(deferred_extensions(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1, m::sinpi, m::cospi, m::tanpi,
-                                  m::asinpi, m::acospi, m::atanpi, m::sec, m::csc, m::cot, m::sech, m::csch, m::coth));
-static_assert(!std::invocable<decltype(m::atan2pi), double, double>);
+static_assert(deferred_extensions(m::exp10, m::exp2m1, m::exp10m1, m::log2p1, m::log10p1, m::sec, m::csc, m::cot,
+                                  m::sech, m::csch, m::coth));
+static_assert(std::invocable<decltype(m::atan2pi), double, double>);
 static_assert(!std::invocable<decltype(m::compound), double, int>);
 
 template <class T> void check_native_special_functions()

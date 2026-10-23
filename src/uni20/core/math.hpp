@@ -1,6 +1,7 @@
 #pragma once
 
 #include "detail/native_math.hpp"
+#include "detail/native_pi_math.hpp"
 #include "detail/native_special_math.hpp"
 #include "math_constants.hpp"
 #include "numeric_limits.hpp"
@@ -346,19 +347,19 @@ UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp2m1)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(exp10m1)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log2p1)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(log10p1)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sinpi)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(cospi)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(tanpi)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(asinpi)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(acospi)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(atanpi)
+UNI20_SCALAR_MATH_DISPATCH_TO(sinpi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(cospi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(tanpi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(asinpi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(acospi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(atanpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sec)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csc)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(cot)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sech)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csch)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(coth)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(atan2pi)
+UNI20_SCALAR_MATH_DISPATCH_TO(atan2pi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(compound)
 #undef UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY
 #undef UNI20_SCALAR_MATH_DISPATCH_TO
@@ -608,11 +609,11 @@ inline constexpr detail::scalar_math::exp10m1_fn exp10m1{};
 inline constexpr detail::scalar_math::log2p1_fn log2p1{};
 /// \brief Base-ten logarithm of one plus x, without rounding the sum first.
 inline constexpr detail::scalar_math::log10p1_fn log10p1{};
-/// \brief Sine of pi times x, with provider argument reduction.
+/// \brief Sine of pi times x, with argument reduction before multiplication by pi.
 inline constexpr detail::scalar_math::sinpi_fn sinpi{};
-/// \brief Cosine of pi times x, with provider argument reduction.
+/// \brief Cosine of pi times x, with argument reduction before multiplication by pi.
 inline constexpr detail::scalar_math::cospi_fn cospi{};
-/// \brief Tangent of pi times x, with provider argument reduction.
+/// \brief Tangent of pi times x, with argument reduction before multiplication by pi.
 inline constexpr detail::scalar_math::tanpi_fn tanpi{};
 /// \brief Principal arcsine divided by pi.
 inline constexpr detail::scalar_math::asinpi_fn asinpi{};

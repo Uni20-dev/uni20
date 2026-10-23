@@ -78,6 +78,73 @@ The same underlying issue is tracked for `std::poisson_distribution` in
 This limitation concerns the affected native Beta and zeta providers. Uni20's
 own log-Gamma adapters use the reentrant routines described below.
 
+## Pi-scaled trigonometric functions
+
+`math::sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi` and
+`atan2pi` support native float32/64/80 and configured binary128, as well as
+the existing MPFR scalar path. The forward functions evaluate at pi times the
+argument; the inverse functions return angles divided by pi. Native unary
+results retain the argument type. `atan2pi(y,x)` uses the common native floating
+type, subject to the usual facade check that it preserves both operands'
+precision and exponent range. Integer and conversion-only inputs are not
+accepted. As with the existing elementary math interface, a trailing
+`Precision` is an MPFR operation, not a native overload.
+
+```cpp
+auto phase = uni20::math::sinpi(0.5L); // exactly 1, without forming pi/2
+auto turns = uni20::math::atan2pi(1.0, -1.0); // exactly 0.75
+```
+
+CMake checks the linked C23 forward family (`sinpi`, `cospi`, `tanpi`) and
+inverse family (`asinpi`, `acospi`, `atanpi`, `atan2pi`) separately for each
+native type. It requires exact signatures, including `_Float128` signatures
+for binary128. The capability macros are `UNI20_HAS_PI_TRIG_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`
+and `UNI20_HAS_PI_INVERSE_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`. A complete detected
+family uses its libc provider. A missing or incomplete family uses a portable
+implementation at the original precision. No newer libc is required, and
+MPFR is never used to evaluate native arguments.
+
+The portable forward implementation uses `remquo(x, 0.5)` to recover the
+quadrant and an exact binary remainder in [-1/4,1/4]. It multiplies only that
+remainder by the typed pi constant before calling native `sin`, `cos` or
+`tan`. This preserves phase for large arguments, avoids overflow in `2*x` or
+`pi*x`, and retains relative accuracy near integer zeros and half-integer
+poles. The inverse implementation scales the native inverse function, with
+explicit handling of exact endpoints, axes and diagonals. `atan2pi` uses
+`atan2`, avoiding an overflowing or underflowing intermediate `y/x`.
+
+The native value conventions follow IEEE pi-scaled arithmetic:
+
+- At every integer, `sinpi` and `tanpi` return zero with the input's sign.
+- `cospi` returns positive zero at every half-integer.
+- `tanpi(n+1/2)` returns positive infinity for even n and negative infinity
+  for odd n; at quarter-integers its finite values are exactly +1 or -1.
+- Forward functions return NaN for infinite or NaN inputs. `asinpi` and
+  `acospi` have domain [-1,1], with NaN outside it.
+- `atanpi` maps infinities to +/-1/2. `atan2pi` preserves signed-zero
+  quadrants, including both zero arguments, and handles infinite axes and
+  diagonals. NaN in either argument yields NaN.
+
+The MPFR path retains its provider conventions. In particular, MPFR 4.2.1
+uses an alternating zero sign for `tanpi` at odd integers; native results follow
+the input sign, as described in the current MPFR reference.
+
+See the [MPFR function reference](https://www.mpfr.org/mpfr-current/mpfr.html#Transcendental-Functions)
+and the GNU libc [forward](https://sourceware.org/glibc/manual/latest/html_node/Trig-Functions.html)
+and [inverse](https://sourceware.org/glibc/manual/latest/html_node/Inverse-Trig-Functions.html)
+interfaces. Native implementations do not promise correct rounding or a
+portable `errno`/floating-point-exception contract. Their accuracy depends on
+the native elementary provider and rounding of the typed pi constant. Tests
+use round-to-nearest with gradual underflow, require errors within four output
+grid spacings on a deterministic adversarial sample, and separately check
+improvement with precision using analytic identities and a convergent series.
+This is numerical validation, not a proven global error bound.
+
+The shared precision matrix tests both the selected public path and the
+portable implementation explicitly. Thus a successful fallback does not count
+as validation of an unavailable libc provider. Core boundary tests run without
+MPFR; the wider 512-bit oracle checks are reported unavailable in that build.
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,
