@@ -36,6 +36,8 @@ enum class PrecisionProbe
   BetaIdentities,
   BetaAccuracy,
   BetaPortableAccuracy,
+  DilogIdentities,
+  DilogAccuracy,
   DigammaIdentities,
   DigammaAccuracy,
   FactorialIdentities,
@@ -122,6 +124,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "BetaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "DilogIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "DilogAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DigammaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DigammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialIdentities", "scalar_math"},
@@ -244,8 +248,9 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == BetaIdentities || probe == BetaAccuracy || probe == BetaPortableAccuracy ||
-        probe == DigammaIdentities || probe == DigammaAccuracy || probe == FactorialIdentities ||
+    if (probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy ||
+        probe == BetaPortableAccuracy || probe == DigammaIdentities || probe == DigammaAccuracy ||
+        probe == FactorialIdentities ||
         probe == FactorialAccuracy || probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities ||
         probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
         probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities || probe == CompoundAccuracy ||
@@ -334,6 +339,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case PiScaledPortableAccuracy:
       case BetaAccuracy:
       case BetaPortableAccuracy:
+      case DilogAccuracy:
       case DigammaAccuracy:
       case FactorialAccuracy:
       case AgmAccuracy:

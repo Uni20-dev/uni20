@@ -210,6 +210,15 @@ absolute near zeros and relative away from them. See
 [native digamma](native_digamma.md) for regions, coefficients, tail bounds and
 independent validation.
 
+## Real dilogarithm
+
+`math::dilog_real(x)` supports all configured native real types through a
+bounded series after real domain transformations. For x>1 it returns the
+real part of Li2; this is not a complex branch API. Signed zeros are retained,
+both infinite arguments give negative infinity, and finite arguments give
+finite results. See [native real dilogarithm](native_dilogarithm.md) for
+accuracy near zero and the nonzero root, reduction formulas and validation.
+
 ## Arithmetic-geometric mean
 
 `math::agm(a,b)` supports matching native real types and MPFR. Native iteration

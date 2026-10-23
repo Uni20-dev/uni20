@@ -160,6 +160,10 @@ explicit-precision mpreal; see [native factorial](native_factorial.md).
 Native digamma also covers all configured real formats; see the
 [algorithm and acceptance criteria](native_digamma.md).
 
+Native `math::dilog_real(x)` covers the whole real line at all configured
+precisions; see [real dilogarithm](native_dilogarithm.md) for reductions and
+acceptance criteria. Binary128 Ei remains a separate investigation.
+
 ### Shared native implementations
 
 Binary128 coverage may require Uni20 implementations of functions such as

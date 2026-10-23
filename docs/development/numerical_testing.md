@@ -159,6 +159,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native/MPFR real dilogarithm | Whole real line, subnormals, continuation for x>1, nonzero-root neighbors, independent pi/log values and defining series; original-input MPFR512 references with 1024-bit worst-case checks |
 | Native/MPFR digamma | Absolute error near zeros, relative accuracy away from zeros, reflection/pole neighborhoods, full exponent range and independent harmonic identities |
 | Native Beta fallback / MPFR | Separate portable and public probes; Gamma-ratio cancellation, extreme parameter ratios, original-input error bounds, range limits and independent integer products; large-argument log-Gamma oracle with additional cancellation guard bits |
 | Typed factorial | Every native finite order, exact-integer references, overflow boundaries and checked result precision |
@@ -266,8 +267,11 @@ even when MPFR is enabled. Pi-scaled trigonometric functions have separate
 precision; `PiScaledPortableAccuracy` directly exercises the native fallback,
 independently of whether a libc provider is selected. The native Gamma/error-function
 probes run at all configured real precisions; their high-precision oracle requires MPFR. Beta,
-zeta and Ei have separate native/MPFR probes; their native binary128 cells
-remain unsupported. Constant probes also cover configured binary128.
+zeta and Ei have combined provider probes whose native binary128 cells remain
+unsupported. Dedicated Beta probes cover its new binary128 and portable paths.
+Constant probes also cover configured binary128. `DilogIdentities` and
+`DilogAccuracy` cover all configured native reals and MPFR128/256, recording
+the largest fraction of the documented error bound and the corresponding input.
 
 Keep operation-specific unsupported reasons explicit in the registry. When a
 combination gains support, enable the same mathematical probe for it.

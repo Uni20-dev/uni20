@@ -3,6 +3,7 @@
 #include "detail/native_agm_math.hpp"
 #include "detail/native_compound_math.hpp"
 #include "detail/native_digamma_math.hpp"
+#include "detail/native_dilog_math.hpp"
 #include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
@@ -341,7 +342,7 @@ UNI20_SCALAR_MATH_DISPATCH_TO(beta, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
 UNI20_SCALAR_MATH_DISPATCH_TO(zeta, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(expint, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(dilog_real)
+UNI20_SCALAR_MATH_DISPATCH_TO(dilog_real, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_j, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_y, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
@@ -595,6 +596,8 @@ inline constexpr detail::scalar_math::zeta_fn zeta{};
 /// \details Native evaluation uses std::expint.
 inline constexpr detail::scalar_math::expint_fn expint{};
 /// \brief Real part of the dilogarithm.
+/// \details Native real arguments use a bounded series with real continuation on x>1.
+///          Signed zeros are preserved; both infinite arguments give negative infinity.
 inline constexpr detail::scalar_math::dilog_real_fn dilog_real{};
 /// \brief Integer-order Bessel function of the first kind, with order first.
 /// \details Native absolute orders must fit int; other scalar providers retain their own limits.
