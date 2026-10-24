@@ -7,6 +7,7 @@
 #include "detail/native_pi_math.hpp"
 #include "detail/native_reciprocal_math.hpp"
 #include "detail/native_special_math.hpp"
+#include "factorial.hpp"
 #include "math_constants.hpp"
 #include "numeric_limits.hpp"
 #include "runtime_precision.hpp"
@@ -603,7 +604,7 @@ inline constexpr detail::scalar_math::airy_ai_fn airy_ai{};
 ///          zero with infinity and other negative arguments give NaN. Native evaluation
 ///          uses scaled iteration; MPFR retains its scalar precision contract.
 inline constexpr detail::scalar_math::agm_fn agm{};
-/// \brief Nonnegative integer factorial at an explicit arithmetic state.
+/// \brief MPFR factorial at an explicit arithmetic state; use uni20::factorial<Real> for a typed result.
 inline constexpr detail::scalar_math::factorial_fn factorial{};
 
 /// \brief Base-ten exponential.

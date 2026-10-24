@@ -206,6 +206,15 @@ keeps separate operand exponents until a common scale is safe, including
 minimum-subnormal/maximum input pairs. See [native AGM](native_agm.md) for
 domains, convergence, acceptance criteria and independent references.
 
+## Typed factorials
+
+`uni20::factorial<Real>(n)` explicitly selects a native floating result type.
+For generic precision-aware code, `uni20::factorial<Real>(n,p)` checks the
+native precision or selects finite/exact MPFR arithmetic. The original
+`math::factorial(n,p)` MPFR convenience remains available. The standalone
+header is `<uni20/core/factorial.hpp>`, also included by `math.hpp`.
+See [factorial contracts and accuracy](native_factorial.md).
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,
