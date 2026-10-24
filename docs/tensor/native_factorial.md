@@ -67,8 +67,20 @@ sixteen-fold error reduction on controlled inexact factorials as precision
 increases. All 26 targeted MPFR-enabled tests passed, including native
 factories, MPFR exact/finite factories and existing scalar facade behavior.
 A separate MPFR-disabled Release check passed all eight native tests and ran
-the explanatory example. These are iteration checks; full integration builds
-and CTest matrices are pending.
+the explanatory example.
+
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Runtime skips |
+| --- | ---: | ---: |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native128 | 3225 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native128 | 2453 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native80, native128 disabled | 2898 | 1 NUMA topology test |
+
+Each configuration also passed the complete numerical precision executable and
+coverage report. CUDA runtime and macOS were not exercised. The NUMA skips
+reflect this host's topology and are separate from the passing counts.
 
 `factorial_example` explains result-type selection, precision arguments,
 overflow and, when enabled, exact versus approximate MPFR results.
