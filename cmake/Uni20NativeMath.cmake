@@ -108,3 +108,28 @@ else()
     set(UNI20_HAS_${function}_FLOAT128 OFF)
   endforeach()
 endif()
+
+# C23 compoundn takes long long; an old TS intmax_t signature is not assumed.
+function(uni20_check_native_compound suffix type function_suffix)
+  block(SCOPE_FOR VARIABLES)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+    check_cxx_source_compiles("
+      #include <cmath>
+      #include <type_traits>
+      int main() {
+        using R = ${type};
+        static_assert(std::is_same_v<decltype(::compoundn${function_suffix}(R(0), 1LL)), R>);
+        R (*volatile function)(R, long long) = &::compoundn${function_suffix};
+        return function(R(0), 1LL) != R(1);
+      }" UNI20_HAS_COMPOUNDN_${suffix})
+  endblock()
+endfunction()
+
+uni20_check_native_compound(FLOAT "float" "f")
+uni20_check_native_compound(DOUBLE "double" "")
+uni20_check_native_compound(LONG_DOUBLE "long double" "l")
+if(UNI20_HAS_FLOAT128)
+  uni20_check_native_compound(FLOAT128 "_Float128" "f128")
+else()
+  set(UNI20_HAS_COMPOUNDN_FLOAT128 OFF)
+endif()

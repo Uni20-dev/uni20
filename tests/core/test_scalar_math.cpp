@@ -97,7 +97,7 @@ template <class... F> consteval bool deferred_extensions(F...)
 }
 static_assert(deferred_extensions(m::sec, m::csc, m::cot, m::sech, m::csch, m::coth));
 static_assert(std::invocable<decltype(m::atan2pi), double, double>);
-static_assert(!std::invocable<decltype(m::compound), double, int>);
+static_assert(std::invocable<decltype(m::compound), double, int>);
 
 template <class T> void check_native_special_functions()
 {

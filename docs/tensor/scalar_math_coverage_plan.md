@@ -183,8 +183,9 @@ using detected libc families or same-precision portable implementations. See
 Native `exp10`, `exp2m1`, `exp10m1`, `log2p1` and `log10p1` also have
 per-type provider selection and portable implementations; see
 [native exponential/logarithmic extensions](native_exponential_extensions.md).
-Native reciprocal functions and `compound` remain deferred, with their
-unavailable signatures tested explicitly.
+Native `compound` uses a detected typed provider or scaled, guarded integer
+exponentiation; see [native compound](native_compound.md). Native reciprocal
+functions remain deferred, with their unavailable signatures tested explicitly.
 
 - `exp10`.
 - `sinpi`, `cospi`, `tanpi`, and pi-scaled inverse trigonometric functions.

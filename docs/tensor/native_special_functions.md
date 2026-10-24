@@ -175,6 +175,16 @@ test host has no numerical evidence from that run, even if its wiring is
 checked synthetically. Accuracy on a new libc provider must be measured on
 that provider before calling it validated.
 
+## Compound powers
+
+`math::compound(x,n)` supports native float32/64/80/128 and MPFR. It computes
+`(1+x)^n` from the original input, including increments lost by first rounding
+`1+x`. The integer exponent has the shared checked signed64 domain; the real
+input must be at least -1. Native paths use per-type C23 `compoundn` detection
+or a bounded expansion of native values, with separate binary scaling. See
+[native compound](native_compound.md) for exceptional values, numerical
+acceptance, range handling and measured performance.
+
 ## Exponential and logarithmic extensions
 
 `exp10`, `exp2m1`, `exp10m1`, `log2p1` and `log10p1` support native

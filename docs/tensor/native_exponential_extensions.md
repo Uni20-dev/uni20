@@ -5,8 +5,9 @@ This batch adds native float32/64/80/128 evaluation of `math::exp10`,
 implementations and precision contracts. Native arguments retain their type;
 there is no MPFR runtime fallback and no additional dependency.
 
-`compound` is a separate numerical investigation in the same overall
-[coverage plan](scalar_math_coverage_plan.md). It is not implemented by this batch.
+The separately implemented [native compound](native_compound.md) function
+retains the original increment when computing `(1+x)^n`; its guard-word
+algorithm and acceptance criteria are independent of these unary functions.
 
 Run `native_exponential_math_example` to compare stable small changes with
 cancellation-prone compositions and to see native extended exponent ranges.

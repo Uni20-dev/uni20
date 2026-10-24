@@ -76,6 +76,11 @@
 #cmakedefine01 UNI20_HAS_BESSEL_FLOAT128
 
 // Independently detected native exponential/logarithmic extensions.
+#cmakedefine01 UNI20_HAS_COMPOUNDN_FLOAT
+#cmakedefine01 UNI20_HAS_COMPOUNDN_DOUBLE
+#cmakedefine01 UNI20_HAS_COMPOUNDN_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_COMPOUNDN_FLOAT128
+
 #cmakedefine01 UNI20_HAS_EXP10_FLOAT
 #cmakedefine01 UNI20_HAS_EXP10_DOUBLE
 #cmakedefine01 UNI20_HAS_EXP10_LONG_DOUBLE

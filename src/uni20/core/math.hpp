@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/native_compound_math.hpp"
 #include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
@@ -361,7 +362,7 @@ UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(sech)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(csch)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(coth)
 UNI20_SCALAR_MATH_DISPATCH_TO(atan2pi, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(compound)
+UNI20_SCALAR_MATH_DISPATCH_TO(compound, native_math, preserves_real_precision)
 #undef UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY
 #undef UNI20_SCALAR_MATH_DISPATCH_TO
 #undef UNI20_SCALAR_MATH_DISPATCH_POLICY
@@ -636,7 +637,9 @@ inline constexpr detail::scalar_math::csch_fn csch{};
 inline constexpr detail::scalar_math::coth_fn coth{};
 /// \brief Quadrant-aware arctangent divided by pi.
 inline constexpr detail::scalar_math::atan2pi_fn atan2pi{};
-/// \brief Integer power of one plus x, without rounding the sum first.
+/// \brief Integer power of one plus x, retaining the original increment.
+/// \details Requires x >= -1 and a checked signed-64-bit exponent (not bool).
+///          Native evaluation uses a typed provider or a guarded expansion; it does not promise correct rounding.
 inline constexpr detail::scalar_math::compound_fn compound{};
 
 /// \brief Read the real component by value; real and integral scalars retain their type.

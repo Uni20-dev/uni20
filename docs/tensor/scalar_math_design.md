@@ -42,7 +42,8 @@ providing a name does not synthesize a missing scalar operation.
 | `digamma`, `upper_gamma`, `dilog_real`, `airy_ai`, `agm`, `factorial` | MPFR special functions; native implementations deferred |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
-| `sec`, `csc`, `cot`, `sech`, `csch`, `coth`, `compound` | MPFR reciprocal functions and compound integer powers |
+| `sec`, `csc`, `cot`, `sech`, `csch`, `coth` | MPFR reciprocal functions |
+| `compound(x,n)` | Original-input integer power of 1+x; native typed provider or guarded expansion, and MPFR |
 
 `abs_squared(x)` is a composed function: compute `abs(x)` once and square it.
 It adds neither overflow scaling nor extra precision. The root-level
