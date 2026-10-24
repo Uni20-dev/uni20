@@ -123,6 +123,16 @@ log(2) reduction and a Taylor series. Subnormal exp results are rounded in
 integer units of the smallest subnormal, retaining the low word through the
 halfway decision. Exponent guards precede narrowing to a native int.
 
+The tail's logarithmic scale is divided by a common power of two before
+forming the two-word product and difference. The reduced logarithm has
+magnitude below one, leaving native exponent range for both terms and their
+residuals. Range comparisons use the same scale; only a bounded result is
+rescaled. A finite fused estimate alone is insufficient: its intermediate
+unfused product can overflow and poison the residual with NaN. The regression
+`a=0x1.9d4d4ap+122f`, `x=0x1.cf67fep+126f` has this behavior; the integral over
+`[x,x+1]` already proves that its result must overflow to positive infinity.
+Corresponding cases are tested at every configured native precision.
+
 The log(2) and log(2*pi) prefixes are reconstructed from exact 16-bit chunks.
 The generator uses rational series bounds for log(2) and Machin pi, plus
 160/240-digit Decimal logarithms for log(2*pi); the prefixes also agree with
@@ -220,8 +230,10 @@ disabled. Missing-provider executables and the example also pass. Removing the g
 the accuracy probe fail at all four native precisions while both MPFR
 cases still pass.
 
-Full unfiltered builds and CTest runs, including the small-endpoint
-regressions, passed with examples, CLI and Python bindings enabled:
+The preceding small-endpoint checkpoint passed the following full unfiltered
+builds and CTest runs with examples, CLI and Python bindings enabled. The
+subsequent scaled-product correction requires a fresh complete matrix before
+publication:
 
 | Configuration | CTest passes | Numerical tests | Runtime skips |
 | --- | ---: | ---: | --- |
