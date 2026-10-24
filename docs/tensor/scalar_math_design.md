@@ -40,7 +40,8 @@ providing a name does not synthesize a missing scalar operation.
 | `lgamma`, `lgamma_sign`, `bessel_j`, `bessel_y` | MPFR or detected native providers; native log-Gamma is reentrant and native Bessel absolute order must fit `int` |
 | `beta` | MPFR, advertised standard-library providers, or native Gamma-ratio fallback including binary128; native arguments must be positive and of the same type |
 | `zeta`, `expint` | MPFR or advertised standard-library providers for float/double/long double |
-| `upper_gamma`, `dilog_real`, `airy_ai` | MPFR special functions; native implementations deferred |
+| `upper_gamma`, `airy_ai` | MPFR special functions; native implementations deferred |
+| `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
 | `digamma` | Native compensated recurrence/asymptotics/reflection or MPFR; negative nonintegers supported |
