@@ -131,6 +131,22 @@ template <NativeReal R> two_word<R> fraction(R av, R xv)
   R eps = epsilon<R>();
   if (av < -1 && xv / (-av - 1) < eps / 4) return P(1) / (-a);
   if (av <= R(-.5) && xv < eps * eps / 64) return P(1) / (-a);
+  // For b=-a>0, U=integral exp(-x*t)/(1+t)^(b+1) dt. Integrating
+  // Taylor's remainder bounds the error after n terms by the next term,
+  // x^n/[b*(b-1)*...*(b-n)], provided n<b. This converges quickly near
+  // a small-x range boundary where the fraction can converge too slowly.
+  if (av < -1 && xv <= 1)
+  {
+    P term = P(1) / (-a), sum = term;
+    for (int n = 1; n < 2 * numeric_limits<R>::digits() && R(n) < -av; ++n)
+    {
+      P next = -term * x / (-a - P(R(n)));
+      if (std::abs(next.hi) <= eps * std::abs(sum.hi) / 16) return sum;
+      if (std::abs(next.hi) >= std::abs(term.hi)) break;
+      sum = sum + next;
+      term = next;
+    }
+  }
   for (int depth = 8; depth <= 128 * numeric_limits<R>::digits(); depth *= 2)
   {
     P value;

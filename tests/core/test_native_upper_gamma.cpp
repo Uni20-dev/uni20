@@ -74,4 +74,12 @@ TYPED_TEST(NativeUpperGamma, ExtremeFiniteParametersHaveBoundedRangeBehavior)
   EXPECT_GT(m::upper_gamma(R(-1), R(1)), R(0));
   EXPECT_GT(m::upper_gamma(R(-32), R(.5)), R(0));
 }
+TEST(NativeUpperGammaRegression, GuardedSmallEndpointRemainsFinite)
+{
+  // Exact represented arguments from the range-guard convergence regression.
+  // MPFR256 rounds the finite reference to this float32 value.
+  float result = m::upper_gamma(-3.5f, 0x1.5fd7fep-37f);
+  ASSERT_TRUE(m::isfinite(result));
+  EXPECT_EQ(result, 0x1.0fe3b8p+126f);
+}
 } // namespace

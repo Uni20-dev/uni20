@@ -142,6 +142,10 @@ template <class C> void upper_gamma_accuracy()
   for (int n = -32; n <= 48; ++n)
     for (int k : {1, 2, 4, 16, 64})
       evaluate(C::real(n) / 2, C::real(k) / 4);
+  // This modest negative shape previously exhausted the guarded fraction
+  // near float32 overflow, although the result is finite. Retain the exact
+  // represented endpoint for every configured scalar, including MPFR.
+  evaluate(-C::real(7) / 2, C::real(0x1.5fd7fep-37));
   auto neighbors = [&](R a, R x) {
     for (int k = 0; k < 8; ++k)
     {
@@ -190,9 +194,14 @@ template <class C> void upper_gamma_accuracy()
     };
     // Locate boundaries with independent identities, without consulting the
     // tested implementation. Search in log(x) to span tiny overflow endpoints.
-    for (R a : {R(-100), R(-.5), R(0), R(.5), R(2), R(2000)})
+    for (R a : {R(-100), R(-8), R(-4), math::next_down(R(-4)), math::next_up(R(-4)), R(-3.5), R(-3.25), R(-3),
+                R(-.5), R(0), R(.5), R(2), R(2000)})
       for (bool overflow : {false, true})
       {
+        // The added modest negative shapes exercise the small-x overflow
+        // guard. Retain the original underflow shapes: direct MPFR evaluation
+        // at large x is much more expensive for nearby noninteger shapes.
+        if (!overflow && a > R(-100) && a < R(-.5)) continue;
         auto target = overflow ? widen(L::max()) + math::ldexp(one, L::max_exponent - L::digits() - 1) : half_subnormal;
         auto lo = math::log(widen(L::denorm_min())), hi = math::log(mpreal(64000, p));
         auto aa = widen(a);
