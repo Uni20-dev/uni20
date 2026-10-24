@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/native_agm_math.hpp"
 #include "detail/native_compound_math.hpp"
 #include "detail/native_exponential_math.hpp"
 #include "detail/native_math.hpp"
@@ -342,7 +343,7 @@ UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(dilog_real)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_j, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_y, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(agm)
+UNI20_SCALAR_MATH_DISPATCH_TO(agm, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(factorial)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma_sign, native_math, preserves_components)
 UNI20_SCALAR_MATH_DISPATCH_TO(exp10, native_math, preserves_real_precision)
@@ -598,6 +599,9 @@ inline constexpr detail::scalar_math::bessel_y_fn bessel_y{};
 /// \brief Real Airy Ai, within the selected provider limitations.
 inline constexpr detail::scalar_math::airy_ai_fn airy_ai{};
 /// \brief Nonnegative arithmetic-geometric mean.
+/// \details Native arguments have the same real type. Zero with a finite argument gives +0;
+///          zero with infinity and other negative arguments give NaN. Native evaluation
+///          uses scaled iteration; MPFR retains its scalar precision contract.
 inline constexpr detail::scalar_math::agm_fn agm{};
 /// \brief Nonnegative integer factorial at an explicit arithmetic state.
 inline constexpr detail::scalar_math::factorial_fn factorial{};

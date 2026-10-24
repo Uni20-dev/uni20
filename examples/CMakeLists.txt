@@ -47,6 +47,8 @@ if(UNI20_HAS_MPLAPACK_MPREAL)
   add_test(NAME MplapackPrecisionExample COMMAND mplapack_precision_example)
 endif()
 
+uni20_add_example(native_agm_example common/native_agm_example.cpp uni20_core)
+add_test(NAME NativeAgmExample COMMAND native_agm_example)
 uni20_add_example(native_reciprocal_math_example common/native_reciprocal_math_example.cpp uni20_core)
 add_test(NAME NativeReciprocalMathExample COMMAND native_reciprocal_math_example)
 uni20_add_example(native_compound_example common/native_compound_example.cpp uni20_core)

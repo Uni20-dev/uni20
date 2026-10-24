@@ -159,6 +159,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native/MPFR AGM | Extreme operand ratios, subnormal inputs, symmetry, equal-input identities and independent elliptic-integral series |
 | Native/MPFR reciprocal functions | Original-input phase, signed zeros, poles and hyperbolic tails beyond sinh/cosh overflow; full-range oracle scans and independent series references |
 | Native/MPFR compound | Original increment and integer exponent retention; signed64 limits; range and subnormal neighborhoods; independent exact rational references; public and portable paths |
 | Native/MPFR exponential extensions | Small-argument cancellation; logarithmic domain and range boundaries; public and direct portable probes; recorded maximum errors/worst inputs; independent radical and log-series accuracy references |
@@ -287,3 +288,8 @@ is included in `MathConstantsAccuracy`, with correct-rounding checks and an
 independent Euler-transformed series. The shared oracle has a dedicated
 regression for negative zero, infinities and NaNs. See the
 [acceptance table](../tensor/native_reciprocal_math.md#contracts-and-numerical-acceptance).
+
+`AgmIdentities` and `AgmAccuracy` validate scaled arithmetic-geometric means
+through the shared cases. Accuracy includes an MPFR512 oracle, a 1024-bit
+check of the worst sampled pair and a separate elliptic-integral power series.
+See the [AGM acceptance criteria](../tensor/native_agm.md#domain-and-acceptance-criteria).
