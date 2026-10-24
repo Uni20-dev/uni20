@@ -75,6 +75,28 @@
 #cmakedefine01 UNI20_HAS_BESSEL_LONG_DOUBLE
 #cmakedefine01 UNI20_HAS_BESSEL_FLOAT128
 
+// Independently detected native exponential/logarithmic extensions.
+#cmakedefine01 UNI20_HAS_EXP10_FLOAT
+#cmakedefine01 UNI20_HAS_EXP10_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP10_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP10_FLOAT128
+#cmakedefine01 UNI20_HAS_EXP2M1_FLOAT
+#cmakedefine01 UNI20_HAS_EXP2M1_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP2M1_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP2M1_FLOAT128
+#cmakedefine01 UNI20_HAS_EXP10M1_FLOAT
+#cmakedefine01 UNI20_HAS_EXP10M1_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP10M1_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_EXP10M1_FLOAT128
+#cmakedefine01 UNI20_HAS_LOG2P1_FLOAT
+#cmakedefine01 UNI20_HAS_LOG2P1_DOUBLE
+#cmakedefine01 UNI20_HAS_LOG2P1_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_LOG2P1_FLOAT128
+#cmakedefine01 UNI20_HAS_LOG10P1_FLOAT
+#cmakedefine01 UNI20_HAS_LOG10P1_DOUBLE
+#cmakedefine01 UNI20_HAS_LOG10P1_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_LOG10P1_FLOAT128
+
 // Use the Kokkos reference mdspan implementation in the Uni20 extension namespace.
 #ifndef MDSPAN_IMPL_STANDARD_NAMESPACE
 #define MDSPAN_IMPL_STANDARD_NAMESPACE stdex

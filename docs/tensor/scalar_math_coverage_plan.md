@@ -180,8 +180,11 @@ Status: implemented for `mpreal` using MPFR 4.2 routines. The seven pi-scaled
 forward/inverse trigonometric functions also support native float32/64/80/128,
 using detected libc families or same-precision portable implementations. See
 [native pi-scaled functions](native_special_functions.md#pi-scaled-trigonometric-functions).
-The other native implementations remain deferred, with their unavailable
-signatures tested explicitly.
+Native `exp10`, `exp2m1`, `exp10m1`, `log2p1` and `log10p1` also have
+per-type provider selection and portable implementations; see
+[native exponential/logarithmic extensions](native_exponential_extensions.md).
+Native reciprocal functions and `compound` remain deferred, with their
+unavailable signatures tested explicitly.
 
 - `exp10`.
 - `sinpi`, `cospi`, `tanpi`, and pi-scaled inverse trigonometric functions.

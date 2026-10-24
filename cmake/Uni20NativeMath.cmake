@@ -78,3 +78,33 @@ else()
   set(UNI20_HAS_PI_TRIG_FLOAT128 OFF)
   set(UNI20_HAS_PI_INVERSE_FLOAT128 OFF)
 endif()
+
+# Unary extensions may be introduced independently by the platform libc.
+function(uni20_check_native_exponential_math suffix type function_suffix)
+  block(SCOPE_FOR VARIABLES)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+    foreach(function IN ITEMS exp10 exp2m1 exp10m1 log2p1 log10p1)
+      string(TOUPPER "${function}" upper)
+      check_cxx_source_compiles("
+        #include <cmath>
+        #include <type_traits>
+        int main() {
+          using R = ${type};
+          static_assert(std::is_same_v<decltype(::${function}${function_suffix}(R(0))), R>);
+          R (*volatile function)(R) = &::${function}${function_suffix};
+          return function(R(0)) != R(0);
+        }" UNI20_HAS_${upper}_${suffix})
+    endforeach()
+  endblock()
+endfunction()
+
+uni20_check_native_exponential_math(FLOAT "float" "f")
+uni20_check_native_exponential_math(DOUBLE "double" "")
+uni20_check_native_exponential_math(LONG_DOUBLE "long double" "l")
+if(UNI20_HAS_FLOAT128)
+  uni20_check_native_exponential_math(FLOAT128 "_Float128" "f128")
+else()
+  foreach(function IN ITEMS EXP10 EXP2M1 EXP10M1 LOG2P1 LOG10P1)
+    set(UNI20_HAS_${function}_FLOAT128 OFF)
+  endforeach()
+endif()
