@@ -116,3 +116,70 @@ Prototype small shape with tiny x, negative-integer neighbors, x near a,
 large positive shape with x far beyond a and a finite result, and final range
 boundaries. Keep observed maxima separate from the intended table. Establish
 whether this decomposition is workable before adding a public native overload.
+
+## Initial prototype evidence
+
+The first positive Stieltjes truncation pair did not converge for tiny x,
+including a=-8 and x=2^-48 in float32. Contracting to the fraction with
+successive denominators `x+1-a, x+3-a, ...` and numerators `k*(a-k)`
+removes that ineffective endpoint enclosure. Use it for large negative shape
+at small x; retain the positive bracketing form where x>=1. At x=0, a=-b
+with positive integer b, the depth-n contracted fraction has exact relative
+truncation error `1/binomial(b+n+1,b)`. Exact rational checks of the finite
+fraction agree with this identity. With b=8/16/16/32, depths 64/128/128/256
+already give errors below 2^-33/2^-69/2^-69/2^-141. These endpoint bounds
+justify the scale of the iteration cap, not a total floating-point bound.
+
+For the small-shape log-Gamma quotient use shifts 16/32/32/64 and
+4/8/10/16 Stirling terms. The divided-difference remainder is bounded by the
+first omitted term of the differentiated Stirling series at `shift-1/2`.
+This follows by differentiating the remainder in the positive-real
+[Binet integral](https://dlmf.nist.gov/5.9). The exact-rational generator
+`scripts/generate-upper-gamma-bounds.py` gives bounds below
+2^-46.586/2^-87.980/2^-101.363/2^-170.058. This bounds truncation only.
+A 1024-point grid in [-1/2,1/2], excluding zero, gives maximum absolute
+quotient errors of 2.196/2.499/2.116/3.384 epsilons against MPFR1024.
+
+The prototype's initial mixed grid has 3192 input pairs per format: half-unit
+shape steps, eight ordinary endpoints, negative-integer/zero/join neighbors,
+small powers of two, deterministic native mantissas and large positive shapes.
+
+| Format | Largest fraction of intended bound | Worst represented shape | Worst represented endpoint |
+| --- | ---: | --- | --- |
+| float32 | 0.935853 | -11.33757877349853515625 | 52.50345611572265625 |
+| float64 | 0.096364 | -0.499999999999999722444243843710864894092082977 | 0.500000000000000555111512312578270211815834045 |
+| binary80 | 0.142906 | -0.50000000000000000037947076036992655190260848 | 0.99999999999999999962052923963007344809739152 |
+| binary128 | 0.196020 | -0.500000000000000000000000000000000481482486097 | 0.999999999999999999999999999999999518517513903 |
+
+No accuracy, nonconvergence or range-classification failures occurred in this
+revised grid. Worst references agreed at 1024 bits. The largest float32
+fraction occurs in the subnormal tail. These are prototype observations,
+not a full native implementation or proof of a domain-wide guarantee.
+
+MPFR gamma_inc is very slow for subnormal shapes near zero: an isolated
+binary80 smallest-subnormal shape with x=1/2 did not finish within five seconds.
+For the 42 such samples at each of float64/binary80/binary128, use Gamma(0,x)
+and bound the reference uncertainty by `10*abs(a)` for abs(a)<2^-256 and
+0.49<x<3. Differentiating the defining integral and bounding its pieces below
+and above one gives this conservative derivative bound. Add the uncertainty
+to the measured error. This is an independently bounded limit reference,
+not a claim that MPFR evaluated the original subnormal shape. Other samples
+use MPFR512 at the original inputs.
+
+Two additional range defects were reproduced and corrected in the candidate:
+
+- With a=2 or 10000 and endpoint near the native maximum, exponent splitting
+  could form zero times an infinite low-part exponential. Renormalize the
+  compensated logarithm before splitting and handle a zero/infinite half
+  exponential before multiplying its correction.
+- At a=2^p and x=nextafter(a,+infinity), all four formats exhausted the
+  continued-fraction cap even though the integral certainly overflows. For
+  a>2*max_exponent and x<=2a, integrate over [z,z+1], z=max(a,x), to obtain
+  the lower bound `a^(a-1)*exp(-2a-1)`. It exceeds every supported format's
+  maximum. Return infinity from this bound before iteration. The regression
+  now returns infinity at each precision. This argument also bounds work
+  around very large shapes without requiring a uniform transition expansion.
+
+The API remains unimplemented. Wider mantissa/exponent sampling, independently
+located final range boundaries, large-parameter cancellation, performance,
+permanent tests and full configuration validation remain required.
