@@ -9,6 +9,7 @@
 #include "detail/native_math.hpp"
 #include "detail/native_pi_math.hpp"
 #include "detail/native_reciprocal_math.hpp"
+#include "detail/native_upper_gamma_math.hpp"
 #include "detail/native_special_math.hpp"
 #include "factorial.hpp"
 #include "math_constants.hpp"
@@ -340,7 +341,7 @@ UNI20_SCALAR_MATH_DISPATCH(erfc)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(digamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(beta, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(upper_gamma)
+UNI20_SCALAR_MATH_DISPATCH_TO(upper_gamma, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(zeta, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(expint, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(dilog_real, native_math, preserves_real_precision)
@@ -582,7 +583,12 @@ inline constexpr detail::scalar_math::digamma_fn digamma{};
 /// \note Affected libstdc++/glibc providers retain an internal signgam data race;
 ///       see docs/tensor/native_special_functions.md for the provider limitation.
 inline constexpr detail::scalar_math::beta_fn beta{};
-/// \brief Upper incomplete Gamma, with shape and lower integration endpoint.
+/// \brief Upper unregularized incomplete Gamma, with shape and lower integration endpoint.
+/// \details Native arguments must have matching real types. For a finite shape and
+///          positive endpoint, this is the positive integral from x to infinity;
+///          negative shapes are supported. At x=0 use the analytic Gamma endpoint.
+///          See docs/tensor/native_upper_gamma.md for domain and accuracy contracts.
+///          MPFR retains its scalar precision contract.
 inline constexpr detail::scalar_math::upper_gamma_fn upper_gamma{};
 /// \brief Real error function.
 inline constexpr detail::scalar_math::erf_fn erf{};

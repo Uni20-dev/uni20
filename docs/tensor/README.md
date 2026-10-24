@@ -21,7 +21,7 @@ front-end operation semantics.
 - [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`
   interface, ADL customization, native precision and component-value semantics.
 - [Native Special Functions and Constants](native_special_functions.md) documents
-  Beta, zeta, Ei, reentrant log-Gamma, integer-order Bessel functions, typed
+  Beta, zeta, Ei, upper incomplete Gamma, reentrant log-Gamma, integer-order Bessel functions, typed
   constants and provider availability.
 
 ## Coverage Plans

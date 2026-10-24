@@ -170,6 +170,10 @@ standard Ei after accuracy and performance comparisons exposed substantial
 GCC13 errors; the algorithm document records the cost and range behavior.
 [Native zeta](native_zeta.md) similarly replaces standard evaluation after
 comparison, with exact phase reduction and scaled reflection.
+[Native upper incomplete Gamma](native_upper_gamma.md) supplies all configured
+precisions using scaled series and fractions, with extra native words for
+range decisions and large-parameter cancellation. Native Airy Ai remains
+a separate numerical investigation.
 
 ### Shared native implementations
 

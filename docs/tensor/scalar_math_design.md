@@ -41,7 +41,8 @@ providing a name does not synthesize a missing scalar operation.
 | `beta` | MPFR, advertised standard-library providers, or native Gamma-ratio fallback including binary128; native arguments must be positive and of the same type |
 | `zeta` | Native Euler–Maclaurin evaluation and reflection at every configured precision, or MPFR |
 | `expint` | Native series/continued-fraction/asymptotic implementation at every configured precision, or MPFR |
-| `upper_gamma`, `airy_ai` | MPFR special functions; native implementations deferred |
+| `upper_gamma` | Native scaled series/fractions with guarded range evaluation, or MPFR |
+| `airy_ai` | MPFR special function; native implementation deferred |
 | `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
