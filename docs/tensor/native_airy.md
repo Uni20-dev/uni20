@@ -179,7 +179,12 @@ plus the missing-provider executables and explanatory example. Replacing the
 phase reducer by a naive native phase makes all four native accuracy probes
 fail; removing the positive-tail guard makes the float32 probe fail. Both
 mutations leave the MPFR probes passing. The 569-sample phase sweep also passed
-AddressSanitizer and UndefinedBehaviorSanitizer at each native precision. Full unfiltered
+AddressSanitizer and UndefinedBehaviorSanitizer at each native precision.
+A combined Clang19 preflight of the seven new special-function families passed
+116 core/numerical tests, including Airy at native32/64/80 and MPFR128/256;
+native128 was disabled in that configuration. It compiled the current headers
+against compatible previously built core libraries, so it remains targeted
+compiler evidence. Full unfiltered
 GCC/Clang, examples, CLI and Python configurations remain the publication gate;
 these targeted checks do not establish that integration result.
 
