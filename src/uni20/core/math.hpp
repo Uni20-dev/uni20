@@ -1,6 +1,7 @@
 #pragma once
 
 #include "detail/native_agm_math.hpp"
+#include "detail/native_airy_math.hpp"
 #include "detail/native_compound_math.hpp"
 #include "detail/native_digamma_math.hpp"
 #include "detail/native_dilog_math.hpp"
@@ -347,7 +348,7 @@ UNI20_SCALAR_MATH_DISPATCH_TO(expint, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(dilog_real, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_j, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(bessel_y, native_math, preserves_real_precision)
-UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(airy_ai)
+UNI20_SCALAR_MATH_DISPATCH_TO(airy_ai, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(agm, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_ADL_ONLY(factorial)
 UNI20_SCALAR_MATH_DISPATCH_TO(lgamma_sign, native_math, preserves_components)
@@ -614,7 +615,8 @@ inline constexpr detail::scalar_math::bessel_j_fn bessel_j{};
 /// \details Native absolute orders must fit int; other scalar providers retain their own limits.
 /// \throws std::out_of_range if the order cannot be represented by the selected provider.
 inline constexpr detail::scalar_math::bessel_y_fn bessel_y{};
-/// \brief Real Airy Ai, within the selected provider limitations.
+/// \brief Real Airy Ai; native inputs retain their precision and full negative-axis phase.
+/// \details MPFR inputs retain their provider-specific range and working-precision rules.
 inline constexpr detail::scalar_math::airy_ai_fn airy_ai{};
 /// \brief Nonnegative arithmetic-geometric mean.
 /// \details Native arguments have the same real type. Zero with a finite argument gives +0;

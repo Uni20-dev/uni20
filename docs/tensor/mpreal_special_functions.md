@@ -22,7 +22,8 @@ The [typed factorial factory](native_factorial.md) selects native or MPFR
 results explicitly. Native [real dilogarithm](native_dilogarithm.md) supports
 all configured formats, including real continuation for x>1. Native
 [upper incomplete Gamma](native_upper_gamma.md) supports finite real shape at
-positive endpoints. Native Airy Ai remains separate work.
+positive endpoints. Native [Airy Ai](native_airy.md) covers the full real
+axis with bounded original-input phase reduction.
 Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check
 availability with `std::invocable` on the `uni20::math` callable.

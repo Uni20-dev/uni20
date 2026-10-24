@@ -172,8 +172,10 @@ GCC13 errors; the algorithm document records the cost and range behavior.
 comparison, with exact phase reduction and scaled reflection.
 [Native upper incomplete Gamma](native_upper_gamma.md) supplies all configured
 precisions using scaled series and fractions, with extra native words for
-range decisions and large-parameter cancellation. Native Airy Ai remains
-a separate numerical investigation.
+range decisions and large-parameter cancellation. [Native Airy Ai](native_airy.md)
+now covers the full real axis, with guarded central evaluation, original-input
+negative phase reduction and positive subnormal rounding. Its full configuration
+validation remains a publication gate.
 
 ### Shared native implementations
 

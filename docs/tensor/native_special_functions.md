@@ -1,7 +1,7 @@
 # Native special functions and constants
 
 `<uni20/core/math.hpp>` exposes `math::beta`, `math::zeta`, `math::expint`,
-`math::upper_gamma`, `math::lgamma`, `math::lgamma_sign`, `math::bessel_j`, and `math::bessel_y`
+`math::upper_gamma`, `math::airy_ai`, `math::lgamma`, `math::lgamma_sign`, `math::bessel_j`, and `math::bessel_y`
 for native real types when a suitable provider or Uni20 implementation is
 available. These paths add no library dependency and do not use Boost or
 MPFR to evaluate native arguments.
@@ -332,7 +332,7 @@ float32/64/80/128 and MPFR 128/256 bits where configured, against independent
 identities/series and wider MPFR references. Unavailable provider combinations
 are recorded in the coverage report rather than counted as passing probes.
 
-The remaining native functions are tracked in
+The native coverage trajectory is tracked in
 [issue #67](https://github.com/Uni20-dev/uni20/issues/67) and the
 [scalar math coverage plan](scalar_math_coverage_plan.md).
 
@@ -348,3 +348,14 @@ cancellation need more precision. It does not require a standard-library
 special-function provider or use MPFR internally.
 See [native upper Gamma](native_upper_gamma.md) for the complete domain,
 accuracy targets, truncation bounds and validation evidence.
+
+## Airy Ai
+
+`math::airy_ai(x)` supports all configured native real formats. It combines a
+four-word central series with decaying/oscillatory asymptotics. Negative-axis
+phase reduction starts from the exact binary input, including when a native
+x*sqrt(-x) would overflow; positive subnormal rounding uses a guarded path.
+NaN propagates and both infinities return positive zero. See
+[native Airy Ai](native_airy.md) for the accuracy contract, reproducible
+constants, bounded work and validation evidence. MPFR keeps its own provider
+limitations; native arithmetic never calls MPFR.
