@@ -162,11 +162,17 @@ template <NativeReal R> R upper_gamma(R a, R x)
 {
   using P = two_word<R>;
   using L = numeric_limits<R>;
-  R rough = std::fma(a / 2, std::log(x), -x / 2);
-  if (std::isinf(rough)) return rough > 0 ? L::infinity() : R(0);
-  P half = P(a / 2) * log(x) - P(x / 2);
-  if (half.hi > R(4 * L::max_exponent)) return L::infinity();
-  if (half.hi < -R(4 * L::max_exponent)) return R(0);
+  P lx = log(x);
+  int shift;
+  std::frexp(std::max(R(1), std::abs(lx.hi)), &shift);
+  // Keep both terms below the native range before the two-word product:
+  // a finite fused difference does not imply that its product is finite.
+  // Decide the range while scaled, then restore the bounded exponent.
+  P half = P(a / 2) * lx.scaled(-shift) - P(std::ldexp(x / 2, -shift));
+  R limit = std::ldexp(R(4 * L::max_exponent), -shift);
+  if (half.hi > limit) return L::infinity();
+  if (half.hi < -limit) return R(0);
+  half = half.scaled(shift);
   P u = fraction(a, x);
   if (std::isnan(u.hi)) return u.hi;
   P lu = log(u.hi) + P(u.lo) / P(u.hi);

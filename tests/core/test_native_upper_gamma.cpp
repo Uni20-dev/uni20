@@ -69,6 +69,11 @@ TYPED_TEST(NativeUpperGamma, ExtremeFiniteParametersHaveBoundedRangeBehavior)
   R huge = m::ldexp(R(1), L::digits());
   EXPECT_EQ(m::upper_gamma(huge, m::next_up(huge)), L::infinity());
   EXPECT_EQ(m::upper_gamma(L::max(), L::max()), L::infinity());
+  // The logarithmic difference is finite although its unscaled product
+  // overflows. The integral over [x,x+1] already exceeds the native range.
+  R large_x = m::ldexp(R(7), L::max_exponent - 3);
+  R large_a = (L::max() / m::log(large_x)) * R(2.5);
+  EXPECT_EQ(m::upper_gamma(large_a, large_x), L::infinity());
   for (R a : {R(-100), R(0), R(2), R(10000)})
     EXPECT_EQ(m::upper_gamma(a, L::max()), R(0));
   EXPECT_GT(m::upper_gamma(R(-1), R(1)), R(0));
@@ -81,5 +86,10 @@ TEST(NativeUpperGammaRegression, GuardedSmallEndpointRemainsFinite)
   float result = m::upper_gamma(-3.5f, 0x1.5fd7fep-37f);
   ASSERT_TRUE(m::isfinite(result));
   EXPECT_EQ(result, 0x1.0fe3b8p+126f);
+}
+TEST(NativeUpperGammaRegression, FiniteLogEstimateWithOverflowingProduct)
+{
+  float result = m::upper_gamma(0x1.9d4d4ap+122f, 0x1.cf67fep+126f);
+  EXPECT_EQ(result, uni20::numeric_limits<float>::infinity());
 }
 } // namespace

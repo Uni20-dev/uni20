@@ -109,10 +109,10 @@ expansion merely to settle this region.
 
 Ordinary paths use native pow/exp with compensated logarithmic scales.
 Near a final overflow or subnormal boundary, or when
-`eps*abs(a)*abs(log(x)) + eps*x > 1/32`, recompute the tail fraction and
+`eps*abs(a)*abs(log(x)) + eps*x > 1/32`, recompute the scaled tail and
 logarithmic scale using two native words. A corresponding lower-complement
 guard recomputes log Gamma, P and Q near that path's overflow boundary.
-Guarding only the final exponent is insufficient: the fraction or complement
+Guarding only the final exponent is insufficient: the scaled tail or complement
 can itself contain the deciding error.
 
 The private two-word helper uses TwoSum and FMA residuals, with division
@@ -122,6 +122,16 @@ accumulated roundoff. Log uses binary reduction and an atanh series; exp uses
 log(2) reduction and a Taylor series. Subnormal exp results are rounded in
 integer units of the smallest subnormal, retaining the low word through the
 halfway decision. Exponent guards precede narrowing to a native int.
+
+The tail's logarithmic scale is divided by a common power of two before
+forming the two-word product and difference. The reduced logarithm has
+magnitude below one, leaving native exponent range for both terms and their
+residuals. Range comparisons use the same scale; only a bounded result is
+rescaled. A finite fused estimate alone is insufficient: its intermediate
+unfused product can overflow and poison the residual with NaN. The regression
+`a=0x1.9d4d4ap+122f`, `x=0x1.cf67fep+126f` has this behavior; the integral over
+`[x,x+1]` already proves that its result must overflow to positive infinity.
+Corresponding cases are tested at every configured native precision.
 
 The log(2) and log(2*pi) prefixes are reconstructed from exact 16-bit chunks.
 The generator uses rational series bounds for log(2) and Machin pi, plus
@@ -160,11 +170,29 @@ independent oracle. The numbers are **observed maxima**, not new guarantees.
 | Adjacent values around final range boundaries | 1664/1536/1536/1536 | 0.999207 | <1 | <=1 | <=1 |
 | Varying shape, x/a from .75 to 1.25 near overflow | 528 | 0.00003338 | 0.00000460 | 0.000000304 | 0.000000307 |
 | Modest negative shapes, small endpoints and range neighbors | 8721 | 0.040873 | 0.024624 | 0.046396 | 0.059256 |
+| Larger negative shapes, independently located overflow boundaries | 3271 | 0.001466 | 0.002092 | 0.001351 | 0.000953 |
 | Large-parameter cancellation | 448 | 0.006809 | 0.007458 | 0.008920 | 0.007429 |
 
 Entries are fractions of the intended bound. All grids pass classification
 and nonconvergence checks. Near a subnormal midpoint, the half-subnormal
 allowance naturally dominates, giving a ratio close to one.
+
+The modest-negative-shape scan uses b=-a on the grid 9/8,10/8,...,8,
+plus each integer 1 through 8 and its immediate native neighbors. It samples
+32 neighbors on either side of an approximate overflow endpoint, multiplicative
+neighbors, powers of two, and normal/subnormal endpoint extremes. Its largest
+errors occur at x=1/2: a=next_down(-1), next_down(-2), -5/4 and -11/8 for
+float32/64/80/128 respectively.
+
+The larger-negative-shape scan uses b=16,32,64,100,128,256,512,1000,2000,2048
+and each value's immediate neighbors. MPFR512 independently locates the first
+native endpoint whose result rounds finite; 32 endpoints in each direction
+exercise the overflow transition. Additional endpoints multiply that boundary
+by exp(j/(4*b)), j=-16,...,16, or use powers of two and native endpoint extremes.
+The largest errors in that scan occur at x=1/2 and a=next_up(-16) for float32
+and binary80, or next_down(-16) for float64 and binary128. The worst references
+in both scans agree when repeated at 1024 bits. These wider negative shapes
+exercise the bounded expansion at extended precision as well as float32.
 
 The guard is covered by regressions for failures in earlier candidates:
 float64 a=-100,x approximately .00078967680221933849 prematurely overflowed;
@@ -196,21 +224,22 @@ references, not claims of MPFR evaluation at the original subnormal shape.
 
 The permanent tests cover native availability/domain rules, shared precision
 identities, precision gains and independent range-boundary references.
-GCC13 targeted validation passes 77 MPFR-enabled tests and 12 native-only
-tests, plus missing-provider executables in both configurations and the
-example. Removing the guarded recomputation in an isolated mutation makes
+The targeted upper-Gamma selection passes 22 MPFR-enabled tests and
+14 native-only tests under GCC13, and 18 tests under Clang19 with binary128
+disabled. Missing-provider executables and the example also pass. Removing the guarded recomputation in an isolated mutation makes
 the accuracy probe fail at all four native precisions while both MPFR
 cases still pass.
 
-The preceding implementation passed the following full builds and CTest
-runs, with examples, CLI and Python bindings enabled. The small-endpoint
-review correction is undergoing a fresh full matrix before publication:
+The preceding small-endpoint checkpoint passed the following full unfiltered
+builds and CTest runs with examples, CLI and Python bindings enabled. The
+subsequent scaled-product correction requires a fresh complete matrix before
+publication:
 
 | Configuration | CTest passes | Numerical tests | Runtime skips |
 | --- | ---: | ---: | --- |
-| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3357 | 635 | 1 NUMA topology test |
-| GCC13 Release without MPFR, native binary80/128 | 2536 | 266 | 1 NUMA topology test |
-| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3004 | 530 | 1 NUMA topology test |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3358 | 635 | 1 NUMA topology test |
+| GCC13 Release without MPFR, native binary80/128 | 2537 | 266 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3005 | 530 | 1 NUMA topology test |
 
 The separate unfiltered numerical runs and their complete coverage reports
 passed in all three configurations. Runtime skips are reported separately
