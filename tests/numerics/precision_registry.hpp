@@ -36,6 +36,8 @@ enum class PrecisionProbe
   BetaIdentities,
   BetaAccuracy,
   BetaPortableAccuracy,
+  UpperGammaIdentities,
+  UpperGammaAccuracy,
   ZetaIdentities,
   ZetaAccuracy,
   ExpintIdentities,
@@ -128,6 +130,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "BetaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "UpperGammaIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "UpperGammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ZetaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ZetaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ExpintIdentities", "scalar_math"},
@@ -256,7 +260,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == ZetaIdentities || probe == ZetaAccuracy || probe == ExpintIdentities || probe == ExpintAccuracy ||
+    if (probe == UpperGammaIdentities || probe == UpperGammaAccuracy || probe == ZetaIdentities ||
+        probe == ZetaAccuracy || probe == ExpintIdentities || probe == ExpintAccuracy ||
         probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy ||
         probe == BetaPortableAccuracy || probe == DigammaIdentities || probe == DigammaAccuracy ||
         probe == FactorialIdentities ||
@@ -348,6 +353,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case PiScaledPortableAccuracy:
       case BetaAccuracy:
       case BetaPortableAccuracy:
+      case UpperGammaAccuracy:
       case ZetaAccuracy:
       case ExpintAccuracy:
       case DilogAccuracy:

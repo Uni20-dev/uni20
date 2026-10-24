@@ -37,7 +37,8 @@ static_assert(std::invocable<decltype(m::bessel_j), int, uni20::mpreal>);
 template <class R>
 constexpr bool without_standard_special_functions =
     std::same_as<std::invoke_result_t<decltype(m::beta), R, R>, R> && std::same_as<std::invoke_result_t<decltype(m::zeta), R>, R> &&
-    std::same_as<std::invoke_result_t<decltype(m::expint), R>, R>;
+    std::same_as<std::invoke_result_t<decltype(m::expint), R>, R> &&
+    std::same_as<std::invoke_result_t<decltype(m::upper_gamma), R, R>, R>;
 static_assert(without_standard_special_functions<float>);
 static_assert(without_standard_special_functions<double>);
 static_assert(without_standard_special_functions<long double>);
@@ -60,6 +61,11 @@ int main()
   valid = valid && m::zeta(-2.0f) == 0 && m::zeta(-2.0) == 0 && m::zeta(-2.0L) == 0;
 #if UNI20_HAS_FLOAT128
   valid = valid && m::zeta(uni20::float128(-2)) == 0;
+#endif
+  valid = valid && m::upper_gamma(1.0f, 1.0f) == m::exp(-1.0f) &&
+          m::upper_gamma(1.0, 1.0) == m::exp(-1.0) && m::upper_gamma(1.0L, 1.0L) == m::exp(-1.0L);
+#if UNI20_HAS_FLOAT128
+  valid = valid && m::upper_gamma(uni20::float128(1), uni20::float128(1)) == m::exp(uni20::float128(-1));
 #endif
   return valid ? 0 : 1;
 }

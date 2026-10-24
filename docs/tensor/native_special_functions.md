@@ -1,7 +1,7 @@
 # Native special functions and constants
 
 `<uni20/core/math.hpp>` exposes `math::beta`, `math::zeta`, `math::expint`,
-`math::lgamma`, `math::lgamma_sign`, `math::bessel_j`, and `math::bessel_y`
+`math::upper_gamma`, `math::lgamma`, `math::lgamma_sign`, `math::bessel_j`, and `math::bessel_y`
 for native real types when a suitable provider or Uni20 implementation is
 available. These paths add no library dependency and do not use Boost or
 MPFR to evaluate native arguments.
@@ -335,3 +335,16 @@ are recorded in the coverage report rather than counted as passing probes.
 The remaining native functions are tracked in
 [issue #67](https://github.com/Uni20-dev/uni20/issues/67) and the
 [scalar math coverage plan](scalar_math_coverage_plan.md).
+
+## Upper incomplete Gamma
+
+`math::upper_gamma(a,x)` evaluates the upper, unregularized incomplete Gamma
+for matching native real types at every configured precision. Finite negative
+shapes are supported when x>0. The x=0 endpoint follows analytic Gamma(a),
+including its poles, rather than the divergent-integral interpretation for
+nonpositive shape. Native evaluation uses scaled series and continued
+fractions, with two native words where range decisions or exponent
+cancellation need more precision. It does not require a standard-library
+special-function provider or use MPFR internally.
+See [native upper Gamma](native_upper_gamma.md) for the complete domain,
+accuracy targets, truncation bounds and validation evidence.
