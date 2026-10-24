@@ -194,6 +194,22 @@ and binary80, or next_down(-16) for float64 and binary128. The worst references
 in both scans agree when repeated at 1024 bits. These wider negative shapes
 exercise the bounded expansion at extended precision as well as float32.
 
+A separate extreme-range scan checks 5121 inputs per native format against
+positive-integral bounds, evaluated independently at both 512 and 1024 bits.
+For a>=1 and x>a-1, with L=(a-1)*log(x)-x,
+`exp(L-1) <= Gamma(a,x) <= exp(L)/(1-(a-1)/x)`. Every case is classified as
+overflow or rounding to positive zero, with no disagreements or unclassified
+cases. The scan includes 161 cases per format whose unfused product overflows
+even though the fused logarithmic estimate remains finite.
+
+Writing E for the native maximum exponent, endpoints are `(m/8)*2^e`, with
+m=8,10,12,14,15 and e=E-1,E-2,E-4,E/2. Shapes are `(x/log(x))*r` for
+r=1/2,3/4,1,5/4,3/2,2,5/2,3, with 16 represented values in each direction,
+starting at the rounded shape.
+One additional case sets x=7*2^(E-3), a=(max/log(x))*5/2. The integral bounds
+provide the range reference without asking MPFR to evaluate Gamma at these
+extreme parameters.
+
 The guard is covered by regressions for failures in earlier candidates:
 float64 a=-100,x approximately .00078967680221933849 prematurely overflowed;
 binary80 a=2000,x approximately 6051.189867266821 also overflowed early.
@@ -224,22 +240,19 @@ references, not claims of MPFR evaluation at the original subnormal shape.
 
 The permanent tests cover native availability/domain rules, shared precision
 identities, precision gains and independent range-boundary references.
-The targeted upper-Gamma selection passes 22 MPFR-enabled tests and
-14 native-only tests under GCC13, and 18 tests under Clang19 with binary128
-disabled. Missing-provider executables and the example also pass. Removing the guarded recomputation in an isolated mutation makes
+Configured missing-provider executables and the example pass with the full
+suites below. Removing the guarded recomputation in an isolated mutation makes
 the accuracy probe fail at all four native precisions while both MPFR
 cases still pass.
 
-The preceding small-endpoint checkpoint passed the following full unfiltered
-builds and CTest runs with examples, CLI and Python bindings enabled. The
-subsequent scaled-product correction requires a fresh complete matrix before
-publication:
+Full unfiltered builds and CTest runs, including both reviewed range
+regressions, passed with examples, CLI and Python bindings enabled:
 
 | Configuration | CTest passes | Numerical tests | Runtime skips |
 | --- | ---: | ---: | --- |
-| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3358 | 635 | 1 NUMA topology test |
-| GCC13 Release without MPFR, native binary80/128 | 2537 | 266 | 1 NUMA topology test |
-| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3005 | 530 | 1 NUMA topology test |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3359 | 635 | 1 NUMA topology test |
+| GCC13 Release without MPFR, native binary80/128 | 2538 | 266 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3006 | 530 | 1 NUMA topology test |
 
 The separate unfiltered numerical runs and their complete coverage reports
 passed in all three configurations. Runtime skips are reported separately
