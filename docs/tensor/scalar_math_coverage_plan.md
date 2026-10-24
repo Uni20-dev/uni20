@@ -111,13 +111,13 @@ the neighbors of zero and infinity. Native formats retain their own limits.
 
 Status: implemented for `mpreal`, with exact-state, domain and numerical
 precision tests. See [MPFR special functions](mpreal_special_functions.md) for
-the contracts. Native float32/64/80/128 functions use native implementations,
-never an adapter through MPFR. Functions
-without a selected native implementation remain constrained out for those types,
-even when MPFR is enabled. Implementing those missing native providers is a
-separate follow-up, outside this change's scope; their `mpreal` overloads remain
-in scope. Shared precision tests must distinguish these unavailable native
-operations from the operations supported at every configured real precision.
+the contracts. The families below also have native float32/64/80/128 algorithms
+or precision-preserving platform adapters. Log-Gamma and Bessel availability
+still depends on the configured provider. Native evaluation never adapts through
+MPFR, and a missing platform overload remains constrained out. Shared precision
+tests distinguish unavailable provider combinations from supported operations.
+The batch documents record validation evidence; implementation alone does not
+establish full configuration validation or merge completion.
 
 Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
@@ -128,9 +128,9 @@ uses native series, continued fractions and asymptotics. Native zeta also
 covers binary128 through Euler–Maclaurin evaluation and reflection.
 The [Beta investigation](native_beta.md) documents
 the fallback's accuracy and range contract separately from retained providers.
-See [native special functions](native_special_functions.md). The remaining
-native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
-it will not add Boost or use MPFR to implement native arithmetic.
+See [native special functions](native_special_functions.md). Publication, review
+and merge progress are tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67).
+Native arithmetic adds neither Boost nor an MPFR runtime dependency.
 
 | Family | Target surface |
 | --- | --- |
