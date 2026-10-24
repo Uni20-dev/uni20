@@ -93,9 +93,17 @@ accuracy improvement between the tested precisions.
 The 25 targeted tests passed (native contracts, shared native/MPFR precision
 probes and existing scalar facade tests). A separate MPFR-disabled Release
 check passed all eight native contract tests; the explanatory example also
-ran without MPFR. These are iteration checks against compatible library
-builds, not a substitute for rebuilding the whole configuration. Full
-integration validation is pending.
+ran without MPFR. These initial iteration checks were followed by full rebuilds
+and unfiltered CTest runs, including examples, CLI and Python:
+
+| Configuration | Passed | Runtime skips |
+| --- | ---: | ---: |
+| GCC 13 Debug, MPFR/MPC/MPLAPACK, native binary128 | 3203 | 1 NUMA topology skip |
+| GCC 13 Release without MPFR, native binary128 | 2440 | 1 NUMA topology skip |
+| Clang 19 Debug, MPFR/MPC/MPLAPACK, binary128 disabled | 2880 | 1 NUMA topology skip |
+
+The complete numerical suites and coverage reports passed in all three
+configurations. Clang binary128, macOS and CUDA execution were not exercised.
 
 Run `native_agm_example` to see native precision improvement and a finite
 AGM for the minimum-subnormal/maximum double pair. In that case scaling both
