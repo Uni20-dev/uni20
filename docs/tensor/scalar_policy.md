@@ -344,8 +344,10 @@ shared native/MPFR constant names. Native specializations are `constexpr`
 values of type `Real`, backed by `std::numbers`; configured binary128 retains
 its full precision. With `mpreal.hpp` included, the MPFR specializations are
 precision-aware descriptors: use `.at(p)` or arithmetic with an approximate
-operand to select finite precision. `catalan<mpreal>` is also available;
-native Catalan remains deferred. See [native constants](native_special_functions.md#typed-constants).
+operand to select finite precision. `catalan<Real>` is also available for native
+formats and mpreal, with the same type/precision conventions. Native Catalan
+is assembled from a binary prefix and independently checked for correct rounding.
+See [native constants](native_special_functions.md#typed-constants).
 
 Other native mathematical constants can use typed `std::numbers` values.
 Do not widen an untyped double constant or a decimal double literal into a
