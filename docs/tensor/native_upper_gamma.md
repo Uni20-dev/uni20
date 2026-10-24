@@ -136,6 +136,17 @@ permit U=1/b when its relative error is below guard resolution: use
 x/(b-1) for b>1, or the conservative 2*sqrt(x) bound for b>=1/2.
 These are bounded approximations, not clamps on an already rounded answer.
 
+For small x and b>1, the guard can also use the integral
+`U(-b,x) = integral_0^infinity exp(-x*t)/(1+t)^(b+1) dt`.
+Integrating the finite Taylor expansion of exp gives terms
+`t_n = (-x)^n/[b*(b-1)*...*(b-n)]` for n<b. The integrated Taylor
+remainder after terms 0 through n-1 is bounded by `abs(t_n)`, since
+`abs(R_n(x*t)) <= (x*t)^n/n!` and the corresponding moment exists.
+When that bound is below the guarded tolerance, return the partial sum;
+otherwise retain the continued-fraction path. This avoids slow fraction
+convergence at modest negative shapes near small-x overflow boundaries,
+without increasing the iteration cap or relaxing the error target.
+
 ## Evidence and limitations
 
 The following GCC13 native scans call the actual `uni20::math::upper_gamma`
@@ -148,6 +159,7 @@ independent oracle. The numbers are **observed maxima**, not new guarantees.
 | Deterministic mantissas, small-x and join neighbors | 4542 | 0.273603 | 0.096364 | 0.190929 | 0.248270 |
 | Adjacent values around final range boundaries | 1664/1536/1536/1536 | 0.999207 | <1 | <=1 | <=1 |
 | Varying shape, x/a from .75 to 1.25 near overflow | 528 | 0.00003338 | 0.00000460 | 0.000000304 | 0.000000307 |
+| Modest negative shapes, small endpoints and range neighbors | 8721 | 0.040873 | 0.024624 | 0.046396 | 0.059256 |
 | Large-parameter cancellation | 448 | 0.006809 | 0.007458 | 0.008920 | 0.007429 |
 
 Entries are fractions of the intended bound. All grids pass classification
@@ -160,7 +172,12 @@ binary80 a=2000,x approximately 6051.189867266821 also overflowed early.
 Varying positive shape exposed a separate lower-complement failure near
 a=1755.5483429045. A huge-shape binary128 case a=2^113 lost the cancellation
 in a*log(x)-x by many orders of magnitude. The guarded paths resolve these
-cases without changing the acceptance bound.
+cases without changing the acceptance bound. A further regression uses
+float32 a=-3.5 and the represented x=1e-11: the old guarded fraction
+exhausted its cap and returned NaN, while the bounded expansion yields the
+finite correctly rounded value `0x1.0fe3b8p+126`. Shared probes cover this
+point and range-boundary neighbors at modest negative shapes at every
+configured native precision.
 
 Ordinary references use MPFR512. Boundary identities use finite sums for
 positive integers, erfc for half-integers, and Ei followed by recurrence for
@@ -183,10 +200,23 @@ GCC13 targeted validation passes 77 MPFR-enabled tests and 12 native-only
 tests, plus missing-provider executables in both configurations and the
 example. Removing the guarded recomputation in an isolated mutation makes
 the accuracy probe fail at all four native precisions while both MPFR
-cases still pass. Full
-GCC/Clang integration validation remains pending;
-targeted tests and scans are not full-suite evidence. CUDA and complex upper
-Gamma are outside this implementation.
+cases still pass.
+
+The preceding implementation passed the following full builds and CTest
+runs, with examples, CLI and Python bindings enabled. The small-endpoint
+review correction is undergoing a fresh full matrix before publication:
+
+| Configuration | CTest passes | Numerical tests | Runtime skips |
+| --- | ---: | ---: | --- |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3357 | 635 | 1 NUMA topology test |
+| GCC13 Release without MPFR, native binary80/128 | 2536 | 266 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3004 | 530 | 1 NUMA topology test |
+
+The separate unfiltered numerical runs and their complete coverage reports
+passed in all three configurations. Runtime skips are reported separately
+from passes; there were no skipped numerical probes. Clang binary128 and
+macOS were not exercised. CUDA and complex upper Gamma are outside this
+implementation.
 
 ### Cost sample
 
