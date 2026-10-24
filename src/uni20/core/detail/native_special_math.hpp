@@ -1,5 +1,6 @@
 #pragma once
 
+#include "native_beta_math.hpp"
 #include "native_math.hpp"
 
 namespace uni20::detail::native_math
@@ -25,11 +26,12 @@ struct standard_special_provider<R>
 };
 #endif
 
-template <NativeReal R>
-  requires requires(R x) { standard_special_provider<R>::beta(x, x); }
-R beta(R x, R y)
+template <NativeReal R> R beta(R x, R y)
 {
-  return standard_special_provider<R>::beta(x, y);
+  if constexpr (requires { standard_special_provider<R>::beta(x, y); })
+    return standard_special_provider<R>::beta(x, y);
+  else
+    return native_math::portable_beta(x, y);
 }
 template <NativeReal R>
   requires requires(R x) { standard_special_provider<R>::zeta(x); }

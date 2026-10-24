@@ -2,8 +2,8 @@
 
 `<uni20/core/math.hpp>` exposes `math::beta`, `math::zeta`, `math::expint`,
 `math::lgamma`, `math::lgamma_sign`, `math::bessel_j`, and `math::bessel_y`
-for native real types when a suitable standard-library or platform routine is
-available. These adapters add no library dependency and do not use Boost or
+for native real types when a suitable provider or Uni20 implementation is
+available. These paths add no library dependency and do not use Boost or
 MPFR to evaluate native arguments.
 
 ```cpp
@@ -46,12 +46,12 @@ MPFR's extended real domain; the C++23 zeta contract leaves behavior below
 correct rounding or uniform behavior at every exceptional argument.
 The existing MPFR overloads retain their own domains and precision rules.
 
-If the macro is absent, these native overloads are unavailable. Configured
-binary128 needs its own provider and is deliberately unsupported for these
-three functions; a standard template declaration accepting an extension type
-is not enough to establish that its implementation preserves precision.
-Future binary128 implementations may also serve the other native types after
-accuracy and performance validation; see the
+If the macro is absent, native zeta and Ei overloads are unavailable. Beta
+instead uses Uni20's [native fallback](native_beta.md), which also supplies
+configured binary128. A standard template declaration accepting an extension
+type is not enough to establish that its implementation preserves precision.
+Binary128 zeta and Ei remain unsupported. Future native implementations may
+also serve the other types after accuracy and performance validation; see the
 [shared native implementation plan](scalar_math_coverage_plan.md#shared-native-implementations).
 The shared numerical tests cover native float32/64/80 and MPFR 128/256-bit
 identities, and compare non-dyadic results with independent 512-bit references
@@ -76,7 +76,9 @@ The same underlying issue is tracked for `std::poisson_distribution` in
 [GCC bug 111726](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111726).
 
 This limitation concerns the affected native Beta and zeta providers. Uni20's
-own log-Gamma adapters use the reentrant routines described below.
+Beta fallback is reentrant and does not access `signgam`; its presence does
+not remove the limitation from the retained standard providers. Uni20's own
+log-Gamma adapters use the reentrant routines described below.
 
 ## Pi-scaled trigonometric functions
 

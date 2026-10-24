@@ -49,6 +49,8 @@ endif()
 
 uni20_add_example(digamma_example common/digamma_example.cpp uni20_core)
 add_test(NAME DigammaExample COMMAND digamma_example)
+uni20_add_example(beta_example common/beta_example.cpp uni20_core)
+add_test(NAME BetaExample COMMAND beta_example)
 uni20_add_example(factorial_example common/factorial_example.cpp uni20_core)
 add_test(NAME FactorialExample COMMAND factorial_example)
 uni20_add_example(native_agm_example common/native_agm_example.cpp uni20_core)

@@ -13,6 +13,8 @@ for float/double/long double. All four named constants, pi-scaled functions,
 exponential/logarithmic extensions, compound, reciprocals and AGM also support
 configured native formats; see the [native inventory](native_special_functions.md).
 Native [digamma](native_digamma.md) is available at each configured precision.
+Native [Beta](native_beta.md) also covers binary128 through a Gamma-ratio
+fallback; existing native standard providers and MPFR keep their own contracts.
 The [typed factorial factory](native_factorial.md) selects native or MPFR
 results explicitly. Native upper Gamma, real dilogarithm and Airy Ai
 remain separate work.

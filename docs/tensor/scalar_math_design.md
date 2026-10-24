@@ -38,7 +38,8 @@ providing a name does not synthesize a missing scalar operation.
 | `conj` | Conjugate complex values; preserve the type of real and integral values |
 | `tgamma`, `erf`, `erfc` | Native or MPFR provider evaluation |
 | `lgamma`, `lgamma_sign`, `bessel_j`, `bessel_y` | MPFR or detected native providers; native log-Gamma is reentrant and native Bessel absolute order must fit `int` |
-| `beta`, `zeta`, `expint` | MPFR or advertised standard-library providers for float/double/long double; native Beta requires positive arguments of the same type |
+| `beta` | MPFR, advertised standard-library providers, or native Gamma-ratio fallback including binary128; native arguments must be positive and of the same type |
+| `zeta`, `expint` | MPFR or advertised standard-library providers for float/double/long double |
 | `upper_gamma`, `dilog_real`, `airy_ai` | MPFR special functions; native implementations deferred |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |

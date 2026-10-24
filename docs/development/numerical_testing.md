@@ -160,6 +160,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
 | Native/MPFR digamma | Absolute error near zeros, relative accuracy away from zeros, reflection/pole neighborhoods, full exponent range and independent harmonic identities |
+| Native Beta fallback / MPFR | Separate portable and public probes; Gamma-ratio cancellation, extreme parameter ratios, original-input error bounds, range limits and independent integer products; large-argument log-Gamma oracle with additional cancellation guard bits |
 | Typed factorial | Every native finite order, exact-integer references, overflow boundaries and checked result precision |
 | Native/MPFR AGM | Extreme operand ratios, subnormal inputs, symmetry, equal-input identities and independent elliptic-integral series |
 | Native/MPFR reciprocal functions | Original-input phase, signed zeros, poles and hyperbolic tails beyond sinh/cosh overflow; full-range oracle scans and independent series references |

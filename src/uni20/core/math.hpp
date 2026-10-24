@@ -574,7 +574,9 @@ inline constexpr detail::scalar_math::lgamma_sign_fn lgamma_sign{};
 inline constexpr detail::scalar_math::digamma_fn digamma{};
 /// \brief Real Beta function.
 /// \details Native arguments must have the same real type and both be positive;
-///          the standard-library provider determines accuracy and range behavior.
+///          configured binary128 uses a scaled native Gamma-ratio algorithm.
+///          Advertised standard providers remain selected for float/double/long double.
+///          See docs/tensor/native_beta.md for fallback accuracy and range behavior.
 /// \note Affected libstdc++/glibc providers retain an internal signgam data race;
 ///       see docs/tensor/native_special_functions.md for the provider limitation.
 inline constexpr detail::scalar_math::beta_fn beta{};
