@@ -16,7 +16,7 @@ template <NativeReal R> struct portable_pi_math
       if (!std::isfinite(x)) return numeric_limits<R>::quiet_NaN();
       int q;
       R r = std::remquo(x, R(0.5), &q);
-      q = (q % 4 + 4) % 4;
+      q &= 3;
       if (r == R(0)) return q % 2 == 0 ? std::copysign(R(0), x) : (q == 1 ? R(1) : R(-1));
       R angle = pi<R> * r;
       switch (q)
@@ -37,7 +37,7 @@ template <NativeReal R> struct portable_pi_math
       if (!std::isfinite(x)) return numeric_limits<R>::quiet_NaN();
       int q;
       R r = std::remquo(x, R(0.5), &q);
-      q = (q % 4 + 4) % 4;
+      q &= 3;
       if (r == R(0)) return q % 2 != 0 ? R(0) : (q == 0 ? R(1) : R(-1));
       R angle = pi<R> * r;
       switch (q)
@@ -58,14 +58,15 @@ template <NativeReal R> struct portable_pi_math
       if (!std::isfinite(x)) return numeric_limits<R>::quiet_NaN();
       int q;
       R r = std::remquo(x, R(0.5), &q);
-      q = (q % 4 + 4) % 4;
+      q &= 3;
       if (r == R(0))
       {
         if (q % 2 == 0) return std::copysign(R(0), x);
         return q == 1 ? numeric_limits<R>::infinity() : -numeric_limits<R>::infinity();
       }
-      // Preserve exact quarter-integer values, independently of libm's tan.
-      if (std::abs(r) == R(0.25)) return std::copysign(R(1), q % 2 == 0 ? r : -r);
+      // At a quarter-integer, remquo's ties-to-even quotient is even.
+      // Preserve the exact result independently of libm's tan.
+      if (std::abs(r) == R(0.25)) return std::copysign(R(1), r);
       R value = std::tan(pi<R> * r);
       return q % 2 == 0 ? value : -R(1) / value;
     }
