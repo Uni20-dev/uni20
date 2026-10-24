@@ -42,7 +42,7 @@ providing a name does not synthesize a missing scalar operation.
 | `zeta` | Native Euler–Maclaurin evaluation and reflection at every configured precision, or MPFR |
 | `expint` | Native series/continued-fraction/asymptotic implementation at every configured precision, or MPFR |
 | `upper_gamma` | Native scaled series/fractions with guarded range evaluation, or MPFR |
-| `airy_ai` | MPFR special function; native implementation deferred |
+| `airy_ai` | Native guarded series/asymptotics with original-input phase reduction, or MPFR |
 | `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
 | `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
@@ -168,7 +168,8 @@ in device execution, add the applicable host/device annotations and an actual
 CUDA compilation probe; annotation alone does not establish device-callability.
 MPFR/MPC scalar implementations remain host-only.
 
-The [scalar math coverage plan](scalar_math_coverage_plan.md) tracks remaining
-arithmetic, decomposition, classification, constants and special functions.
+The [scalar math coverage plan](scalar_math_coverage_plan.md) records availability
+and contracts for arithmetic, decomposition, classification, constants and
+special functions.
 The elementary expansion covers real scalars; existing native complex and MPC
 operations remain available only where those implementations provide overloads.

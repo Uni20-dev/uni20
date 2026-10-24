@@ -2,8 +2,9 @@
 
 This plan covers the general-purpose real math surface for `mpreal` and the
 matching `uni20::math` interface. It is broader than Bethe's immediate needs.
-The implementation status below distinguishes the elementary-functions change
-from follow-up work; it does not promise every listed function today.
+The implementation status below records the elementary-functions change and
+the subsequent native and MPFR extensions. Availability depends on the
+configured scalar types and, for some native functions, platform providers.
 
 The current contracts live in [scalar math dispatch](scalar_math_design.md),
 [arbitrary-precision reals](mpreal.md) and [scalar policy](scalar_policy.md).
@@ -111,13 +112,13 @@ the neighbors of zero and infinity. Native formats retain their own limits.
 
 Status: implemented for `mpreal`, with exact-state, domain and numerical
 precision tests. See [MPFR special functions](mpreal_special_functions.md) for
-the contracts. Native float32/64/80/128 functions use native implementations,
-never an adapter through MPFR. Functions
-without a selected native implementation remain constrained out for those types,
-even when MPFR is enabled. Implementing those missing native providers is a
-separate follow-up, outside this change's scope; their `mpreal` overloads remain
-in scope. Shared precision tests must distinguish these unavailable native
-operations from the operations supported at every configured real precision.
+the contracts. The families below also have native float32/64/80/128 algorithms
+or precision-preserving platform adapters. Log-Gamma and Bessel availability
+still depends on the configured provider. Native evaluation never adapts through
+MPFR, and a missing platform overload remains constrained out. Shared precision
+tests distinguish unavailable provider combinations from supported operations.
+The batch documents record validation evidence; implementation alone does not
+establish full configuration validation or merge completion.
 
 Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
@@ -128,9 +129,9 @@ uses native series, continued fractions and asymptotics. Native zeta also
 covers binary128 through Euler–Maclaurin evaluation and reflection.
 The [Beta investigation](native_beta.md) documents
 the fallback's accuracy and range contract separately from retained providers.
-See [native special functions](native_special_functions.md). The remaining
-native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
-it will not add Boost or use MPFR to implement native arithmetic.
+See [native special functions](native_special_functions.md). Publication, review
+and merge progress are tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67).
+Native arithmetic adds neither Boost nor an MPFR runtime dependency.
 
 | Family | Target surface |
 | --- | --- |
@@ -149,9 +150,11 @@ wrapping a provider is not a guarantee over a wider domain.
 
 For `mpreal`, constants use precision-aware descriptors: `pi`, `log_two`,
 `euler_gamma` and `catalan`. They require finite precision and remain separate
-from exact rationals. The first three names also supply native `constexpr`
-values backed by typed `std::numbers` constants, including configured binary128. `factorial(n,p)` explicitly selects exact or finite arithmetic; its
-integer-source checks and exact-storage costs are documented.
+from exact rationals. All four names also supply native `constexpr` values,
+including configured binary128. Pi, log(2) and Euler gamma use typed `std::numbers` constants;
+[Catalan](native_reciprocal_math.md) is assembled from an independently checked
+binary prefix. `factorial(n,p)` explicitly selects exact or finite arithmetic;
+its integer-source checks and exact-storage costs are documented.
 
 Native `math::agm(a,b)` is also implemented for matching native real types
 through scaled iteration; see [native AGM](native_agm.md).
@@ -172,8 +175,11 @@ GCC13 errors; the algorithm document records the cost and range behavior.
 comparison, with exact phase reduction and scaled reflection.
 [Native upper incomplete Gamma](native_upper_gamma.md) supplies all configured
 precisions using scaled series and fractions, with extra native words for
-range decisions and large-parameter cancellation. Native Airy Ai remains
-a separate numerical investigation.
+range decisions and large-parameter cancellation. [Native Airy Ai](native_airy.md)
+now covers the full real axis, with guarded central evaluation, original-input
+negative phase reduction and positive subnormal rounding. Full GCC Debug,
+native-only GCC Release and Clang Debug configurations passed; the algorithm
+document records their coverage and platform limits.
 
 ### Shared native implementations
 
@@ -220,10 +226,10 @@ tails; see [native reciprocals and Catalan](native_reciprocal_math.md).
 - `log2p1`, `log10p1`, `exp2m1`, `exp10m1`, and `compound` for `(1+x)^n`.
 - `sec`, `csc`, `cot`, `sech`, `csch`, `coth`.
 
-These routines fit the MPFR 4.2 minimum introduced by stage 2. Further native
-support needs its own accurate implementation or provider. Multiplying a rounded
-pi into the argument is not an adequate replacement for a pi-scaled function's
-argument reduction contract.
+These routines fit the MPFR 4.2 minimum introduced by stage 2. Native calls use
+the implementations or detected providers described above, independently of
+whether MPFR is enabled. Multiplying a rounded pi into the argument is not an
+adequate replacement for a pi-scaled function's argument reduction contract.
 Likewise, do not replace the small-argument functions with cancellation-prone
 compositions. `compound` rounds the result from the original input, matching
 the arithmetic-utility contract; the other extensions use explicit input

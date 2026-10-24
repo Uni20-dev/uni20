@@ -1,8 +1,8 @@
 # Native reciprocal functions and Catalan constant
 
 This batch covers native `math::sec`, `csc`, `cot`, `sech`, `csch`, `coth`,
-and `catalan<Real>`. AGM and factorial remain separate investigations. The
-existing MPFR overloads and their explicit-precision contracts are unchanged.
+and `catalan<Real>`. [AGM](native_agm.md) and [factorial](native_factorial.md)
+are documented separately. The existing MPFR overloads and their explicit-precision contracts are unchanged.
 Native inputs must stay native, including configured binary80 and binary128.
 
 ## Contracts and numerical acceptance

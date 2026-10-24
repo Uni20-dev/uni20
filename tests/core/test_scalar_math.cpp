@@ -70,19 +70,8 @@ template <class... Functions> consteval bool elementary_signatures(Functions...)
 static_assert(elementary_signatures(m::exp2, m::expm1, m::log2, m::log10, m::log1p, m::cbrt, m::asin, m::acos, m::tan,
                                     m::atan, m::sinh, m::cosh, m::tanh, m::asinh, m::acosh, m::atanh));
 
-// Enabling MPFR must not supply missing native functions through conversion
-// to mpreal. These native implementations are deliberately deferred.
-template <class T> consteval bool deferred_native_special_functions()
-{
-  return !std::invocable<decltype(m::airy_ai), T>;
-}
-static_assert(deferred_native_special_functions<float>());
-static_assert(deferred_native_special_functions<double>());
-static_assert(deferred_native_special_functions<long double>());
-#if UNI20_HAS_FLOAT128
-static_assert(deferred_native_special_functions<uni20::float128>());
-#endif
-static_assert(deferred_native_special_functions<scalar_math_test::ConversionOnly<std::true_type>>());
+// Conversion-only classes must not acquire native math through implicit casts.
+static_assert(!std::invocable<decltype(m::airy_ai), scalar_math_test::ConversionOnly<std::true_type>>);
 static_assert(!std::invocable<decltype(m::factorial), int>);
 static_assert(std::invocable<decltype(m::atan2pi), double, double>);
 static_assert(std::invocable<decltype(m::compound), double, int>);

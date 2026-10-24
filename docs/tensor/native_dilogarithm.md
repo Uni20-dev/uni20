@@ -106,5 +106,5 @@ Each configuration also passed the complete numerical precision executable and
 coverage report. CUDA runtime and macOS were not exercised. The NUMA skips
 reflect this host's topology and are separate from the passing counts.
 
-Ei remains a separate investigation in this milestone; native128 Ei is not
-provided by this dilogarithm batch.
+The separate [native Ei implementation](native_expint.md) supplies the
+exponential integral, including binary128.
