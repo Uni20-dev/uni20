@@ -183,3 +183,30 @@ Two additional range defects were reproduced and corrected in the candidate:
 The API remains unimplemented. Wider mantissa/exponent sampling, independently
 located final range boundaries, large-parameter cancellation, performance,
 permanent tests and full configuration validation remain required.
+
+### Final-range investigation remains unresolved
+
+The neighboring-value boundary sweep finds classification errors even though
+all finite comparisons meet the empirical error bound. With direct half-powers
+for nonpositive shape, the 1664/1536/1536/1536-pair sweep reports 6/6/9/3
+mismatches for float32/64/80/128, including repeated neighboring inputs.
+For example, float64 a=-100 and
+x=0.00078967680221933849067650346142954731476 gives premature infinity;
+binary80 a=2000 and x=6051.1898672668210741321104251255746931 also gives
+premature infinity. Positive large-shape exponent cancellation and final
+rounding of the scaled fraction both need more guard precision. Direct
+half-powers improve some cases but do not settle the range contract.
+
+The boundary oracle now uses independent exact identities: positive integer
+shapes use their finite falling-factorial sum, shape1/2 uses erfc, nonpositive
+integers use E1 followed by recurrence, and shape-1/2 uses the half-integer
+recurrence. Recurrence references gain guard bits proportional to the number
+of steps and log2(x) to compensate for cancellation. All 36 ordinary cross-checks
+agree with MPFR gamma_inc at 512 bits; worst boundary references agree at 1024.
+This avoids very slow direct incomplete-Gamma evaluation in extreme tails.
+
+The next bounded experiment is a native guarded evaluation near final range
+boundaries, retaining extra words in the fraction and exponent rather than
+clamping a rounded answer. Existing FMA-based expansion work is relevant, but
+native execution must still remain independent of MPFR. Keep these failures
+visible until corrected; do not integrate or publish the native overload yet.
