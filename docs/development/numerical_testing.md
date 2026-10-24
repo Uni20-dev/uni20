@@ -263,8 +263,9 @@ numerical subsystem. In the current implementation:
 
 New numerical operations should join these cases as they are implemented.
 The dedicated MPFR-only special/extension probes run at 128 and 256 bits.
-The remaining native implementations are deferred and reported as unsupported,
-even when MPFR is enabled. Pi-scaled trigonometric functions have separate
+These aggregate probes are inapplicable to native types, which have separate
+family probes. Missing platform providers remain explicitly unavailable;
+enabling MPFR never implements a native operation. Pi-scaled trigonometric functions have separate
 `PiScaledIdentities` and `PiScaledAccuracy` probes at every configured real
 precision; `PiScaledPortableAccuracy` directly exercises the native fallback,
 independently of whether a libc provider is selected. The native Gamma/error-function
@@ -278,6 +279,17 @@ record bound fractions. Constant probes also cover configured binary128.
 `DilogIdentities` and
 `DilogAccuracy` cover all configured native reals and MPFR128/256, recording
 the largest fraction of the documented error bound and the corresponding input.
+`UpperGammaIdentities` and `UpperGammaAccuracy` cover finite shape/endpoint
+regions, endpoint conventions, large-parameter cancellation and final range
+boundaries. Their error scale is specified in the
+[upper Gamma acceptance table](../tensor/native_upper_gamma.md#domain-and-numerical-acceptance).
+`AiryIdentities` and `AiryAccuracy` cover zero neighborhoods, region joins,
+positive underflow and original-input phase at huge negative arguments. The
+[Airy acceptance table](../tensor/native_airy.md#domain-and-numerical-acceptance)
+uses an amplitude-scaled absolute measure on the negative axis; its reference
+precision grows with the argument exponent to resolve the phase. Native
+identity probes remain available in MPFR-disabled configurations; independent
+high-precision accuracy probes require the MPFR oracle.
 
 Keep operation-specific unsupported reasons explicit in the registry. When a
 combination gains support, enable the same mathematical probe for it.
