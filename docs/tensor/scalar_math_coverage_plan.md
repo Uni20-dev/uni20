@@ -121,10 +121,11 @@ operations from the operations supported at every configured real precision.
 
 Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
-Native `beta`, `zeta` and `expint` use advertised standard-library functions
+Native `beta` and `zeta` use advertised standard-library functions
 for float/double/long double, with native Beta restricted to positive arguments.
-Binary128 Beta now uses a native Gamma-ratio implementation; binary128 zeta
-and Ei remain deferred. The [Beta investigation](native_beta.md) documents
+Binary128 Beta now uses a native Gamma-ratio implementation; binary128 Ei
+uses native series, continued fractions and asymptotics. Binary128 zeta remains
+deferred. The [Beta investigation](native_beta.md) documents
 the fallback's accuracy and range contract separately from retained providers.
 See [native special functions](native_special_functions.md). The remaining
 native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
@@ -162,7 +163,10 @@ Native digamma also covers all configured real formats; see the
 
 Native `math::dilog_real(x)` covers the whole real line at all configured
 precisions; see [real dilogarithm](native_dilogarithm.md) for reductions and
-acceptance criteria. Binary128 Ei remains a separate investigation.
+acceptance criteria. [Native Ei](native_expint.md) also supplies binary128
+and the other configured precisions through Uni20 algorithms. This replaces
+standard Ei after accuracy and performance comparisons exposed substantial
+GCC13 errors; the algorithm document records the cost and range behavior.
 
 ### Shared native implementations
 

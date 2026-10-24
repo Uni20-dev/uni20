@@ -54,8 +54,6 @@ template <class R> void check_standard_special()
     // Verify the adapter calls the native provider even in MPFR-enabled builds.
     EXPECT_EQ(m::beta(x, R(2)), std::beta(x, R(2)));
     EXPECT_EQ(m::zeta(x), std::riemann_zeta(x));
-    EXPECT_EQ(m::expint(x), std::expint(x));
-    EXPECT_EQ(m::expint(-x), std::expint(-x));
     EXPECT_TRUE(m::abs(m::beta(x, R(1)) * x - R(1)) <= R(32) * epsilon);
 #if defined(__GLIBC__)
     int saved = ::signgam;

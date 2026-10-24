@@ -8,8 +8,10 @@ minimum as the numerical utilities. This surface does not add MPC overloads.
 Native float32/64/80/128 use their native implementations for `tgamma`, `erf`
 and `erfc`. `lgamma`, `lgamma_sign`, `bessel_j`, and `bessel_y` also have
 [native adapters](native_special_functions.md) where platform routines are
-detected. `beta`, `zeta` and `expint` use advertised standard-library providers
-for float/double/long double. All four named constants, pi-scaled functions,
+detected. `beta` and `zeta` use advertised standard-library providers
+for float/double/long double. [Native Ei](native_expint.md) uses Uni20
+algorithms at all configured precisions, including binary128. All four named
+constants, pi-scaled functions,
 exponential/logarithmic extensions, compound, reciprocals and AGM also support
 configured native formats; see the [native inventory](native_special_functions.md).
 Native [digamma](native_digamma.md) is available at each configured precision.

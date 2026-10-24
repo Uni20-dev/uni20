@@ -26,12 +26,10 @@ Uni20 exposes these adapters for `float`, `double` and `long double`:
 | --- | --- | --- |
 | `math::beta(x,y)` | `std::beta(x,y)` | Both arguments positive; same native real type |
 | `math::zeta(x)` | `std::riemann_zeta(x)` | Real Riemann zeta; pole at one |
-| `math::expint(x)` | `std::expint(x)` | Real principal-value Ei; pole at zero |
 
 ```cpp
 auto b = uni20::math::beta(0.5L, 0.5L); // long double, approximately pi
 auto z = uni20::math::zeta(2.0);        // double, approximately pi^2/6
-auto e = uni20::math::expint(-1.0f);    // float, negative real Ei
 ```
 
 The standard feature macro is sufficient to select these interfaces; there are
@@ -46,11 +44,12 @@ MPFR's extended real domain; the C++23 zeta contract leaves behavior below
 correct rounding or uniform behavior at every exceptional argument.
 The existing MPFR overloads retain their own domains and precision rules.
 
-If the macro is absent, native zeta and Ei overloads are unavailable. Beta
-instead uses Uni20's [native fallback](native_beta.md), which also supplies
-configured binary128. A standard template declaration accepting an extension
+If the macro is absent, native zeta is unavailable. Beta instead uses
+Uni20's [native fallback](native_beta.md), also supplying configured binary128.
+Ei uses Uni20's [native implementation](native_expint.md) at every precision.
+A standard template declaration accepting an extension
 type is not enough to establish that its implementation preserves precision.
-Binary128 zeta and Ei remain unsupported. Future native implementations may
+Binary128 zeta remains unsupported. Future native implementations may
 also serve the other types after accuracy and performance validation; see the
 [shared native implementation plan](scalar_math_coverage_plan.md#shared-native-implementations).
 The shared numerical tests cover native float32/64/80 and MPFR 128/256-bit
@@ -209,6 +208,17 @@ are supported; negative integer poles give NaN. Its accuracy criterion is
 absolute near zeros and relative away from them. See
 [native digamma](native_digamma.md) for regions, coefficients, tail bounds and
 independent validation.
+
+## Real exponential integral
+
+`math::expint(x)` uses Uni20 algorithms at every configured native precision,
+including binary128. It combines a compensated series, a positive E1
+continued fraction and positive-Ei
+asymptotics. Exponential scaling preserves finite results beyond exp(x)
+overflow and negative subnormal tails. Accuracy and performance comparisons
+found substantial errors in GCC13's standard Ei, justifying the selection
+change. See [native Ei](native_expint.md) for contracts, acceptance, error
+control and the measured cost. MPFR scalar behavior is unchanged.
 
 ## Real dilogarithm
 

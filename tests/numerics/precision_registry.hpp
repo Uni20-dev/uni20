@@ -36,6 +36,8 @@ enum class PrecisionProbe
   BetaIdentities,
   BetaAccuracy,
   BetaPortableAccuracy,
+  ExpintIdentities,
+  ExpintAccuracy,
   DilogIdentities,
   DilogAccuracy,
   DigammaIdentities,
@@ -124,6 +126,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "BetaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "ExpintIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ExpintAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DilogIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DilogAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "DigammaIdentities", "scalar_math"},
@@ -248,7 +252,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy ||
+    if (probe == ExpintIdentities || probe == ExpintAccuracy || probe == DilogIdentities || probe == DilogAccuracy ||
+        probe == BetaIdentities || probe == BetaAccuracy ||
         probe == BetaPortableAccuracy || probe == DigammaIdentities || probe == DigammaAccuracy ||
         probe == FactorialIdentities ||
         probe == FactorialAccuracy || probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities ||
@@ -281,7 +286,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
         {
           using R = typename C::real_type;
           if constexpr (!std::same_as<R, float> && !std::same_as<R, double> && !std::same_as<R, long double>)
-            return {"unsupported", "no standard zeta/Ei provider for this extension type"};
+            return {"unsupported", "no standard zeta provider for this extension type"};
 #if !defined(__cpp_lib_math_special_functions) || __cpp_lib_math_special_functions < 201603L
           return {"unavailable", "standard library does not advertise mathematical special functions"};
 #endif
@@ -339,6 +344,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case PiScaledPortableAccuracy:
       case BetaAccuracy:
       case BetaPortableAccuracy:
+      case ExpintAccuracy:
       case DilogAccuracy:
       case DigammaAccuracy:
       case FactorialAccuracy:

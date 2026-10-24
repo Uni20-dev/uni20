@@ -37,7 +37,7 @@ static_assert(std::invocable<decltype(m::bessel_j), int, uni20::mpreal>);
 template <class R>
 constexpr bool without_standard_special_functions =
     std::same_as<std::invoke_result_t<decltype(m::beta), R, R>, R> && !std::invocable<decltype(m::zeta), R> &&
-    !std::invocable<decltype(m::expint), R>;
+    std::same_as<std::invoke_result_t<decltype(m::expint), R>, R>;
 static_assert(without_standard_special_functions<float>);
 static_assert(without_standard_special_functions<double>);
 static_assert(without_standard_special_functions<long double>);
@@ -52,8 +52,10 @@ static_assert(std::invocable<decltype(m::expint), uni20::mpreal>);
 int main()
 {
   bool valid = m::beta(1.0f, 2.0f) == 0.5f && m::beta(1.0, 2.0) == 0.5 && m::beta(1.0L, 2.0L) == 0.5L;
+  valid = valid && m::expint(-1.0f) < 0 && m::expint(-1.0) < 0 && m::expint(-1.0L) < 0;
 #if UNI20_HAS_FLOAT128
   valid = valid && m::beta(uni20::float128(1), uni20::float128(2)) == uni20::float128(0.5);
+  valid = valid && m::expint(uni20::float128(-1)) < 0;
 #endif
   return valid ? 0 : 1;
 }

@@ -16,15 +16,6 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderIdentities)
   check(math::beta(x, C::real(2)), one / (x * (x + one)));
   check(math::zeta(C::real(-1)), -one / 12);
   check(math::zeta(C::real(0)), -one / 2);
-  // Ei(x)-Ei(-x) cancels the logarithm and Euler constant. The odd series
-  // converges rapidly at x near 1/4, with its tail below the tested precisions.
-  auto term = x, sum = x;
-  for (int k = 3; k < 101; k += 2)
-  {
-    term *= x * x / C::real(k * (k - 1));
-    sum += term / C::real(k);
-  }
-  check(math::expint(x) - math::expint(-x), 2 * sum);
 }
 } // namespace uni20::test
 
@@ -112,19 +103,6 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderAccuracy)
   auto half = C::real(1) / 2;
   accuracy<C>(math::beta(half, half), wide_pi, 32);
   accuracy<C>(math::zeta(C::real(2)), wide_pi * wide_pi / 6, 32);
-  for (int sign : {-1, 1})
-  {
-    auto x = mpreal(sign, p) / 4;
-    auto term = x, series = x;
-    for (int k = 2; k < 200; ++k)
-    {
-      term *= x;
-      term /= k;
-      series += term / k;
-    }
-    // Ei(x) = gamma + log(abs(x)) + sum x^k/(k*k!).
-    accuracy<C>(math::expint(C::real(sign) / 4), euler_gamma<mpreal>.at(p) + math::log(abs(x)) + series, 32);
-  }
 }
 
 namespace

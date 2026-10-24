@@ -22,7 +22,6 @@ struct standard_special_provider<R>
 {
     static R beta(R x, R y) { return std::beta(x, y); }
     static R zeta(R x) { return std::riemann_zeta(x); }
-    static R expint(R x) { return std::expint(x); }
 };
 #endif
 
@@ -38,12 +37,6 @@ template <NativeReal R>
 R zeta(R x)
 {
   return standard_special_provider<R>::zeta(x);
-}
-template <NativeReal R>
-  requires requires(R x) { standard_special_provider<R>::expint(x); }
-R expint(R x)
-{
-  return standard_special_provider<R>::expint(x);
 }
 
 template <class R> struct lgamma_provider
