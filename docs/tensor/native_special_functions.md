@@ -167,11 +167,48 @@ evaluation at the represented input, not the conditioning of an unrounded
 mathematical argument.
 
 The recorded GCC 13 and Clang 19 runs satisfy these thresholds for their
-configured portable paths. The tests do not record a per-function observed
-maximum, so no tighter measured bound is claimed. A provider unavailable on a
-test host has no numerical evidence from that run, even if its wiring is
-checked synthetically. Accuracy on a new libc provider must be measured on
-that provider before calling it validated.
+configured portable paths. The following measurements use the existing
+`PiScaledAccuracy`/`PiScaledPortableAccuracy` deterministic grid, with GCC
+13.3, glibc 2.39 and MPFR 4.2.1 at 512 bits. Public and direct portable paths
+have identical measurements on this host; all eight typed libc pi-family
+probes are unavailable. These sample maxima are not domain-wide guarantees.
+The intended bound remains four output-grid spacings.
+
+| Function | float32 | float64 | binary80 | binary128 |
+| --- | ---: | ---: | ---: | ---: |
+| `sinpi` | 0.983119 | 0.920274 | 0.839963 | 0.810794 |
+| `cospi` | 0.997654 | 0.860209 | 0.974611 | 0.927585 |
+| `tanpi` | 1.668568 | 1.867259 | 1.452005 | 1.960705 |
+| `asinpi` | 1.304351 | 1.327294 | 0.897331 | 1.203063 |
+| `acospi` | 1.256780 | 1.238159 | 1.318098 | 1.255125 |
+| `atanpi` | 1.562144 | 1.401984 | 1.323161 | 1.233538 |
+| `atan2pi` | 1.716090 | 1.401984 | 1.330636 | 1.832722 |
+
+Maxima are rounded upward to six decimal places. Each format checks 402/416/
+378/112/112/438/1756 finite nonzero references for the seven functions in table
+order. Zeros and nonfinite values have separate classification/sign checks
+and are excluded from these maxima. Worst inputs are below; decimal values
+retain enough digits to round back to the tested native value. `atan2pi`
+entries give `(y,x)` in call order.
+
+| Function | float32 input | float64 input | binary80 input | binary128 input |
+| --- | --- | --- | --- | --- |
+| `sinpi` | `-0.243243247` | `-3.1891891891891890` | `-3.10810810810810810804` | `-3.13513513513513513513513513513513510` |
+| `cospi` | `-1.54054058` | `-1.5945945945945945` | `-1.51351351351351351350` | `-0.594594594594594594594594594594594592` |
+| `tanpi` | `-3.35135126` | `-3.7500000000000004` | `-3.40540540540540540536` | `-3.45945945945945945945945945945945958` |
+| `asinpi` | `-0.999999940` | `-0.62162162162162160` | `-0.108108108108108108106` | `-0.513513513513513513513513513513513472` |
+| `acospi` | `-0.837837815` | `0.43243243243243246` | `0.75` | `0.0810810810810810810810810810810810840` |
+| `atanpi` | `-2.37837839` | `67108863.25` | `-0.837837837837837837835` | `-2.32432432432432432432432432432432448` |
+| `atan2pi` | `(-1.89189184, -1)` | `(67108863.25, 1)` | `(-0.249999999999999999986, -1)` | `(-2.86486486486486486486486486486486490, 3)` |
+
+At all 28 worst points, the 1024-bit oracle rounds back to the same 512-bit
+reference. Measurement adds maximum/input bookkeeping to the existing sample
+checker without changing its inputs or acceptance assertions. The permanent
+tests continue to enforce the four-spacing target and independent precision
+improvement checks. A provider unavailable on a test host has no numerical
+evidence from that run, even if its wiring is checked synthetically. Accuracy
+on a new libc provider must be measured on that provider before calling it
+validated.
 
 ## Compound powers
 

@@ -1,8 +1,8 @@
 # Native reciprocal functions and Catalan constant
 
 This batch covers native `math::sec`, `csc`, `cot`, `sech`, `csch`, `coth`,
-and `catalan<Real>`. AGM and factorial remain separate investigations. The
-existing MPFR overloads and their explicit-precision contracts are unchanged.
+and `catalan<Real>`. [AGM](native_agm.md) and [factorial](native_factorial.md)
+are documented separately. The existing MPFR overloads and their explicit-precision contracts are unchanged.
 Native inputs must stay native, including configured binary80 and binary128.
 
 ## Contracts and numerical acceptance
@@ -97,7 +97,19 @@ existing scalar/special-function cases and an oracle regression. The oracle's
 binary-value reconstruction now preserves negative zero and nonfinite values;
 previously it discarded the sign of zero. A separate MPFR-disabled Release
 check passed all 12 native reciprocal/constant tests, and the example ran in
-that configuration. Full validation is pending.
+that configuration.
+
+Full local validation passed with examples, CLI and Python enabled:
+
+| Configuration | Passed | Skipped |
+| --- | ---: | ---: |
+| GCC 13 Debug, MPFR/MPC and MPLAPACK, native binary128 | 3182 | 1 |
+| GCC 13 Release, MPFR disabled, native binary128 | 2427 | 1 |
+| Clang 19 Debug, MPFR/MPC and MPLAPACK, binary128 disabled | 2863 | 1 |
+
+The skip in each configuration was the single-node NUMA topology test.
+Unfiltered numerical suites and their coverage reports also passed. Clang's
+cell is not binary128 evidence; macOS and CUDA execution were not exercised.
 
 Run `native_reciprocal_math_example` to see the retained hyperbolic tails and
 native Catalan constants. No external dependency or provider selection changes

@@ -143,7 +143,7 @@ c++ scripts/generate-airy-constants.cpp -lmpfr -lgmp -o /tmp/airy-constants
 Generated coefficient words match the source headers; formatting is separate.
 No approximation table was copied from another numerical provider.
 
-## Numerical evidence and remaining validation
+## Numerical evidence and validation
 
 The actual CPO was checked in a native-only GCC13 configuration, with raw MPFR
 used solely by the external oracle. Direct MPFR Ai is practical in a limited
@@ -174,19 +174,25 @@ actual missing-provider executables also run without MPFR. The aggregate
 MPFR-special-function probe remains MPFR-specific; native families have their
 own named probes.
 
-Targeted validation passed 77 tests with MPFR enabled and 12 native-only tests,
-plus the missing-provider executables and explanatory example. Replacing the
-phase reducer by a naive native phase makes all four native accuracy probes
-fail; removing the positive-tail guard makes the float32 probe fail. Both
-mutations leave the MPFR probes passing. The 569-sample phase sweep also passed
-AddressSanitizer and UndefinedBehaviorSanitizer at each native precision.
-A combined Clang19 preflight of the seven new special-function families passed
-116 core/numerical tests, including Airy at native32/64/80 and MPFR128/256;
-native128 was disabled in that configuration. It compiled the current headers
-against compatible previously built core libraries, so it remains targeted
-compiler evidence. Full unfiltered
-GCC/Clang, examples, CLI and Python configurations remain the publication gate;
-these targeted checks do not establish that integration result.
+Replacing the phase reducer by a naive native phase makes all four native
+accuracy probes fail; removing the positive-tail guard makes the float32
+probe fail. Both mutations leave the MPFR probes passing. The 569-sample
+phase sweep also passed AddressSanitizer and UndefinedBehaviorSanitizer at
+each native precision.
+
+Full unfiltered builds and tests passed, including examples, CLI and Python
+bindings. These configurations include both upper-Gamma range corrections:
+
+| Configuration | CTest passes | Numerical tests | Runtime skips |
+| --- | ---: | ---: | --- |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3380 | 647 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native binary80/128 | 2551 | 270 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native binary80, binary128 disabled | 3023 | 540 | 1 NUMA topology test |
+
+The unfiltered numerical suites had no skips and their complete coverage
+reports passed. The NUMA skips reflect this host's topology and are separate
+from the passing counts. Clang binary128, macOS and CUDA runtime were not
+exercised.
 
 Representative GCC13 -O2 costs, in microseconds per call on the validation
 host, were:

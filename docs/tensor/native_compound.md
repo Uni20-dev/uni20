@@ -35,11 +35,11 @@ with selected hard cases repeated at 1024 bits to check oracle stability.
 
 | Region, all four formats | Measure | Intended bound | Guarantee level | Observed maximum |
 | --- | --- | --- | --- | --- |
-| Finite x > -1, ordinary n | Error against original-input reference, in spacing units | At most 4 | Empirical acceptance target | Not measured |
-| Tiny x where native 1+x is 1; exponents through signed64 extrema | Same measure; compare the exact input, not a rounded sum or exponent | At most 4; retain resolvable compounding | Empirical acceptance target | Not measured |
-| x immediately above -1; overflow/underflow boundaries; subnormal output | Spacing units, positivity and independently rounded classification | At most 4, correct sampled zero/infinity classification | Empirical acceptance target | Not measured |
-| Poles, signed zeros, infinities, NaNs, n=0 | Exact values and classifications above | Exact agreement | API contract | Not measured |
-| Powers of two with representable exact results | Exact equality | Exact agreement | API contract | Not measured |
+| Finite x > -1, ordinary n | Error against original-input reference, in spacing units | At most 4 | Empirical acceptance target | Within target in scan below |
+| Tiny x where native 1+x is 1; exponents through signed64 extrema | Same measure; compare the exact input, not a rounded sum or exponent | At most 4; retain resolvable compounding | Empirical acceptance target | Within target in scan below |
+| x immediately above -1; overflow/underflow boundaries; subnormal output | Spacing units, positivity and independently rounded classification | At most 4, correct sampled zero/infinity classification | Empirical acceptance target | Maximum <0.75 units; no sampled range failures |
+| Poles, signed zeros, infinities, NaNs, n=0 | Exact values and classifications above | Exact agreement | API contract | Regression tests pass |
+| Powers of two with representable exact results | Exact equality | Exact agreement | API contract | Regression tests pass |
 
 Tests must include the immediate floating neighbors of region boundaries,
 large exponents with tiny x, negative exponents whose positive power would
@@ -129,7 +129,20 @@ These are observed maxima, distinct from the intended four-unit target.
 The shared-test XML records each path's actual maximum, input and exponent.
 The targeted checks passed 29 tests, including all four native formats, MPFR
 at 128/256 bits, and the existing scalar facade tests. The example also ran.
-Full build/test configurations remain pending.
+Full unfiltered builds and CTest runs, including examples, CLI and Python
+bindings, passed in the following local Linux configurations:
+
+| Configuration | Passed | Skipped |
+| --- | ---: | ---: |
+| GCC 13 Debug, MPFR/MPC, binary80/128, MPLAPACK | 3160 | 1 NUMA topology test |
+| GCC 13 Release, MPFR disabled, binary80/128, MPLAPACK kernels disabled | 2414 | 1 NUMA topology test |
+| Clang 19 Debug, MPFR/MPC, binary80, binary128 disabled, MPLAPACK | 2845 | 1 NUMA topology test |
+
+Unfiltered numerical suites and complete coverage reports passed in all three
+cells. Clang's configuration does not certify binary128. Actual C23 compound
+providers were unavailable on this host; synthetic provider-wiring checks do
+not certify their numerical behavior. macOS, CUDA and MPI execution were not
+exercised.
 
 ## Cost
 

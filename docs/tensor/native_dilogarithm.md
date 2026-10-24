@@ -91,10 +91,20 @@ or mutable shared state.
 The local targeted MPFR-enabled suite passes 37 tests, including existing
 scalar/MPFR special-function regressions. A separate MPFR-disabled build passes
 12 tests, including the shared identities at all four native precisions; the
-explanatory example also runs without MPFR. Full GCC Debug, GCC Release without
-MPFR and Clang Debug integration
-matrices remain queued before publication. This checkpoint does not claim
-macOS, CUDA or a Clang binary128 configuration was tested.
+explanatory example also runs without MPFR.
 
-Ei remains a separate investigation in this milestone; native128 Ei is not
-provided by this dilogarithm batch.
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Runtime skips |
+| --- | ---: | ---: |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native128 | 3294 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native128 | 2497 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native80, native128 disabled | 2953 | 1 NUMA topology test |
+
+Each configuration also passed the complete numerical precision executable and
+coverage report. CUDA runtime and macOS were not exercised. The NUMA skips
+reflect this host's topology and are separate from the passing counts.
+
+The separate [native Ei implementation](native_expint.md) supplies the
+exponential integral, including binary128.

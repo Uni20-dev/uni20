@@ -131,6 +131,15 @@ The synthetic missing-standard-provider executable compiled and ran both with
 and without MPFR. This establishes fallback wiring, not second-platform
 numerical validation. The explanatory example also compiled and ran.
 
-Full GCC Debug, GCC Release without MPFR and Clang Debug integration remain
-queued before publication. No macOS, CUDA or Clang binary128 validation is
-claimed by this local checkpoint.
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Numerical tests | Runtime skips |
+| --- | ---: | ---: | ---: |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3315 | 611 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native binary80/128 | 2510 | 258 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native binary80, binary128 disabled | 2970 | 510 | 1 NUMA topology test |
+
+The complete numerical coverage reports passed in all three configurations.
+The NUMA skips reflect this host's topology and are separate from the passing
+counts. Clang binary128, macOS and CUDA runtime were not exercised.

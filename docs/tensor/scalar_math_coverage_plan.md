@@ -2,8 +2,9 @@
 
 This plan covers the general-purpose real math surface for `mpreal` and the
 matching `uni20::math` interface. It is broader than Bethe's immediate needs.
-The implementation status below distinguishes the elementary-functions change
-from follow-up work; it does not promise every listed function today.
+The implementation status below records the elementary-functions change and
+the subsequent native and MPFR extensions. Availability depends on the
+configured scalar types and, for some native functions, platform providers.
 
 The current contracts live in [scalar math dispatch](scalar_math_design.md),
 [arbitrary-precision reals](mpreal.md) and [scalar policy](scalar_policy.md).
@@ -149,9 +150,11 @@ wrapping a provider is not a guarantee over a wider domain.
 
 For `mpreal`, constants use precision-aware descriptors: `pi`, `log_two`,
 `euler_gamma` and `catalan`. They require finite precision and remain separate
-from exact rationals. The first three names also supply native `constexpr`
-values backed by typed `std::numbers` constants, including configured binary128. `factorial(n,p)` explicitly selects exact or finite arithmetic; its
-integer-source checks and exact-storage costs are documented.
+from exact rationals. All four names also supply native `constexpr` values,
+including configured binary128. Pi, log(2) and Euler gamma use typed `std::numbers` constants;
+[Catalan](native_reciprocal_math.md) is assembled from an independently checked
+binary prefix. `factorial(n,p)` explicitly selects exact or finite arithmetic;
+its integer-source checks and exact-storage costs are documented.
 
 Native `math::agm(a,b)` is also implemented for matching native real types
 through scaled iteration; see [native AGM](native_agm.md).
@@ -174,8 +177,9 @@ comparison, with exact phase reduction and scaled reflection.
 precisions using scaled series and fractions, with extra native words for
 range decisions and large-parameter cancellation. [Native Airy Ai](native_airy.md)
 now covers the full real axis, with guarded central evaluation, original-input
-negative phase reduction and positive subnormal rounding. Its full configuration
-validation remains a publication gate.
+negative phase reduction and positive subnormal rounding. Full GCC Debug,
+native-only GCC Release and Clang Debug configurations passed; the algorithm
+document records their coverage and platform limits.
 
 ### Shared native implementations
 
@@ -222,10 +226,10 @@ tails; see [native reciprocals and Catalan](native_reciprocal_math.md).
 - `log2p1`, `log10p1`, `exp2m1`, `exp10m1`, and `compound` for `(1+x)^n`.
 - `sec`, `csc`, `cot`, `sech`, `csch`, `coth`.
 
-These routines fit the MPFR 4.2 minimum introduced by stage 2. Further native
-support needs its own accurate implementation or provider. Multiplying a rounded
-pi into the argument is not an adequate replacement for a pi-scaled function's
-argument reduction contract.
+These routines fit the MPFR 4.2 minimum introduced by stage 2. Native calls use
+the implementations or detected providers described above, independently of
+whether MPFR is enabled. Multiplying a rounded pi into the argument is not an
+adequate replacement for a pi-scaled function's argument reduction contract.
 Likewise, do not replace the small-argument functions with cancellation-prone
 compositions. `compound` rounds the result from the original input, matching
 the arithmetic-utility contract; the other extensions use explicit input

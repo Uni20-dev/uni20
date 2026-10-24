@@ -164,7 +164,9 @@ approximations and remain separate from exact rational constants.
 
 Run `mpreal_special_example` for annotated examples of exact results,
 log-Gamma signs, stable small arguments, pi-scaled argument reduction, result
-rounding and constants. The shared numerical matrix tests native Gamma/error
-functions where available and MPFR-specific operations at 128 and 256 bits.
-Missing native operations are reported as unsupported, not as successful or
-skipped MPFR-backed tests. See [numerical testing](../development/numerical_testing.md).
+rounding and constants. The shared numerical matrix has separate native-family
+and MPFR 128/256 probes. Aggregate MPFR-only probes are inapplicable to native
+types. Missing provider combinations are recorded explicitly; neither a native
+fallback nor an MPFR result counts as validation of an unavailable provider.
+See [numerical testing](../development/numerical_testing.md) and
+[native special functions](native_special_functions.md).

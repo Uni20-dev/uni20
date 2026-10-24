@@ -132,8 +132,20 @@ behavior and synthetic fallback wiring, not second-platform validation.
 
 Permanent tests exercise all configured native types and MPFR128/256. They
 include independently bisected native overflow boundaries, rational Bernoulli
-values, pi identities and accuracy gains at zeta(2). Full integration validation
-is queued before publication; macOS, CUDA and Clang binary128 are not claimed.
+values, pi identities and accuracy gains at zeta(2).
+
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Numerical tests | Runtime skips |
+| --- | ---: | ---: | --- |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3336 | 623 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native binary80/128 | 2523 | 262 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native binary80, binary128 disabled | 2987 | 520 | 1 NUMA topology test |
+
+The complete numerical coverage reports passed in all three configurations.
+The NUMA skips reflect this host's topology and are separate from the passing
+counts. Clang binary128, macOS and CUDA runtime were not exercised.
 
 ## Provider comparison
 

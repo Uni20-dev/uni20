@@ -113,9 +113,20 @@ half-integer harmonic identities, plus a precision-improvement case at 1/2.
 All 30 targeted tests passed, covering native contracts, the shared native
 and MPFR cases, existing scalar facade behavior and MPFR special-function
 exact/unset/explicit-precision regressions. Eight native core tests
-and the explanatory example also passed with MPFR disabled. Full integration
-builds and CTest matrices are pending; targeted checks use compatible B1
-libraries and do not replace that gate.
+and the explanatory example also passed with MPFR disabled.
+
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Runtime skips |
+| --- | ---: | ---: |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native128 | 3246 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native128 | 2466 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native80, native128 disabled | 2915 | 1 NUMA topology test |
+
+Each configuration also passed the complete numerical precision executable and
+coverage report. CUDA runtime and macOS were not exercised. The NUMA skips
+reflect this host's topology and are separate from the passing counts.
 
 A small GCC13 -O2 timing experiment varied inputs near 1/2, -3.75 and 128,
 25,000 calls per region. Observed microseconds/call were 0.012--0.031 for

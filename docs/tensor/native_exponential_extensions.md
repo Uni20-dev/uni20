@@ -106,7 +106,20 @@ regressions. Integrated GCC 13 Debug validation passed all 93 core tests and 509
 precision tests, including the complete coverage-report check. The integrated
 precision suite records the following rounded-up maxima (inputs and full
 values are XML properties); these use a smaller regression sample than the
-prototype scan above. Full integration/configuration validation is pending.
+prototype scan above.
+
+Full unfiltered builds and CTest runs, including examples, CLI and Python bindings,
+passed on the local Linux host:
+
+| Configuration | Passed | Skipped |
+| --- | ---: | ---: |
+| GCC 13 Debug, MPFR/MPC and binary80/128, MPLAPACK enabled | 3,135 | 1 NUMA topology test |
+| GCC 13 Release, MPFR disabled, binary80/128, MPLAPACK kernels disabled | 2,401 | 1 NUMA topology test |
+| Clang 19 Debug, MPFR/MPC and binary80, binary128 disabled, MPLAPACK enabled | 2,825 | 1 NUMA topology test |
+
+The complete numerical suites and coverage reports passed in each cell.
+Clang's binary128-disabled cell is not evidence for native binary128; that
+coverage comes from GCC. GPU/MPI execution and macOS were not exercised.
 
 | Scalar / path | exp10 | exp2m1 | exp10m1 | log2p1 | log10p1 |
 | --- | --- | --- | --- | --- | --- |

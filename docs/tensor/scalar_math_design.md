@@ -168,7 +168,8 @@ in device execution, add the applicable host/device annotations and an actual
 CUDA compilation probe; annotation alone does not establish device-callability.
 MPFR/MPC scalar implementations remain host-only.
 
-The [scalar math coverage plan](scalar_math_coverage_plan.md) tracks remaining
-arithmetic, decomposition, classification, constants and special functions.
+The [scalar math coverage plan](scalar_math_coverage_plan.md) records availability
+and contracts for arithmetic, decomposition, classification, constants and
+special functions.
 The elementary expansion covers real scalars; existing native complex and MPC
 operations remain available only where those implementations provide overloads.

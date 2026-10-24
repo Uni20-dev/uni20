@@ -185,6 +185,16 @@ not change the current provider contract or silently replace that selection.
 All 38 targeted MPFR-enabled tests passed, including the permanent boundary
 searches, retained-provider checks and existing MPFR special-function regressions.
 The separate MPFR-disabled Release check passed 13 native tests and ran `beta_example`.
-These checks and the scans above are iteration evidence. Full integration
-builds, CTest and complete numerical coverage reports are pending before
-publication.
+
+Full unfiltered integration validation also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | Passing CTest cases | Runtime skips |
+| --- | ---: | ---: |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native128 | 3273 | 1 NUMA topology test |
+| GCC13 Release, MPFR disabled, native128 | 2484 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, native80, native128 disabled | 2936 | 1 NUMA topology test |
+
+Each configuration also passed the complete numerical precision executable and
+coverage report. CUDA runtime and macOS were not exercised. The NUMA skips
+reflect this host's topology and are separate from the passing counts.
