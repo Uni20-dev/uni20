@@ -20,41 +20,37 @@ auto y = uni20::math::bessel_y(-3, 1.0);    // Y_-3(1) = -Y_3(1)
 ## Standard-library special functions
 
 When `<cmath>` advertises `__cpp_lib_math_special_functions >= 201603L`,
-Uni20 exposes these adapters for `float`, `double` and `long double`:
+Uni20 selects this adapter for `float`, `double` and `long double`:
 
 | Uni20 callable | Standard provider | Domain and interpretation |
 | --- | --- | --- |
 | `math::beta(x,y)` | `std::beta(x,y)` | Both arguments positive; same native real type |
-| `math::zeta(x)` | `std::riemann_zeta(x)` | Real Riemann zeta; pole at one |
 
 ```cpp
 auto b = uni20::math::beta(0.5L, 0.5L); // long double, approximately pi
-auto z = uni20::math::zeta(2.0);        // double, approximately pi^2/6
 ```
 
-The standard feature macro is sufficient to select these interfaces; there are
+The standard feature macro is sufficient to select this interface; there are
 no redundant per-function CMake probes. The return type is the input type.
 Integer arguments, mixed native types and conversion-only classes are not
 accepted by these adapters. Convert explicitly when needed.
 
-The standard library determines numerical accuracy, floating-point error
-reporting and range behavior. In particular, native Beta does not promise
-MPFR's extended real domain; the C++23 zeta contract leaves behavior below
--170 implementation-defined. These are provider wrappers, not a promise of
-correct rounding or uniform behavior at every exceptional argument.
-The existing MPFR overloads retain their own domains and precision rules.
+The standard library determines Beta's numerical accuracy, floating-point
+error reporting and range behavior. Native Beta requires positive arguments
+and does not promise MPFR's extended real domain or correct rounding. The
+MPFR overload retains its own domains and precision rules.
 
-If the macro is absent, native zeta is unavailable. Beta instead uses
-Uni20's [native fallback](native_beta.md), also supplying configured binary128.
-Ei uses Uni20's [native implementation](native_expint.md) at every precision.
-A standard template declaration accepting an extension
-type is not enough to establish that its implementation preserves precision.
-Binary128 zeta remains unsupported. Future native implementations may
-also serve the other types after accuracy and performance validation; see the
-[shared native implementation plan](scalar_math_coverage_plan.md#shared-native-implementations).
-The shared numerical tests cover native float32/64/80 and MPFR 128/256-bit
-identities, and compare non-dyadic results with independent 512-bit references
-to demonstrate increasing accuracy. Identity tests also run without MPFR.
+If the macro is absent, Beta uses Uni20's [native fallback](native_beta.md),
+which also supplies configured binary128. Native [Ei](native_expint.md) and
+[zeta](native_zeta.md) use Uni20 algorithms at every configured precision.
+Their former standard paths were replaced after accuracy and performance
+comparisons; neither requires the standard special-function feature macro.
+A standard template declaration accepting an extension type alone does not
+establish precision-preserving evaluation.
+
+Shared numerical tests cover all configured native formats and MPFR128/256,
+with independent identities, wider references and measured accuracy gains.
+Identity tests also run without MPFR.
 
 ### Global Gamma sign state
 
@@ -64,19 +60,20 @@ global `signgam` variable, including reading it after a non-reentrant platform
 returned sign belongs to that invocation.
 
 This restriction accommodates a known upstream limitation. The inspected
-libstdc++ implementations of native Beta and zeta call ordinary `lgamma`, which
-writes global `signgam` on glibc. Their numerical results do not consume that
-sign output. Uni20 retains the standard-library adapters, but concurrent calls
+libstdc++ implementation of native Beta calls ordinary `lgamma`, which
+writes global `signgam` on glibc. Its numerical results do not consume that
+sign output. Uni20 retains the standard-library Beta adapters, but concurrent calls
 on affected providers still have an internal write/write data race even when
 application code never accesses `signgam`. The restriction does not make those
 providers formally race-free, and race detectors can report the upstream
-defect. Uni20 adds no serialization or replacement numerical algorithm here.
+defect. Uni20 adds no serialization around the retained Beta providers.
 The same underlying issue is tracked for `std::poisson_distribution` in
 [GCC bug 111726](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111726).
 
-This limitation concerns the affected native Beta and zeta providers. Uni20's
+This limitation concerns the affected native Beta providers. Uni20's
 Beta fallback is reentrant and does not access `signgam`; its presence does
-not remove the limitation from the retained standard providers. Uni20's own
+not remove the limitation from the retained standard providers. Native zeta
+now uses reentrant Uni20 evaluation without `signgam`. Uni20's own
 log-Gamma adapters use the reentrant routines described below.
 
 ## Pi-scaled trigonometric functions
@@ -208,6 +205,16 @@ are supported; negative integer poles give NaN. Its accuracy criterion is
 absolute near zeros and relative away from them. See
 [native digamma](native_digamma.md) for regions, coefficients, tail bounds and
 independent validation.
+
+## Riemann zeta
+
+`math::zeta(x)` supports the whole real line at each configured native precision,
+including binary128. It uses Euler–Maclaurin evaluation, pole cancellation near
+zero, and reflection with exact pi-scaled phase reduction. Native negative
+even integers give positive zero; the pole at one gives positive infinity.
+NaN and negative infinity give NaN, and positive infinity gives one.
+See [native zeta](native_zeta.md) for accuracy targets, truncation bounds,
+provider comparisons and scaled range handling. MPFR semantics are unchanged.
 
 ## Real exponential integral
 

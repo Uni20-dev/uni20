@@ -2,6 +2,7 @@
 
 #include "native_beta_math.hpp"
 #include "native_math.hpp"
+#include "native_zeta_math.hpp"
 
 namespace uni20::detail::native_math
 {
@@ -11,7 +12,7 @@ template <class R> struct standard_special_provider
 // The standard feature macro guarantees float, double and long double support.
 // Extension types need their own provider: a viable std template declaration
 // alone does not establish a working, precision-preserving implementation.
-// Some libstdc++/glibc providers write signgam internally in beta and zeta.
+// Some libstdc++/glibc providers write signgam internally in beta.
 // Their results do not use that sign, but concurrent calls retain an upstream
 // data race. See docs/tensor/native_special_functions.md for the accepted
 // provider limitation and the restriction on application use of signgam.
@@ -21,7 +22,6 @@ template <class R>
 struct standard_special_provider<R>
 {
     static R beta(R x, R y) { return std::beta(x, y); }
-    static R zeta(R x) { return std::riemann_zeta(x); }
 };
 #endif
 
@@ -32,13 +32,6 @@ template <NativeReal R> R beta(R x, R y)
   else
     return native_math::portable_beta(x, y);
 }
-template <NativeReal R>
-  requires requires(R x) { standard_special_provider<R>::zeta(x); }
-R zeta(R x)
-{
-  return standard_special_provider<R>::zeta(x);
-}
-
 template <class R> struct lgamma_provider
 {};
 template <class R> struct bessel_provider

@@ -588,10 +588,9 @@ inline constexpr detail::scalar_math::upper_gamma_fn upper_gamma{};
 inline constexpr detail::scalar_math::erf_fn erf{};
 /// \brief Complementary error function without subtractive cancellation.
 inline constexpr detail::scalar_math::erfc_fn erfc{};
-/// \brief Riemann zeta function.
-/// \details Native evaluation uses std::riemann_zeta, including its provider limits.
-/// \note Affected libstdc++/glibc providers retain an internal signgam data race;
-///       see docs/tensor/native_special_functions.md for the provider limitation.
+/// \brief Real Riemann zeta with native Euler-Maclaurin evaluation and reflection.
+/// \details Native arguments retain their type, including binary128. Exact negative
+///          even integers give positive zero; the pole at one gives positive infinity.
 inline constexpr detail::scalar_math::zeta_fn zeta{};
 /// \brief Real principal-value exponential integral Ei.
 /// \details Native evaluation uses compensated series, a positive E1 continued

@@ -14,8 +14,6 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderIdentities)
   };
   check(math::beta(x, one), one / x);
   check(math::beta(x, C::real(2)), one / (x * (x + one)));
-  check(math::zeta(C::real(-1)), -one / 12);
-  check(math::zeta(C::real(0)), -one / 2);
 }
 } // namespace uni20::test
 
@@ -102,7 +100,6 @@ UNI20_PRECISION_TEST(NumericalScalar, StandardProviderAccuracy)
   auto wide_pi = pi<mpreal>.at(p);
   auto half = C::real(1) / 2;
   accuracy<C>(math::beta(half, half), wide_pi, 32);
-  accuracy<C>(math::zeta(C::real(2)), wide_pi * wide_pi / 6, 32);
 }
 
 namespace

@@ -17,22 +17,16 @@ static_assert(!std::invocable<decltype(m::bessel_y), int, ConversionOnly>);
 static_assert(!std::invocable<decltype(m::bessel_j), bool, double>);
 static_assert(!std::invocable<decltype(m::bessel_y), double, double>);
 
-template <class R> consteval bool standard_special_available()
+template <class R> consteval bool native_special_available()
 {
   return std::invocable<decltype(m::beta), R, R> && std::invocable<decltype(m::zeta), R> &&
          std::invocable<decltype(m::expint), R>;
 }
-#if defined(__cpp_lib_math_special_functions) && __cpp_lib_math_special_functions >= 201603L
-static_assert(standard_special_available<float>());
-static_assert(standard_special_available<double>());
-static_assert(standard_special_available<long double>());
-#else
-static_assert(!standard_special_available<float>());
-static_assert(!standard_special_available<double>());
-static_assert(!standard_special_available<long double>());
-#endif
+static_assert(native_special_available<float>());
+static_assert(native_special_available<double>());
+static_assert(native_special_available<long double>());
 #if UNI20_HAS_FLOAT128
-static_assert(!standard_special_available<uni20::float128>());
+static_assert(native_special_available<uni20::float128>());
 #endif
 static_assert(!std::invocable<decltype(m::beta), ConversionOnly, ConversionOnly>);
 static_assert(!std::invocable<decltype(m::zeta), ConversionOnly>);
@@ -53,13 +47,14 @@ template <class R> void check_standard_special()
   {
     // Verify the adapter calls the native provider even in MPFR-enabled builds.
     EXPECT_EQ(m::beta(x, R(2)), std::beta(x, R(2)));
-    EXPECT_EQ(m::zeta(x), std::riemann_zeta(x));
     EXPECT_TRUE(m::abs(m::beta(x, R(1)) * x - R(1)) <= R(32) * epsilon);
 #if defined(__GLIBC__)
     int saved = ::signgam;
     ::signgam = 73;
     (void)m::expint(x);
     (void)m::expint(-x);
+    (void)m::zeta(x);
+    (void)m::zeta(-x);
     EXPECT_EQ(::signgam, 73);
     ::signgam = saved;
 #endif

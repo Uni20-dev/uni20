@@ -39,7 +39,7 @@ providing a name does not synthesize a missing scalar operation.
 | `tgamma`, `erf`, `erfc` | Native or MPFR provider evaluation |
 | `lgamma`, `lgamma_sign`, `bessel_j`, `bessel_y` | MPFR or detected native providers; native log-Gamma is reentrant and native Bessel absolute order must fit `int` |
 | `beta` | MPFR, advertised standard-library providers, or native Gamma-ratio fallback including binary128; native arguments must be positive and of the same type |
-| `zeta` | MPFR or advertised standard-library providers for float/double/long double |
+| `zeta` | Native Euler–Maclaurin evaluation and reflection at every configured precision, or MPFR |
 | `expint` | Native series/continued-fraction/asymptotic implementation at every configured precision, or MPFR |
 | `upper_gamma`, `airy_ai` | MPFR special functions; native implementations deferred |
 | `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |

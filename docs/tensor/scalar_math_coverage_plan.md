@@ -121,11 +121,12 @@ operations from the operations supported at every configured real precision.
 
 Native `lgamma`, `lgamma_sign`, `bessel_j` and `bessel_y` now have per-type
 platform adapters, using reentrant log-Gamma and checked Bessel order lowering.
-Native `beta` and `zeta` use advertised standard-library functions
+Native `beta` uses advertised standard-library functions
 for float/double/long double, with native Beta restricted to positive arguments.
 Binary128 Beta now uses a native Gamma-ratio implementation; binary128 Ei
-uses native series, continued fractions and asymptotics. Binary128 zeta remains
-deferred. The [Beta investigation](native_beta.md) documents
+uses native series, continued fractions and asymptotics. Native zeta also
+covers binary128 through Euler–Maclaurin evaluation and reflection.
+The [Beta investigation](native_beta.md) documents
 the fallback's accuracy and range contract separately from retained providers.
 See [native special functions](native_special_functions.md). The remaining
 native surface is tracked in [issue #67](https://github.com/Uni20-dev/uni20/issues/67);
@@ -167,11 +168,13 @@ acceptance criteria. [Native Ei](native_expint.md) also supplies binary128
 and the other configured precisions through Uni20 algorithms. This replaces
 standard Ei after accuracy and performance comparisons exposed substantial
 GCC13 errors; the algorithm document records the cost and range behavior.
+[Native zeta](native_zeta.md) similarly replaces standard evaluation after
+comparison, with exact phase reduction and scaled reflection.
 
 ### Shared native implementations
 
-Binary128 coverage may require Uni20 implementations of functions such as
-Beta, zeta and Ei. When a suitable provider is unavailable, design the native
+Beta, zeta and Ei now have reusable native implementations, including
+binary128. When a suitable provider is unavailable, design the native
 algorithm for reuse across float32/64/80/128 through the existing typed adapter
 boundary. Keep the public `uni20::math` calls unchanged and retain MPFR's own
 scalar implementations.
@@ -188,10 +191,11 @@ Start with the missing binary128 implementation, validate the shared algorithm
 at every intended native precision, then compare accuracy and performance with
 the existing providers before changing provider selection. Use the shared
 precision matrix and independent higher-precision MPFR references; MPFR remains
-a test oracle, not a runtime dependency of native evaluation. A reentrant
-Uni20 implementation of Beta or zeta could then also replace the affected
-standard providers and remove their documented `signgam` race. This is future
-implementation work; the current standard-library adapters remain in use.
+a test oracle, not a runtime dependency of native evaluation. This comparison
+has justified replacing standard Ei and zeta. Native zeta no longer shares
+the upstream `signgam` limitation. Beta's standard providers remain selected
+where available; its native fallback supplies binary128 and missing-provider
+configurations, with the tradeoff recorded in the Beta document.
 
 ## 4. Nonstandard elementary extensions
 

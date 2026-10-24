@@ -155,10 +155,11 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Real elementary math | Small-argument `expm1`/`log1p` with cancellation negative controls; inverse identities retaining increments; error improvement against independent 512-bit series |
 | Real numerical utilities | Named decompositions and remainders retaining increments; fused cancellation; rounding ties, signed zeros, NaN/infinity and grid endpoints; integer power/root accuracy against rational and independent Newton references |
 | Native/MPFR Gamma and error functions | Accuracy improvement against `sqrt(pi)` and an independent 512-bit error-function series |
-| Native/MPFR Beta and zeta providers | Rational identities without MPFR; increased accuracy against independent pi identities |
+| Native/MPFR Beta providers | Rational identities without MPFR; increased accuracy against an independent pi identity |
 | Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native zeta / MPFR | Exact trivial zeros, pole neighbors, Gamma/Stirling joins, negative overflow boundaries, rational Bernoulli and pi identities, original-input error bounds and precision gains |
 | Native Ei / MPFR | Public probes at all real precisions, cancellation near the positive zero, continued-fraction and asymptotic joins, normal/subnormal/zero/overflow boundaries, independent small-argument series and upper-Gamma identity |
 | Native/MPFR real dilogarithm | Whole real line, subnormals, continuation for x>1, nonzero-root neighbors, independent pi/log values and defining series; original-input MPFR512 references with 1024-bit worst-case checks |
 | Native/MPFR digamma | Absolute error near zeros, relative accuracy away from zeros, reflection/pole neighborhoods, full exponent range and independent harmonic identities |
@@ -268,8 +269,10 @@ even when MPFR is enabled. Pi-scaled trigonometric functions have separate
 precision; `PiScaledPortableAccuracy` directly exercises the native fallback,
 independently of whether a libc provider is selected. The native Gamma/error-function
 probes run at all configured real precisions; their high-precision oracle requires MPFR.
-Beta and zeta have combined provider probes whose native binary128 cells remain
+Beta has standard-provider probes whose native binary128 cells remain
 unsupported. Dedicated Beta probes cover its binary128 and portable paths.
+`ZetaIdentities` and `ZetaAccuracy` cover every configured real type, including
+reflection near trivial zeros and final overflow boundaries.
 `ExpintIdentities` and `ExpintAccuracy` cover every configured real type and
 record bound fractions. Constant probes also cover configured binary128.
 `DilogIdentities` and

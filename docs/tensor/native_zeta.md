@@ -1,10 +1,9 @@
-# Native Riemann zeta investigation
+# Native real Riemann zeta
 
-The immediate gap is binary128 `math::zeta(x)`. Investigate a reusable native
-implementation without Boost, MPFR evaluation or global state. Existing
-float/double/long-double providers remain selected until an accuracy and
-performance comparison justifies changing that choice. This document records
-acceptance before prototyping; no new public overload is implemented yet.
+`math::zeta(x)` evaluates real Riemann zeta at every configured native
+precision, including binary128. Native execution uses Uni20 algorithms without
+Boost, MPFR or mutable shared state. The former standard providers are replaced
+after the accuracy and performance comparison below. MPFR semantics are unchanged.
 
 ## Domain and acceptance
 
@@ -15,7 +14,7 @@ infinity, and exact negative even integers give positive zero. No complex
 function or additional precision argument is added.
 
 For f=zeta(x) at the exact represented input, let eps be spacing at one.
-The initial empirical target is `32*eps*abs(f)` for nonnegative arguments.
+The empirical target is `32*eps*abs(f)` for nonnegative arguments.
 For negative nonzero results, use
 `32*eps*max(1,abs(log(A)))*abs(f) + denorm_min/2`, where
 `A=2*(2*pi)^(x-1)*Gamma(1-x)*zeta(1-x)` is the positive reflection amplitude.
@@ -26,21 +25,21 @@ trivial zeros; zero values themselves require exact classification instead.
 
 | Region / all four native formats | Measure | Intended criterion | Status |
 | --- | --- | --- | --- |
-| Nonnegative finite x, excluding one | Original-input absolute error | <=32*eps*abs(f) | Unmeasured |
-| Neighbors of the pole | Relative error at the represented input | <=32*eps; preserve sided sign | Unmeasured |
-| Negative ordinary x and neighbors of trivial zeros | Reflection-scaled relative error plus final subnormal allowance | Bound above; preserve nonzero sign unless underflow | Unmeasured |
-| Negative even integers | Exact value | Zero, without evaluating an overflowing amplitude | Unmeasured |
-| Negative overflow neighborhoods | Classification and finite accuracy separately | No premature intermediate overflow | Unmeasured |
-| Large positive x | Distance from limiting value | Return one only once the omitted tail is below half a spacing | Unmeasured |
-| Independent integer values and precision ladder | Bernoulli/pi identities | Document accuracy improvements with precision | Unmeasured |
+| Nonnegative finite x, excluding one | Original-input absolute error | <=32*eps*abs(f) | Permanent tests and scans pass |
+| Neighbors of the pole | Relative error at the represented input | <=32*eps; preserve sided sign | Permanent tests and scans pass |
+| Negative ordinary x and neighbors of trivial zeros | Reflection-scaled relative error plus final subnormal allowance | Bound above; preserve nonzero sign unless underflow | Permanent tests and scans pass |
+| Negative even integers | Exact value | Zero, without evaluating an overflowing amplitude | Permanent tests and scans pass |
+| Negative overflow neighborhoods | Classification and finite accuracy separately | No premature intermediate overflow | Permanent tests and scans pass |
+| Large positive x | Distance from limiting value | Return one only once the omitted tail is below half a spacing | Permanent tests and scans pass |
+| Independent integer values and precision ladder | Bernoulli/pi identities | Document accuracy improvements with precision | Permanent tests pass |
 
-Worst cases will use MPFR512 references repeated at 1024 bits. Scans must
+Worst cases use MPFR512 references repeated at 1024 bits. Scans must
 include adjacent native values around negative even integers, the pole and
 range boundaries, plus ordinary grids and deterministic exponent samples.
 Do not ask MPFR to evaluate enormous negative noninteger arguments when a
 separate analytical range argument establishes native overflow.
 
-## Candidate algorithms
+## Algorithms and error control
 
 For x>=1/2, use an Euler–Maclaurin tail after a finite Dirichlet sum. Handle
 the pole explicitly and sum with compensation. For x>=p+1, p significand
@@ -84,7 +83,31 @@ of direct Euler–Maclaurin evaluation, and rounding 1-x to one cannot introduce
 a spurious pole. For abs(x)<eps/2 the first-order expansion
 `-1/2-x*log(2*pi)/2` suffices; its omitted term is O(eps^2).
 
-## Current investigation evidence
+## Observed accuracy
+
+The integrated native header was scanned against MPFR512 at the original
+represented inputs. The scan includes a rational grid from about -443 to 443,
+64 neighbors of joins and selected negative even integers through -4950,
+deterministic exponent/significand samples and native exponent strides.
+The native implementation remained independent of MPFR in this build.
+
+| Format | Inputs | Largest fraction of acceptance bound | Worst input |
+| --- | ---: | ---: | --- |
+| float32 | 57143 | 0.673338 | -16.4594593048095703125 |
+| float64 | 56679 | 0.864861 | -16.891891891891891219756871578283607959747314453125 |
+| binary80 | 58889 | 0.640751 | -16.324324324324324324980706180099332414101809263229 |
+| binary128 | 58821 | 0.341791 | 0.5000000000000000000000000000000012518544638517033 |
+
+No accuracy or range-classification failures occurred. Worst references
+agreed at 1024 bits. These observations do not prove a domain-wide bound.
+
+A separate 10640-input scan per format concentrates deterministic random
+mantissas in [-18,-14] and [1/2,1], plus join and pole neighbors. Its largest
+bound fractions were .732773/.912335/.705631/.341791, with no failures and
+1024-bit agreement. The worst inputs for the first three formats were
+-16.84014129638671875, -16.784456336552974420328609994612634181976318359375
+and -16.380167256238744729127110311139858822571113705635. Binary128's worst
+input was the same half-integer neighbor as in the table.
 
 The local prototype's 1513-input near-zero/pole scan per format passed the
 target at MPFR512, with worst references agreeing at 1024 bits. Largest
@@ -102,8 +125,38 @@ A separate 384-input scan of neighbors of -8, -16 and -32 passed after
 preserving the multiplicative sine and finite Gamma product. Largest bound
 fractions were .484/.671/.562/.110; worst references agree at 1024 bits.
 
-Broad scans, provider comparisons, permanent tests and public integration are
-still pending. Prototype evidence is not full implementation validation.
+The targeted MPFR-enabled run passed 77 tests; the MPFR-disabled run passed
+12. The missing-standard-provider executable compiled and ran in both modes,
+and the explanatory example ran without MPFR. These checks establish local
+behavior and synthetic fallback wiring, not second-platform validation.
+
+Permanent tests exercise all configured native types and MPFR128/256. They
+include independently bisected native overflow boundaries, rational Bernoulli
+values, pi identities and accuracy gains at zeta(2). Full integration validation
+is queued before publication; macOS, CUDA and Clang binary128 are not claimed.
+
+## Provider comparison
+
+On GCC13/glibc2.39, a 7684-input scan per native standard format over [-35,100],
+with pole/zero neighbors, exposed 2287/2293/2348 accuracy failures and
+124/88/88 classification failures for float32/64/80 against the stated target.
+The float provider returns infinity at -35 although zeta(-35) is about
+3.80879311252454e11. Double zeta(-34) is about 1.00567e-4 instead of exact zero.
+Inspection of GCC13's `tr1/riemann_zeta.tcc` explains these failures: reflection
+forms sin(pi*x/2) without exact argument reduction and separately exponentiates
+log-Gamma, which can overflow before the full result does. The ordinary-domain
+summation also incurs cancellation. These are observations of the tested
+provider, not claims about every standard-library version.
+
+Representative 10000-call loops measured native costs of .003--.168 us for
+float32, .003--.203 us for float64, .009--3.73 us for binary80 and .048--55.9 us
+for binary128. The retained comparison provider took roughly 3.8--6.7,
+39--44 and 478--647 us for the first three formats at -1.1, .25 and 10;
+its large-positive shortcut is much faster. At -100, the new binary80 path was
+about five times slower. Measurements during an unrelated build give orientation,
+not timing guarantees. Accuracy, range, reentrancy and the ordinary-region
+cost justify selecting Uni20 evaluation for all native formats. Native Beta's
+separate retained-provider limitation is unchanged.
 
 Sources: [DLMF reflection formulas](https://dlmf.nist.gov/25.4),
 [Euler–Maclaurin representations](https://dlmf.nist.gov/25.11#iii), and
