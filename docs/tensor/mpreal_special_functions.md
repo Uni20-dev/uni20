@@ -22,7 +22,8 @@ The [typed factorial factory](native_factorial.md) selects native or MPFR
 results explicitly. Native [real dilogarithm](native_dilogarithm.md) supports
 all configured formats, including real continuation for x>1. Native
 [upper incomplete Gamma](native_upper_gamma.md) supports finite real shape at
-positive endpoints. Native Airy Ai remains separate work.
+positive endpoints. Native [Airy Ai](native_airy.md) covers the full real
+axis with bounded original-input phase reduction.
 Enabling MPFR never supplies an
 MPFR-backed implementation for a native scalar. Generic code can check
 availability with `std::invocable` on the `uni20::math` callable.
@@ -163,7 +164,9 @@ approximations and remain separate from exact rational constants.
 
 Run `mpreal_special_example` for annotated examples of exact results,
 log-Gamma signs, stable small arguments, pi-scaled argument reduction, result
-rounding and constants. The shared numerical matrix tests native Gamma/error
-functions where available and MPFR-specific operations at 128 and 256 bits.
-Missing native operations are reported as unsupported, not as successful or
-skipped MPFR-backed tests. See [numerical testing](../development/numerical_testing.md).
+rounding and constants. The shared numerical matrix has separate native-family
+and MPFR 128/256 probes. Aggregate MPFR-only probes are inapplicable to native
+types. Missing provider combinations are recorded explicitly; neither a native
+fallback nor an MPFR result counts as validation of an unavailable provider.
+See [numerical testing](../development/numerical_testing.md) and
+[native special functions](native_special_functions.md).

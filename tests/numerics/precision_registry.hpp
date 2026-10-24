@@ -36,6 +36,8 @@ enum class PrecisionProbe
   BetaIdentities,
   BetaAccuracy,
   BetaPortableAccuracy,
+  AiryIdentities,
+  AiryAccuracy,
   UpperGammaIdentities,
   UpperGammaAccuracy,
   ZetaIdentities,
@@ -130,6 +132,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "BetaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "BetaPortableAccuracy", "portable_native_math"},
+    ProbeDescription{"NumericalScalar", "AiryIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "AiryAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UpperGammaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "UpperGammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ZetaIdentities", "scalar_math"},
@@ -260,8 +264,9 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == UpperGammaIdentities || probe == UpperGammaAccuracy || probe == ZetaIdentities ||
-        probe == ZetaAccuracy || probe == ExpintIdentities || probe == ExpintAccuracy ||
+    if (probe == AiryIdentities || probe == AiryAccuracy || probe == UpperGammaIdentities ||
+        probe == UpperGammaAccuracy || probe == ZetaIdentities || probe == ZetaAccuracy ||
+        probe == ExpintIdentities || probe == ExpintAccuracy ||
         probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy ||
         probe == BetaPortableAccuracy || probe == DigammaIdentities || probe == DigammaAccuracy ||
         probe == FactorialIdentities ||
@@ -341,7 +346,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       if constexpr (C::is_complex) return {"not_applicable", "special-function expansion covers real scalars"};
       if constexpr (!C::runtime)
         if (probe != StandardSpecialAccuracy)
-          return {"unsupported", "native implementation deferred; no MPFR adapter for native types"};
+          return {"not_applicable", "MPFR-specific aggregate probe; native families have separate probes"};
     }
     switch (probe)
     {
@@ -353,6 +358,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case PiScaledPortableAccuracy:
       case BetaAccuracy:
       case BetaPortableAccuracy:
+      case AiryAccuracy:
       case UpperGammaAccuracy:
       case ZetaAccuracy:
       case ExpintAccuracy:

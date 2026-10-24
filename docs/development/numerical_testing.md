@@ -156,9 +156,11 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Real numerical utilities | Named decompositions and remainders retaining increments; fused cancellation; rounding ties, signed zeros, NaN/infinity and grid endpoints; integer power/root accuracy against rational and independent Newton references |
 | Native/MPFR Gamma and error functions | Accuracy improvement against `sqrt(pi)` and an independent 512-bit error-function series |
 | Native/MPFR Beta providers | Rational identities without MPFR; increased accuracy against an independent pi identity |
-| Typed constants | Type retention and improved accuracy of pi, log(2) and Euler gamma, including binary128 constants |
+| Typed constants | Type retention and improved accuracy of pi, log(2), Euler gamma and Catalan, including binary128 constants and an independent Catalan series |
 | MPFR special functions | Gamma/digamma/Beta recurrences, upper-Gamma identity, Bessel Wronskian, zeta/pi identity; accuracy against Ei, Li2, Bessel J and Airy series and an AGM iteration |
 | Native/MPFR pi-scaled functions | Exact phase at large arguments; zeros, poles, domains and subnormals; four-grid-spacing checks against 512-bit MPFR; precision improvement from analytic identities and an atan series; direct portable-path validation |
+| Native/MPFR upper incomplete Gamma | Integer/half-integer identities, negative shapes, shape-zero limits, transition joins, huge-parameter cancellation and final range boundaries; wider references with explicit cancellation control and precision gains |
+| Native/MPFR Airy Ai | Differential equation and value-at-zero identities, zero and region-join neighbors, full-range negative phase, positive subnormal/zero boundaries; cross-checked asymptotic references and precision gains |
 | Native zeta / MPFR | Exact trivial zeros, pole neighbors, Gamma/Stirling joins, negative overflow boundaries, rational Bernoulli and pi identities, original-input error bounds and precision gains |
 | Native Ei / MPFR | Public probes at all real precisions, cancellation near the positive zero, continued-fraction and asymptotic joins, normal/subnormal/zero/overflow boundaries, independent small-argument series and upper-Gamma identity |
 | Native/MPFR real dilogarithm | Whole real line, subnormals, continuation for x>1, nonzero-root neighbors, independent pi/log values and defining series; original-input MPFR512 references with 1024-bit worst-case checks |
@@ -263,8 +265,9 @@ numerical subsystem. In the current implementation:
 
 New numerical operations should join these cases as they are implemented.
 The dedicated MPFR-only special/extension probes run at 128 and 256 bits.
-The remaining native implementations are deferred and reported as unsupported,
-even when MPFR is enabled. Pi-scaled trigonometric functions have separate
+These aggregate probes are inapplicable to native types, which have separate
+family probes. Missing platform providers remain explicitly unavailable;
+enabling MPFR never implements a native operation. Pi-scaled trigonometric functions have separate
 `PiScaledIdentities` and `PiScaledAccuracy` probes at every configured real
 precision; `PiScaledPortableAccuracy` directly exercises the native fallback,
 independently of whether a libc provider is selected. The native Gamma/error-function
@@ -278,6 +281,17 @@ record bound fractions. Constant probes also cover configured binary128.
 `DilogIdentities` and
 `DilogAccuracy` cover all configured native reals and MPFR128/256, recording
 the largest fraction of the documented error bound and the corresponding input.
+`UpperGammaIdentities` and `UpperGammaAccuracy` cover finite shape/endpoint
+regions, endpoint conventions, large-parameter cancellation and final range
+boundaries. Their error scale is specified in the
+[upper Gamma acceptance table](../tensor/native_upper_gamma.md#domain-and-numerical-acceptance).
+`AiryIdentities` and `AiryAccuracy` cover zero neighborhoods, region joins,
+positive underflow and original-input phase at huge negative arguments. The
+[Airy acceptance table](../tensor/native_airy.md#domain-and-numerical-acceptance)
+uses an amplitude-scaled absolute measure on the negative axis; its reference
+precision grows with the argument exponent to resolve the phase. Native
+identity probes remain available in MPFR-disabled configurations; independent
+high-precision accuracy probes require the MPFR oracle.
 
 Keep operation-specific unsupported reasons explicit in the registry. When a
 combination gains support, enable the same mathematical probe for it.
