@@ -30,6 +30,9 @@ enum class PrecisionProbe
   MpfrSpecialIdentities,
   MpfrSpecialAccuracy,
   MpfrExtensionsStableArithmetic,
+  PiScaledIdentities,
+  PiScaledAccuracy,
+  PiScaledPortableAccuracy,
   CpuMatrixOneNormRetainsIncrement,
   CpuReductionsRetainIncrement,
   CpuGemmRetainsIncrement,
@@ -96,6 +99,9 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "MpfrSpecialIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrSpecialAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "MpfrExtensionsStableArithmetic", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "PiScaledIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "PiScaledAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "PiScaledPortableAccuracy", "portable_native_math"},
     ProbeDescription{"NumericalLinalg", "CpuMatrixOneNormRetainsIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuReductionsRetainIncrement", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "CpuGemmRetainsIncrement", "cpu_reference"},
@@ -204,6 +210,12 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
+    if (probe == PiScaledIdentities || probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy)
+    {
+      if constexpr (C::is_complex) return {"not_applicable", "pi-scaled functions cover real scalars"};
+      if constexpr (C::runtime)
+        if (probe == PiScaledPortableAccuracy) return {"not_applicable", "portable path covers native scalars"};
+    }
     if (probe == StandardProviderIdentities || probe == StandardProviderAccuracy || probe == MathConstantsAccuracy)
     {
       if constexpr (C::is_complex) return {"not_applicable", "real special functions and constants"};
@@ -267,6 +279,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case StandardSpecialAccuracy:
       case StandardProviderAccuracy:
       case MathConstantsAccuracy:
+      case PiScaledAccuracy:
+      case PiScaledPortableAccuracy:
       case LogGammaAccuracy:
       case BesselAccuracy:
       case UtilityAccuracyImprovesWithPrecision:

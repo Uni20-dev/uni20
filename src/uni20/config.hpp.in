@@ -56,6 +56,16 @@
 #cmakedefine01 UNI20_FLOAT128_PROVIDER_MPLAPACK
 
 // Native special functions, independently detected for each scalar type.
+// Native pi-scaled trigonometric families; otherwise use same-type portable math.
+#cmakedefine01 UNI20_HAS_PI_TRIG_FLOAT
+#cmakedefine01 UNI20_HAS_PI_TRIG_DOUBLE
+#cmakedefine01 UNI20_HAS_PI_TRIG_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_PI_TRIG_FLOAT128
+#cmakedefine01 UNI20_HAS_PI_INVERSE_FLOAT
+#cmakedefine01 UNI20_HAS_PI_INVERSE_DOUBLE
+#cmakedefine01 UNI20_HAS_PI_INVERSE_LONG_DOUBLE
+#cmakedefine01 UNI20_HAS_PI_INVERSE_FLOAT128
+
 #cmakedefine01 UNI20_HAS_LGAMMA_R_FLOAT
 #cmakedefine01 UNI20_HAS_LGAMMA_R_DOUBLE
 #cmakedefine01 UNI20_HAS_LGAMMA_R_LONG_DOUBLE

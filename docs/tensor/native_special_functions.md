@@ -78,6 +78,103 @@ The same underlying issue is tracked for `std::poisson_distribution` in
 This limitation concerns the affected native Beta and zeta providers. Uni20's
 own log-Gamma adapters use the reentrant routines described below.
 
+## Pi-scaled trigonometric functions
+
+`math::sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi` and
+`atan2pi` support native float32/64/80 and configured binary128, as well as
+the existing MPFR scalar path. The forward functions evaluate at pi times the
+argument; the inverse functions return angles divided by pi. Native unary
+results retain the argument type. `atan2pi(y,x)` uses the common native floating
+type, subject to the usual facade check that it preserves both operands'
+precision and exponent range. Integer and conversion-only inputs are not
+accepted. As with the existing elementary math interface, a trailing
+`Precision` is an MPFR operation, not a native overload.
+
+```cpp
+auto phase = uni20::math::sinpi(0.5L); // exactly 1, without forming pi/2
+auto turns = uni20::math::atan2pi(1.0, -1.0); // exactly 0.75
+```
+
+CMake checks the linked C23 forward family (`sinpi`, `cospi`, `tanpi`) and
+inverse family (`asinpi`, `acospi`, `atanpi`, `atan2pi`) separately for each
+native type. It requires exact signatures, including `_Float128` signatures
+for binary128. The capability macros are `UNI20_HAS_PI_TRIG_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`
+and `UNI20_HAS_PI_INVERSE_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`. A complete detected
+family uses its libc provider. A missing or incomplete family uses a portable
+implementation at the original precision. No newer libc is required, and
+MPFR is never used to evaluate native arguments.
+
+The portable forward implementation uses `remquo(x, 0.5)` to recover the
+quadrant and an exact binary remainder in [-1/4,1/4]. It multiplies only that
+remainder by the typed pi constant before calling native `sin`, `cos` or
+`tan`. This preserves phase for large arguments, avoids overflow in `2*x` or
+`pi*x`, and retains relative accuracy near integer zeros and half-integer
+poles. The inverse implementation scales the native inverse function, with
+explicit handling of exact endpoints, axes and diagonals. `atan2pi` uses
+`atan2`, avoiding an overflowing or underflowing intermediate `y/x`.
+
+The native value conventions follow IEEE pi-scaled arithmetic:
+
+- At every integer, `sinpi` and `tanpi` return zero with the input's sign.
+- `cospi` returns positive zero at every half-integer.
+- `tanpi(n+1/2)` returns positive infinity for even n and negative infinity
+  for odd n; at quarter-integers its finite values are exactly +1 or -1.
+- Forward functions return NaN for infinite or NaN inputs. `asinpi` and
+  `acospi` have domain [-1,1], with NaN outside it.
+- `atanpi` maps infinities to +/-1/2. `atan2pi` preserves signed-zero
+  quadrants, including both zero arguments, and handles infinite axes and
+  diagonals. NaN in either argument yields NaN.
+
+The MPFR path retains its provider conventions. In particular, MPFR 4.2.1
+uses an alternating zero sign for `tanpi` at odd integers; native results follow
+the input sign, as described in the current MPFR reference.
+
+See the [MPFR function reference](https://www.mpfr.org/mpfr-current/mpfr.html#Transcendental-Functions)
+and the GNU libc [forward](https://sourceware.org/glibc/manual/latest/html_node/Trig-Functions.html)
+and [inverse](https://sourceware.org/glibc/manual/latest/html_node/Inverse-Trig-Functions.html)
+interfaces. Native implementations do not promise correct rounding or a
+portable `errno`/floating-point-exception contract. Their accuracy depends on
+the native elementary provider and rounding of the typed pi constant. Tests
+use round-to-nearest with gradual underflow, require errors within four output
+grid spacings on a deterministic adversarial sample, and separately check
+improvement with precision using analytic identities and a convergent series.
+This is numerical validation, not a proven global error bound.
+
+The shared precision matrix tests both the selected public path and the
+portable implementation explicitly. Thus a successful fallback does not count
+as validation of an unavailable libc provider. Core boundary tests run without
+MPFR; the wider 512-bit oracle checks are reported unavailable in that build.
+
+### Numerical acceptance
+
+The following acceptance criteria apply to configured native float32/64/80/128
+under round-to-nearest with gradual underflow. The reference is the function at
+the exact represented input, not at an intended real input before rounding.
+`PiScaledAccuracy` and `PiScaledPortableAccuracy` cover the public and portable
+paths separately in `tests/numerics/test_pi_math_precision.cpp`.
+
+| Region | Measure and intended criterion | Guarantee or evidence |
+| --- | --- | --- |
+| Integer/half-integer grids; quarter-integer tangent; inverse endpoints, axes and equal-magnitude diagonals | Exact value and specified zero/infinity sign | Value contract; core tests plus precision-matrix identities |
+| Ordinary non-dyadic sample (`i/37`, -128 <= i <= 128); both neighbors of quarter integers from -4 to 4 | Absolute error <= four output grid spacings against 512-bit MPFR | Empirical acceptance target, not a domain-wide bound |
+| Large arguments with representable quarter offsets; native minimum normal/subnormal multiples and largest finite values | Same absolute grid-spacing target, with exact checks for zeros and nonfinite results | Tests phase retention and exponent range separately from significand precision |
+| Selected nonzero analytic values at 1/8, 1/2 and 1/4 | Four-spacing target and error at least sixteen times smaller than the preceding precision's rounded reference | Precision-improvement evidence from radical/rational identities and an independent atan series |
+| Out-of-domain and nonfinite arguments | NaN classification, or the specified finite/infinite value and sign | Value contract, independently checked in core tests |
+
+For a finite nonzero result `r`, an output grid spacing is
+`next_up(abs(r)) - abs(r)`, evaluated in the wider reference type. This also
+gives an absolute measure in the subnormal region. No relative error is used
+at zeros; exact-zero signs have separate assertions. Pole-neighbor tests assess
+evaluation at the represented input, not the conditioning of an unrounded
+mathematical argument.
+
+The recorded GCC 13 and Clang 19 runs satisfy these thresholds for their
+configured portable paths. The tests do not record a per-function observed
+maximum, so no tighter measured bound is claimed. A provider unavailable on a
+test host has no numerical evidence from that run, even if its wiring is
+checked synthetically. Accuracy on a new libc provider must be measured on
+that provider before calling it validated.
+
 ## Typed constants
 
 `<uni20/core/math_constants.hpp>` supplies `uni20::pi<Real>`,

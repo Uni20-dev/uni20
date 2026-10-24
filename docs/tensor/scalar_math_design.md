@@ -41,7 +41,7 @@ providing a name does not synthesize a missing scalar operation.
 | `beta`, `zeta`, `expint` | MPFR or advertised standard-library providers for float/double/long double; native Beta requires positive arguments of the same type |
 | `digamma`, `upper_gamma`, `dilog_real`, `airy_ai`, `agm`, `factorial` | MPFR special functions; native implementations deferred |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | MPFR base-ten and cancellation-safe extensions |
-| `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR pi-scaled trigonometry and inverse functions |
+| `sinpi`, `cospi`, `tanpi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
 | `sec`, `csc`, `cot`, `sech`, `csch`, `coth`, `compound` | MPFR reciprocal functions and compound integer powers |
 
 `abs_squared(x)` is a composed function: compute `abs(x)` once and square it.
