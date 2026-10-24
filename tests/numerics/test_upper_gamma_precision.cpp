@@ -145,7 +145,7 @@ template <class C> void upper_gamma_accuracy()
   // This modest negative shape previously exhausted the guarded fraction
   // near float32 overflow, although the result is finite. Retain the exact
   // represented endpoint for every configured scalar, including MPFR.
-  evaluate(-C::real(7) / 2, C::real(0x1.5fd7fep-37));
+  evaluate(-C::real(7) / 2, scalar_at_precision<R>(0x1.5fd7fep-37, C::precision()));
   auto neighbors = [&](R a, R x) {
     for (int k = 0; k < 8; ++k)
     {
