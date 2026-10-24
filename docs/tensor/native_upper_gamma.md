@@ -183,10 +183,22 @@ GCC13 targeted validation passes 77 MPFR-enabled tests and 12 native-only
 tests, plus missing-provider executables in both configurations and the
 example. Removing the guarded recomputation in an isolated mutation makes
 the accuracy probe fail at all four native precisions while both MPFR
-cases still pass. Full
-GCC/Clang integration validation remains pending;
-targeted tests and scans are not full-suite evidence. CUDA and complex upper
-Gamma are outside this implementation.
+cases still pass.
+
+Full unfiltered builds and CTest runs also passed, with examples, CLI and
+Python bindings enabled:
+
+| Configuration | CTest passes | Numerical tests | Runtime skips |
+| --- | ---: | ---: | --- |
+| GCC13 Debug, MPFR/MPC/MPLAPACK, native binary80/128 | 3357 | 635 | 1 NUMA topology test |
+| GCC13 Release without MPFR, native binary80/128 | 2536 | 266 | 1 NUMA topology test |
+| Clang19 Debug, MPFR/MPC/MPLAPACK, binary80; binary128 disabled | 3004 | 530 | 1 NUMA topology test |
+
+The separate unfiltered numerical runs and their complete coverage reports
+passed in all three configurations. Runtime skips are reported separately
+from passes; there were no skipped numerical probes. Clang binary128 and
+macOS were not exercised. CUDA and complex upper Gamma are outside this
+implementation.
 
 ### Cost sample
 
