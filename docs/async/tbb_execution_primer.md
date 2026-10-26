@@ -505,13 +505,14 @@ void wait_for(WaitRequest const& request)
   if (request.is_ready())
     return;
 
-  request.notify_when_ready(wake_current_suspension);
+  require_notification_registration(request);
   arena_.execute([&] {
     while (!request.is_ready()) {
-      if (runnable_work_exists())
-        suspend_until_ready_or_idle(request);
-      else
-        wait_for_new_work_or_watchdog(request);
+      auto wait = make_suspension_latch();
+      request.notify_when_ready(weak_wakeup(wait));
+      if (request.is_ready())
+        return;
+      suspend_and_install_resume_point(wait);
     }
   });
 }
@@ -552,79 +553,38 @@ path prioritization would require always-available dependency metadata and
 evidence from profiling that the latency benefit outweighs scheduling overhead
 and possible starvation. It is not part of the current design.
 
-`IAsyncScheduler::WaitRequest` carries both the readiness predicate and an optional
-targeted wakeup-registration function. `EpochContextReader` registers that
-wakeup at the epoch's mutex-protected transition to `Reading`. Schedulers that
-do not use resumable tasks ignore the registration and retain their existing
-predicate-driven behavior.
+`IAsyncScheduler::WaitRequest` carries a readiness predicate and a targeted
+wakeup-registration function. For a pending TBB wait, registration is required;
+an unsatisfied predicate-only request throws `async_state_error`. Ready-value
+access still returns immediately. Polling schedulers such as `DebugScheduler`
+can ignore the registration.
 
-### Wait watchdog
+Registration must not block waiting for readiness, and must close the race
+between checking the predicate and subscribing to its next change. It may invoke
+the supplied non-throwing callback inline. The suspension latch handles a
+notification before or after installation of the resume point and resumes that
+point at most once. Providers may retain callbacks: a weak reference makes late
+notifications harmless after the waiting stack returns.
 
-A suspended wait also has a configurable diagnostic escape path. The scheduler
-tracks runnable coroutine execution quanta. Submitting a resumption increments
-the count; completing it decrements the count. A coroutine execution quantum
-that enters synchronous `get_wait()` is temporarily removed from the count
-because its stack is suspended rather than runnable. Paused-queue entries are
-also excluded until `resume()` dispatches them.
+Reader waits subscribe to the epoch's mutex-protected transition to `Reading`.
+Writer waits subscribe to availability of the exclusive write gate, and acquire
+it through their readiness predicate. Notification does not reserve the gate:
+if another writer acquires it first, the waiter checks again and registers a
+fresh notification. Epoch callbacks run outside the epoch mutex.
 
-Zero submitted work is not by itself proof of deadlock. An external operation,
-another application thread, or a future GPU or MPI completion may still make an
-epoch ready. The useful diagnostic condition is therefore:
+### Diagnosing stalled waits
 
-1. the requested epoch is still not ready
-2. the scheduler has had no runnable execution quantum for a configurable
-   interval
-3. both conditions still hold when the timeout is serviced
+TBB waits have no internal deadline, idle-work counter, or execution-scope
+bookkeeping. They remain suspended until notified, including while the arena
+has no runnable tasks. Later submissions and external completions can still
+satisfy the dependency. Application and worker threads use the same path;
+no thread-local execution chain is carried across a resumable-stack switch.
 
-When the runnable count reaches zero, the scheduler resumes the innermost
-suspended wait. That stack then waits on a condition variable with the watchdog
-deadline. It is safe to occupy the arena slot in this state because no
-scheduler-visible work is runnable. Submitting new work increments the count,
-notifies the condition variable, and lets the stack return to resumable TBB
-suspension before the new work needs the slot.
-
-This arrangement needs neither a timer thread nor a sleeping TBB task. A
-sleeping or polling watchdog task would be incorrect because it could occupy
-the only slot and delay the dependency that satisfies the wait. On timeout, the
-waiting stack prints scheduler state, requests a best-effort `TaskRegistry` DAG
-snapshot when debug tracking is available, and raises `async_wait_timeout`
-through the normal Uni20 error policy.
-
-Runnable-work accounting should use a generation counter as well as a count so
-that timeout servicing can detect a zero-to-nonzero-to-zero transition without
-mistaking stale observations for one continuous idle interval. Enqueuing new
-work resets the idle deadline. A paused scheduler and a scheduler with no
-submitted work should be reported separately because their likely causes are
-different.
-
-This watchdog diagnoses a lack of scheduler-visible progress; it does not prove
-that the dependency graph contains a cycle. Its timeout must remain configurable
-for applications that legitimately wait on slow external completion.
-`TbbSchedulerWaitOptions::watchdog_timeout` defaults to 5 seconds when
-`UNI20_ASYNC_DEBUG=ON` and to `std::nullopt` otherwise. Callers may explicitly
-provide either a timeout or `std::nullopt` in any build mode. A future Python
-binding may enable a timeout while using exception-mode error handling without
-making native optimized builds terminate on this diagnostic heuristic.
-
-The optional `TaskRegistry` diagnostics service provides a separate external
-trigger. It can consume a signal such as `SIGUSR1` and write a best-effort DAG
-snapshot without terminating the process. The signal must not force the
-watchdog failure path because it may arrive while scheduler-visible work is
-still making progress.
-
-Resumable stacks can themselves be nested. An idle transition wakes only the
-most recently registered nested wait, allowing suspended stacks to unwind from
-the inside out. Waking every registered suspension point would allow an
-application-thread ancestor to enter its watchdog path while the dependency
-task remained suspended below it. Independent application-thread waits may all
-enter their watchdog paths when no nested execution stack exists.
-
-No `in_coroutine` test is required. The relevant execution context is the TBB
-arena and resumable task stack, not whether some function higher in the call
-chain happens to be a C++ coroutine. Uni20 uses thread-local state only to mark
-the currently executing scheduler quantum; it explicitly clears that state
-before suspension and establishes it again when the stack resumes. No thread
-identity or thread-local value is assumed to survive a oneTBB suspension.
+Use an attached debugger or optional `TaskRegistry` diagnostics to investigate
+stalled work. The diagnostics service can consume a signal such as `SIGUSR1`
+and write a best-effort DAG snapshot without terminating the process. External
+test timeouts bound tests of progress; timeout-based deadlock detection is not
+a scheduler feature.
 
 ## What Suspend/Resume Does Not Fix
 
@@ -674,11 +634,10 @@ The TBB scheduler test suite should include:
 - readiness becoming true during waiter registration
 - repeated ready-value access that never enters the suspension path
 - a multi-worker stress test for lost wakeups and duplicate resume attempts
-- a watchdog timeout with no runnable work, including diagnostic wakeup of the
-  suspended application stack
-- external or newly submitted work arriving before the watchdog deadline
-- runnable work transitioning through zero without triggering a stale timeout
-- independent waits timing out or completing concurrently
+- an idle wait satisfied by a later submission
+- writer waits behind preceding readers or an active writer
+- concurrent coroutine waits nested inside lightweight batches
+- unsatisfied predicate-only requests rejected before entering the arena
 - initial admission and rescheduling from outside a saturated arena
 - `run_all()` ordered after accepted admission waiting for that activation
 

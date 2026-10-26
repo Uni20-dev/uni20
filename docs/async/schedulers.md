@@ -153,24 +153,17 @@ Wait behavior:
   suspension point
 - oneTBB resumable tasks release the arena slot while dependencies execute
 - nested synchronous waits work with one total arena participant
-- if runnable scheduler work reaches zero, the innermost suspended wait enters
-  the watchdog path
-- `TbbSchedulerWaitOptions::watchdog_timeout` defaults to 5 seconds when
-  `UNI20_ASYNC_DEBUG=ON` and to `std::nullopt` otherwise
-- callers may explicitly provide a timeout or `std::nullopt` in either build mode
+- pending low-level waits require a race-safe notification registration;
+  predicate-only calls are accepted only when already ready
+- writer waits are notified when their write gate becomes available, then
+  recheck acquisition in case another writer took the gate first
 
-The watchdog raises `async_wait_timeout` after one continuous interval with no
-scheduler-visible runnable work. It emits a best-effort `TaskRegistry` and
-Graphviz diagnostic when async task tracking is compiled in. This is evidence
-of stalled progress, not proof of a dependency cycle, because external GPU,
-MPI, I/O, or application-thread activity may still produce the value. See
-[`tbb_execution_primer.md`](tbb_execution_primer.md) for the complete execution
-model and single-participant timeline.
-
-For out-of-band inspection, an instrumented `TaskRegistry` diagnostics service
-can consume a signal such as `SIGUSR1` and write a best-effort DAG snapshot. A
-signal requests diagnostics but does not raise `async_wait_timeout`: it may
-arrive while valid work is still running.
+There is no internal wait timeout or idle-work bookkeeping. An idle arena can
+still receive later work or external completion. Use an attached debugger or
+an instrumented `TaskRegistry` diagnostics service to investigate stalled
+waits; the latter can consume a signal such as `SIGUSR1` and write a best-effort
+DAG snapshot. See [`tbb_execution_primer.md`](tbb_execution_primer.md) for the
+execution model, notification contract, and single-participant timeline.
 
 ## TbbNumaScheduler
 
@@ -199,7 +192,7 @@ routing with the host schedulers.
   activations.
 - `TbbCudaScheduler` extends `TbbScheduler` with one worker-only arena per
   enrolled CUDA device. The host and device arenas share task-group, pause,
-  wait, watchdog, and rescheduling state.
+  wait and rescheduling state.
 - Each CUDA device arena defaults to one participating worker, so general CUDA
   work has one host submission lane per device. Setting
   `TbbCudaSchedulerOptions::cuda_max_concurrency_per_device` explicitly retains

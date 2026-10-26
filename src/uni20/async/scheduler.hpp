@@ -133,7 +133,12 @@ class IAsyncScheduler : public virtual IScheduler {
     {
         /// Predicate that reports whether the requested value is available.
         WaitPredicate is_ready;
-        /// Optional callback registration used to wake a suspended scheduler stack directly.
+        /// Register a non-throwing wakeup, including when readiness races with registration.
+        /// Registration must not block waiting for readiness. Each registration must eventually
+        /// notify when readiness becomes possible; inline notification is permitted. A wakeup
+        /// does not reserve a resource, so a scheduler may recheck and register again. Retained
+        /// callbacks may outlive the wait and must be safe to invoke afterwards. Required for
+        /// pending TBB waits; polling schedulers may ignore it.
         WaitWakeupRegistration notify_when_ready{};
     };
 

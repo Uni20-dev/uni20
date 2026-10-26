@@ -8,10 +8,7 @@
 #include "tbb_task_submission.hpp"
 #include <algorithm>
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <oneapi/tbb/concurrent_queue.h>
@@ -20,7 +17,6 @@
 #include <oneapi/tbb/task_arena.h>
 #include <oneapi/tbb/task_group.h>
 #include <optional>
-#include <uni20/common/display.hpp>
 #include <uni20/config.hpp>
 #include <utility>
 #include <vector>
@@ -38,17 +34,6 @@ inline void service_tbb_task_registry_debug_requests()
 }
 } // namespace detail
 
-/// \brief Runtime policy for blocking waits driven by a TBB scheduler.
-struct TbbSchedulerWaitOptions
-{
-    /// Idle interval before a scheduler-visible no-progress wait raises `async_wait_timeout`; null disables it.
-#if UNI20_ASYNC_DEBUG
-    std::optional<std::chrono::milliseconds> watchdog_timeout{std::chrono::seconds{5}};
-#else
-    std::optional<std::chrono::milliseconds> watchdog_timeout{std::nullopt};
-#endif
-};
-
 /// \brief Runtime policy for synchronous lightweight batches executed by a TBB scheduler.
 struct TbbSchedulerBatchOptions
 {
@@ -65,47 +50,39 @@ struct TbbSchedulerBatchOptions
 /// \note Each coroutine records a non-owning scheduler route. A suspended task
 ///       may replace that route while externally owned; subsequent activations
 ///       are submitted only to the replacement scheduler.
-/// \note This scheduler provides a configurable no-progress watchdog, but it
-///       does not prove that the dependency graph contains a cycle. Use
-///       DebugScheduler and TaskRegistry diagnostics for deterministic DAG
-///       investigation.
+/// \note Blocking waits require readiness notifications. There is no internal
+///       deadlock detector or wait timeout; use a debugger or TaskRegistry
+///       diagnostics to investigate stalled dependencies.
 ///
 class TbbNumaScheduler;
 
 class TbbScheduler : public IAsyncScheduler {
     class SuspendedWait;
-    class ReadySignal;
-    class ExecutionScope;
 
   public:
     /// \brief Construct a TBB scheduler with a given arena concurrency.
     /// \param max_concurrency Maximum arena participation, including application threads.
     ///                        Use task_arena::automatic for the oneTBB default.
-    /// \param wait_options Blocking-wait watchdog policy.
     /// \param batch_options Lightweight-batch concurrency policy.
     /// \note Explicit concurrency one shares its sole slot between application and worker threads;
     ///       reserving that slot would let oneTBB add a second participant for enqueued work.
     explicit TbbScheduler(int max_concurrency = oneapi::tbb::task_arena::automatic,
-                          TbbSchedulerWaitOptions wait_options = {}, TbbSchedulerBatchOptions batch_options = {})
+                          TbbSchedulerBatchOptions batch_options = {})
         : arena_(max_concurrency, /*reserved_for_application_threads=*/max_concurrency == 1 ? 0 : 1,
                  oneapi::tbb::task_arena::priority::normal, oneapi::tbb::task_arena::leave_policy::fast),
-          wait_options_(std::move(wait_options)), batch_options_(std::move(batch_options)), paused_(false)
+          batch_options_(std::move(batch_options)), paused_(false)
     {
-      CHECK(!wait_options_.watchdog_timeout || wait_options_.watchdog_timeout->count() > 0);
       CHECK(!batch_options_.maximum_concurrency || *batch_options_.maximum_concurrency > 0);
     }
 
     /// \brief Construct a TBB scheduler constrained to a specific NUMA node.
     /// \param constraints Binding constraints applied to the underlying arena.
-    /// \param wait_options Blocking-wait watchdog policy.
     /// \param batch_options Lightweight-batch concurrency policy.
-    explicit TbbScheduler(oneapi::tbb::task_arena::constraints constraints, TbbSchedulerWaitOptions wait_options = {},
-                          TbbSchedulerBatchOptions batch_options = {})
+    explicit TbbScheduler(oneapi::tbb::task_arena::constraints constraints, TbbSchedulerBatchOptions batch_options = {})
         : arena_(constraints, /*reserved_for_application_threads=*/constraints.max_concurrency == 1 ? 0 : 1,
                  oneapi::tbb::task_arena::priority::normal, oneapi::tbb::task_arena::leave_policy::fast),
-          wait_options_(std::move(wait_options)), batch_options_(std::move(batch_options)), paused_(false)
+          batch_options_(std::move(batch_options)), paused_(false)
     {
-      CHECK(!wait_options_.watchdog_timeout || wait_options_.watchdog_timeout->count() > 0);
       CHECK(!batch_options_.maximum_concurrency || *batch_options_.maximum_concurrency > 0);
     }
 
@@ -166,25 +143,19 @@ class TbbScheduler : public IAsyncScheduler {
 
     void help_while_waiting(const WaitPredicate& is_ready) override { this->wait_for(is_ready); }
 
-    /// \brief Wait for a predicate using scheduler progress notifications.
-    /// \param is_ready Predicate that reports completion.
+    /// \brief Accept an already-satisfied predicate; pending TBB waits require a WaitRequest notification.
     void wait_for(const WaitPredicate& is_ready) override { this->wait_for(WaitRequest{.is_ready = is_ready}); }
 
     /// \brief Wait for targeted readiness while allowing the arena to execute other work.
-    /// \param request Readiness predicate and optional direct wakeup registration.
+    /// \param request Readiness predicate and race-safe wakeup registration.
+    /// \throws async_state_error if a pending request has no notification registration.
     void wait_for(WaitRequest const& request) override
     {
       if (request.is_ready()) return;
+      if (!request.notify_when_ready)
+        throw async_state_error("TbbScheduler pending wait requires a readiness notification");
 
-      auto ready_signal = std::make_shared<ReadySignal>(*this);
-      if (request.notify_when_ready)
-      {
-        request.notify_when_ready([weak_signal = std::weak_ptr<ReadySignal>(ready_signal)]() noexcept {
-          if (auto signal = weak_signal.lock()) signal->notify_ready();
-        });
-      }
-
-      arena_.execute([&] { this->wait_in_arena(request, ready_signal); });
+      arena_.execute([&] { this->wait_in_arena(request); });
     }
 
   private:
@@ -243,10 +214,6 @@ class TbbScheduler : public IAsyncScheduler {
 
     class SuspendedWait {
       public:
-        SuspendedWait(bool wake_on_progress, bool nested_wait)
-            : wake_on_progress_(wake_on_progress), nested_wait_(nested_wait)
-        {}
-
         void install(oneapi::tbb::task::suspend_point point) noexcept
         {
           oneapi::tbb::task::suspend_point point_to_resume = nullptr;
@@ -277,251 +244,29 @@ class TbbScheduler : public IAsyncScheduler {
           if (point_to_resume) oneapi::tbb::task::resume(point_to_resume);
         }
 
-        [[nodiscard]] bool wake_on_progress() const noexcept { return wake_on_progress_; }
-        [[nodiscard]] bool nested_wait() const noexcept { return nested_wait_; }
-
       private:
         std::mutex mutex_;
         oneapi::tbb::task::suspend_point point_{nullptr};
         bool signaled_{false};
         bool resume_issued_{false};
-        bool wake_on_progress_;
-        bool nested_wait_;
     };
 
-    class ReadySignal {
-      public:
-        explicit ReadySignal(TbbScheduler& scheduler) : scheduler_(&scheduler) {}
-
-        void attach(std::shared_ptr<SuspendedWait> const& wait) noexcept
-        {
-          bool already_ready = false;
-          {
-            std::scoped_lock lock(mutex_);
-            active_wait_ = wait;
-            already_ready = ready_;
-          }
-          if (already_ready) wait->signal();
-        }
-
-        void detach(SuspendedWait const* wait) noexcept
-        {
-          std::scoped_lock lock(mutex_);
-          auto active = active_wait_.lock();
-          if (active.get() == wait) active_wait_.reset();
-        }
-
-        void notify_ready() noexcept
-        {
-          std::shared_ptr<SuspendedWait> active;
-          {
-            std::scoped_lock lock(mutex_);
-            ready_ = true;
-            active = active_wait_.lock();
-          }
-          if (active) active->signal();
-          scheduler_->wait_cv_.notify_all();
-        }
-
-      private:
-        TbbScheduler* scheduler_;
-        std::mutex mutex_;
-        std::weak_ptr<SuspendedWait> active_wait_;
-        bool ready_{false};
-    };
-
-    class ExecutionScope {
-      public:
-        explicit ExecutionScope(TbbScheduler& scheduler) : scheduler_(&scheduler), previous_(current_)
-        {
-          current_ = this;
-        }
-
-        ExecutionScope(ExecutionScope const&) = delete;
-        ExecutionScope& operator=(ExecutionScope const&) = delete;
-
-        ~ExecutionScope()
-        {
-          CHECK(!blocked_);
-          CHECK_EQUAL(current_, this);
-          current_ = previous_;
-          scheduler_->finish_runnable_quantum();
-        }
-
-        static ExecutionScope* block_current() noexcept
-        {
-          auto* scope = current_;
-          if (!scope) return nullptr;
-
-          CHECK(!scope->blocked_);
-          CHECK_EQUAL(current_, scope);
-          current_ = scope->previous_;
-          scope->blocked_ = true;
-          scope->scheduler_->block_runnable_quantum();
-          return scope;
-        }
-
-        static void unblock(ExecutionScope* scope) noexcept
-        {
-          if (!scope) return;
-
-          CHECK(scope->blocked_);
-          CHECK_EQUAL(current_, scope->previous_);
-          scope->scheduler_->unblock_runnable_quantum();
-          scope->blocked_ = false;
-          current_ = scope;
-        }
-
-      private:
-        inline static thread_local ExecutionScope* current_{nullptr};
-
-        TbbScheduler* scheduler_;
-        ExecutionScope* previous_;
-        bool blocked_{false};
-    };
-
-    class BlockedExecutionScope {
-      public:
-        BlockedExecutionScope() noexcept : scope_(ExecutionScope::block_current()) {}
-        BlockedExecutionScope(BlockedExecutionScope const&) = delete;
-        BlockedExecutionScope& operator=(BlockedExecutionScope const&) = delete;
-        ~BlockedExecutionScope() { ExecutionScope::unblock(scope_); }
-
-        [[nodiscard]] bool blocks_execution_quantum() const noexcept { return scope_ != nullptr; }
-
-      private:
-        ExecutionScope* scope_;
-    };
-
-    void wait_in_arena(WaitRequest const& request, std::shared_ptr<ReadySignal> const& ready_signal)
+    void wait_in_arena(WaitRequest const& request)
     {
-      BlockedExecutionScope blocked_execution;
-
       while (!request.is_ready())
       {
         detail::service_tbb_task_registry_debug_requests();
-        if (runnable_quanta_.load(std::memory_order_acquire) == 0)
-        {
-          if (!this->wait_for_idle_progress(request)) this->raise_wait_timeout();
-          continue;
-        }
+        auto wait = std::make_shared<SuspendedWait>();
+        request.notify_when_ready([weak_wait = std::weak_ptr<SuspendedWait>(wait)]() noexcept {
+          if (auto active = weak_wait.lock()) active->signal();
+        });
 
-        auto suspended_wait =
-            std::make_shared<SuspendedWait>(!request.notify_when_ready, blocked_execution.blocks_execution_quantum());
-        ready_signal->attach(suspended_wait);
-        this->register_suspended_wait(suspended_wait);
-
-        if (request.is_ready() || runnable_quanta_.load(std::memory_order_acquire) == 0) suspended_wait->signal();
-
-        oneapi::tbb::task::suspend(
-            [suspended_wait](oneapi::tbb::task::suspend_point point) { suspended_wait->install(point); });
-        ready_signal->detach(suspended_wait.get());
-      }
-    }
-
-    [[nodiscard]] bool wait_for_idle_progress(WaitRequest const& request)
-    {
-      auto const observed_generation = work_generation_.load(std::memory_order_acquire);
-      auto made_progress = [&] {
-        return request.is_ready() || runnable_quanta_.load(std::memory_order_acquire) != 0 ||
-               work_generation_.load(std::memory_order_acquire) != observed_generation;
-      };
-
-      std::unique_lock lock(wait_mutex_);
-      if (!wait_options_.watchdog_timeout)
-      {
-        wait_cv_.wait(lock, made_progress);
-        return true;
-      }
-      return wait_cv_.wait_for(lock, *wait_options_.watchdog_timeout, made_progress);
-    }
-
-    [[noreturn]] void raise_wait_timeout()
-    {
-      detail::service_tbb_task_registry_debug_requests();
-#if UNI20_DEBUG_ASYNC_TASKS
-      auto const path = TaskRegistry::default_graphviz_dump_path();
-      if (TaskRegistry::dump_graphviz_file_best_effort(path))
-        display::info("Async Graphviz DAG snapshot written to {}", path);
-      TaskRegistry::dump();
-#endif
-      trace::raise(async_wait_timeout(*wait_options_.watchdog_timeout, paused_.load(std::memory_order_acquire)));
-    }
-
-    void submit_runnable_quantum()
-    {
-      runnable_quanta_.fetch_add(1, std::memory_order_release);
-      work_generation_.fetch_add(1, std::memory_order_release);
-      wait_cv_.notify_all();
-    }
-
-    void finish_runnable_quantum() noexcept
-    {
-      auto const previous = runnable_quanta_.fetch_sub(1, std::memory_order_acq_rel);
-      CHECK(previous > 0);
-      this->notify_suspended_waiters(previous == 1);
-      wait_cv_.notify_all();
-    }
-
-    void block_runnable_quantum() noexcept
-    {
-      auto const previous = runnable_quanta_.fetch_sub(1, std::memory_order_acq_rel);
-      CHECK(previous > 0);
-      if (previous == 1) this->notify_suspended_waiters(true);
-      wait_cv_.notify_all();
-    }
-
-    void unblock_runnable_quantum() noexcept
-    {
-      runnable_quanta_.fetch_add(1, std::memory_order_release);
-      wait_cv_.notify_all();
-    }
-
-    void register_suspended_wait(std::shared_ptr<SuspendedWait> const& wait)
-    {
-      {
-        std::scoped_lock lock(suspended_waits_mutex_);
-        std::erase_if(suspended_waits_, [](auto const& weak_wait) { return weak_wait.expired(); });
-        suspended_waits_.push_back(wait);
-      }
-      if (runnable_quanta_.load(std::memory_order_acquire) == 0) wait->signal();
-    }
-
-    void notify_suspended_waiters(bool scheduler_idle) noexcept
-    {
-      std::vector<std::shared_ptr<SuspendedWait>> waits;
-      {
-        std::scoped_lock lock(suspended_waits_mutex_);
-        auto output = suspended_waits_.begin();
-        for (auto input = suspended_waits_.begin(); input != suspended_waits_.end(); ++input)
-        {
-          if (auto wait = input->lock())
-          {
-            waits.push_back(wait);
-            *output++ = *input;
-          }
-        }
-        suspended_waits_.erase(output, suspended_waits_.end());
-      }
-
-      if (scheduler_idle)
-      {
-        // Resumable task stacks can be nested. Wake only the innermost nested
-        // wait; its completion may make a suspended ancestor runnable. When no
-        // nested stack exists, independent application-thread waits can all
-        // enter their watchdog paths.
-        auto nested = std::find_if(waits.rbegin(), waits.rend(), [](auto const& wait) { return wait->nested_wait(); });
-        if (nested != waits.rend())
-          (*nested)->signal();
-        else
-          for (auto const& wait : waits)
-            wait->signal();
-        return;
-      }
-
-      for (auto const& wait : waits)
-      {
-        if (wait->wake_on_progress()) wait->signal();
+        // Registration must also notify if readiness raced with registration.
+        // Recheck before suspending: a writer predicate may acquire its gate here.
+        if (request.is_ready()) return;
+        oneapi::tbb::task::suspend([wait](oneapi::tbb::task::suspend_point point) { wait->install(point); });
+        // Notifications need not reserve a resource. If another writer acquired
+        // it first, recheck and register a fresh notification on the next pass.
       }
     }
 
@@ -565,7 +310,7 @@ class TbbScheduler : public IAsyncScheduler {
       this->dispatch_handle_in_arena(arena_, handle, {.scheduler = "TbbScheduler"}, [] {});
     }
 
-    /// \brief Submit one activation to an arena while sharing scheduler accounting.
+    /// \brief Submit one activation to an arena through the shared task group.
     /// \tparam Prepare callable that establishes or verifies the arena execution context.
     /// \param arena Arena that will execute the activation.
     /// \param handle Promise-neutral task identity.
@@ -575,11 +320,9 @@ class TbbScheduler : public IAsyncScheduler {
     void dispatch_handle_in_arena(oneapi::tbb::task_arena& arena, TaskHandle handle,
                                   detail::TbbTaskAdmissionContext context, Prepare&& prepare)
     {
-      this->submit_runnable_quantum();
       detail::enqueue_tbb_task(
           arena, tg_,
-          [this, handle, prepare = std::forward<Prepare>(prepare)] {
-            ExecutionScope execution(*this);
+          [handle, prepare = std::forward<Prepare>(prepare)] {
             prepare();
             TRACE_MODULE(ASYNC, "resuming coroutine", handle.coroutine());
             TaskPromiseBase::resume_and_track(handle);
@@ -591,17 +334,10 @@ class TbbScheduler : public IAsyncScheduler {
   private:
     oneapi::tbb::task_arena arena_;
     oneapi::tbb::task_group tg_;
-    TbbSchedulerWaitOptions wait_options_;
     TbbSchedulerBatchOptions batch_options_;
     std::atomic<bool> paused_;
     std::mutex pause_mutex_;
     oneapi::tbb::concurrent_queue<TaskHandle> queue_;
-    std::atomic<std::size_t> runnable_quanta_{0};
-    std::atomic<std::uint64_t> work_generation_{0};
-    std::mutex suspended_waits_mutex_;
-    std::vector<std::weak_ptr<SuspendedWait>> suspended_waits_;
-    std::condition_variable wait_cv_;
-    std::mutex wait_mutex_;
     // FIXME: the concurrent_queue is overkill here, since we don't need to preserve order of tasks
 
     friend class TbbNumaScheduler;
