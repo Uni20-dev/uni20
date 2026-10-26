@@ -43,6 +43,52 @@ the entire suite built. Record compiler/configuration details, actual failures,
 and skip counts, and identify unavailable configurations explicitly. Do not claim
 GPU, MPI, or macOS validation from a Linux CPU run.
 
+## Sanitizer boundaries
+
+Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. An embedding
+application that supplies global `-fsanitize` flags must also set this option
+to activate Uni20's dependency policy; the option alone does not instrument
+parent-directory application targets.
+
+The compiled oneTBB scheduling runtime (`TBB::tbb`) is excluded from address,
+undefined-behavior and thread instrumentation because of known provider
+incompatibilities. In particular, the instrumented resumable-task teardown in
+oneTBB 2022.3 binds a reference through a null `thread_data` pointer. This boundary
+predates that reproducer and does not claim that oneTBB has passed sanitizer validation.
+The exclusion is private to the actual build target: Uni20, application code
+and inline oneTBB code compiled in those consumers retain their checks.
+Imported oneTBB libraries are left unchanged; their instrumentation is determined
+by whoever built them.
+For ASan/TSan builds, the fetched provider keeps its thread-backed resumable-task
+implementation even without instrumentation, avoiding a switch to
+`makecontext`/`swapcontext`, which ASan does not fully support.
+
+`UNI20_DEBUG_DAG` deliberately retains `NodeInfo` metadata for process-lifetime
+diagnostics. This is an accepted diagnostic allocation policy, not ownership of
+the calculation's result payload. When leak-checking with DAG diagnostics
+enabled, explicitly select the debug-metadata suppression:
+
+```sh
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+LSAN_OPTIONS=suppressions=/path/to/uni20/tests/sanitizers/lsan.supp:print_suppressions=0 \
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+  ctest --test-dir build --output-on-failure
+```
+
+The file matches allocation stacks in `uni20/async/async_node.hpp`, the
+debug-metadata header. Matching the source path also covers inlined factories
+whose qualified names are absent from reduced debug information. Leak detection
+remains enabled; general Async and numerical-provider allocation stacks are not
+suppressed. Suppression statistics are quiet so that successful CLI calls keep
+their usual stderr behavior; actual errors still print and fail. This does not
+change allocation or lifetime behavior in ordinary builds. For a complementary
+leak check without retained diagnostic pointers, use `UNI20_DEBUG_DAG=OFF`.
+
+Runtime reclamation is deferred. The async documentation records future options
+for [diagnostic metadata](../async/task_registry_debug.md#diagnostic-memory-lifetime-and-deferred-reclamation-options)
+and [MPFR caches](../async/tbb_execution_primer.md#mpfr-cache-lifetime-and-deferred-cleanup-options).
+These proposals add no cleanup API and do not broaden the leak suppression.
+
 ## Test Layout
 
 Current test modules include:
