@@ -1,0 +1,4 @@
+# Intentionally retained Uni20 debug DAG metadata. Clang -g1 may omit the
+# NodeInfo qualification on inlined create<T> frames, so match its header.
+# Do not suppress Async generally, GMP/MPFR, or disable leak detection.
+leak:uni20/async/async_node.hpp

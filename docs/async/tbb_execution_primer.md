@@ -72,6 +72,47 @@ ordinary TBB task is non-preemptive, but a suspended task may resume on a
 different worker. oneTBB guarantees that an outermost blocking construct such
 as `task_arena::execute()` eventually returns on its original calling thread.
 
+### MPFR cache lifetime and deferred cleanup options
+
+With thread-safe MPFR, local caches belong to operating-system threads, not to
+Uni20 schedulers or oneTBB arenas. Retaining reusable caches on persistent
+threads is acceptable for the usual calculation lifetime. Program-exit cleanup
+alone offers little practical benefit; useful motivations would be memory
+reclamation during a long run or preventing accumulation when threads terminate
+and are replaced during the process lifetime. No new cleanup mechanism is
+currently planned for implementation.
+
+`mpfr_free_cache2(MPFR_FREE_LOCAL_CACHE)` frees the calling thread's local caches.
+Calling it from the application thread after a scheduler wait does not clear
+other threads' caches. Neither scheduler destruction nor submitting one cleanup
+task per arena slot guarantees that each participating thread performs cleanup.
+See [MPFR's memory-handling contract](https://www.mpfr.org/mpfr-current/mpfr.html#Memory-Handling).
+
+If runtime memory pressure justifies further work, a possible approach is an
+explicit cleanup request generation, checked at safe execution boundaries on
+each participating thread. A thread would clear its local caches once for each
+request it observes. This would be eventual reclamation, not a synchronous
+all-thread operation: idle threads might retain caches, and suspended work can
+resume on another thread. The integration would need to cover application
+threads, worker threads and the provider's auxiliary resumable-task threads,
+without assuming that one arena entry covers every later resumption.
+
+A thread-local destructor could complement this by freeing caches when an
+enrolled thread actually terminates during the run. Its enrollment coverage,
+teardown ordering and execution cost need validation. Clearing caches after
+every numerical operation or every arena exit is not proposed; that could
+discard useful caches repeatedly.
+
+oneTBB's [scheduler observers](https://uxlfoundation.github.io/oneTBB/main/specification/source/task_scheduler/task_arena/task_scheduler_observer_cls.html)
+provide arena entry/exit notifications, not an immediate callback on every pool
+thread. [Runtime finalization](https://uxlfoundation.github.io/oneTBB/main/reference/source/task_scheduler/scheduling_controls/task_scheduler_handle_cls.html)
+can wait for worker termination under process-wide conditions, but does not
+itself perform MPFR cleanup and is unsuitable as a local sub-scheduler cleanup
+operation. These limitations should remain explicit in any future API.
+
+Diagnostic-node reclamation has a separate ownership problem; see
+[the deferred metadata options](task_registry_debug.md#diagnostic-memory-lifetime-and-deferred-reclamation-options).
+
 ### Non-Preemption and Scheduling Points
 
 oneTBB does not time-slice runnable tasks. If several tasks are queued in a

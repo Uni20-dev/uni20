@@ -471,22 +471,8 @@ if(NOT UNI20_DOCS_WEB)
       "TBB_BUILD_TESTS=OFF"
   )
 
-  # If sanitizers are enabled, exclude them from TBB (known incompatibility).
-  if(UNI20_SANITIZE)
-    string(FIND "${UNI20_SANITIZE}" "address" _has_asan)
-    string(FIND "${UNI20_SANITIZE}" "undefined" _has_ubsan)
-    string(FIND "${UNI20_SANITIZE}" "thread" _has_tsan)
-    if(NOT _has_asan EQUAL -1 OR NOT _has_ubsan EQUAL -1 OR NOT _has_tsan EQUAL -1)
-      message(WARNING "Building uni20 with sanitizers (${UNI20_SANITIZE}), "
-      "but disabling sanitizer instrumentation for oneTBB.")
-
-      # Apply -fno-sanitize=all to all TBB sources
-      get_target_property(tbb_sources TBB::tbb SOURCES)
-      if(tbb_sources)
-        set_source_files_properties(${tbb_sources} PROPERTIES COMPILE_FLAGS "-fno-sanitize=all")
-      endif()
-    endif()
-  endif()
+  include(Uni20TbbSanitizers)
+  uni20_configure_tbb_sanitizers()
 
   # Optionally fetch GoogleTest for unit testing
   if(UNI20_BUILD_TESTS)

@@ -58,6 +58,15 @@ add_test(NAME CMakeSubproject.dependency_arguments
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dependency_arguments.cmake")
 set_tests_properties(CMakeSubproject.dependency_arguments PROPERTIES LABELS cmake TIMEOUT 60)
 
+if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+  add_test(NAME CMakeSubproject.tbb_sanitizers
+    COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+      "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/tbb_sanitizers"
+      "-Dgenerator=${CMAKE_GENERATOR}" "-Dcompiler=${CMAKE_CXX_COMPILER}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/check_tbb_sanitizers.cmake")
+  set_tests_properties(CMakeSubproject.tbb_sanitizers PROPERTIES LABELS cmake TIMEOUT 60)
+endif()
+
 # Do not compile the entire MPLAPACK provider three more times in nested builds.
 # Main-suite tests cover the fetched provider; an installed package also gives
 # these downstream consumers inexpensive binary128 compile/link/run coverage.

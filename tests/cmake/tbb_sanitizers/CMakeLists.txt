@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.28)
+project(tbb_sanitizer_boundary LANGUAGES CXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+include("${UNI20_SOURCE_DIR}/cmake/Uni20TbbSanitizers.cmake")
+
+if(case STREQUAL "imported")
+  add_library(provider SHARED IMPORTED)
+  add_library(TBB::tbb ALIAS provider)
+  set(UNI20_SANITIZE address,undefined)
+  uni20_configure_tbb_sanitizers()
+  get_target_property(options provider INTERFACE_COMPILE_OPTIONS)
+  if(options)
+    message(FATAL_ERROR "Modified imported provider usage requirements: ${options}")
+  endif()
+  return()
+endif()
+
+# The real provider is defined in a different directory, with relative source
+# names. This reproduces the scope in which the old source-property fix failed.
+add_compile_options(-fsanitize=address,undefined)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/provider/provider.cpp" "int provider() { return 0; }\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/provider/CMakeLists.txt"
+  "add_library(provider STATIC provider.cpp)\nadd_library(TBB::tbb ALIAS provider)\n")
+add_subdirectory("${CMAKE_CURRENT_BINARY_DIR}/provider" provider-build)
+if(case STREQUAL "enabled")
+  set(UNI20_SANITIZE address,undefined)
+else()
+  set(UNI20_SANITIZE "")
+endif()
+uni20_configure_tbb_sanitizers()
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp" "int consumer() { return 0; }\n")
+add_library(consumer STATIC "${CMAKE_CURRENT_BINARY_DIR}/consumer.cpp")
+target_link_libraries(consumer PRIVATE TBB::tbb)

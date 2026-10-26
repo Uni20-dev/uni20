@@ -91,6 +91,54 @@ Dump output correlates tasks with epochs at dump time by scanning epoch snapshot
 
 This gives useful suspension context without requiring high-overhead always-on edge tracking.
 
+### Diagnostic memory lifetime and deferred reclamation options
+
+`NodeInfo` allocations currently survive for the process lifetime. They retain
+diagnostic metadata, not ownership of tensor values or coroutine frames. This
+policy is intentional; see [sanitizer boundaries](../development/testing.md#sanitizer-boundaries)
+for the narrow leak-checking suppression. There is no metadata cleanup API.
+
+Reclamation is deferred. Cleaning up only at program exit would provide little
+practical benefit. A useful future operation would reclaim metadata during a
+long calculation without adding reference counting to every diagnostic edge or
+disturbing the execution being debugged.
+
+A diagnostic allocation arena would make allocation and bulk release simple,
+but switching allocation to a new arena does not make the old one disposable.
+Live `Async<T>` values, epochs, coroutine dependency lists and in-progress
+snapshots can still refer to old nodes. Scheduler completion alone does not end
+these lifetimes. Keeping arenas alive through shared ownership would introduce
+arena-wide reference counting; one long-lived value could retain the entire old
+arena. That is not the preferred direction merely to remove sanitizer reports.
+
+Two options remain worth investigating if diagnostic memory growth becomes a
+practical problem:
+
+- **Explicit phase release:** bulk release after every diagnostic reference to
+  a completed phase has disappeared. This is relatively simple, but unsuitable
+  for iterations that carry live async values between phases without additional
+  lifetime tracking.
+- **Collection at an explicit quiescent checkpoint:** identify live metadata
+  and reclaim unreferenced nodes while preserving live node addresses and IDs.
+  Individually reclaimable allocations or reusable arena slots could avoid
+  copying live nodes and rewriting their references. Allocation blocks containing
+  live nodes would remain allocated; this need not release every byte immediately.
+
+The second option is the more useful candidate for a continuing calculation,
+not an approved design. It requires an audit of all references, including
+coroutine promises, epochs, aliases and temporary snapshot state. Node names
+must not accidentally keep dead nodes alive; stale label entries would need
+removal. Diagnostic pointers held outside the registry also need an explicit
+lifetime contract. Cleanup must exclude concurrent submission, resumption,
+async-object mutation and diagnostic capture across the affected runtime;
+suspended tasks remain live references. These requirements cannot currently be
+replaced by a call to one scheduler's `run_all()`.
+
+Any implementation should demonstrate that live values and subsequent snapshots
+remain valid, repeated cleanup reclaims dead metadata, and normal debug execution
+does not acquire per-edge ownership overhead. No allocation arena, collection
+mechanism or new synchronization is implemented by this proposal.
+
 ### Graphviz DAG snapshots
 
 `TaskRegistry::graphviz_dot()` returns a Graphviz DOT document for the current async
