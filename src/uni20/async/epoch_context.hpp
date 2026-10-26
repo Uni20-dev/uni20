@@ -757,7 +757,7 @@ class EpochContext {
 
     // Writer interface
     int total_writers_{0};
-    int num_writers_{0}; ///< number of active writers
+    int num_writers_{0}; ///< Outstanding writer handles, including waiting writers; prevents Reading until zero.
     std::vector<TaskState> writer_tasks_;
     std::vector<std::function<void()>> writer_ready_waiters_;
     bool writer_active_{false};
