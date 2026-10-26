@@ -69,11 +69,21 @@ the calculation's result payload. When leak-checking with DAG diagnostics
 enabled, explicitly select the debug-metadata suppression:
 
 ```sh
+DEBUGINFOD_URLS= \
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 LSAN_OPTIONS=suppressions=/path/to/uni20/tests/sanitizers/lsan.supp:print_suppressions=0 \
 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
   ctest --test-dir build --output-on-failure
 ```
+
+Automated sanitizer runs should clear `DEBUGINFOD_URLS` in their test environment
+so symbolization does not depend on remote debug-symbol downloads. A stalled
+request can otherwise consume the test timeout while a sanitizer formats its
+report. This preserves local symbolization and every sanitizer check; system
+library stack traces may have less detail when their debug symbols are not
+installed locally. Keep this policy in test commands or CI/preset environments,
+not in the library or the user's global shell configuration. See
+[LLVM's debuginfod options](https://llvm.org/docs/CommandGuide/llvm-symbolizer.html#cmdoption-llvm-symbolizer-debuginfod).
 
 The file matches allocation stacks in `uni20/async/async_node.hpp`, the
 debug-metadata header. Matching the source path also covers inlined factories
