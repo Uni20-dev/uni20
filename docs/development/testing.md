@@ -55,6 +55,16 @@ An embedding application that supplies global `-fsanitize` flags must also set
 this option to activate Uni20's dependency policy; the option alone does not
 instrument parent-directory application targets.
 
+MPFR-enabled test builds with GCC or Clang also compile the
+`uni20_mpfr_ubsan_compile` object target with `-fsanitize=undefined`, including
+when the rest of the build is not instrumented. It checks real and complex
+provider dispatch without requiring a sanitizer runtime or running numerical
+code. GCC with UBSan rejects constant-expression equality comparisons between
+distinct externally declared functions; the scalar wrappers select operations
+by template identity instead. The ordinary scalar tests check the resulting
+exact and approximate numerical behavior. See the related
+[GCC discussion of constexpr address comparisons and sanitizer null checks](https://gcc.gnu.org/pipermail/gcc-patches/2025-July/688787.html).
+
 The compiled oneTBB scheduling runtime (`TBB::tbb`) is excluded from address,
 undefined-behavior and thread instrumentation because of known provider
 incompatibilities. In particular, the instrumented resumable-task teardown in

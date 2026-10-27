@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/function_identity.hpp"
 #include "detail/scaled_rational.hpp"
 #include "exact_constant.hpp"
 #include "math_constants.hpp"
@@ -375,11 +376,11 @@ struct mpreal_access
         Operation(result.approximate(), a.is_exact() ? zero : r, a.is_exact() ? r : zero, MPFR_RNDN);
         return result;
       }
-      if constexpr (Operation == mpfr_add)
+      if constexpr (same_function_v<Operation, mpfr_add>)
         mpfr_add_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
-      else if constexpr (Operation == mpfr_mul)
+      else if constexpr (same_function_v<Operation, mpfr_mul>)
         mpfr_mul_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
-      else if constexpr (Operation == mpfr_sub)
+      else if constexpr (same_function_v<Operation, mpfr_sub>)
       {
         if (a.is_exact())
         {
@@ -390,7 +391,7 @@ struct mpreal_access
         else
           mpfr_sub_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
       }
-      else if constexpr (Operation == mpfr_div)
+      else if constexpr (same_function_v<Operation, mpfr_div>)
       {
         if (!a.is_exact())
           mpfr_div_q(result.approximate(), real.native_handle(), q, MPFR_RNDN);
@@ -448,38 +449,41 @@ struct mpreal_access
       auto p = x.precision();
       if (p.is_exact())
       {
-        if constexpr (Operation == mpfr_neg)
+        if constexpr (same_function_v<Operation, mpfr_neg>)
           return mpreal(-x.exact_value());
-        else if constexpr (Operation == mpfr_abs)
+        else if constexpr (same_function_v<Operation, mpfr_abs>)
           return mpreal(x.exact_value() < 0 ? -x.exact_value() : x.exact_value());
-        else if constexpr (Operation == mpfr_sqrt)
+        else if constexpr (same_function_v<Operation, mpfr_sqrt>)
           return mpreal(uni20::sqrt(x.exact_value()));
-        else if constexpr (Operation == mpfr_cbrt)
+        else if constexpr (same_function_v<Operation, mpfr_cbrt>)
         {
           if (auto root = rational_root(x.exact_value(), 3)) return mpreal(*root);
           throw std::logic_error("mpreal: cube root requires finite working precision");
         }
-        else if constexpr (Operation == mpfr_exp2)
+        else if constexpr (same_function_v<Operation, mpfr_exp2>)
           return mpreal(uni20::pow(exact_constant{2}, x.exact_value()));
-        else if constexpr (Operation == mpfr_log2)
+        else if constexpr (same_function_v<Operation, mpfr_log2>)
           return exact_logarithm(x.exact_value(), 2);
-        else if constexpr (Operation == mpfr_log10)
+        else if constexpr (same_function_v<Operation, mpfr_log10>)
           return exact_logarithm(x.exact_value(), 10);
         else
         {
           auto const& q = x.exact_value();
-          if constexpr (Operation == mpfr_exp || Operation == mpfr_cos || Operation == mpfr_cosh)
+          if constexpr (same_function_v<Operation, mpfr_exp> || same_function_v<Operation, mpfr_cos> ||
+                        same_function_v<Operation, mpfr_cosh>)
           {
             if (q == 0) return mpreal{1};
           }
-          else if constexpr (Operation == mpfr_log || Operation == mpfr_acos || Operation == mpfr_acosh)
+          else if constexpr (same_function_v<Operation, mpfr_log> || same_function_v<Operation, mpfr_acos> ||
+                             same_function_v<Operation, mpfr_acosh>)
           {
             if (q == 1) return mpreal{};
           }
-          else if constexpr (Operation == mpfr_sin || Operation == mpfr_tan || Operation == mpfr_atan ||
-                             Operation == mpfr_expm1 || Operation == mpfr_log1p || Operation == mpfr_asin ||
-                             Operation == mpfr_sinh || Operation == mpfr_tanh || Operation == mpfr_asinh ||
-                             Operation == mpfr_atanh)
+          else if constexpr (same_function_v<Operation, mpfr_sin> || same_function_v<Operation, mpfr_tan> ||
+                             same_function_v<Operation, mpfr_atan> || same_function_v<Operation, mpfr_expm1> ||
+                             same_function_v<Operation, mpfr_log1p> || same_function_v<Operation, mpfr_asin> ||
+                             same_function_v<Operation, mpfr_sinh> || same_function_v<Operation, mpfr_tanh> ||
+                             same_function_v<Operation, mpfr_asinh> || same_function_v<Operation, mpfr_atanh>)
           {
             if (q == 0) return mpreal{};
           }
@@ -495,26 +499,27 @@ struct mpreal_access
       auto p = common_precision(a.precision(), b.precision());
       if (p.is_exact())
       {
-        if constexpr (Operation == mpfr_add)
+        if constexpr (same_function_v<Operation, mpfr_add>)
           return mpreal(a.exact_value() + b.exact_value());
-        else if constexpr (Operation == mpfr_sub)
+        else if constexpr (same_function_v<Operation, mpfr_sub>)
           return mpreal(a.exact_value() - b.exact_value());
-        else if constexpr (Operation == mpfr_mul)
+        else if constexpr (same_function_v<Operation, mpfr_mul>)
           return mpreal(a.exact_value() * b.exact_value());
-        else if constexpr (Operation == mpfr_div)
+        else if constexpr (same_function_v<Operation, mpfr_div>)
           return mpreal(a.exact_value() / b.exact_value());
-        else if constexpr (Operation == mpfr_pow)
+        else if constexpr (same_function_v<Operation, mpfr_pow>)
           return mpreal(uni20::pow(a.exact_value(), b.exact_value()));
-        else if constexpr (Operation == mpfr_hypot)
+        else if constexpr (same_function_v<Operation, mpfr_hypot>)
           return mpreal(uni20::sqrt(a.exact_value() * a.exact_value() + b.exact_value() * b.exact_value()));
         else
         {
-          if constexpr (Operation == mpfr_atan2)
+          if constexpr (same_function_v<Operation, mpfr_atan2>)
             if (a.exact_value() == 0 && b.exact_value() > 0) return mpreal{};
           throw std::logic_error("mpreal: elementary function requires finite working precision");
         }
       }
-      if constexpr (Operation == mpfr_add || Operation == mpfr_sub || Operation == mpfr_mul || Operation == mpfr_div)
+      if constexpr (same_function_v<Operation, mpfr_add> || same_function_v<Operation, mpfr_sub> ||
+                    same_function_v<Operation, mpfr_mul> || same_function_v<Operation, mpfr_div>)
         if (a.is_exact() != b.is_exact()) return mixed<Operation>(a, b, p);
       mpreal av(uninitialized), bv(uninitialized);
       if (a.is_exact()) av = a.at(p);
