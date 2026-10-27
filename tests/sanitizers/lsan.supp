@@ -1,4 +1,14 @@
 # Intentionally retained Uni20 debug DAG metadata. Clang -g1 may omit the
 # NodeInfo qualification on inlined create<T> frames, so match its header.
-# Do not suppress Async generally, GMP/MPFR, or disable leak detection.
+# Do not suppress Async generally or disable leak detection.
 leak:uni20/async/async_node.hpp
+
+# MPFR's per-thread caches/pools can outlive terminating provider threads.
+# Match actual MPFR C frames, not libmpfr/GMP or Uni20's owning scalar wrappers.
+# Anchors matter: "mpfr_atan" also matches apply<&mpfr_atan>, which allocates
+# the result payload before calling MPFR and must remain leak-checked.
+# Function-based rules also exclude other internal allocations in these frames;
+# they are an opt-in test policy, not a claim that MPFR is leak-free.
+leak:^mpfr_atan$
+leak:^mpfr_cos$
+leak:^mpfr_cache$

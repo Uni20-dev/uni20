@@ -45,10 +45,15 @@ GPU, MPI, or macOS validation from a Linux CPU run.
 
 ## Sanitizer boundaries
 
-Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. An embedding
-application that supplies global `-fsanitize` flags must also set this option
-to activate Uni20's dependency policy; the option alone does not instrument
-parent-directory application targets.
+Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. Commas and
+semicolons are both accepted, including mixed lists. Quote semicolon-separated
+arguments in a shell, for example `'-DUNI20_SANITIZE=address;undefined'`.
+Compiler flags, dependency policies, and sanitizer test registration all use
+the same normalized list.
+
+An embedding application that supplies global `-fsanitize` flags must also set
+this option to activate Uni20's dependency policy; the option alone does not
+instrument parent-directory application targets.
 
 The compiled oneTBB scheduling runtime (`TBB::tbb`) is excluded from address,
 undefined-behavior and thread instrumentation because of known provider
@@ -66,7 +71,8 @@ implementation even without instrumentation, avoiding a switch to
 `UNI20_DEBUG_DAG` deliberately retains `NodeInfo` metadata for process-lifetime
 diagnostics. This is an accepted diagnostic allocation policy, not ownership of
 the calculation's result payload. When leak-checking with DAG diagnostics
-enabled, explicitly select the debug-metadata suppression:
+enabled, or MPFR caches on terminating provider threads, explicitly select
+Uni20's test suppression policy:
 
 ```sh
 DEBUGINFOD_URLS= \
@@ -88,16 +94,42 @@ not in the library or the user's global shell configuration. See
 The file matches allocation stacks in `uni20/async/async_node.hpp`, the
 debug-metadata header. Matching the source path also covers inlined factories
 whose qualified names are absent from reduced debug information. Leak detection
-remains enabled; general Async and numerical-provider allocation stacks are not
-suppressed. Suppression statistics are quiet so that successful CLI calls keep
-their usual stderr behavior; actual errors still print and fail. This does not
+remains enabled; general Async allocation stacks are not suppressed.
+
+The same file suppresses observed MPFR cache/pool allocations through the exact
+C functions `mpfr_atan`, `mpfr_cos`, and `mpfr_cache`. These caches belong to
+operating-system threads and can remain allocated after a provider thread
+terminates. They are separate from the result storage owned by `mpreal`, which
+is released by its destructor. See [MPFR's memory-handling contract](https://www.mpfr.org/mpfr-current/mpfr.html#Memory-Handling).
+This is an opt-in test policy, not runtime cleanup or a claim that every MPFR
+allocation is harmless. A function-based rule also excludes other internal
+allocations with that function in their stack; do not broaden it to GMP,
+`libmpfr`, or all `mpreal` allocations.
+
+Keep the `^...$` anchors: LSan matches patterns against every symbolized stack
+frame, and an unanchored `mpfr_atan` also matches the C++ wrapper
+`mpreal_access::apply<&mpfr_atan>`. That wrapper allocates the owning result
+*before* calling MPFR, so a substring rule could hide a real leaked payload.
+Linux ASan/LSan builds with MPFR register `Sanitizers.MpfrCachePolicy`, which
+compares retained caches with explicit local cleanup and verifies that leaked
+`mpreal` payloads and ordinary heap allocations still fail. The isolated probe
+disables LSan's TLS roots to expose cache allocations without depending on
+worker scheduling or termination; ordinary application tests retain TLS roots.
+Local symbolization must be available for these checks; set
+`ASAN_SYMBOLIZER_PATH` to the matching `llvm-symbolizer` if it is not on `PATH`.
+See [LLVM's suppression documentation](https://clang.llvm.org/docs/LeakSanitizer.html#suppressions).
+
+Downstream applications should select this file from their pinned Uni20 source
+instead of maintaining independent MPFR rules. Suppression statistics are quiet
+so that successful CLI calls keep their usual stderr behavior; actual errors
+still print and fail. This does not
 change allocation or lifetime behavior in ordinary builds. For a complementary
 leak check without retained diagnostic pointers, use `UNI20_DEBUG_DAG=OFF`.
 
 Runtime reclamation is deferred. The async documentation records future options
 for [diagnostic metadata](../async/task_registry_debug.md#diagnostic-memory-lifetime-and-deferred-reclamation-options)
 and [MPFR caches](../async/tbb_execution_primer.md#mpfr-cache-lifetime-and-deferred-cleanup-options).
-These proposals add no cleanup API and do not broaden the leak suppression.
+These proposals add no cleanup API.
 
 ## Test Layout
 

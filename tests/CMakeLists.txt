@@ -3,6 +3,7 @@
 enable_testing()
 include(GoogleTest)
 add_subdirectory(cmake)
+add_subdirectory(sanitizers)
 
 # Add subdirectories that contribute source files
 add_subdirectory(core)
