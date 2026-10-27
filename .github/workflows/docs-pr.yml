@@ -22,6 +22,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Test documentation checker
+        run: python3 -m unittest discover -s tests/docs -v
+
+      - name: Check documentation links and indexes
+        run: python3 scripts/check-docs.py
+
       - name: Install documentation tools
         run: |
           sudo apt-get update -y
