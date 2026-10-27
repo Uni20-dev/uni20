@@ -95,6 +95,7 @@ read/write history. Uni20 tensor operations accept either ordinary tensors or
 their asynchronous counterparts with the same names and mathematical meaning.
 The intended change to an algorithm is deliberately small:
 
+<!-- tested-snippet: product-step -->
 ```cpp
 template <class Matrix>
 void product_step(Matrix& output, Matrix const& lhs, Matrix const& rhs)
@@ -102,7 +103,12 @@ void product_step(Matrix& output, Matrix const& lhs, Matrix const& rhs)
   uni20::linalg::assign_product(output, lhs, rhs);
   uni20::linalg::add_product(output, lhs, rhs, 0.5);
 }
+```
 
+Call the same function with either ordinary or asynchronous matrices:
+
+<!-- tested-snippet: product-step-calls -->
+```cpp
 product_step(output, lhs, rhs);                         // DenseMatrix<T>
 product_step(async_output, async_lhs, async_rhs);       // Async<DenseMatrix<T>>
 ```
