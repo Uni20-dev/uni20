@@ -1,6 +1,13 @@
 # tests/core/CMakeLists.txt
 
 if(UNI20_HAS_MPREAL)
+  # Compile the real/complex dispatch headers with UBSan even in ordinary CI
+  # builds. No executable or sanitizer runtime is needed for this regression.
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_library(uni20_mpfr_ubsan_compile OBJECT test_mpfr_ubsan_compile.cpp)
+    target_link_libraries(uni20_mpfr_ubsan_compile PRIVATE uni20_core)
+    target_compile_options(uni20_mpfr_ubsan_compile PRIVATE -fsanitize=undefined)
+  endif()
   add_test_module(mpfr_conversion SOURCES test_mpreal_native_conversion.cpp LIBS uni20_core)
   add_test_module(mpfr SOURCES test_mpreal.cpp test_mpreal_elementary.cpp test_mpreal_utilities.cpp test_mpreal_special.cpp test_mpreal_extensions.cpp test_exact_constant.cpp test_scaled_rational.cpp LIBS uni20_core uni20_async TBB::tbb)
 endif()

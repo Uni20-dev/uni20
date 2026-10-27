@@ -54,15 +54,15 @@ template <auto Operation> mpreal special_unary(mpreal const& x)
   if (p.is_exact())
   {
     auto const& q = x.exact_value();
-    if constexpr (Operation == mpfr_gamma)
+    if constexpr (same_function_v<Operation, mpfr_gamma>)
       return exact_gamma(q);
-    else if constexpr (Operation == mpfr_zeta)
+    else if constexpr (same_function_v<Operation, mpfr_zeta>)
       return exact_zeta(q);
-    else if constexpr (Operation == mpfr_erf || Operation == mpfr_li2)
+    else if constexpr (same_function_v<Operation, mpfr_erf> || same_function_v<Operation, mpfr_li2>)
     {
       if (q == 0) return mpreal{};
     }
-    else if constexpr (Operation == mpfr_erfc)
+    else if constexpr (same_function_v<Operation, mpfr_erfc>)
     {
       if (q == 0) return mpreal{1};
     }
@@ -99,13 +99,13 @@ template <auto Operation> mpreal special_binary(mpreal const& a, mpreal const& b
   auto p = common_precision(a.precision(), b.precision());
   if (p.is_exact())
   {
-    if constexpr (Operation == mpfr_beta)
+    if constexpr (same_function_v<Operation, mpfr_beta>)
       return exact_beta(a.exact_value(), b.exact_value());
-    else if constexpr (Operation == mpfr_gamma_inc)
+    else if constexpr (same_function_v<Operation, mpfr_gamma_inc>)
     {
       if (b == 0) return exact_gamma(a.exact_value());
     }
-    else if constexpr (Operation == mpfr_agm)
+    else if constexpr (same_function_v<Operation, mpfr_agm>)
     {
       if (a >= 0 && b >= 0)
       {
@@ -219,7 +219,7 @@ template <auto Operation> mpreal integer_bessel(mpreal const& x, std::int64_t or
   auto p = x.precision();
   if (p.is_exact())
   {
-    if constexpr (Operation == mpfr_jn)
+    if constexpr (same_function_v<Operation, mpfr_jn>)
       if (x == 0) return mpreal{order == 0 ? 1 : 0};
     throw std::logic_error("Bessel function requires finite working precision");
   }

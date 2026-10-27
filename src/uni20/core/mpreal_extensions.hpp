@@ -47,17 +47,18 @@ template <auto Operation> mpreal extended_unary(mpreal const& x)
   if (p.is_exact())
   {
     auto const& q = x.exact_value();
-    if constexpr (Operation == mpfr_exp10)
+    if constexpr (same_function_v<Operation, mpfr_exp10>)
       return mpreal(uni20::pow(exact_constant{10}, q));
-    else if constexpr (Operation == mpfr_exp2m1 || Operation == mpfr_exp10m1)
-      return mpreal(uni20::pow(exact_constant{Operation == mpfr_exp2m1 ? 2 : 10}, q) - exact_constant{1});
-    else if constexpr (Operation == mpfr_log2p1 || Operation == mpfr_log10p1)
-      return mpreal_access::exact_logarithm(q + exact_constant{1}, Operation == mpfr_log2p1 ? 2 : 10);
-    else if constexpr (Operation == mpfr_sinpi)
+    else if constexpr (same_function_v<Operation, mpfr_exp2m1> || same_function_v<Operation, mpfr_exp10m1>)
+      return mpreal(uni20::pow(exact_constant{same_function_v<Operation, mpfr_exp2m1> ? 2 : 10}, q) -
+                    exact_constant{1});
+    else if constexpr (same_function_v<Operation, mpfr_log2p1> || same_function_v<Operation, mpfr_log10p1>)
+      return mpreal_access::exact_logarithm(q + exact_constant{1}, same_function_v<Operation, mpfr_log2p1> ? 2 : 10);
+    else if constexpr (same_function_v<Operation, mpfr_sinpi>)
       return rational_sinpi(q);
-    else if constexpr (Operation == mpfr_cospi)
+    else if constexpr (same_function_v<Operation, mpfr_cospi>)
       return rational_sinpi(q + exact_constant{1} / exact_constant{2});
-    else if constexpr (Operation == mpfr_tanpi)
+    else if constexpr (same_function_v<Operation, mpfr_tanpi>)
     {
       auto quarters = q * exact_constant{4};
       auto value = quarters.native_handle();
@@ -76,16 +77,16 @@ template <auto Operation> mpreal extended_unary(mpreal const& x)
         }
       }
     }
-    else if constexpr (Operation == mpfr_asinpi)
+    else if constexpr (same_function_v<Operation, mpfr_asinpi>)
       return rational_asinpi(q);
-    else if constexpr (Operation == mpfr_acospi)
+    else if constexpr (same_function_v<Operation, mpfr_acospi>)
       return mpreal(exact_constant{1} / exact_constant{2} - rational_asinpi(q).exact_value());
-    else if constexpr (Operation == mpfr_atanpi)
+    else if constexpr (same_function_v<Operation, mpfr_atanpi>)
     {
       if (q == 0) return mpreal{};
       if (q == 1 || q == -1) return mpreal(q / exact_constant{4});
     }
-    else if constexpr (Operation == mpfr_sec || Operation == mpfr_sech)
+    else if constexpr (same_function_v<Operation, mpfr_sec> || same_function_v<Operation, mpfr_sech>)
     {
       if (q == 0) return mpreal{1};
     }

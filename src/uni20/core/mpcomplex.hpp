@@ -243,23 +243,23 @@ struct mpcomplex_access
       if (p.is_exact())
       {
         auto const& q = std::get<exact_complex>(x.value_);
-        if constexpr (Operation == mpc_neg)
+        if constexpr (same_function_v<Operation, mpc_neg>)
           return mpcomplex(exact_complex{-q.re, -q.im});
-        else if constexpr (Operation == mpc_conj)
+        else if constexpr (same_function_v<Operation, mpc_conj>)
           return mpcomplex(exact_complex{q.re, -q.im});
-        else if constexpr (Operation == mpc_sqrt)
+        else if constexpr (same_function_v<Operation, mpc_sqrt>)
           return exact_sqrt(x);
         else
         {
-          if constexpr (Operation == mpc_exp || Operation == mpc_cos)
+          if constexpr (same_function_v<Operation, mpc_exp> || same_function_v<Operation, mpc_cos>)
           {
             if (q.re == 0 && q.im == 0) return mpcomplex{1};
           }
-          else if constexpr (Operation == mpc_log)
+          else if constexpr (same_function_v<Operation, mpc_log>)
           {
             if (q.re == 1 && q.im == 0) return mpcomplex{};
           }
-          else if constexpr (Operation == mpc_sin)
+          else if constexpr (same_function_v<Operation, mpc_sin>)
           {
             if (q.re == 0 && q.im == 0) return mpcomplex{};
           }
@@ -273,9 +273,9 @@ struct mpcomplex_access
     template <auto Operation> static mpcomplex mixed_finite(mpcomplex const& a, mpcomplex const& b, Precision p)
     {
       auto ar = a.real(), ai = a.imag(), br = b.real(), bi = b.imag();
-      if constexpr (Operation == mpc_add)
+      if constexpr (same_function_v<Operation, mpc_add>)
         return mpcomplex(ar + br, ai + bi, p);
-      else if constexpr (Operation == mpc_sub)
+      else if constexpr (same_function_v<Operation, mpc_sub>)
         return mpcomplex(ar - br, ai - bi, p);
       else
       {
@@ -286,7 +286,7 @@ struct mpcomplex_access
           auto yr = mpreal_access::stored_scaled(br), yi = mpreal_access::stored_scaled(bi);
           auto rr = xr * yr, ii = xi * yi, ri = xr * yi, ir = xi * yr;
           mpcomplex result(p);
-          if constexpr (Operation == mpc_mul)
+          if constexpr (same_function_v<Operation, mpc_mul>)
           {
             scaled_rational_ratio({rr, -ii, {exact_constant{1}, 0}, {}}).round_to(mpc_realref(result.approximate()));
             scaled_rational_ratio({ri, ir, {exact_constant{1}, 0}, {}}).round_to(mpc_imagref(result.approximate()));
@@ -303,10 +303,10 @@ struct mpcomplex_access
           bool const ri_negative = signbit(ar) != signbit(bi), ir_negative = signbit(ai) != signbit(br);
           if (rr.coefficient == 0 && ii.coefficient == 0)
             mpfr_set_zero(mpc_realref(result.approximate()),
-                          (rr_negative && (Operation == mpc_mul ? !ii_negative : ii_negative)) ? -1 : 1);
+                          (rr_negative && (same_function_v<Operation, mpc_mul> ? !ii_negative : ii_negative)) ? -1 : 1);
           if (ri.coefficient == 0 && ir.coefficient == 0)
             mpfr_set_zero(mpc_imagref(result.approximate()),
-                          (ir_negative && (Operation == mpc_mul ? ri_negative : !ri_negative)) ? -1 : 1);
+                          (ir_negative && (same_function_v<Operation, mpc_mul> ? ri_negative : !ri_negative)) ? -1 : 1);
           return result;
         }
         auto xr = mpreal_access::stored_rational(ar), xi = mpreal_access::stored_rational(ai);
@@ -321,7 +321,7 @@ struct mpcomplex_access
         bool const ir_negative = signbit(ai) != signbit(br);
         exact_complex value;
         bool re_negative_zero, im_negative_zero;
-        if constexpr (Operation == mpc_mul)
+        if constexpr (same_function_v<Operation, mpc_mul>)
         {
           value = {rr - ii, ri + ir};
           re_negative_zero = rr == 0 && ii == 0 && rr_negative && !ii_negative;
@@ -349,20 +349,20 @@ struct mpcomplex_access
       {
         auto const& x = std::get<exact_complex>(a.value_);
         auto const& y = std::get<exact_complex>(b.value_);
-        if constexpr (Operation == mpc_add)
+        if constexpr (same_function_v<Operation, mpc_add>)
           return mpcomplex(exact_complex{x.re + y.re, x.im + y.im});
-        else if constexpr (Operation == mpc_sub)
+        else if constexpr (same_function_v<Operation, mpc_sub>)
           return mpcomplex(exact_complex{x.re - y.re, x.im - y.im});
-        else if constexpr (Operation == mpc_mul)
+        else if constexpr (same_function_v<Operation, mpc_mul>)
           return mpcomplex(exact_complex{x.re * y.re - x.im * y.im, x.re * y.im + x.im * y.re});
-        else if constexpr (Operation == mpc_div)
+        else if constexpr (same_function_v<Operation, mpc_div>)
         {
           auto d = y.re * y.re + y.im * y.im;
           return mpcomplex(exact_complex{(x.re * y.re + x.im * y.im) / d, (x.im * y.re - x.re * y.im) / d});
         }
         else
         {
-          if constexpr (Operation == mpc_pow)
+          if constexpr (same_function_v<Operation, mpc_pow>)
           {
             if (y.im == 0)
             {
@@ -376,14 +376,15 @@ struct mpcomplex_access
           throw std::logic_error("complex<mpreal>: elementary function requires finite working precision");
         }
       }
-      if constexpr (Operation == mpc_add || Operation == mpc_sub || Operation == mpc_mul || Operation == mpc_div)
+      if constexpr (same_function_v<Operation, mpc_add> || same_function_v<Operation, mpc_sub> ||
+                    same_function_v<Operation, mpc_mul> || same_function_v<Operation, mpc_div>)
       {
         if (a.is_exact() != b.is_exact())
         {
           auto const& approximate = a.is_exact() ? b : a;
           auto native = approximate.native_handle();
           bool const finite = mpfr_number_p(mpc_realref(native)) && mpfr_number_p(mpc_imagref(native));
-          if (finite && (Operation != mpc_div || b.real() != 0 || b.imag() != 0))
+          if (finite && (!same_function_v<Operation, mpc_div> || b.real() != 0 || b.imag() != 0))
             return mixed_finite<Operation>(a, b, p);
         }
       }
@@ -411,7 +412,7 @@ struct mpcomplex_access
       auto p = x.precision();
       if (p.is_exact())
       {
-        if constexpr (Operation == mpc_norm)
+        if constexpr (same_function_v<Operation, mpc_norm>)
         {
           auto const& q = std::get<exact_complex>(x.value_);
           return mpreal(q.re * q.re + q.im * q.im);
@@ -419,9 +420,9 @@ struct mpcomplex_access
         else
         {
           auto const& q = std::get<exact_complex>(x.value_);
-          if constexpr (Operation == mpc_abs)
+          if constexpr (same_function_v<Operation, mpc_abs>)
             return mpreal(uni20::sqrt(q.re * q.re + q.im * q.im));
-          else if constexpr (Operation == mpc_arg)
+          else if constexpr (same_function_v<Operation, mpc_arg>)
             if (q.im == 0 && q.re > 0) return mpreal{};
           throw std::logic_error("complex<mpreal>: elementary function requires finite working precision");
         }
