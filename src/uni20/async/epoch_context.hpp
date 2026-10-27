@@ -441,6 +441,21 @@ class EpochContext {
       return true;
     }
 
+    // Notify about availability, without reserving the gate. The waiting writer
+    // still acquires through writer_try_make_active() and may need to wait again.
+    void writer_notify_when_ready(std::function<void()> notify)
+    {
+      std::unique_lock lock(mtx_);
+      DEBUG_CHECK(phase_ <= Phase::Writing);
+      if (phase_ == Phase::Writing && !writer_active_)
+      {
+        lock.unlock();
+        notify();
+        return;
+      }
+      writer_ready_waiters_.push_back(std::move(notify));
+    }
+
     void writer_set_exception(std::exception_ptr e) noexcept
     {
       std::lock_guard lock(mtx_);
@@ -504,6 +519,10 @@ class EpochContext {
         auto NextTask = std::move(writer_tasks_.back());
         writer_tasks_.pop_back();
         this->execute_writer_locked(std::move(lock), std::move(NextTask));
+      }
+      else
+      {
+        this->notify_writers_locked(std::move(lock));
       }
 
       return false;
@@ -634,7 +653,10 @@ class EpochContext {
         return;
       }
 
-      if (num_writers_ == 0) this->advance_reading_locked(std::move(lock));
+      if (num_writers_ == 0)
+        this->advance_reading_locked(std::move(lock));
+      else
+        this->notify_writers_locked(std::move(lock));
     }
 
     void advance_reading_locked(std::unique_lock<std::mutex> lock) noexcept
@@ -674,6 +696,18 @@ class EpochContext {
       writer_active_ = true;
       lock.unlock();
       BasicTask::reschedule(std::move(task.task));
+    }
+
+    void notify_writers_locked(std::unique_lock<std::mutex> lock) noexcept
+    {
+      DEBUG_CHECK(phase_ == Phase::Writing && !writer_active_);
+      // As with reader callbacks, notification can release the last epoch owner.
+      // Move callbacks out and do not access this after unlocking.
+      std::vector<std::function<void()>> waiters;
+      waiters.swap(writer_ready_waiters_);
+      lock.unlock();
+      for (auto& notify : waiters)
+        notify();
     }
 
     void execute_readers_locked(std::unique_lock<std::mutex> lock)
@@ -723,8 +757,9 @@ class EpochContext {
 
     // Writer interface
     int total_writers_{0};
-    int num_writers_{0}; ///< number of active writers
+    int num_writers_{0}; ///< Outstanding writer handles, including waiting writers; prevents Reading until zero.
     std::vector<TaskState> writer_tasks_;
+    std::vector<std::function<void()>> writer_ready_waiters_;
     bool writer_active_{false};
 
     // Reader interface

@@ -330,7 +330,12 @@ template <typename T> T&& EpochContextWriter<T>::move_from_wait()
   if (!this->ready())
   {
     CHECK(sched);
-    sched->wait_for([this] { return this->ready(); });
+    auto epoch = this->epoch_context_shared();
+    sched->wait_for(IAsyncScheduler::WaitRequest{
+        .is_ready = [this] { return this->ready(); },
+        .notify_when_ready =
+            [epoch](IAsyncScheduler::WaitWakeup notify) { epoch->writer_notify_when_ready(std::move(notify)); },
+    });
   }
   return std::move(this->data());
 }

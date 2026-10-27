@@ -368,7 +368,7 @@ template <uni20::RealOrComplex Scalar, uni20::BlockTensorStorage MpsStorage> int
     return std::nullopt;
   }();
   uni20::async::TbbScheduler scheduler{
-      static_cast<int>(run.block_threads), {}, {.maximum_concurrency = batch_concurrency}};
+      static_cast<int>(run.block_threads), {.maximum_concurrency = batch_concurrency}};
   uni20::async::ScopedScheduler use_scheduler(&scheduler);
   auto const local = uni20::models::make_spin_half_u1_site();
   auto mps = make_initial_mps<Scalar, MpsStorage>(run, local);

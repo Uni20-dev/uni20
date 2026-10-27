@@ -93,7 +93,7 @@ See [Kernel Dispatch](architecture/kernel_dispatch.md),
 - Exceptions and cancellation propagate to output epochs; multi-output tasks
   can publish independent results or the same failure.
 - Task-registry snapshots, presentation reports, optional stacktraces, signal
-  triggers, watchdog controls, and Graphviz output support diagnosis.
+  triggers and Graphviz output support diagnosis.
 - Async fixed-output contraction, GEMM, GEMV, matrix initialization and
   exponential, dense solve, matrix-product overwrite/update, preserving or
   consuming QR/LQ/self-adjoint `eigh`/exact and truncating SVD, and general
@@ -221,8 +221,8 @@ not add a second meaning to the current fixed-rank mdspan-based `Tensor`.
   consumption remain operation-specific Tensor concerns.
 - Improve deadlock and task-provenance diagnostics without adding meaningful
   cost when instrumentation is disabled.
-- Integrate future CUDA/MPI external waits with watchdog state so a legitimate
-  device or communication wait is not diagnosed as stalled CPU dataflow.
+- Integrate future CUDA/MPI external completions with targeted readiness
+  notifications, including when no CPU tasks are runnable.
 
 ### 4. Extend the symmetry-aware block tensor
 

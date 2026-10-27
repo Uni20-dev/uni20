@@ -173,7 +173,7 @@ child route.
 `TbbCudaScheduler` is the parallel implementation. It extends `TbbScheduler`
 with one worker-only oneTBB arena per enrolled CUDA device. The host arena and
 all device arenas share one scheduler route, task group, pause state, wait
-state, and watchdog accounting. The default constructor enrolls every visible
+state. The default constructor enrolls every visible
 device; tests may provide an explicit device set.
 
 Each device arena has a `task_scheduler_observer`. The observer saves and

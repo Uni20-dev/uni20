@@ -15,7 +15,7 @@ add_test_module(async
 # https://github.com/google/googletest/blob/main/docs/advanced.md#death-tests-and-threads
 add_test_module(async_tbb
   SOURCES test_tbb_numa_scheduler.cpp test_scheduler_stress.cpp test_tbb_scheduler.cpp
-          test_tbb_single_concurrency.cpp
+          test_tbb_single_concurrency.cpp test_tbb_wait.cpp
   LIBS uni20_common uni20_async TBB::tbb
 )
 

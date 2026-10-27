@@ -29,22 +29,6 @@
 
 using namespace uni20::async;
 
-namespace
-{
-class ErrorModeGuard {
-  public:
-    ErrorModeGuard() : previous_(trace::get_formatting_options().errors_abort())
-    {
-      trace::get_formatting_options().set_errors_abort(false);
-    }
-
-    ~ErrorModeGuard() { trace::get_formatting_options().set_errors_abort(previous_); }
-
-  private:
-    bool previous_;
-};
-} // namespace
-
 #if UNI20_DEBUG_ASYNC_TASKS
 namespace
 {
@@ -113,7 +97,7 @@ TEST(TbbScheduler, LightweightBatchExecutesEveryIndexExactlyOnce)
 
 TEST(TbbScheduler, LightweightBatchConcurrencyCanBeLimitedIndependentlyOfArena)
 {
-  TbbScheduler scheduler{4, {}, {.maximum_concurrency = 2}};
+  TbbScheduler scheduler{4, {.maximum_concurrency = 2}};
   std::array<std::atomic<int>, 8> counts{};
   std::atomic<std::size_t> active{0};
   std::atomic<std::size_t> peak{0};
@@ -210,19 +194,6 @@ TEST(TbbScheduler, AsyncAccumulationGetWait)
   EXPECT_EQ(x.get_wait(), iterations);
 }
 
-TEST(TbbScheduler, WatchdogDefaultFollowsAsyncDebugMode)
-{
-  using namespace std::chrono_literals;
-
-  TbbSchedulerWaitOptions const options;
-#if UNI20_ASYNC_DEBUG
-  ASSERT_TRUE(options.watchdog_timeout.has_value());
-  EXPECT_EQ(*options.watchdog_timeout, 5s);
-#else
-  EXPECT_FALSE(options.watchdog_timeout.has_value());
-#endif
-}
-
 TEST(TbbScheduler, OneParticipantTopLevelGetWaitExecutesDependency)
 {
   oneapi::tbb::global_control single_participant(oneapi::tbb::global_control::max_allowed_parallelism, 1);
@@ -296,11 +267,8 @@ TEST(TbbScheduler, SaturatedArenaAcceptsAdmissionAndResumptionWithoutParticipati
 
 TEST(TbbScheduler, OneParticipantNestedGetWaitSupportsRepeatedSuspension)
 {
-  using namespace std::chrono_literals;
-
-  ErrorModeGuard error_mode;
   oneapi::tbb::global_control single_participant(oneapi::tbb::global_control::max_allowed_parallelism, 1);
-  TbbScheduler sched{1, {.watchdog_timeout = 500ms}};
+  TbbScheduler sched{1};
   ScopedScheduler guard(&sched);
 
   Async<int> result;
@@ -320,12 +288,10 @@ TEST(TbbScheduler, OneParticipantNestedGetWaitSupportsRepeatedSuspension)
   EXPECT_EQ(result.get_wait(), 12);
 }
 
-TEST(TbbScheduler, IdleWaitAcceptsWorkSubmittedBeforeWatchdogDeadline)
+TEST(TbbScheduler, IdleWaitAcceptsLaterSubmission)
 {
-  using namespace std::chrono_literals;
-
   oneapi::tbb::global_control single_participant(oneapi::tbb::global_control::max_allowed_parallelism, 1);
-  TbbScheduler sched{1, {.watchdog_timeout = 500ms}};
+  TbbScheduler sched{1};
   ScopedScheduler guard(&sched);
 
   Async<int> result;
@@ -339,45 +305,6 @@ TEST(TbbScheduler, IdleWaitAcceptsWorkSubmittedBeforeWatchdogDeadline)
   });
 
   EXPECT_EQ(result.get_wait(), 17);
-}
-
-TEST(TbbScheduler, RunnableWorkGenerationResetsIdleWatchdog)
-{
-  using namespace std::chrono_literals;
-
-  oneapi::tbb::global_control single_participant(oneapi::tbb::global_control::max_allowed_parallelism, 1);
-  TbbScheduler sched{1, {.watchdog_timeout = 400ms}};
-  ScopedScheduler guard(&sched);
-
-  Async<int> result;
-  auto writer = result.write();
-  std::jthread submitter([&sched, writer = std::move(writer)]() mutable {
-    std::this_thread::sleep_for(200ms);
-    sched.schedule([]() static -> AsyncTask { co_return; }());
-
-    std::this_thread::sleep_for(300ms);
-    sched.schedule([](WriteBuffer<int> output) static -> AsyncTask {
-      co_await output = 23;
-      co_return;
-    }(std::move(writer)));
-  });
-
-  EXPECT_EQ(result.get_wait(), 23);
-}
-
-TEST(TbbScheduler, IdleWaitWatchdogRaisesTimeout)
-{
-  using namespace std::chrono_literals;
-
-  ErrorModeGuard error_mode;
-  oneapi::tbb::global_control single_participant(oneapi::tbb::global_control::max_allowed_parallelism, 1);
-  TbbScheduler sched{1, {.watchdog_timeout = 20ms}};
-  ScopedScheduler guard(&sched);
-
-  Async<int> result;
-  auto pending_writer = result.write();
-  EXPECT_THROW((void)result.get_wait(), async_wait_timeout);
-  pending_writer.release();
 }
 
 TEST(TbbScheduler, CoroutineAndAsync)

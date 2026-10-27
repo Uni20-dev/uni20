@@ -120,8 +120,6 @@ struct TbbCudaSchedulerOptions
     /// Device used to route CUDA tasks that have not established affinity.
     /// The first enrolled device is used when this is empty.
     std::optional<int> default_cuda_device{};
-    /// Blocking-wait watchdog policy shared by every task domain.
-    TbbSchedulerWaitOptions wait_options{};
 };
 
 /// \brief Unified oneTBB scheduler with one host arena and one arena per CUDA device.
@@ -141,7 +139,7 @@ class TbbCudaScheduler final : public TbbScheduler, public ICudaScheduler {
     /// \param devices Validated devices to enroll.
     /// \param options Host and per-device arena configuration.
     explicit TbbCudaScheduler(std::vector<cuda::Device> devices, TbbCudaSchedulerOptions options = {})
-        : TbbScheduler(options.host_max_concurrency, std::move(options.wait_options))
+        : TbbScheduler(options.host_max_concurrency)
     {
       device_arenas_.reserve(devices.size());
       for (auto device : devices)
