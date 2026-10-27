@@ -1,7 +1,9 @@
 # Keep the historical oneTBB instrumentation boundary local to its compiled
 # implementation. Public headers instantiated by consumers remain instrumented.
 function(uni20_configure_tbb_sanitizers)
-  if(NOT UNI20_SANITIZE MATCHES "(^|,)(address|undefined|thread)(,|$)")
+  if(NOT "address" IN_LIST UNI20_SANITIZE_LIST
+     AND NOT "undefined" IN_LIST UNI20_SANITIZE_LIST
+     AND NOT "thread" IN_LIST UNI20_SANITIZE_LIST)
     return()
   endif()
 
@@ -19,7 +21,7 @@ function(uni20_configure_tbb_sanitizers)
   # Source properties set here would not reach oneTBB's directory. PRIVATE
   # target options apply there without disabling checks in linked consumers.
   target_compile_options("${_tbb_target}" PRIVATE -fno-sanitize=all)
-  if(UNI20_SANITIZE MATCHES "(^|,)(address|thread)(,|$)")
+  if("address" IN_LIST UNI20_SANITIZE_LIST OR "thread" IN_LIST UNI20_SANITIZE_LIST)
     # Disabling instrumentation also disables the compiler's sanitizer macros.
     # Preserve oneTBB's sanitizer-selected coroutine implementation: switching
     # an instrumented caller through makecontext/swapcontext is unsupported.

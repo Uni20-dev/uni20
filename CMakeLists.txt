@@ -140,9 +140,7 @@ if(UNI20_ENABLE_STACKTRACE AND NOT UNI20_STACKTRACE_AVAILABLE)
     "std::stacktrace. Configure with -DUNI20_ENABLE_STACKTRACE=OFF for degraded diagnostics or use a "
     "toolchain with stacktrace support.")
 endif()
-set(UNI20_SANITIZE "" CACHE STRING
-    "Enable sanitizers (comma-separated list: address,undefined,thread,memory,leak)")
-set_property(CACHE UNI20_SANITIZE PROPERTY TYPE STRING)
+include(Uni20Sanitizers)
 include(Uni20Initialization)
 option(UNI20_EXTERNAL_NO_WERROR   "Disable -Werror for external libraries" ON)
 option(UNI20_EXTERNAL_NO_WARN     "Disable all warnings for external libraries" OFF)
@@ -306,10 +304,7 @@ endforeach()
 
 if(UNI20_SANITIZE)
   message(STATUS "Enabling sanitizers: ${UNI20_SANITIZE}")
-  # Split comma-separated UNI20_SANITIZE into a proper CMake list
-  string(REPLACE "," ";" UNI20_SANITIZE_LIST "${UNI20_SANITIZE}")
-
-  foreach(san ${UNI20_SANITIZE_LIST})
+  foreach(san IN LISTS UNI20_SANITIZE_LIST)
     if(san STREQUAL "memory" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       message(FATAL_ERROR "UNI20_SANITIZE=memory requires Clang MemorySanitizer; GCC builds can use Valgrind Memcheck.")
     endif()

@@ -1,7 +1,7 @@
 # LSan subprocess controls intentionally fail on real leaks. Other builds do
 # not register these checks; Linux is the validated LSan runtime here.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND UNI20_HAS_MPREAL
-   AND UNI20_SANITIZE MATCHES "(^|,)(address|leak)(,|$)")
+   AND ("address" IN_LIST UNI20_SANITIZE_LIST OR "leak" IN_LIST UNI20_SANITIZE_LIST))
   add_executable(uni20_mpfr_cache_probe mpfr_cache_probe.cpp)
   target_link_libraries(uni20_mpfr_cache_probe PRIVATE uni20_core)
   # Keep the owning-result allocation stack visible, including the templated

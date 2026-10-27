@@ -45,10 +45,15 @@ GPU, MPI, or macOS validation from a Linux CPU run.
 
 ## Sanitizer boundaries
 
-Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. An embedding
-application that supplies global `-fsanitize` flags must also set this option
-to activate Uni20's dependency policy; the option alone does not instrument
-parent-directory application targets.
+Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. Commas and
+semicolons are both accepted, including mixed lists. Quote semicolon-separated
+arguments in a shell, for example `'-DUNI20_SANITIZE=address;undefined'`.
+Compiler flags, dependency policies, and sanitizer test registration all use
+the same normalized list.
+
+An embedding application that supplies global `-fsanitize` flags must also set
+this option to activate Uni20's dependency policy; the option alone does not
+instrument parent-directory application targets.
 
 The compiled oneTBB scheduling runtime (`TBB::tbb`) is excluded from address,
 undefined-behavior and thread instrumentation because of known provider
