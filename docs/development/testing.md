@@ -147,14 +147,19 @@ Current test modules include:
 
 - `tests/async`
 - `tests/backend`
+- `tests/cli` (only when `UNI20_BUILD_CLI=ON`)
 - `tests/common`
 - `tests/cmake` (downstream configure, build, and execution regressions)
 - `tests/core`
+- `tests/docs` (Python documentation-checker regressions, run by Docs PR CI)
 - `tests/kernel`
 - `tests/krylov`
 - `tests/linalg`
 - `tests/mdspan`
+- `tests/models`
 - `tests/numerics` (shared real/complex precision and backend matrix)
+- `tests/sanitizers` (optional instrumentation and suppression probes)
+- `tests/symmetry`
 - `tests/tensor`
 - `tests/python` (only when `UNI20_BUILD_PYTHON=ON`)
 

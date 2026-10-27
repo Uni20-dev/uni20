@@ -18,17 +18,37 @@ front-end operation semantics.
   generated values, layout-aware materialization, and reshape behavior.
 - [Scalar Policy](scalar_policy.md) defines Uni20 scalar spellings, concepts,
   promotion boundaries, numeric limits, and optional binary128 behavior.
+- [Arbitrary-Precision Scalars](mpreal.md) defines exact and finite-precision
+  real/complex values, construction, arithmetic, and tensor defaults.
 - [Shared Scalar Math Dispatch](scalar_math_design.md) defines the `uni20::math`
   interface, ADL customization, native precision and component-value semantics.
 - [Native Special Functions and Constants](native_special_functions.md) documents
   Beta, zeta, Ei, upper incomplete Gamma, Airy Ai, reentrant log-Gamma,
   integer-order Bessel functions, typed
   constants and provider availability.
+- [MPFR Special Functions](mpreal_special_functions.md) documents domains, exact
+  results, constants and stable elementary extensions.
+
+## Numerical Algorithms and Validation
+
+These notes record native implementations, numerical acceptance criteria,
+reference comparisons, and measured limitations.
+
+- [Exponential and Logarithmic Extensions](native_exponential_extensions.md)
+- [Reciprocal Functions and Catalan's Constant](native_reciprocal_math.md)
+- [Compound Powers](native_compound.md)
+- [Arithmetic-Geometric Mean](native_agm.md)
+- [Typed Factorial](native_factorial.md)
+- [Digamma](native_digamma.md)
+- [Beta](native_beta.md)
+- [Riemann Zeta](native_zeta.md)
+- [Exponential Integral](native_expint.md)
+- [Dilogarithm](native_dilogarithm.md)
+- [Upper Incomplete Gamma](native_upper_gamma.md)
+- [Airy Ai](native_airy.md)
 
 ## Coverage Plans
 
-- [MPFR Special Functions](mpreal_special_functions.md) documents domains, exact
-  results, constants and stable elementary extensions.
 - [Scalar Math Coverage](scalar_math_coverage_plan.md) tracks elementary functions,
   exact-aware utilities, special functions and provider-version decisions.
 

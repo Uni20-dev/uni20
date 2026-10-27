@@ -1,7 +1,7 @@
 # Uni20
 
 [![CI](https://github.com/Uni20-dev/uni20/actions/workflows/ci.yml/badge.svg)](https://github.com/Uni20-dev/uni20/actions/workflows/ci.yml)
-[![Documentation](https://github.com/Uni20-dev/uni20/actions/workflows/docs.yml/badge.svg)](https://github.com/Uni20-dev/uni20/actions/workflows/docs.yml)
+[![Documentation](https://github.com/Uni20-dev/uni20/actions/workflows/docs.yml/badge.svg)](https://uni20-dev.github.io/uni20/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **A C++23 research library for asynchronous, symmetry-aware tensor networks on
@@ -203,6 +203,8 @@ much larger bond dimensions and on heterogeneous systems. The main tracks are:
 
 ## Explore and Contribute
 
+- [API Documentation](https://uni20-dev.github.io/uni20/): generated reference
+  documentation and guides.
 - [About Uni20](docs/about.md): current capabilities and design boundaries.
 - [Getting Started](docs/getting_started.md): prerequisites, build options,
   CUDA initialization, testing, and developer tooling.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Uni20's Markdown hierarchy and local documentation references."""
+"""Validate tracked Uni20 documentation using the working-tree contents."""
 
 from __future__ import annotations
 
@@ -49,34 +49,18 @@ def repository_relative(path: Path) -> Path:
     return path.relative_to(REPOSITORY)
 
 
-def markdown_files() -> list[Path]:
-    return sorted(DOCS.rglob("*.md"))
-
-
-def source_readmes() -> list[Path]:
-    return sorted(SOURCE.rglob("README.md"))
-
-
-def example_readmes() -> list[Path]:
-    return sorted(EXAMPLES.rglob("README.md"))
-
-
 def tracked_existing_files() -> list[Path]:
     output = subprocess.check_output(["git", "ls-files", "-z"], cwd=REPOSITORY)
     paths = [REPOSITORY / value for value in output.decode().split("\0") if value]
     return [path for path in paths if path.is_file()]
 
 
-def tracked_directories(root: Path) -> set[Path]:
-    output = subprocess.check_output(
-        ["git", "ls-files", "-z", "--", repository_relative(root).as_posix()],
-        cwd=REPOSITORY,
-    )
+def tracked_directories(root: Path, files: list[Path]) -> set[Path]:
     directories: set[Path] = set()
-    for value in output.decode().split("\0"):
-        if not value:
+    for path in files:
+        if root not in path.parents:
             continue
-        directory = (REPOSITORY / value).parent
+        directory = path.parent
         while directory == root or root in directory.parents:
             directories.add(directory)
             if directory == root:
@@ -92,7 +76,7 @@ def split_link_target(raw: str) -> str:
     return raw.split(maxsplit=1)[0]
 
 
-def validate_markdown(path: Path, problems: list[str]) -> None:
+def validate_markdown(path: Path, tracked_paths: set[Path], problems: list[str]) -> None:
     in_fence = False
     fence_character: str | None = None
 
@@ -130,10 +114,11 @@ def validate_markdown(path: Path, problems: list[str]) -> None:
             if path_part.startswith("/"):
                 resolved = REPOSITORY / path_part.removeprefix("/")
             else:
-                resolved = Path(os.path.normpath(path.parent / path_part))
-            if not resolved.exists():
+                resolved = path.parent / path_part
+            resolved = Path(os.path.normpath(resolved))
+            if resolved not in tracked_paths:
                 problems.append(
-                    f"{repository_relative(path)}:{line_number}: missing link target {target}"
+                    f"{repository_relative(path)}:{line_number}: missing or untracked link target {target}"
                 )
 
     if in_fence:
@@ -176,20 +161,24 @@ def validate_directory_readme_links(paths: list[Path], problems: list[str]) -> N
                     )
 
 
-def validate_doc_indexes(problems: list[str]) -> None:
-    for directory in sorted(path for path in DOCS.rglob("*") if path.is_dir()):
-        documents = sorted(directory.glob("*.md"))
-        child_indexes = sorted(directory.glob("*/README.md"))
-        if not documents and not child_indexes:
+def validate_doc_indexes(documents: list[Path], problems: list[str]) -> None:
+    document_set = set(documents)
+    for directory in sorted(tracked_directories(DOCS, documents) - {DOCS}):
+        children = [path for path in documents if path.parent == directory]
+        child_indexes = [
+            path for path in documents
+            if path.name == "README.md" and path.parent.parent == directory
+        ]
+        if not children and not child_indexes:
             continue
 
         index = directory / "README.md"
-        if not index.exists():
+        if index not in document_set:
             problems.append(f"{repository_relative(directory)}: missing README.md")
             continue
 
         content = index.read_text()
-        for document in documents:
+        for document in children:
             if document.name != "README.md" and document.name not in content:
                 problems.append(
                     f"{repository_relative(document)}: not named in {repository_relative(index)}"
@@ -203,9 +192,16 @@ def validate_doc_indexes(problems: list[str]) -> None:
 
 
 def validate_directory_indexes(
-    root: Path, readmes: list[Path], kind: str, problems: list[str]
+    root: Path, readmes: list[Path], files: list[Path], kind: str, problems: list[str]
 ) -> None:
-    directories = tracked_directories(root)
+    directories = tracked_directories(root, files)
+    if root == SOURCE:
+        # Internal helpers are documented by their owning module. Any README
+        # they do contain still participates in Markdown/link validation.
+        directories = {
+            path for path in directories
+            if "detail" not in path.relative_to(root).parts
+        }
     readme_set = set(readmes)
 
     for directory in sorted(directories):
@@ -238,7 +234,7 @@ def validate_directory_indexes(
             )
 
 
-def validate_root_references(paths: list[Path], problems: list[str]) -> None:
+def validate_root_references(paths: list[Path], tracked_paths: set[Path], problems: list[str]) -> None:
     for path in paths:
         if path == Path(__file__).resolve():
             continue
@@ -250,32 +246,39 @@ def validate_root_references(paths: list[Path], problems: list[str]) -> None:
         for reference in ROOT_DOC_REFERENCE.findall(content):
             if source in LEGACY_ASYNC_INDEXES and reference in LEGACY_ASYNC_DOCUMENTS:
                 continue
-            if not (REPOSITORY / reference).exists():
+            resolved = Path(os.path.normpath(REPOSITORY / reference))
+            if resolved not in tracked_paths:
                 problems.append(f"{source}: missing repository-root reference {reference}")
 
 
 def main() -> int:
     problems: list[str] = []
-    documents = markdown_files()
-    source_indexes = source_readmes()
-    example_indexes = example_readmes()
     tracked_files = tracked_existing_files()
+    tracked_paths = set(tracked_files) | tracked_directories(REPOSITORY, tracked_files)
     tracked_markdown = sorted(path for path in tracked_files if path.suffix == ".md")
+    documents = [path for path in tracked_markdown if DOCS in path.parents]
+    source_indexes = [
+        path for path in tracked_markdown
+        if SOURCE in path.parents and path.name == "README.md"
+    ]
+    example_indexes = [
+        path for path in tracked_markdown
+        if EXAMPLES in path.parents and path.name == "README.md"
+    ]
 
-    top_level = {path.name for path in DOCS.glob("*.md")}
+    top_level = {path.name for path in documents if path.parent == DOCS}
     unexpected = sorted(top_level - TOP_LEVEL_MARKDOWN)
     for name in unexpected:
         problems.append(f"docs/{name}: unclassified top-level Markdown document")
 
     for path in documents + source_indexes + example_indexes:
-        validate_markdown(path, problems)
+        validate_markdown(path, tracked_paths, problems)
     validate_directory_readme_links(tracked_markdown, problems)
-    validate_doc_indexes(problems)
-    validate_directory_indexes(SOURCE, source_indexes, "source", problems)
-    validate_directory_indexes(EXAMPLES, example_indexes, "example", problems)
+    validate_doc_indexes(documents, problems)
+    validate_directory_indexes(SOURCE, source_indexes, tracked_files, "source", problems)
+    validate_directory_indexes(EXAMPLES, example_indexes, tracked_files, "example", problems)
 
-    root_reference_paths = set(tracked_files) | set(documents)
-    validate_root_references(sorted(root_reference_paths), problems)
+    validate_root_references(tracked_files, tracked_paths, problems)
 
     if problems:
         print("Documentation validation failed:")
@@ -284,7 +287,7 @@ def main() -> int:
         return 1
 
     print(
-        f"Documentation validation passed: {len(documents)} Markdown files, "
+        f"Documentation validation passed: {len(documents)} tracked Markdown files, "
         f"{len(source_indexes)} source indexes, {len(example_indexes)} example "
         "indexes, local links, directory navigation, hierarchy, and "
         "repository-root references checked."

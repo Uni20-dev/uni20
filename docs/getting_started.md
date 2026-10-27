@@ -19,10 +19,14 @@ uni20/                         # Project root
 │   ├── linalg/                # Dense linalg and provider lowering
 │   ├── krylov/                # Krylov algorithms and validation
 │   ├── symmetry/              # QNum and block-sparse design
+│   ├── tensor_network/        # MPS/MPO, DMRG, and performance evidence
+│   ├── diagnostics/           # Presentation, CLI, and run output
 │   └── backends/              # CUDA and MPI design
 ├── cmake/                     # CMake modules and dependency helpers
 ├── src/uni20/                 # C++ library source
-│   ├── common/                # Shared traits, diagnostics, and presentation
+│   ├── core/                  # Scalars, precision, limits, and math
+│   ├── common/                # Diagnostics, presentation, and run metadata
+│   ├── cli/                   # Optional CLI11 integration
 │   ├── async/                 # Coroutine runtime and schedulers
 │   ├── backend/               # Provider and ABI facades
 │   ├── mdspan/                # Mdspan concepts, views, and accessors
@@ -30,7 +34,9 @@ uni20/                         # Project root
 │   ├── tensor/                # Tensor values, aliases, and front-end operations
 │   ├── linalg/                # Operation tags, dispatch, and dense kernels
 │   ├── krylov/                # Matrix-free Krylov algorithms
-│   ├── symmetry/              # Quantum-number foundations
+│   ├── symmetry/              # Quantum numbers, BlockTensor, and block operations
+│   ├── tensor_network/        # MPS/MPO, environments, and two-site DMRG
+│   ├── models/                # Model operators and example states
 │   └── kernel/                # Lower-level/reference kernel infrastructure
 ├── tests/                     # GoogleTest modules organized by subsystem
 ├── benchmarks/                # Google Benchmark targets

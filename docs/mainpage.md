@@ -21,7 +21,7 @@ scheduling through backend kernels and structured presentation.
 <span>Understand epochs, schedulers, tensor aliases, and operation lowering.</span>
 </td>
 <td>
-<a class="uni20-home-card-title" href="md_docs_2krylov__algorithms.html">Krylov Solvers</a>
+<a class="uni20-home-card-title" href="md_docs_2krylov_2algorithms.html">Krylov Solvers</a>
 <span>Review Lanczos, Arnoldi, exponential, and restart behavior.</span>
 </td>
 </tr>
