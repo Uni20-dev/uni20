@@ -82,6 +82,13 @@ reclamation during a long run or preventing accumulation when threads terminate
 and are replaced during the process lifetime. No new cleanup mechanism is
 currently planned for implementation.
 
+LeakSanitizer can report retained caches when those threads terminate. Uni20's
+opt-in [sanitizer policy](../development/testing.md#sanitizer-boundaries)
+suppresses the observed MPFR internal allocation frames while retaining checks
+on owning `mpreal` result storage. This does not free memory or change ordinary
+execution. Persistent cache reuse and accumulation from repeated thread
+termination remain different lifetime cases.
+
 `mpfr_free_cache2(MPFR_FREE_LOCAL_CACHE)` frees the calling thread's local caches.
 Calling it from the application thread after a scheduler wait does not clear
 other threads' caches. Neither scheduler destruction nor submitting one cleanup
