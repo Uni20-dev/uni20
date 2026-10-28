@@ -33,13 +33,13 @@ UNI20_PRECISION_TEST(NumericalScalar, FactorialAccuracy)
     else
       return 1755;
   }();
-  exact_constant integer{1};
+  exact_rational integer{1};
   auto maximum = mpreal(0, p);
   int worst = 0;
   for (int n = 0; n <= count; ++n)
   {
     SCOPED_TRACE(n);
-    if (n > 1) integer = integer * exact_constant(n);
+    if (n > 1) integer = integer * exact_rational(n);
     auto reference = mpreal(integer, p);
     // Convert the full exact integer directly at the target precision; do not
     // infer correct rounding from an intermediate fixed-width oracle.
@@ -72,9 +72,9 @@ UNI20_PRECISION_TEST(NumericalScalar, FactorialAccuracy)
   // Inexact at every requested precision; use an independently accumulated
   // exact integer, also for the lower-precision comparison.
   constexpr int n = C::digits() / 4 + 16;
-  integer = exact_constant{1};
+  integer = exact_rational{1};
   for (int k = 2; k <= n; ++k)
-    integer = integer * exact_constant(k);
+    integer = integer * exact_rational(k);
   auto reference = mpreal(integer, p);
   auto error = math::abs(widen(uni20::factorial<R>(n, C::precision())) - reference);
   constexpr int bits = C::digits();

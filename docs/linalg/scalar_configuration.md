@@ -62,7 +62,7 @@ Binary128 GEMM also uses the existing `UNI20_BACKEND_BLAS` wrapper switch
 MPFR and binary80 adapters do not have this additional GEMM requirement.
 
 ```sh
-# Scalars, exact constants and tensor storage; no MPLAPACK kernels.
+# Scalars, exact rationals and tensor storage; no MPLAPACK kernels.
 cmake -S . -B build_codex/scalars -DUNI20_ENABLE_MPREAL=ON
 
 # Binary128 and arbitrary precision, plus native float80 where available.

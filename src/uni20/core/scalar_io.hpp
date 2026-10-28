@@ -49,7 +49,7 @@ namespace detail
 #if UNI20_HAS_MPREAL
 // Decimal rounding of an exact rational must not pass through a binary float:
 // even an arbitrarily wide temporary can move a decimal halfway case off its tie.
-inline std::string format_exact_decimal(exact_constant const& value, scalar_format_options const& options)
+inline std::string format_exact_decimal(exact_rational const& value, scalar_format_options const& options)
 {
   auto q = value.native_handle();
   int const requested = options.precision;

@@ -8,9 +8,9 @@ namespace detail
 {
 // Rational values of sin(pi*x) occur on this grid. Reduce exactly, including
 // for numerators too large for any native floating-point format.
-inline mpreal rational_sinpi(exact_constant const& x)
+inline mpreal rational_sinpi(exact_rational const& x)
 {
-  auto sixths = x * exact_constant{6};
+  auto sixths = x * exact_rational{6};
   auto q = sixths.native_handle();
   if (mpz_cmp_ui(mpq_denref(q), 1) == 0)
   {
@@ -21,23 +21,23 @@ inline mpreal rational_sinpi(exact_constant const& x)
         return mpreal{};
       case 1:
       case 5:
-        return mpreal(exact_constant{1} / exact_constant{2});
+        return mpreal(exact_rational{1} / exact_rational{2});
       case 3:
         return mpreal{1};
       case 7:
       case 11:
-        return mpreal(exact_constant{-1} / exact_constant{2});
+        return mpreal(exact_rational{-1} / exact_rational{2});
       case 9:
         return mpreal{-1};
     }
   }
   throw std::logic_error("sinpi requires finite precision for an irrational result");
 }
-inline mpreal rational_asinpi(exact_constant const& x)
+inline mpreal rational_asinpi(exact_rational const& x)
 {
   if (x == 0) return mpreal{};
-  if (x == 1 || x == -1) return mpreal(x / exact_constant{2});
-  if (x * exact_constant{2} == 1 || x * exact_constant{2} == -1) return mpreal(x / exact_constant{3});
+  if (x == 1 || x == -1) return mpreal(x / exact_rational{2});
+  if (x * exact_rational{2} == 1 || x * exact_rational{2} == -1) return mpreal(x / exact_rational{3});
   throw std::logic_error("asinpi requires finite precision for this input");
 }
 
@@ -48,19 +48,19 @@ template <auto Operation> mpreal extended_unary(mpreal const& x)
   {
     auto const& q = x.exact_value();
     if constexpr (same_function_v<Operation, mpfr_exp10>)
-      return mpreal(uni20::pow(exact_constant{10}, q));
+      return mpreal(uni20::pow(exact_rational{10}, q));
     else if constexpr (same_function_v<Operation, mpfr_exp2m1> || same_function_v<Operation, mpfr_exp10m1>)
-      return mpreal(uni20::pow(exact_constant{same_function_v<Operation, mpfr_exp2m1> ? 2 : 10}, q) -
-                    exact_constant{1});
+      return mpreal(uni20::pow(exact_rational{same_function_v<Operation, mpfr_exp2m1> ? 2 : 10}, q) -
+                    exact_rational{1});
     else if constexpr (same_function_v<Operation, mpfr_log2p1> || same_function_v<Operation, mpfr_log10p1>)
-      return mpreal_access::exact_logarithm(q + exact_constant{1}, same_function_v<Operation, mpfr_log2p1> ? 2 : 10);
+      return mpreal_access::exact_logarithm(q + exact_rational{1}, same_function_v<Operation, mpfr_log2p1> ? 2 : 10);
     else if constexpr (same_function_v<Operation, mpfr_sinpi>)
       return rational_sinpi(q);
     else if constexpr (same_function_v<Operation, mpfr_cospi>)
-      return rational_sinpi(q + exact_constant{1} / exact_constant{2});
+      return rational_sinpi(q + exact_rational{1} / exact_rational{2});
     else if constexpr (same_function_v<Operation, mpfr_tanpi>)
     {
-      auto quarters = q * exact_constant{4};
+      auto quarters = q * exact_rational{4};
       auto value = quarters.native_handle();
       if (mpz_cmp_ui(mpq_denref(value), 1) == 0)
       {
@@ -80,11 +80,11 @@ template <auto Operation> mpreal extended_unary(mpreal const& x)
     else if constexpr (same_function_v<Operation, mpfr_asinpi>)
       return rational_asinpi(q);
     else if constexpr (same_function_v<Operation, mpfr_acospi>)
-      return mpreal(exact_constant{1} / exact_constant{2} - rational_asinpi(q).exact_value());
+      return mpreal(exact_rational{1} / exact_rational{2} - rational_asinpi(q).exact_value());
     else if constexpr (same_function_v<Operation, mpfr_atanpi>)
     {
       if (q == 0) return mpreal{};
-      if (q == 1 || q == -1) return mpreal(q / exact_constant{4});
+      if (q == 1 || q == -1) return mpreal(q / exact_rational{4});
     }
     else if constexpr (same_function_v<Operation, mpfr_sec> || same_function_v<Operation, mpfr_sech>)
     {
@@ -200,8 +200,8 @@ inline mpreal atan2pi(mpreal const& y, mpreal const& x)
       return mpreal{x < 0 ? 1 : 0};
     }
     int sign = y < 0 ? -1 : 1;
-    if (x == 0) return mpreal(exact_constant{sign} / exact_constant{2});
-    if (abs(x) == abs(y)) return mpreal(exact_constant{sign * (x < 0 ? 3 : 1)} / exact_constant{4});
+    if (x == 0) return mpreal(exact_rational{sign} / exact_rational{2});
+    if (abs(x) == abs(y)) return mpreal(exact_rational{sign * (x < 0 ? 3 : 1)} / exact_rational{4});
     throw std::logic_error("atan2pi requires finite precision for this direction");
   }
   auto yv = y.at(p), xv = x.at(p);

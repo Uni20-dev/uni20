@@ -28,3 +28,10 @@ check(owned "${suppressions}" 23)
 check(plain "${suppressions}" 23)
 # This deliberately unsafe rule demonstrates why exact C-symbol anchors matter.
 check(owned "${test_binary_dir}/unanchored.supp" 0)
+
+# The exponential's internal mpfr_exp_2 path uses a separate per-thread pool.
+# Verify its local cleanup and retain leak detection for the owning exp result.
+check(cache-exp "${test_binary_dir}/metadata-only.supp" 23)
+check(clean-exp "${test_binary_dir}/metadata-only.supp" 0)
+check(cache-exp "${suppressions}" 0)
+check(owned-exp "${suppressions}" 23)

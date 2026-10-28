@@ -14,7 +14,7 @@
 namespace uni20
 {
 class mpreal;
-class exact_constant;
+class exact_rational;
 class decimal_literal;
 namespace literals
 {
@@ -52,7 +52,7 @@ struct mp_integer
 
 inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
 {
-  if (text.empty()) throw std::invalid_argument("exact_constant: empty decimal");
+  if (text.empty()) throw std::invalid_argument("exact_rational: empty decimal");
   std::string unseparated;
   if (text.find('\'') != std::string_view::npos)
   {
@@ -62,7 +62,7 @@ inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
         unseparated += text[i];
       else if (i == 0 || i + 1 == text.size() || text[i - 1] < '0' || text[i - 1] > '9' || text[i + 1] < '0' ||
                text[i + 1] > '9')
-        throw std::invalid_argument("exact_constant: misplaced digit separator");
+        throw std::invalid_argument("exact_rational: misplaced digit separator");
     }
     text = unseparated;
   }
@@ -77,7 +77,7 @@ inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
     char c = text[pos];
     if (c == '.')
     {
-      if (dot) throw std::invalid_argument("exact_constant: repeated decimal point");
+      if (dot) throw std::invalid_argument("exact_rational: repeated decimal point");
       dot = true;
     }
     else if (c >= '0' && c <= '9')
@@ -88,7 +88,7 @@ inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
     else
       break;
   }
-  if (digits.empty()) throw std::invalid_argument("exact_constant: expected decimal digits");
+  if (digits.empty()) throw std::invalid_argument("exact_rational: expected decimal digits");
   // Decimal literals are deliberate: hexadecimal/binary spellings are not accepted.
   bool exponent_negative = false;
   unsigned long exponent = 0;
@@ -100,23 +100,23 @@ inline void parse_decimal_rational(mpq_ptr result, std::string_view text)
     auto const last = text.data() + text.size();
     auto const parsed = std::from_chars(first, last, exponent);
     if (parsed.ec == std::errc::result_out_of_range)
-      throw std::out_of_range("exact_constant: decimal exponent is too large");
+      throw std::out_of_range("exact_rational: decimal exponent is too large");
     if (parsed.ec != std::errc{} || parsed.ptr != last)
-      throw std::invalid_argument("exact_constant: invalid decimal exponent");
+      throw std::invalid_argument("exact_rational: invalid decimal exponent");
     pos = text.size();
   }
-  if (pos != text.size()) throw std::invalid_argument("exact_constant: invalid decimal spelling");
+  if (pos != text.size()) throw std::invalid_argument("exact_rational: invalid decimal spelling");
   if (fraction_digits > std::numeric_limits<unsigned long>::max())
-    throw std::out_of_range("exact_constant: too many fractional digits");
+    throw std::out_of_range("exact_rational: too many fractional digits");
   auto const fraction = static_cast<unsigned long>(fraction_digits);
   if (exponent_negative && exponent > std::numeric_limits<unsigned long>::max() - fraction)
-    throw std::out_of_range("exact_constant: decimal scale is too large");
+    throw std::out_of_range("exact_rational: decimal scale is too large");
   bool const denominator = exponent_negative || fraction > exponent;
   auto const scale =
       exponent_negative ? fraction + exponent : (denominator ? fraction - exponent : exponent - fraction);
   // Bound expansion of short inputs such as 1e999999999 before allocating 10^scale.
   constexpr unsigned long max_decimal_scale = 1'000'000;
-  if (scale > max_decimal_scale) throw std::out_of_range("exact_constant: decimal scale exceeds 1000000");
+  if (scale > max_decimal_scale) throw std::out_of_range("exact_rational: decimal scale exceeds 1000000");
   mpz_set_str(mpq_numref(result), digits.c_str(), 10);
   mpz_set_ui(mpq_denref(result), 1);
   if (mpz_sgn(mpq_numref(result)) == 0) return;
@@ -135,30 +135,32 @@ inline void parse_rational(mpq_ptr result, std::string_view text)
   auto slash = text.find('/');
   if (slash == std::string_view::npos) return parse_decimal_rational(result, text);
   auto integer = [](mpz_ptr out, std::string_view part) {
-    if (part.empty()) throw std::invalid_argument("exact_constant: missing fraction component");
+    if (part.empty()) throw std::invalid_argument("exact_rational: missing fraction component");
     bool negative = part.front() == '-';
     if (negative || part.front() == '+') part.remove_prefix(1);
     if (part.empty() || part.find_first_not_of("0123456789") != std::string_view::npos)
-      throw std::invalid_argument("exact_constant: expected integer fraction components");
+      throw std::invalid_argument("exact_rational: expected integer fraction components");
     std::string owned(part);
     mpz_set_str(out, owned.c_str(), 10);
     if (negative) mpz_neg(out, out);
   };
   integer(mpq_numref(result), text.substr(0, slash));
   integer(mpq_denref(result), text.substr(slash + 1));
-  if (mpz_sgn(mpq_denref(result)) == 0) throw std::domain_error("exact_constant: zero denominator");
+  if (mpz_sgn(mpq_denref(result)) == 0) throw std::domain_error("exact_rational: zero denominator");
   mpq_canonicalize(result);
 }
 } // namespace detail
 
-/// \brief Owning exact rational for precisionless literal arithmetic.
-/// \details All arithmetic is eager. Text accepts finite decimals and signed
+/// \brief Owning arbitrary-size rational with exact, eager arithmetic.
+/// \details Prefer mpreal for general numerical code. Use this type when the
+///          value must remain rational, independent of any working precision.
+///          Text accepts finite decimals and signed
 ///          integer fractions; division can produce rationals such as 1/3.
 ///          Default construction produces zero; moving leaves the source unset.
 ///          Copies and assignments preserve unset state, but numerical use throws.
-class exact_constant {
+class exact_rational {
   public:
-    exact_constant()
+    exact_rational()
     {
       mpq_init(value_);
       initialized_ = true;
@@ -167,12 +169,12 @@ class exact_constant {
     constexpr bool initialized() const noexcept { return initialized_; }
     /// \brief Whether this object carries an exact value; false when unset.
     constexpr bool is_exact() const noexcept { return this->initialized(); }
-    explicit exact_constant(std::string_view text) : exact_constant() { detail::parse_rational(value_, text); }
-    exact_constant(decimal_literal literal) : exact_constant(literal.spelling()) {}
+    explicit exact_rational(std::string_view text) : exact_rational() { detail::parse_rational(value_, text); }
+    exact_rational(decimal_literal literal) : exact_rational(literal.spelling()) {}
 
     template <std::integral I>
       requires(!std::same_as<I, bool>)
-    exact_constant(I value) : exact_constant()
+    exact_rational(I value) : exact_rational()
     {
       char text[std::numeric_limits<I>::digits10 + 4];
       auto const result = std::to_chars(text, text + sizeof(text), value);
@@ -180,7 +182,7 @@ class exact_constant {
       mpz_set_str(mpq_numref(value_), text, 10);
     }
 
-    exact_constant(exact_constant const& other)
+    exact_rational(exact_rational const& other)
     {
       if (other.initialized_)
       {
@@ -190,18 +192,18 @@ class exact_constant {
       }
     }
     /// \brief Transfer the payload without allocating, leaving the source unset.
-    exact_constant(exact_constant&& other) noexcept { this->swap(other); }
-    exact_constant& operator=(exact_constant other) noexcept
+    exact_rational(exact_rational&& other) noexcept { this->swap(other); }
+    exact_rational& operator=(exact_rational other) noexcept
     {
       this->swap(other);
       return *this;
     }
-    ~exact_constant()
+    ~exact_rational()
     {
       if (initialized_) mpq_clear(value_);
     }
     /// \brief Exchange payload ownership, including unset states, without allocating.
-    void swap(exact_constant& other) noexcept
+    void swap(exact_rational& other) noexcept
     {
       // Swap descriptors, not GMP values: an unset descriptor is not an mpq.
       std::swap(value_[0], other.value_[0]);
@@ -215,7 +217,7 @@ class exact_constant {
     /// \throws std::logic_error If this object is unset.
     mpq_srcptr native_handle() const
     {
-      if (!this->initialized()) throw std::logic_error("exact_constant: numerical use of an unset value");
+      if (!this->initialized()) throw std::logic_error("exact_rational: numerical use of an unset value");
       return value_;
     }
 
@@ -229,12 +231,12 @@ class exact_constant {
       return text;
     }
 
-    friend exact_constant operator+(exact_constant const& a, exact_constant const& b);
-    friend std::optional<exact_constant> rational_root(exact_constant const&, unsigned long);
-    friend exact_constant operator-(exact_constant const& a, exact_constant const& b);
-    friend exact_constant operator*(exact_constant const& a, exact_constant const& b);
-    friend exact_constant operator/(exact_constant const& a, exact_constant const& b);
-    friend exact_constant operator-(exact_constant const& a);
+    friend exact_rational operator+(exact_rational const& a, exact_rational const& b);
+    friend std::optional<exact_rational> rational_root(exact_rational const&, unsigned long);
+    friend exact_rational operator-(exact_rational const& a, exact_rational const& b);
+    friend exact_rational operator*(exact_rational const& a, exact_rational const& b);
+    friend exact_rational operator/(exact_rational const& a, exact_rational const& b);
+    friend exact_rational operator-(exact_rational const& a);
 
   private:
     friend struct detail::mpreal_access;
@@ -242,48 +244,48 @@ class exact_constant {
     bool initialized_ = false;
 };
 
-inline exact_constant operator+(exact_constant const& a, exact_constant const& b)
+inline exact_rational operator+(exact_rational const& a, exact_rational const& b)
 {
-  exact_constant result;
+  exact_rational result;
   mpq_add(result.value_, a.native_handle(), b.native_handle());
   return result;
 }
-inline exact_constant operator-(exact_constant const& a, exact_constant const& b)
+inline exact_rational operator-(exact_rational const& a, exact_rational const& b)
 {
-  exact_constant result;
+  exact_rational result;
   mpq_sub(result.value_, a.native_handle(), b.native_handle());
   return result;
 }
-inline exact_constant operator*(exact_constant const& a, exact_constant const& b)
+inline exact_rational operator*(exact_rational const& a, exact_rational const& b)
 {
-  exact_constant result;
+  exact_rational result;
   mpq_mul(result.value_, a.native_handle(), b.native_handle());
   return result;
 }
-inline exact_constant operator/(exact_constant const& a, exact_constant const& b)
+inline exact_rational operator/(exact_rational const& a, exact_rational const& b)
 {
   auto divisor = b.native_handle();
-  if (mpq_sgn(divisor) == 0) throw std::domain_error("exact_constant: division by zero");
-  exact_constant result;
+  if (mpq_sgn(divisor) == 0) throw std::domain_error("exact_rational: division by zero");
+  exact_rational result;
   mpq_div(result.value_, a.native_handle(), divisor);
   return result;
 }
-inline exact_constant operator-(exact_constant const& a)
+inline exact_rational operator-(exact_rational const& a)
 {
-  exact_constant result;
+  exact_rational result;
   mpq_neg(result.value_, a.native_handle());
   return result;
 }
-inline exact_constant operator+(exact_constant const& a)
+inline exact_rational operator+(exact_rational const& a)
 {
   (void)a.native_handle();
   return a;
 }
-inline bool operator==(exact_constant const& a, exact_constant const& b)
+inline bool operator==(exact_rational const& a, exact_rational const& b)
 {
   return mpq_equal(a.native_handle(), b.native_handle()) != 0;
 }
-inline std::strong_ordering operator<=>(exact_constant const& a, exact_constant const& b)
+inline std::strong_ordering operator<=>(exact_rational const& a, exact_rational const& b)
 {
   return mpq_cmp(a.native_handle(), b.native_handle()) <=> 0;
 }
@@ -291,15 +293,15 @@ inline std::strong_ordering operator<=>(exact_constant const& a, exact_constant 
 /// \brief Return a rational nth root when it exists, without choosing a precision.
 /// \details Negative inputs have a real root only for odd degrees. A missing
 ///          result means that the root cannot be represented as a rational.
-inline std::optional<exact_constant> rational_root(exact_constant const& x, unsigned long degree)
+inline std::optional<exact_rational> rational_root(exact_rational const& x, unsigned long degree)
 {
-  if (degree == 0) throw std::domain_error("exact_constant: zeroth root");
+  if (degree == 0) throw std::domain_error("exact_rational: zeroth root");
   auto q = x.native_handle();
   bool negative = mpq_sgn(q) < 0;
   if (negative && degree % 2 == 0) return std::nullopt;
   detail::mp_integer magnitude;
   mpz_abs(magnitude.value, mpq_numref(q));
-  exact_constant result;
+  exact_rational result;
   if (!mpz_root(mpq_numref(result.value_), magnitude.value, degree) ||
       !mpz_root(mpq_denref(result.value_), mpq_denref(q), degree))
     return std::nullopt;
@@ -330,11 +332,11 @@ template <class T> T integer_power(T base, mpz_srcptr exponent)
 /// \details Uses the real root for negative bases with odd-denominator powers;
 ///          zero to the zeroth power is one. No approximate result is inferred.
 template <class X, class Y>
-  requires((std::same_as<X, exact_constant> || std::same_as<X, decimal_literal>) &&
-           (std::same_as<Y, exact_constant> || std::same_as<Y, decimal_literal>))
-inline exact_constant pow(X const& base, Y const& power)
+  requires((std::same_as<X, exact_rational> || std::same_as<X, decimal_literal>) &&
+           (std::same_as<Y, exact_rational> || std::same_as<Y, decimal_literal>))
+inline exact_rational pow(X const& base, Y const& power)
 {
-  exact_constant const x(base), y(power);
+  exact_rational const x(base), y(power);
   (void)x.native_handle();
   auto exponent = y.native_handle();
   auto degree = mpq_denref(exponent);
@@ -344,24 +346,24 @@ inline exact_constant pow(X const& base, Y const& power)
   // large degree cannot have a rational root in an in-memory GMP operand.
   if (mpz_fits_ulong_p(degree))
     if (auto root = rational_root(x, mpz_get_ui(degree))) return detail::integer_power(*root, mpq_numref(exponent));
-  throw std::logic_error("exact_constant: power requires finite working precision");
+  throw std::logic_error("exact_rational: power requires finite working precision");
 }
 
 /// \brief Return the nonnegative rational square root, or require finite precision.
 template <class X>
-  requires(std::same_as<X, exact_constant> || std::same_as<X, decimal_literal>)
-inline exact_constant sqrt(X const& value)
+  requires(std::same_as<X, exact_rational> || std::same_as<X, decimal_literal>)
+inline exact_rational sqrt(X const& value)
 {
-  exact_constant const x(value);
+  exact_rational const x(value);
   if (auto root = rational_root(x, 2)) return *root;
-  throw std::logic_error("exact_constant: square root requires finite working precision");
+  throw std::logic_error("exact_rational: square root requires finite working precision");
 }
 
 /// \brief Exact numeric sources accepted without an approximation precision.
 template <class T>
 concept ExactRationalSource =
     (std::integral<std::remove_cvref_t<T>> && !std::same_as<std::remove_cvref_t<T>, bool>) ||
-    std::same_as<std::remove_cvref_t<T>, exact_constant> || std::same_as<std::remove_cvref_t<T>, decimal_literal>;
+    std::same_as<std::remove_cvref_t<T>, exact_rational> || std::same_as<std::remove_cvref_t<T>, decimal_literal>;
 
 namespace literals
 {

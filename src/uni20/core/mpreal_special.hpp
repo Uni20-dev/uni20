@@ -10,8 +10,8 @@ namespace uni20
 {
 namespace detail
 {
-inline bool rational_integer(exact_constant const& x) { return mpz_cmp_ui(mpq_denref(x.native_handle()), 1) == 0; }
-inline unsigned long exact_nonnegative_order(exact_constant const& x)
+inline bool rational_integer(exact_rational const& x) { return mpz_cmp_ui(mpq_denref(x.native_handle()), 1) == 0; }
+inline unsigned long exact_nonnegative_order(exact_rational const& x)
 {
   auto q = x.native_handle();
   if (!rational_integer(x) || mpq_sgn(q) < 0)
@@ -19,25 +19,25 @@ inline unsigned long exact_nonnegative_order(exact_constant const& x)
   if (!mpz_fits_slong_p(mpq_numref(q))) throw std::out_of_range("special function order does not fit int64_t");
   return mpz_get_ui(mpq_numref(q));
 }
-inline exact_constant exact_factorial(unsigned long n)
+inline exact_rational exact_factorial(unsigned long n)
 {
   return mpreal_access::rational_result([&](mpq_ptr out) { mpz_fac_ui(mpq_numref(out), n); });
 }
-inline mpreal exact_gamma(exact_constant const& x)
+inline mpreal exact_gamma(exact_rational const& x)
 {
-  if (x > 0 && rational_integer(x)) return mpreal(exact_factorial(exact_nonnegative_order(x - exact_constant{1})));
+  if (x > 0 && rational_integer(x)) return mpreal(exact_factorial(exact_nonnegative_order(x - exact_rational{1})));
   throw std::logic_error("Gamma requires finite precision unless its input is a positive integer");
 }
-inline mpreal exact_zeta(exact_constant const& x)
+inline mpreal exact_zeta(exact_rational const& x)
 {
-  if (x == 0) return mpreal(exact_constant{-1} / exact_constant{2});
+  if (x == 0) return mpreal(exact_rational{-1} / exact_rational{2});
   if (x < 0 && rational_integer(x))
   {
     if (mpz_even_p(mpq_numref(x.native_handle()))) return mpreal{};
     // Zeta(-m) = -B_(m+1)/(m+1) for odd positive m. This exact
     // Bernoulli recurrence has no floating-point approximation or ambient precision.
     auto order = exact_nonnegative_order(-x) + 1;
-    return mpreal(-exact_bernoulli(order) / exact_constant{order});
+    return mpreal(-exact_bernoulli(order) / exact_rational{order});
   }
   throw std::logic_error("Zeta requires finite precision except at nonpositive integers");
 }
@@ -70,7 +70,7 @@ template <auto Operation> mpreal special_unary(mpreal const& x, Precision p)
   return special_unary<Operation>(x.at(p));
 }
 
-inline mpreal exact_beta(exact_constant const& a, exact_constant const& b)
+inline mpreal exact_beta(exact_rational const& a, exact_rational const& b)
 {
   if (a > 0 && b > 0 && (rational_integer(a) || rational_integer(b)))
   {
@@ -81,9 +81,9 @@ inline mpreal exact_beta(exact_constant const& a, exact_constant const& b)
     auto x = use_a ? b : a;
     // B(x,n) = (n-1)! / (x (x+1) ... (x+n-1)). The recurrence
     // avoids computing three enormous factorials for small rational arguments.
-    exact_constant result = exact_constant{1} / x;
+    exact_rational result = exact_rational{1} / x;
     for (unsigned long k = 1; k < n; ++k)
-      result = result * exact_constant{k} / (x + exact_constant{k});
+      result = result * exact_rational{k} / (x + exact_rational{k});
     return mpreal(result);
   }
   throw std::logic_error("Beta requires finite precision except for positive rational/integer pairs");

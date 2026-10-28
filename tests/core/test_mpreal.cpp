@@ -128,7 +128,7 @@ TEST(MpReal, ArithmeticIsEagerAndOwnsItsResult)
   y = mpreal(20, p);
   EXPECT_EQ(result, 3);
   auto temporary_result = mpreal(1, p) / mpreal(8, p);
-  EXPECT_EQ(temporary_result, exact_constant("0.125"));
+  EXPECT_EQ(temporary_result, exact_rational("0.125"));
   auto high = mpreal(1, p) + 1e-70_mp;
   EXPECT_GT(high, 1);
   EXPECT_EQ(static_cast<double>(high), 1.0);
@@ -211,11 +211,11 @@ TEST(MpReal, MixedBasicArithmeticRoundsTheResultOnce)
     auto p = Precision::bits(bits);
     for (auto text : {"1", "-1", "5/4", "-3/2"})
     {
-      exact_constant x(text);
+      exact_rational x(text);
       mpreal a(x, p);
       for (auto fraction : {"1/7", "9/8", "-19/13", "11/10", "1/10000000000000000000000000000000000000000"})
       {
-        exact_constant q(fraction);
+        exact_rational q(fraction);
         mpreal b(q);
         EXPECT_EQ(a + b, mpreal(x + q, p));
         EXPECT_EQ(b + a, mpreal(q + x, p));
@@ -235,8 +235,8 @@ TEST(MpReal, MixedBasicArithmeticRoundsTheResultOnce)
         EXPECT_EQ(c.precision(), p);
       }
     }
-    auto epsilon = exact_constant("1/10000000000000000000000000000000000000000");
-    mpreal just_above_one(exact_constant{1} + epsilon);
+    auto epsilon = exact_rational("1/10000000000000000000000000000000000000000");
+    mpreal just_above_one(exact_rational{1} + epsilon);
     EXPECT_EQ(just_above_one - mpreal(1, p), epsilon.at(p));
     EXPECT_EQ(mpreal(1, p) - just_above_one, (-epsilon).at(p));
   }
@@ -255,7 +255,7 @@ TEST(MpReal, MixedArithmeticRetainsExceptionalValuesAndSignedZeros)
   EXPECT_TRUE(signbit(one / negative_zero));
   EXPECT_TRUE(isnan(zero / negative_zero));
   mpreal inf("inf", p), nan("nan", p);
-  EXPECT_EQ(mpreal(exact_constant("1e10000")) / inf, 0);
+  EXPECT_EQ(mpreal(exact_rational("1e10000")) / inf, 0);
   EXPECT_TRUE(isnan(one / nan));
   EXPECT_TRUE(isinf(inf + one));
   EXPECT_TRUE(isnan(inf * zero));
@@ -266,7 +266,7 @@ TEST(MpReal, RoundNearestTiesToEven)
 {
   auto p = Precision::bits(3);
   EXPECT_EQ(mpreal("1.125", p), 1);
-  EXPECT_EQ(mpreal("1.375", p), exact_constant("1.5"));
+  EXPECT_EQ(mpreal("1.375", p), exact_rational("1.5"));
   EXPECT_EQ(mpreal("-1.125", p), -1);
   EXPECT_EQ((1.125_mp).at(p), 1);
 }
@@ -287,9 +287,9 @@ TEST(MpReal, ExactRationalArithmeticAndLiteralDigits)
   EXPECT_EQ(sum.at(p), mpreal("0.3", p));
   EXPECT_EQ(literal.at(p), mpreal(literal.spelling(), p));
   EXPECT_NE(literal.at(p), mpreal(0.123456789012345678901234567890123456789L, p));
-  auto rational = exact_constant("0.1");
+  auto rational = exact_rational("0.1");
   auto owned_sum = rational + rational;
-  rational = exact_constant("9");
+  rational = exact_rational("9");
   EXPECT_EQ(owned_sum, 0.2_mp);
   auto moved = std::move(owned_sum);
   EXPECT_EQ(moved, 0.2_mp);
@@ -311,12 +311,12 @@ TEST(MpReal, ParenthesesDetermineTheRoundingBoundary)
 TEST(MpReal, DecimalExpansionRejectsExcessiveScales)
 {
   for (auto text : {"1e1000001", "1e-1000001", "0.1e-1000000", "0e1000001", "1e999999999"})
-    EXPECT_THROW((void)exact_constant(text), std::out_of_range) << text;
+    EXPECT_THROW((void)exact_rational(text), std::out_of_range) << text;
   // The limit applies to the combined scale, not the exponent in isolation.
-  auto positive = exact_constant("1.0e1000001");
-  auto negative = exact_constant("1e-1000000");
+  auto positive = exact_rational("1.0e1000001");
+  auto negative = exact_rational("1e-1000000");
   EXPECT_EQ(positive * negative, 10_mp);
-  EXPECT_EQ(exact_constant("0e1000000"), 0_mp);
+  EXPECT_EQ(exact_rational("0e1000000"), 0_mp);
 }
 
 TEST(MpReal, IntegralOperandsRemainExactUntilConversion)
@@ -324,8 +324,8 @@ TEST(MpReal, IntegralOperandsRemainExactUntilConversion)
   auto p = Precision::bits(256);
   auto minimum = std::numeric_limits<long long>::min();
   auto maximum = std::numeric_limits<unsigned long long>::max();
-  EXPECT_EQ(mpreal(minimum, p), exact_constant("-9223372036854775808"));
-  EXPECT_EQ(mpreal(maximum, p), exact_constant("18446744073709551615"));
+  EXPECT_EQ(mpreal(minimum, p), exact_rational("-9223372036854775808"));
+  EXPECT_EQ(mpreal(maximum, p), exact_rational("18446744073709551615"));
   mpreal x(3, p);
   EXPECT_EQ(x + 1, 4);
   EXPECT_EQ(1 + x, 4);
@@ -426,9 +426,9 @@ TEST(MpReal, ParsingAndRoundTripFormatting)
     EXPECT_THROW(mpreal(text, p), std::invalid_argument) << text;
   EXPECT_THROW(mpreal(std::string_view("1\0x", 3), p), std::invalid_argument);
   for (auto text : {"", "+", "nan", "1/3/4", "1.2.3", "1e", "0x10", "1''2"})
-    EXPECT_THROW((void)exact_constant(text), std::invalid_argument) << text;
-  EXPECT_THROW(exact_constant("1e184467440737095516160"), std::out_of_range);
-  EXPECT_THROW(exact_constant("1.0e-18446744073709551615"), std::out_of_range);
+    EXPECT_THROW((void)exact_rational(text), std::invalid_argument) << text;
+  EXPECT_THROW(exact_rational("1e184467440737095516160"), std::out_of_range);
+  EXPECT_THROW(exact_rational("1.0e-18446744073709551615"), std::out_of_range);
   std::ostringstream os;
   os << mpreal("0.1", p);
   EXPECT_EQ(mpreal(os.str(), p), mpreal("0.1", p));
@@ -809,7 +809,7 @@ TEST(MpReal, GenericExactnessQueries)
   static_assert(!is_exact(1.0));
   static_assert(!numeric_limits<mpreal>::is_exact);
   EXPECT_TRUE(is_exact(mpreal{}));
-  EXPECT_TRUE(is_exact(exact_constant("1/3")));
+  EXPECT_TRUE(is_exact(exact_rational("1/3")));
   EXPECT_TRUE(is_exact(0.1_mp));
   EXPECT_FALSE(is_exact(mpreal(1, Precision::bits(80))));
   EXPECT_FALSE(is_exact(mpreal(uninitialized)));

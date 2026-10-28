@@ -35,8 +35,8 @@ int main()
 #if UNI20_HAS_MPLAPACK_MPREAL
   auto p = Precision::bits(256);
   DenseMatrix<mpreal> tiny(2, 2, Precision::exact());
-  tiny[0, 0] = mpreal(exact_constant("1e-1000"));
-  tiny[1, 1] = mpreal(exact_constant("1e-1000"));
+  tiny[0, 0] = mpreal(exact_rational("1e-1000"));
+  tiny[1, 1] = mpreal(exact_rational("1e-1000"));
   auto high_precision = slogdet(tiny, p);
   fmt::print("MPFR: diag(1e-1000, 1e-1000), factored at 256 bits, has log(abs(det)) = {}.\n"
              "The exact source stays exact; the logarithm is approximate at the requested precision.\n",

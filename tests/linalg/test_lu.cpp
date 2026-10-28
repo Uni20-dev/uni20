@@ -131,9 +131,9 @@ TEST(Lu, RuntimePrecisionAndComplex)
   auto p = Precision::bits(512);
   DenseMatrix<mpreal> a(2, 2, Precision::exact()), b(2, 1, Precision::bits(256));
   a[0, 0] = a[0, 1] = a[1, 0] = mpreal{1};
-  a[1, 1] = mpreal(exact_constant{1} + exact_constant("1e-100"));
+  a[1, 1] = mpreal(exact_rational{1} + exact_rational("1e-100"));
   b[0, 0] = mpreal{2};
-  b[1, 0] = mpreal(exact_constant{2} + exact_constant("1e-100"));
+  b[1, 0] = mpreal(exact_rational{2} + exact_rational("1e-100"));
   auto f = lu_factor(a, p);
   EXPECT_EQ(f.precision(), p);
   auto x = lu_solve(f, b);
