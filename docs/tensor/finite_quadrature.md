@@ -105,6 +105,9 @@ For width `w=hi-lo` and positive transformed abscissa `t`, define
 Jacobian is `w*pi*cosh(t)*z/(1+z)^2`. The central sample and successive paired
 samples use step sizes 1, 1/2, 1/4, … with compensated component sums. The step
 is included in each weight before accumulation.
+Only the final pair evaluates the unscaled endpoint diagnostic. An interior
+unscaled product need not fit when its step-weighted contribution and the
+integral are representable; a large-scale Gaussian regression checks this.
 
 `endpoint_power` (default 3, minimum 2) truncates sampling when
 `pi*sinh(t)>-endpoint_power*log(epsilon)+4`. This corresponds roughly to an

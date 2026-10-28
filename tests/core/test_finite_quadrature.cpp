@@ -85,6 +85,24 @@ TEST(FiniteQuadrature, CallbackAndArithmeticFailures)
   EXPECT_EQ(tanh_sinh_integrate(constant, -maximum, maximum, options).status, Status::arithmetic_range);
   EXPECT_EQ(tanh_sinh_integrate(constant, 0.0, numeric_limits<double>::denorm_min(), options).status,
             Status::arithmetic_range);
+  // Midpoint and early weights fit, but a later endpoint distance/weight does not.
+  EXPECT_EQ(tanh_sinh_integrate(constant, 0.0, 1e-300, options).status, Status::arithmetic_range);
+}
+
+TEST(FiniteQuadrature, InteriorUnscaledProductsNeedNotFit)
+{
+  double const width = 1e308;
+  tanh_sinh_options<double> options;
+  auto f = [width](auto const& x) {
+    double const d = (x.value / width - 0.4) / 0.02;
+    return std::array{4 * math::exp(-d * d)};
+  };
+  auto result = tanh_sinh_integrate(f, 0.0, width, options);
+  ASSERT_EQ(result.status, Status::converged);
+  // The Gaussian tails beyond [0,1] are far below binary64 accuracy.
+  double const reference = 0.08 * math::sqrt(pi<double>);
+  EXPECT_LE(math::abs(result.value[0] / width - reference), options.relative_tolerance * reference);
+  EXPECT_TRUE(isfinite(result.error[0]));
 }
 
 TEST(FiniteQuadrature, RoundedEndpointRequiresDistanceInput)

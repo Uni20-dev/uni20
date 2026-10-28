@@ -146,12 +146,13 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
     std::array<R, N> edge;
     std::array<std::size_t, N> nonzero_samples{};
     edge.fill(zero);
-    auto sample = [&](R const& x, R const& lower, R const& upper, R const& weight, bool endpoint) {
+    auto sample = [&](R const& x, R const& lower, R const& upper, R const& unscaled_weight, bool endpoint) {
       if (out.evaluations == options.max_evaluations)
       {
         out.status = quadrature_status::evaluation_limit;
         return false;
       }
+      R const weight = unscaled_weight * h;
       if (!(lower > zero) || !(upper > zero) || !(weight > zero) || !isfinite(weight))
       {
         out.status = quadrature_status::arithmetic_range;
@@ -171,7 +172,9 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
         if (y[j] != zero) ++nonzero_samples[j];
         sum[j].add(term);
         absolute[j].add(math::abs(term));
-        if (endpoint) edge[j] += math::abs(term) / h;
+        // Evaluate this diagnostic only at the final pair. At interior nodes
+        // the unscaled product may overflow while the weighted term fits.
+        if (endpoint) edge[j] += math::abs(unscaled_weight * y[j]);
         if (!isfinite(sum[j].sum) || !isfinite(absolute[j].sum) || !isfinite(edge[j]))
         {
           out.status = quadrature_status::arithmetic_range;
@@ -181,25 +184,26 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
       return true;
     };
     R const half = width / two;
-    if (!sample(lo + half, half, half, (width * h) * (pi_value / number(4)), false)) return out;
-    R t = h;
-    for (;;)
+    if (!sample(lo + half, half, half, width * (pi_value / number(4)), false)) return out;
+    R t = h, argument = pi_value * math::sinh(t);
+    while (argument <= limit)
     {
-      R const argument = pi_value * math::sinh(t);
-      if (argument > limit) break;
-      R const z = math::exp(-argument), denominator = one + z;
-      R const distance = width * (z / denominator), far = width / denominator;
-      R const weight = (distance * (pi_value * math::cosh(t) / denominator)) * h;
-      edge.fill(zero);
-      if (!sample(lo + distance, distance, far, weight, true) || !sample(hi - distance, far, distance, weight, true))
-        return out;
       R const next = t + h;
       if (!(next > t))
       {
         out.status = quadrature_status::arithmetic_range;
         return out;
       }
+      R const next_argument = pi_value * math::sinh(next);
+      bool const endpoint = next_argument > limit;
+      R const z = math::exp(-argument), denominator = one + z;
+      R const distance = width * (z / denominator), far = width / denominator;
+      R const unscaled_weight = distance * (pi_value * math::cosh(t) / denominator);
+      if (!sample(lo + distance, distance, far, unscaled_weight, endpoint) ||
+          !sample(hi - distance, far, distance, unscaled_weight, endpoint))
+        return out;
       t = next;
+      argument = next_argument;
     }
     bool mesh_ok = level >= 2, endpoints_ok = true, tail_limited_mesh = level >= 2;
     for (std::size_t j = 0; j < N; ++j)
