@@ -5,6 +5,12 @@ GMP rational or a finite-precision MPFR approximation. Optional MPC supplies
 `uni20::complex<mpreal>` with two exact rational components or one MPC payload.
 Symbolic constants such as `pi<mpreal>` remain separate descriptor types.
 
+Use `mpreal` for general numerical code, including calculations that start
+exact and later acquire a finite working precision. Use `exact_rational` when
+the type itself must guarantee a rational value. It is useful for exact
+coefficients and precisionless literal arithmetic, and provides the exact
+payload inside `mpreal`.
+
 This is CPU arithmetic. Tensor construction defaults and the optional
 [MPLAPACK product/solve backend](../linalg/mplapack_mpfr.md) are described below.
 [Typed tables and metadata](../diagnostics/data_tables.md#runtime-precision-and-exact-fractions)
@@ -205,22 +211,25 @@ with a diagnostic. See the [MPFR type documentation](https://www.mpfr.org/mpfr-c
 
 ```cpp
 constexpr auto decimal = 0.12345678901234567890123456789_mp;
-auto exact = 0.1_mp + 0.2_mp;      // Owning exact_constant equal to 3/10.
-auto third = 1_mp / 3_mp;          // Owning exact_constant equal to 1/3.
+auto exact = 0.1_mp + 0.2_mp;      // Owning exact_rational equal to 3/10.
+auto third = 1_mp / 3_mp;          // Owning exact_rational equal to 1/3.
 auto a = exact.at(p);             // Round once to p.
 auto b = x + third;               // Add exact third, then round at x's precision.
 ```
 
 The `_mp` literal records source characters without conversion through a machine
 float. Its descriptor can be `constexpr`; operations on descriptors materialize
-owning GMP rationals at runtime. `exact_constant` accepts decimal or integer-fraction text for runtime
-input and formats as a reduced numerator/denominator, or an integer.
+owning GMP rationals at runtime. `exact_rational` accepts decimal or
+integer-fraction text for runtime input and formats as a reduced
+numerator/denominator, or an integer. Its declaration is in
+`<uni20/core/exact_rational.hpp>`; include `<uni20/core/mpreal.hpp>` when
+converting to or combining with `mpreal`.
 
-Default construction of `exact_constant` produces zero. Move construction transfers
+Default construction of `exact_rational` produces zero. Move construction transfers
 the payload without allocating and leaves the source unset; `initialized()` and
 `is_exact()` then return false. Copying, moving, swapping and assignment support
 unset states, and self-move assignment preserves the value. Numerical use of an
-unset constant, including conversion to `mpreal`, throws `std::logic_error` until
+unset rational, including conversion to `mpreal`, throws `std::logic_error` until
 it is assigned a value again. Moving an exact `mpreal` likewise requires no GMP
 allocation.
 
@@ -237,7 +246,7 @@ combining the exponent with the number of fractional digits. Larger scales throw
 accidentally enormous allocations from short decimal spellings; it does not cap
 `mpreal` working precision or the size of results from exact rational arithmetic.
 
-Mixing an exact constant with `mpreal` in basic arithmetic rounds the result at
+Mixing an exact rational with `mpreal` in basic arithmetic rounds the result at
 the real operand's precision. Each approximate operation is a rounding boundary:
 
 ```cpp
@@ -634,7 +643,7 @@ and explicit mixed-precision conversion with explanatory output.
 
 The active payload is selected by a variant: unset, exact rational, or MPFR/MPC.
 Approximate precision is queried from the native payload rather than duplicated.
-The exact real payload reuses `exact_constant`; exact complex uses two rationals.
+The exact real payload reuses `exact_rational`; exact complex uses two rationals.
 No ambient scalar precision or expression templates are introduced.
 
 `mpreal_exact_example` demonstrates unchanged generic accumulation with `T{}`

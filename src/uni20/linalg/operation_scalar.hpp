@@ -8,7 +8,7 @@
 
 #include <uni20/core/runtime_precision.hpp>
 #if UNI20_HAS_MPREAL
-#include <uni20/core/exact_constant.hpp>
+#include <uni20/core/exact_rational.hpp>
 #endif
 
 #include <concepts>

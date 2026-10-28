@@ -18,7 +18,7 @@ enum class integer_rounding
   even_ties
 };
 
-inline exact_constant round_rational(exact_constant const& x, integer_rounding mode)
+inline exact_rational round_rational(exact_rational const& x, integer_rounding mode)
 {
   return mpreal_access::rational_result([&](mpq_ptr result) {
     auto q = x.native_handle();
@@ -153,7 +153,7 @@ inline mpreal fused_product_sum(mpreal const& a, mpreal const& b, mpreal const& 
     }
     scaled_rational_ratio({mpreal_access::stored_scaled(a) * mpreal_access::stored_scaled(b),
                            mpreal_access::stored_scaled(c),
-                           {exact_constant{1}, 0},
+                           {exact_rational{1}, 0},
                            {}})
         .round_to(result);
   });
@@ -176,7 +176,7 @@ inline mpreal binary_scale(mpreal const& x, std::int64_t exponent, Precision p)
   return mpreal_access::finite_result(p, [&](mpfr_ptr result) {
     if (x.is_exact())
     {
-      scaled_rational_ratio({scaled_rational{x.exact_value(), exponent}, {}, {exact_constant{1}, 0}, {}})
+      scaled_rational_ratio({scaled_rational{x.exact_value(), exponent}, {}, {exact_rational{1}, 0}, {}})
           .round_to(result);
     }
     else
@@ -350,7 +350,7 @@ inline mpreal nextafter(mpreal const& x, mpreal const& direction, Precision p)
 
 namespace detail
 {
-inline std::int64_t rational_binary_exponent(exact_constant const& x)
+inline std::int64_t rational_binary_exponent(exact_rational const& x)
 {
   auto q = x.native_handle();
   if (mpq_sgn(q) == 0) return 0;
@@ -486,7 +486,7 @@ inline remquo_result<mpreal> remainder_value(mpreal const& a, mpreal const& b, P
     if (result.value.coefficient == 0)
       mpfr_set_zero(out, signbit(a) ? -1 : 1);
     else
-      scaled_rational_ratio({result.value, {}, {exact_constant{1}, 0}, {}}).round_to(out);
+      scaled_rational_ratio({result.value, {}, {exact_rational{1}, 0}, {}}).round_to(out);
   });
   return {std::move(value), result.quotient};
 }
@@ -601,7 +601,7 @@ namespace detail
 // The callers remove rational-result cases first. The remaining result is
 // irrational/non-dyadic and cannot equal a binary rounding boundary, so an
 // enclosing interval eventually selects one rounded value.
-template <class F> mpreal rational_monotone(exact_constant const& positive, Precision p, bool decreasing, F operation)
+template <class F> mpreal rational_monotone(exact_rational const& positive, Precision p, bool decreasing, F operation)
 {
   auto bits = std::max<mpfr_prec_t>(64, p.bit_count());
   while (true)
@@ -625,21 +625,21 @@ template <class F> mpreal rational_monotone(exact_constant const& positive, Prec
 inline mpreal integer_power_value(mpreal const& x, std::int64_t exponent, Precision p)
 {
   (void)x.precision();
-  if (p.is_exact()) return mpreal(uni20::pow(x.exact_value(), exact_constant(exponent)));
+  if (p.is_exact()) return mpreal(uni20::pow(x.exact_value(), exact_rational(exponent)));
   if (!x.is_exact())
   {
-    auto n = exact_constant(exponent);
+    auto n = exact_rational(exponent);
     return mpreal_access::finite_result(
         p, [&](mpfr_ptr out) { mpfr_pow_z(out, x.native_handle(), mpq_numref(n.native_handle()), MPFR_RNDN); });
   }
   if (exponent == 0) return mpreal(1, p);
   if (x == 0) return exponent < 0 ? mpreal("inf", p) : mpreal(0, p);
   auto q = x.exact_value();
-  if (exponent < 0) q = exact_constant{1} / q;
+  if (exponent < 0) q = exact_rational{1} / q;
   bool negative = q < 0 && exponent % 2 != 0;
   if (q < 0) q = -q;
   auto magnitude = exponent < 0 ? std::uint64_t(0) - std::uint64_t(exponent) : std::uint64_t(exponent);
-  auto n = exact_constant(magnitude);
+  auto n = exact_rational(magnitude);
   auto operation = [&](mpfr_ptr out, mpfr_srcptr in, mpfr_rnd_t rounding) {
     mpfr_pow_z(out, in, mpq_numref(n.native_handle()), rounding);
   };
@@ -675,7 +675,7 @@ inline mpreal integer_root_value(mpreal const& x, std::int64_t degree, Precision
     if (degree < 0)
     {
       if (*root == 0 && !p.is_exact()) return mpreal("inf", p);
-      *root = exact_constant{1} / *root;
+      *root = exact_rational{1} / *root;
     }
     return mpreal(*root, p);
   }
@@ -728,7 +728,7 @@ inline mpreal compound_value(mpreal const& x, std::int64_t n, Precision p)
       if (p.is_exact()) throw std::domain_error("compound requires x >= -1");
       return mpreal("nan", p);
     }
-    return integer_power_value(mpreal(x.exact_value() + exact_constant{1}), n, p);
+    return integer_power_value(mpreal(x.exact_value() + exact_rational{1}), n, p);
   }
   static_assert(sizeof(long) >= sizeof(std::int64_t));
   return mpreal_access::finite_result(

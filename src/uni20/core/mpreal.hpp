@@ -2,7 +2,7 @@
 
 #include "detail/function_identity.hpp"
 #include "detail/scaled_rational.hpp"
-#include "exact_constant.hpp"
+#include "exact_rational.hpp"
 #include "math_constants.hpp"
 #include "scalar_traits.hpp"
 #include <memory>
@@ -74,28 +74,28 @@ struct mpfr_value
 class mpreal {
   public:
     /// \brief Construct exact zero for ordinary generic accumulators.
-    mpreal() : value_(std::in_place_type<exact_constant>) {}
+    mpreal() : value_(std::in_place_type<exact_rational>) {}
     /// \brief Construct an unset placeholder for overwrite storage.
     explicit mpreal(uninitialized_t) noexcept : value_(std::monostate{}) {}
     /// \brief Construct zero at finite precision, or exact zero.
     explicit mpreal(Precision p) : mpreal(uninitialized)
     {
       if (p.is_exact())
-        value_.emplace<exact_constant>();
+        value_.emplace<exact_rational>();
       else
         value_.emplace<detail::mpfr_value>(p);
     }
     /// \brief Retain an exact rational without rounding.
     /// \throws std::logic_error If the source is unset.
-    explicit mpreal(exact_constant value) : mpreal(uninitialized)
+    explicit mpreal(exact_rational value) : mpreal(uninitialized)
     {
       (void)value.native_handle();
-      value_.emplace<exact_constant>(std::move(value));
+      value_.emplace<exact_rational>(std::move(value));
     }
-    explicit mpreal(decimal_literal value) : mpreal(exact_constant(value)) {}
+    explicit mpreal(decimal_literal value) : mpreal(exact_rational(value)) {}
     template <std::integral I>
       requires(!std::same_as<I, bool>)
-    explicit mpreal(I value) : mpreal(exact_constant(value))
+    explicit mpreal(I value) : mpreal(exact_rational(value))
     {}
 
     /// \brief Parse a complete decimal or integer fraction at the requested precision.
@@ -103,7 +103,7 @@ class mpreal {
     {
       if (p.is_exact() || text.find('/') != std::string_view::npos)
       {
-        *this = mpreal(exact_constant(text), p);
+        *this = mpreal(exact_rational(text), p);
         return;
       }
       if (text.empty() || text.find('\0') != std::string_view::npos ||
@@ -115,7 +115,7 @@ class mpreal {
       if (end != owned.c_str() + owned.size() || end == owned.c_str())
         throw std::invalid_argument("mpreal: invalid decimal value");
     }
-    mpreal(exact_constant const& value, Precision p) : mpreal(p)
+    mpreal(exact_rational const& value, Precision p) : mpreal(p)
     {
       auto rational = value.native_handle();
       if (p.is_exact())
@@ -123,10 +123,10 @@ class mpreal {
       else
         mpfr_set_q(this->approximate(), rational, MPFR_RNDN);
     }
-    mpreal(decimal_literal value, Precision p) : mpreal(exact_constant(value), p) {}
+    mpreal(decimal_literal value, Precision p) : mpreal(exact_rational(value), p) {}
     template <std::integral I>
       requires(!std::same_as<I, bool>)
-    mpreal(I value, Precision p) : mpreal(exact_constant(value), p)
+    mpreal(I value, Precision p) : mpreal(exact_rational(value), p)
     {}
 
     /// \brief Copy a valid borrowed MPFR value, rounding at finite precision.
@@ -173,7 +173,7 @@ class mpreal {
     /// \brief Whether this object holds an exact or approximate numerical value.
     bool initialized() const noexcept { return !std::holds_alternative<std::monostate>(value_); }
     /// \brief Whether the active payload is an exact rational.
-    bool is_exact() const noexcept { return std::holds_alternative<exact_constant>(value_); }
+    bool is_exact() const noexcept { return std::holds_alternative<exact_rational>(value_); }
     /// \brief Return exact state or the working precision stored by MPFR.
     Precision precision() const
     {
@@ -188,11 +188,11 @@ class mpreal {
       return std::get<detail::mpfr_value>(value_).value;
     }
     /// \brief Borrow the exact rational; valid while this object retains its state.
-    exact_constant const& exact_value() const
+    exact_rational const& exact_value() const
     {
       this->require_value();
       if (!this->is_exact()) throw std::logic_error("mpreal: value is approximate");
-      return std::get<exact_constant>(value_);
+      return std::get<exact_rational>(value_);
     }
     /// \brief Round into an initialized MPFR destination at its existing precision.
     void copy_to(mpfr_ptr destination) const
@@ -249,10 +249,10 @@ class mpreal {
     mpreal& operator-=(mpreal const& rhs);
     mpreal& operator*=(mpreal const& rhs);
     mpreal& operator/=(mpreal const& rhs);
-    mpreal& operator+=(exact_constant const& rhs);
-    mpreal& operator-=(exact_constant const& rhs);
-    mpreal& operator*=(exact_constant const& rhs);
-    mpreal& operator/=(exact_constant const& rhs);
+    mpreal& operator+=(exact_rational const& rhs);
+    mpreal& operator-=(exact_rational const& rhs);
+    mpreal& operator*=(exact_rational const& rhs);
+    mpreal& operator/=(exact_rational const& rhs);
 
   private:
     friend mpreal epsilon(Precision precision);
@@ -285,7 +285,7 @@ class mpreal {
       (void)this->native_handle();
       return std::get<detail::mpfr_value>(value_).value;
     }
-    std::variant<std::monostate, exact_constant, detail::mpfr_value> value_;
+    std::variant<std::monostate, exact_rational, detail::mpfr_value> value_;
 };
 
 /// \brief Type properties and explicit runtime limits for exact-or-approximate reals.
@@ -328,9 +328,9 @@ struct mpreal_access
       operation(result.approximate());
       return result;
     }
-    template <class F> static exact_constant rational_result(F&& operation)
+    template <class F> static exact_rational rational_result(F&& operation)
     {
-      exact_constant result;
+      exact_rational result;
       operation(result.value_);
       mpq_canonicalize(result.value_);
       return result;
@@ -353,10 +353,10 @@ struct mpreal_access
     }
     // Internal arithmetic representation of a finite stored value. This does
     // not reclassify the user's approximation as an exact scalar.
-    static exact_constant stored_rational(mpreal const& x)
+    static exact_rational stored_rational(mpreal const& x)
     {
       if (x.is_exact()) return x.exact_value();
-      exact_constant result;
+      exact_rational result;
       mpfr_get_q(result.value_, x.native_handle());
       return result;
     }
@@ -414,7 +414,7 @@ struct mpreal_access
     }
     // For rational x and base 2 or 10, a rational logarithm is an integer.
     // Check numerator and denominator independently without any floating conversion.
-    static mpreal exact_logarithm(exact_constant const& x, unsigned long base)
+    static mpreal exact_logarithm(exact_rational const& x, unsigned long base)
     {
       auto q = x.native_handle();
       if (mpq_sgn(q) > 0)
@@ -426,7 +426,7 @@ struct mpreal_access
         {
           auto denominator_power = mpz_remove(remainder.value, mpq_denref(q), factor.value);
           if (mpz_cmp_ui(remainder.value, 1) == 0)
-            return mpreal(exact_constant(numerator_power) - exact_constant(denominator_power));
+            return mpreal(exact_rational(numerator_power) - exact_rational(denominator_power));
         }
       }
       throw std::logic_error("mpreal: logarithm requires finite working precision");
@@ -461,7 +461,7 @@ struct mpreal_access
           throw std::logic_error("mpreal: cube root requires finite working precision");
         }
         else if constexpr (same_function_v<Operation, mpfr_exp2>)
-          return mpreal(uni20::pow(exact_constant{2}, x.exact_value()));
+          return mpreal(uni20::pow(exact_rational{2}, x.exact_value()));
         else if constexpr (same_function_v<Operation, mpfr_log2>)
           return exact_logarithm(x.exact_value(), 2);
         else if constexpr (same_function_v<Operation, mpfr_log10>)
@@ -550,7 +550,7 @@ struct mpreal_access
 };
 } // namespace detail
 
-inline mpreal exact_constant::at(Precision precision) const { return mpreal(*this, precision); }
+inline mpreal exact_rational::at(Precision precision) const { return mpreal(*this, precision); }
 inline mpreal decimal_literal::at(Precision precision) const { return mpreal(*this, precision); }
 
 inline mpreal operator+(mpreal const& a, mpreal const& b) { return detail::mpreal_access::apply<mpfr_add>(a, b); }
@@ -565,23 +565,23 @@ inline mpreal operator+(mpreal const& a)
 }
 
 // Basic arithmetic retains the exact operand until rounding the result.
-inline mpreal operator+(mpreal const& a, exact_constant const& b) { return a + mpreal(b); }
-inline mpreal operator-(mpreal const& a, exact_constant const& b) { return a - mpreal(b); }
-inline mpreal operator*(mpreal const& a, exact_constant const& b) { return a * mpreal(b); }
-inline mpreal operator/(mpreal const& a, exact_constant const& b) { return a / mpreal(b); }
-inline mpreal operator+(exact_constant const& a, mpreal const& b) { return mpreal(a) + b; }
-inline mpreal operator-(exact_constant const& a, mpreal const& b) { return mpreal(a) - b; }
-inline mpreal operator*(exact_constant const& a, mpreal const& b) { return mpreal(a) * b; }
-inline mpreal operator/(exact_constant const& a, mpreal const& b) { return mpreal(a) / b; }
+inline mpreal operator+(mpreal const& a, exact_rational const& b) { return a + mpreal(b); }
+inline mpreal operator-(mpreal const& a, exact_rational const& b) { return a - mpreal(b); }
+inline mpreal operator*(mpreal const& a, exact_rational const& b) { return a * mpreal(b); }
+inline mpreal operator/(mpreal const& a, exact_rational const& b) { return a / mpreal(b); }
+inline mpreal operator+(exact_rational const& a, mpreal const& b) { return mpreal(a) + b; }
+inline mpreal operator-(exact_rational const& a, mpreal const& b) { return mpreal(a) - b; }
+inline mpreal operator*(exact_rational const& a, mpreal const& b) { return mpreal(a) * b; }
+inline mpreal operator/(exact_rational const& a, mpreal const& b) { return mpreal(a) / b; }
 
 inline mpreal& mpreal::operator+=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_add>(*this, rhs); }
 inline mpreal& mpreal::operator-=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_sub>(*this, rhs); }
 inline mpreal& mpreal::operator*=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_mul>(*this, rhs); }
 inline mpreal& mpreal::operator/=(mpreal const& rhs) { return detail::mpreal_access::assign<mpfr_div>(*this, rhs); }
-inline mpreal& mpreal::operator+=(exact_constant const& rhs) { return *this += mpreal(rhs); }
-inline mpreal& mpreal::operator-=(exact_constant const& rhs) { return *this -= mpreal(rhs); }
-inline mpreal& mpreal::operator*=(exact_constant const& rhs) { return *this *= mpreal(rhs); }
-inline mpreal& mpreal::operator/=(exact_constant const& rhs) { return *this /= mpreal(rhs); }
+inline mpreal& mpreal::operator+=(exact_rational const& rhs) { return *this += mpreal(rhs); }
+inline mpreal& mpreal::operator-=(exact_rational const& rhs) { return *this -= mpreal(rhs); }
+inline mpreal& mpreal::operator*=(exact_rational const& rhs) { return *this *= mpreal(rhs); }
+inline mpreal& mpreal::operator/=(exact_rational const& rhs) { return *this /= mpreal(rhs); }
 
 /// \brief Compare exact or stored approximate values without rounding either operand.
 inline std::partial_ordering operator<=>(mpreal const& a, mpreal const& b)
@@ -603,8 +603,8 @@ inline std::partial_ordering operator<=>(mpreal const& a, mpreal const& b)
   return mpfr_cmp(a.native_handle(), b.native_handle()) <=> 0;
 }
 inline bool operator==(mpreal const& a, mpreal const& b) { return (a <=> b) == 0; }
-inline std::partial_ordering operator<=>(mpreal const& a, exact_constant const& b) { return a <=> mpreal(b); }
-inline bool operator==(mpreal const& a, exact_constant const& b) { return (a <=> b) == 0; }
+inline std::partial_ordering operator<=>(mpreal const& a, exact_rational const& b) { return a <=> mpreal(b); }
+inline bool operator==(mpreal const& a, exact_rational const& b) { return (a <=> b) == 0; }
 
 namespace detail
 {
@@ -616,7 +616,7 @@ template <std::integral I> int compare_integer(mpreal const& a, I b)
                      std::numeric_limits<I>::digits <= std::numeric_limits<unsigned long>::digits)
     return mpfr_cmp_ui(a.native_handle(), static_cast<unsigned long>(b));
   else
-    return mpfr_cmp_q(a.native_handle(), exact_constant(b).native_handle());
+    return mpfr_cmp_q(a.native_handle(), exact_rational(b).native_handle());
 }
 } // namespace detail
 
@@ -624,7 +624,7 @@ template <std::integral I>
   requires(!std::same_as<I, bool>)
 inline bool operator==(mpreal const& a, I b)
 {
-  if (a.is_exact()) return a.exact_value() == exact_constant(b);
+  if (a.is_exact()) return a.exact_value() == exact_rational(b);
   if (b == 0) return mpfr_zero_p(a.native_handle());
   return mpfr_number_p(a.native_handle()) && detail::compare_integer(a, b) == 0;
 }
@@ -632,7 +632,7 @@ template <std::integral I>
   requires(!std::same_as<I, bool>)
 inline std::partial_ordering operator<=>(mpreal const& a, I b)
 {
-  if (a.is_exact()) return a.exact_value() <=> exact_constant(b);
+  if (a.is_exact()) return a.exact_value() <=> exact_rational(b);
   if (mpfr_nan_p(a.native_handle())) return std::partial_ordering::unordered;
   return detail::compare_integer(a, b) <=> 0;
 }
@@ -838,7 +838,7 @@ template <> struct math_constants<mpreal>
 
 /// \brief Stream the round-trip decimal representation, independent of stream precision.
 inline std::ostream& operator<<(std::ostream& os, mpreal const& value) { return os << value.to_string(); }
-inline std::ostream& operator<<(std::ostream& os, exact_constant const& value) { return os << value.to_string(); }
+inline std::ostream& operator<<(std::ostream& os, exact_rational const& value) { return os << value.to_string(); }
 
 } // namespace uni20
 

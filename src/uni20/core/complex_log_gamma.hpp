@@ -84,7 +84,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
         {
           auto b = sequence.next();
           if (n >= 2 && n % 2 == 0)
-            coefficients_.push_back(this->number(b / (exact_constant{n} * exact_constant{n - 1})));
+            coefficients_.push_back(this->number(b / (exact_rational{n} * exact_rational{n - 1})));
         }
       }
       else

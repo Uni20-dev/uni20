@@ -176,7 +176,7 @@ TEST(ScalarMath, ExactAndExplicitPrecisionContracts)
   EXPECT_TRUE(m::sqrt(mpreal{4}).is_exact());
   EXPECT_EQ(m::sqrt(mpreal{4}), 2);
   EXPECT_EQ(m::pow(mpreal{2}, mpreal{-3}), mpreal("1/8", Precision::exact()));
-  EXPECT_EQ(m::sqrt(uni20::exact_constant("9/4")), uni20::exact_constant("3/2"));
+  EXPECT_EQ(m::sqrt(uni20::exact_rational("9/4")), uni20::exact_rational("3/2"));
   EXPECT_THROW(m::sqrt(mpreal{2}), std::logic_error);
   EXPECT_THROW(m::exp(mpreal{1}), std::logic_error);
   for (auto p : {Precision::bits(80), Precision::bits(256)})

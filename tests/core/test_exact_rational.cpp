@@ -9,12 +9,12 @@
 
 using namespace uni20;
 
-static_assert(std::is_nothrow_move_constructible_v<exact_constant>);
-static_assert(std::is_nothrow_move_assignable_v<exact_constant>);
+static_assert(std::is_nothrow_move_constructible_v<exact_rational>);
+static_assert(std::is_nothrow_move_assignable_v<exact_rational>);
 
-TEST(ExactConstant, MoveTransfersValueAndLeavesSourceUnset)
+TEST(ExactRational, MoveTransfersValueAndLeavesSourceUnset)
 {
-  exact_constant source("123456789012345678901234567890/7");
+  exact_rational source("123456789012345678901234567890/7");
   auto copy = source;
   auto moved = std::move(source);
   EXPECT_FALSE(source.initialized());
@@ -23,7 +23,7 @@ TEST(ExactConstant, MoveTransfersValueAndLeavesSourceUnset)
   EXPECT_TRUE(moved.initialized());
   EXPECT_EQ(moved, copy);
 
-  source = exact_constant("2/3");
+  source = exact_rational("2/3");
   EXPECT_EQ(source.to_string(), "2/3");
   EXPECT_EQ(moved, copy);
   source = std::move(moved);
@@ -34,19 +34,19 @@ TEST(ExactConstant, MoveTransfersValueAndLeavesSourceUnset)
   auto& alias = source;
   source = std::move(alias);
   EXPECT_EQ(source, copy);
-  EXPECT_EQ(exact_constant{}, 0);
+  EXPECT_EQ(exact_rational{}, 0);
 }
 
-TEST(ExactConstant, CopyAssignmentAndSwapSupportUnsetStates)
+TEST(ExactRational, CopyAssignmentAndSwapSupportUnsetStates)
 {
-  exact_constant source("3/7");
+  exact_rational source("3/7");
   auto value = std::move(source);
   auto empty_copy = source;
   auto empty_move = std::move(source);
   EXPECT_FALSE(empty_copy.initialized());
   EXPECT_FALSE(empty_move.initialized());
 
-  exact_constant destination{5};
+  exact_rational destination{5};
   destination = source;
   EXPECT_FALSE(destination.initialized());
   destination = value;
@@ -64,7 +64,7 @@ TEST(ExactConstant, CopyAssignmentAndSwapSupportUnsetStates)
   destination = std::move(empty_move);
   EXPECT_FALSE(destination.initialized());
 
-  std::vector<exact_constant> values;
+  std::vector<exact_rational> values;
   values.push_back(std::move(source));
   values.push_back(value);
   values.reserve(32);
@@ -72,9 +72,9 @@ TEST(ExactConstant, CopyAssignmentAndSwapSupportUnsetStates)
   EXPECT_EQ(values[1], value);
 }
 
-TEST(ExactConstant, UnsetValuesHaveNoNumericalMeaning)
+TEST(ExactRational, UnsetValuesHaveNoNumericalMeaning)
 {
-  exact_constant unset{1};
+  exact_rational unset{1};
   auto value = std::move(unset);
   EXPECT_THROW(unset.native_handle(), std::logic_error);
   EXPECT_THROW(unset.to_string(), std::logic_error);
@@ -91,7 +91,7 @@ TEST(ExactConstant, UnsetValuesHaveNoNumericalMeaning)
   EXPECT_THROW((void)(unset == value), std::logic_error);
   EXPECT_THROW((void)(unset < value), std::logic_error);
   EXPECT_THROW(sqrt(unset), std::logic_error);
-  EXPECT_THROW(pow(unset, exact_constant{0}), std::logic_error);
+  EXPECT_THROW(pow(unset, exact_rational{0}), std::logic_error);
   EXPECT_THROW(pow(value, unset), std::logic_error);
   EXPECT_THROW((void)mpreal{unset}, std::logic_error);
   EXPECT_THROW((void)mpreal{std::move(unset)}, std::logic_error);
@@ -127,7 +127,7 @@ struct GmpAllocationProbe
 };
 } // namespace
 
-TEST(ExactConstantDeathTest, MovesDoNotAllocate)
+TEST(ExactRationalDeathTest, MovesDoNotAllocate)
 {
   // Never change GMP's process-global hooks in the main test process, where
   // other tests may have started scheduler workers or retained GMP objects.
@@ -138,10 +138,10 @@ TEST(ExactConstantDeathTest, MovesDoNotAllocate)
         bool valid = false;
         std::size_t move_allocations = 0;
         {
-          exact_constant source("123456789012345678901234567891/7");
-          exact_constant target{9};
+          exact_rational source("123456789012345678901234567891/7");
+          exact_rational target{9};
           mpreal real(source);
-          std::vector<exact_constant> values(3, source);
+          std::vector<exact_rational> values(3, source);
           auto before = GmpAllocationProbe::allocations;
           auto moved = std::move(source);
           auto empty = std::move(source);

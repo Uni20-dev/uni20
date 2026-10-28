@@ -12,6 +12,10 @@ layers such as tensor, linalg, backend, async, or symmetry.
 - `scalar_precision.hpp`: provider-neutral runtime selection of configured real
   scalar precisions.
 - `precision.hpp`: provider-independent exact or finite working precision, in every build.
+- `mpreal.hpp`, `mpcomplex.hpp`: optional exact or finite-precision real and
+  complex scalars for general numerical code.
+- `exact_rational.hpp`: owning GMP rationals for code that explicitly requires
+  exact rational arithmetic; also the exact payload used by `mpreal`.
 - `runtime_precision.hpp`: generic `precision_of`, `native_precision` and
   `scalar_at_precision` queries/construction for fixed and runtime scalar types.
 - `numeric_limits.hpp`: Uni20 numeric-limits customization point for generic
