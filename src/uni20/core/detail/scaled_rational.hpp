@@ -1,7 +1,7 @@
 #pragma once
 
 #include <mpfr.h>
-#include <uni20/core/exact_constant.hpp>
+#include <uni20/core/exact_rational.hpp>
 
 #include <algorithm>
 #include <array>
@@ -14,7 +14,7 @@ using scaled_exponent = __int128_t;
 
 struct scaled_rational
 {
-    exact_constant coefficient;
+    exact_rational coefficient;
     scaled_exponent exponent = 0;
 };
 

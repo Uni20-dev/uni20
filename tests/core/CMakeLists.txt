@@ -12,7 +12,7 @@ if(UNI20_HAS_MPREAL)
     target_compile_options(uni20_mpfr_ubsan_compile PRIVATE -fsanitize=undefined)
   endif()
   add_test_module(mpfr_conversion SOURCES test_mpreal_native_conversion.cpp LIBS uni20_core)
-  add_test_module(mpfr SOURCES test_mpreal.cpp test_mpreal_elementary.cpp test_mpreal_utilities.cpp test_mpreal_special.cpp test_mpreal_extensions.cpp test_exact_constant.cpp test_scaled_rational.cpp LIBS uni20_core uni20_async TBB::tbb)
+  add_test_module(mpfr SOURCES test_mpreal.cpp test_mpreal_elementary.cpp test_mpreal_utilities.cpp test_mpreal_special.cpp test_mpreal_extensions.cpp test_exact_rational.cpp test_scaled_rational.cpp LIBS uni20_core uni20_async TBB::tbb)
 endif()
 
 if(UNI20_HAS_MPREAL)

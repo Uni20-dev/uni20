@@ -13,8 +13,8 @@ namespace detail
 struct mpcomplex_access;
 struct exact_complex
 {
-    exact_constant re;
-    exact_constant im;
+    exact_rational re;
+    exact_rational im;
 };
 struct mpc_value
 {
@@ -91,13 +91,13 @@ class mpcomplex {
       requires(!std::same_as<I, bool>)
     explicit mpcomplex(I value) : mpcomplex(mpreal(value))
     {}
-    explicit mpcomplex(exact_constant const& value) : mpcomplex(mpreal(value)) {}
+    explicit mpcomplex(exact_rational const& value) : mpcomplex(mpreal(value)) {}
     explicit mpcomplex(decimal_literal value) : mpcomplex(mpreal(value)) {}
     template <std::integral I>
       requires(!std::same_as<I, bool>)
     mpcomplex(I value, Precision p) : mpcomplex(mpreal(value, p))
     {}
-    mpcomplex(exact_constant const& value, Precision p) : mpcomplex(mpreal(value, p)) {}
+    mpcomplex(exact_rational const& value, Precision p) : mpcomplex(mpreal(value, p)) {}
     mpcomplex(decimal_literal value, Precision p) : mpcomplex(mpreal(value, p)) {}
     mpcomplex(std::string_view re, std::string_view im, Precision p) : mpcomplex(mpreal(re, p), mpreal(im, p)) {}
     mpcomplex(mpcomplex const& other, Precision p) : mpcomplex(p)
@@ -187,10 +187,10 @@ class mpcomplex {
     mpcomplex& operator-=(mpcomplex const& rhs);
     mpcomplex& operator*=(mpcomplex const& rhs);
     mpcomplex& operator/=(mpcomplex const& rhs);
-    mpcomplex& operator+=(exact_constant const& rhs);
-    mpcomplex& operator-=(exact_constant const& rhs);
-    mpcomplex& operator*=(exact_constant const& rhs);
-    mpcomplex& operator/=(exact_constant const& rhs);
+    mpcomplex& operator+=(exact_rational const& rhs);
+    mpcomplex& operator-=(exact_rational const& rhs);
+    mpcomplex& operator*=(exact_rational const& rhs);
+    mpcomplex& operator/=(exact_rational const& rhs);
 
   private:
     friend struct detail::mpcomplex_access;
@@ -288,8 +288,8 @@ struct mpcomplex_access
           mpcomplex result(p);
           if constexpr (same_function_v<Operation, mpc_mul>)
           {
-            scaled_rational_ratio({rr, -ii, {exact_constant{1}, 0}, {}}).round_to(mpc_realref(result.approximate()));
-            scaled_rational_ratio({ri, ir, {exact_constant{1}, 0}, {}}).round_to(mpc_imagref(result.approximate()));
+            scaled_rational_ratio({rr, -ii, {exact_rational{1}, 0}, {}}).round_to(mpc_realref(result.approximate()));
+            scaled_rational_ratio({ri, ir, {exact_rational{1}, 0}, {}}).round_to(mpc_imagref(result.approximate()));
           }
           else
           {
@@ -473,21 +473,21 @@ inline mpcomplex& mpcomplex::operator/=(mpcomplex const& rhs)
   return detail::mpcomplex_access::assign<mpc_div>(*this, rhs);
 }
 
-inline mpcomplex operator+(mpcomplex const& a, exact_constant const& b) { return a + mpcomplex(b); }
-inline mpcomplex operator-(mpcomplex const& a, exact_constant const& b) { return a - mpcomplex(b); }
-inline mpcomplex operator*(mpcomplex const& a, exact_constant const& b) { return a * mpcomplex(b); }
-inline mpcomplex operator/(mpcomplex const& a, exact_constant const& b) { return a / mpcomplex(b); }
-inline mpcomplex operator+(exact_constant const& a, mpcomplex const& b) { return mpcomplex(a) + b; }
-inline mpcomplex operator-(exact_constant const& a, mpcomplex const& b) { return mpcomplex(a) - b; }
-inline mpcomplex operator*(exact_constant const& a, mpcomplex const& b) { return mpcomplex(a) * b; }
-inline mpcomplex operator/(exact_constant const& a, mpcomplex const& b) { return mpcomplex(a) / b; }
-inline mpcomplex& mpcomplex::operator+=(exact_constant const& rhs) { return *this += mpcomplex(rhs); }
-inline mpcomplex& mpcomplex::operator-=(exact_constant const& rhs) { return *this -= mpcomplex(rhs); }
-inline mpcomplex& mpcomplex::operator*=(exact_constant const& rhs) { return *this *= mpcomplex(rhs); }
-inline mpcomplex& mpcomplex::operator/=(exact_constant const& rhs) { return *this /= mpcomplex(rhs); }
+inline mpcomplex operator+(mpcomplex const& a, exact_rational const& b) { return a + mpcomplex(b); }
+inline mpcomplex operator-(mpcomplex const& a, exact_rational const& b) { return a - mpcomplex(b); }
+inline mpcomplex operator*(mpcomplex const& a, exact_rational const& b) { return a * mpcomplex(b); }
+inline mpcomplex operator/(mpcomplex const& a, exact_rational const& b) { return a / mpcomplex(b); }
+inline mpcomplex operator+(exact_rational const& a, mpcomplex const& b) { return mpcomplex(a) + b; }
+inline mpcomplex operator-(exact_rational const& a, mpcomplex const& b) { return mpcomplex(a) - b; }
+inline mpcomplex operator*(exact_rational const& a, mpcomplex const& b) { return mpcomplex(a) * b; }
+inline mpcomplex operator/(exact_rational const& a, mpcomplex const& b) { return mpcomplex(a) / b; }
+inline mpcomplex& mpcomplex::operator+=(exact_rational const& rhs) { return *this += mpcomplex(rhs); }
+inline mpcomplex& mpcomplex::operator-=(exact_rational const& rhs) { return *this -= mpcomplex(rhs); }
+inline mpcomplex& mpcomplex::operator*=(exact_rational const& rhs) { return *this *= mpcomplex(rhs); }
+inline mpcomplex& mpcomplex::operator/=(exact_rational const& rhs) { return *this /= mpcomplex(rhs); }
 
 inline bool operator==(mpcomplex const& a, mpcomplex const& b) { return a.real() == b.real() && a.imag() == b.imag(); }
-inline bool operator==(mpcomplex const& a, exact_constant const& b) { return a.real() == b && a.imag() == 0; }
+inline bool operator==(mpcomplex const& a, exact_rational const& b) { return a.real() == b && a.imag() == 0; }
 inline mpcomplex conj(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_conj>(z); }
 inline mpreal abs(mpcomplex const& z) { return detail::mpcomplex_access::real_result<mpc_abs>(z); }
 inline mpreal norm(mpcomplex const& z) { return detail::mpcomplex_access::real_result<mpc_norm>(z); }

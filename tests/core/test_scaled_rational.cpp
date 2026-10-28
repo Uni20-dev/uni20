@@ -67,7 +67,7 @@ TEST(ScaledRational, RealQuotientMatchesExactOracle)
       auto exact_x = mpreal{3} * pow(mpreal{2}, mpreal{exponent});
       for (auto text : {"1/3", "9/8", "-11/10"})
       {
-        mpreal q{exact_constant(text)};
+        mpreal q{exact_rational(text)};
         EXPECT_EQ(q / x, (q / exact_x).at(p));
       }
     }
@@ -82,8 +82,8 @@ TEST(ScaledRational, CorrectRoundingAndRangeFlagsMatchMpfr)
     {
       auto p = Precision::bits(bits);
       detail::mpfr_value actual(p);
-      exact_constant q(text);
-      detail::scaled_rational_ratio({detail::scaled_rational{q, 0}, {}, {exact_constant{1}, 0}, {}})
+      exact_rational q(text);
+      detail::scaled_rational_ratio({detail::scaled_rational{q, 0}, {}, {exact_rational{1}, 0}, {}})
           .round_to(actual.value);
       EXPECT_EQ(mpreal(actual.value, p), q.at(p));
     }
@@ -93,13 +93,13 @@ TEST(ScaledRational, CorrectRoundingAndRangeFlagsMatchMpfr)
       {
         auto p = Precision::bits(bits);
         detail::mpfr_value actual(p), expected(p), input(Precision::bits(8));
-        exact_constant q(text);
+        exact_rational q(text);
         mpfr_set_q(input.value, q.native_handle(), MPFR_RNDN);
         mpfr_clear_flags();
         mpfr_mul_2si(expected.value, input.value, exponent, MPFR_RNDN);
         auto flags = mpfr_flags_save();
         mpfr_clear_flags();
-        detail::scaled_rational_ratio({detail::scaled_rational{q, exponent}, {}, {exact_constant{1}, 0}, {}})
+        detail::scaled_rational_ratio({detail::scaled_rational{q, exponent}, {}, {exact_rational{1}, 0}, {}})
             .round_to(actual.value);
         SCOPED_TRACE(testing::Message() << bits << " bits: " << text << " * 2^" << exponent);
         EXPECT_EQ(mpfr_flags_save(), flags);
@@ -119,7 +119,7 @@ TEST(ScaledRational, ComplexProductsAndQuotientsMatchExactOracle)
         {
           auto p = Precision::bits(bits);
           C x(pow(mpreal{2}, mpreal{exponents.first}), -pow(mpreal{2}, mpreal{exponents.second}));
-          C a = x.at(p), b(mpreal{exact_constant(re)}, mpreal{exact_constant(im)});
+          C a = x.at(p), b(mpreal{exact_rational(re)}, mpreal{exact_rational(im)});
           EXPECT_EQ(a * b, (x * b).at(p));
           EXPECT_EQ(b * a, (b * x).at(p));
           EXPECT_EQ(a / b, (x / b).at(p));
@@ -127,13 +127,13 @@ TEST(ScaledRational, ComplexProductsAndQuotientsMatchExactOracle)
         }
   auto p = Precision::bits(3);
   C a(power_of_two(5000, p), power_of_two(-5000, p));
-  C below(mpreal{exact_constant("9/8")}, mpreal{1});
-  C above(mpreal{exact_constant("9/8")}, mpreal{-1});
+  C below(mpreal{exact_rational("9/8")}, mpreal{1});
+  C above(mpreal{exact_rational("9/8")}, mpreal{-1});
   EXPECT_EQ((a * below).real(), power_of_two(5000, p));
   EXPECT_EQ((a * above).real(), mpreal("1.25", p) * power_of_two(5000, p));
   // Cancellation of huge terms must still recover a much smaller exact result.
   C x(power_of_two(5000, p), -power_of_two(5000, p));
-  mpreal tiny{exact_constant("1/10000000000000000000000000000000000000000")};
+  mpreal tiny{exact_rational("1/10000000000000000000000000000000000000000")};
   C b(mpreal{1} + tiny, mpreal{-1});
   EXPECT_EQ((x * b).real(), (pow(mpreal{2}, mpreal{5000}) * tiny).at(p));
 }

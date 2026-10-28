@@ -59,8 +59,8 @@ template <class S> consteval bool gemm_coefficients_are_numeric()
   constexpr std::array accepted{true, true, true, true};
   constexpr std::array rejected{false, false, false, false};
   return gemm_coefficient_forms<S, S, S> == accepted && gemm_coefficient_forms<S, int, int> == accepted &&
-         gemm_coefficient_forms<S, decimal_literal, exact_constant> == accepted &&
-         gemm_coefficient_forms<S, exact_constant, decimal_literal> == accepted &&
+         gemm_coefficient_forms<S, decimal_literal, exact_rational> == accepted &&
+         gemm_coefficient_forms<S, exact_rational, decimal_literal> == accepted &&
          gemm_coefficient_forms<S, Precision, int> == rejected &&
          gemm_coefficient_forms<S, int, Precision> == rejected &&
          gemm_coefficient_forms<S, uninitialized_t, int> == rejected &&
@@ -464,8 +464,8 @@ TEST(MpfrLinalg, DefaultToleranceIsExactZeroAndExplicitRationalToleranceIsChecke
   auto p = Precision::bits(128);
   DenseMatrix<mpreal> a(2, 2, p), b(2, 1, p);
   a[0, 0] = mpreal{1};
-  a[1, 1] = mpreal{exact_constant("1/100")};
-  options.relative_pivot_tolerance = mpreal{exact_constant("1/10")};
+  a[1, 1] = mpreal{exact_rational("1/100")};
+  options.relative_pivot_tolerance = mpreal{exact_rational("1/10")};
   auto info = linalg::solve_inplace_with_info(a, b, options);
   EXPECT_EQ(info.status, linalg::SolveStatus::small_pivot);
   options.relative_pivot_tolerance = mpreal{-1};
@@ -499,7 +499,7 @@ TEST(MpfrLinalg, SyncGemmAcceptsNumericCoefficientsInEveryForm)
     DenseMatrix<S> a(1, 1, p), b(1, 1, p), out(1, 1, p);
     a[0, 0] = S{2};
     b[0, 0] = S{6};
-    auto quarter = exact_constant("1/4");
+    auto quarter = exact_rational("1/4");
     out[0, 0] = S{4};
     linalg::gemm(out, 0.5_mp, a, b, quarter);
     EXPECT_EQ((out[0, 0]), S{7});

@@ -63,7 +63,7 @@ TEST(FactorialFactory, RuntimePrecisionAndExactState)
   EXPECT_EQ(value, math::factorial(40, p));
   auto exact = factorial<mpreal>(20, Precision::exact());
   EXPECT_TRUE(exact.is_exact());
-  EXPECT_EQ(exact, mpreal(exact_constant("2432902008176640000")));
+  EXPECT_EQ(exact, mpreal(exact_rational("2432902008176640000")));
   EXPECT_THROW(factorial<mpreal>(-1, p), std::domain_error);
   EXPECT_THROW(factorial<mpreal>(numeric_limits<std::uint64_t>::max(), p), std::out_of_range);
 }

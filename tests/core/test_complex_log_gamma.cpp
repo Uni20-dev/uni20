@@ -151,10 +151,10 @@ TEST(ComplexLogGamma, ExplicitPrecisionAndExactCoefficients)
   EXPECT_THROW((log_gamma_context<mpreal>(p, {.max_terms = 16})), std::invalid_argument);
   EXPECT_THROW((log_gamma_context<mpreal>(Precision::bits(std::numeric_limits<std::int64_t>::max()))),
                std::overflow_error);
-  EXPECT_EQ(uni20::detail::exact_bernoulli(0), uni20::exact_constant(1));
-  EXPECT_EQ(uni20::detail::exact_bernoulli(1), uni20::exact_constant(-1) / uni20::exact_constant(2));
-  EXPECT_EQ(uni20::detail::exact_bernoulli(12), uni20::exact_constant(-691) / uni20::exact_constant(2730));
-  EXPECT_EQ(uni20::detail::exact_bernoulli(19), uni20::exact_constant(0));
+  EXPECT_EQ(uni20::detail::exact_bernoulli(0), uni20::exact_rational(1));
+  EXPECT_EQ(uni20::detail::exact_bernoulli(1), uni20::exact_rational(-1) / uni20::exact_rational(2));
+  EXPECT_EQ(uni20::detail::exact_bernoulli(12), uni20::exact_rational(-691) / uni20::exact_rational(2730));
+  EXPECT_EQ(uni20::detail::exact_bernoulli(19), uni20::exact_rational(0));
 }
 TEST(ComplexLogGamma, SharedContextsRetainPrecisionThroughAsyncCompletion)
 {

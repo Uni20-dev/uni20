@@ -13,6 +13,12 @@ allocation and dense backend integration are separate from scalar support.
 `BlasBackend` and `LapackBackend`, without extending
 the type-only `LapackScalar` concepts or generic Krylov support.
 
+Prefer `mpreal` for general numerical code: it supports both exact rationals and
+finite-precision approximations. Use `uni20::exact_rational` when the type must
+explicitly require rational arithmetic, for example when generating exact
+coefficients. It is the owning GMP rational payload used by `mpreal` and by
+precisionless literal arithmetic; it has no approximation precision of its own.
+
 `uni20::complex<T>` selects the appropriate owning scalar type. Existing native
 real types retain exact `std::complex<T>` type identity. Generic complex APIs
 should deduce the complex type directly (`template <Complex C>`) and obtain its
@@ -503,7 +509,7 @@ template's zero-valued fallback from silently becoming a convergence tolerance.
 ### Exactness queries
 
 `uni20::is_exact(value)` queries the active arithmetic state of `mpreal`,
-`complex<mpreal>` and `exact_constant`, and the static exactness of ordinary scalar
+`complex<mpreal>` and `exact_rational`, and the static exactness of ordinary scalar
 types. It returns false for an unset runtime scalar. `numeric_limits<T>::is_exact`
 remains a compile-time type property; it cannot describe the changing state of an
 individual `mpreal`. Ordinary integers are exact, while native floating values

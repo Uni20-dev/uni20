@@ -24,10 +24,10 @@ TYPED_TEST(ExactMatrixProduct, RationalProductAndAccumulationSelectCpu)
   auto exact = Precision::exact();
   RowMajorTensor<S, 2> a(2, 2, exact);
   DenseMatrix<S> b(2, 2, exact), out(uninitialized, 2, 2, exact);
-  a[0, 0] = S{exact_constant("1/3")};
-  a[0, 1] = S{exact_constant("1/7")};
-  a[1, 0] = S{exact_constant("-1/2")};
-  a[1, 1] = S{exact_constant("2/5")};
+  a[0, 0] = S{exact_rational("1/3")};
+  a[0, 1] = S{exact_rational("1/7")};
+  a[1, 0] = S{exact_rational("-1/2")};
+  a[1, 1] = S{exact_rational("2/5")};
   b[0, 0] = S{3};
   b[1, 1] = S{5};
   namespace diagnostics = linalg::dispatch_diagnostics;
@@ -39,11 +39,11 @@ TYPED_TEST(ExactMatrixProduct, RationalProductAndAccumulationSelectCpu)
   });
   linalg::assign_product(out, a, b);
   EXPECT_EQ((out[0, 0]), S{1});
-  EXPECT_EQ((out[0, 1]), S{exact_constant("5/7")});
-  EXPECT_EQ((out[1, 0]), S{exact_constant("-3/2")});
+  EXPECT_EQ((out[0, 1]), S{exact_rational("5/7")});
+  EXPECT_EQ((out[1, 0]), S{exact_rational("-3/2")});
   EXPECT_EQ((out[1, 1]), S{2});
   linalg::add_product(out, a, b);
-  EXPECT_EQ((out[0, 1]), S{exact_constant("10/7")});
+  EXPECT_EQ((out[0, 1]), S{exact_rational("10/7")});
   EXPECT_EQ((out[1, 0]), S{-3});
   EXPECT_EQ(out.default_precision(), exact);
   for (auto const& value : out.storage())
@@ -96,13 +96,13 @@ TYPED_TEST(ExactMatrixProduct, AsyncProductRetainsExactArithmetic)
   async::DebugScheduler scheduler;
   async::ScopedScheduler scope(&scheduler);
   Matrix av(1, 1, exact), bv(1, 1, exact);
-  av[0, 0] = S{exact_constant("1/3")};
-  bv[0, 0] = S{exact_constant("3/7")};
+  av[0, 0] = S{exact_rational("1/3")};
+  bv[0, 0] = S{exact_rational("3/7")};
   async::Async<Matrix> a(std::move(av)), b(std::move(bv)), out;
   linalg::assign_product(out, a, b);
   linalg::add_product(out, a, b);
   auto const& result = out.get_wait(scheduler);
-  EXPECT_EQ((result[0, 0]), S{exact_constant("2/7")});
+  EXPECT_EQ((result[0, 0]), S{exact_rational("2/7")});
   EXPECT_TRUE((result[0, 0].is_exact()));
   EXPECT_EQ(result.default_precision(), exact);
 }
@@ -112,9 +112,9 @@ TEST(ExactComplexMatrixProduct, ConjugatingAccessorIsObserved)
 {
   using C = complex<mpreal>;
   DenseMatrix<C> a(1, 1, Precision::exact()), out;
-  a[0, 0] = C{mpreal{exact_constant("1/3")}, mpreal{exact_constant("2/7")}};
+  a[0, 0] = C{mpreal{exact_rational("1/3")}, mpreal{exact_rational("2/7")}};
   linalg::assign_product(out, a, conj(a));
-  EXPECT_EQ((out[0, 0]), C{exact_constant("85/441")});
+  EXPECT_EQ((out[0, 0]), C{exact_rational("85/441")});
   EXPECT_TRUE((out[0, 0].is_exact()));
 }
 #endif
@@ -125,7 +125,7 @@ TYPED_TEST(ExactMatrixProduct, FiniteOverrideUsesMplapack)
   using S = TypeParam;
   auto p = Precision::bits(3);
   DenseMatrix<S> a(1, 1, Precision::exact()), b(1, 1, Precision::exact()), out;
-  a[0, 0] = S{exact_constant("9/8")};
+  a[0, 0] = S{exact_rational("9/8")};
   b[0, 0] = S{1};
   linalg::assign_product(out, a, b, p);
   EXPECT_EQ((out[0, 0]), S{1});

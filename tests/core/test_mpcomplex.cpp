@@ -261,7 +261,7 @@ TEST(MpComplex, MixedBasicArithmeticRoundsEachResultComponentOnce)
     for (auto re : {"9/8", "1/7", "-11/10"})
       for (auto im : {"1/8", "-19/13", "1/10000000000000000000000000000000000000000"})
       {
-        C b(mpreal{exact_constant(re)}, mpreal{exact_constant(im)});
+        C b(mpreal{exact_rational(re)}, mpreal{exact_rational(im)});
         EXPECT_EQ(a + b, (x + b).at(p));
         EXPECT_EQ(b + a, (b + x).at(p));
         EXPECT_EQ(a - b, (x - b).at(p));
@@ -280,8 +280,8 @@ TEST(MpComplex, MixedBasicArithmeticRoundsEachResultComponentOnce)
         EXPECT_EQ(c.precision(), p);
       }
     // Nearly cancelling real products; pre-rounding the exact operand loses this component.
-    exact_constant tiny("1/10000000000000000000000000000000000000000");
-    C b(mpreal{exact_constant{1} + tiny}, mpreal{-1});
+    exact_rational tiny("1/10000000000000000000000000000000000000000");
+    C b(mpreal{exact_rational{1} + tiny}, mpreal{-1});
     EXPECT_EQ((a * b).real(), tiny.at(p));
   }
 }
