@@ -12,3 +12,4 @@ leak:uni20/async/async_node.hpp
 leak:^mpfr_atan$
 leak:^mpfr_cos$
 leak:^mpfr_cache$
+leak:^mpfr_exp_2$
