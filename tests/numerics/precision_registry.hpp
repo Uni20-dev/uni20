@@ -50,6 +50,8 @@ enum class PrecisionProbe
   DigammaAccuracy,
   FactorialIdentities,
   FactorialAccuracy,
+  FiniteQuadratureIdentities,
+  FiniteQuadratureAccuracy,
   ThetaConstantIdentities,
   ThetaConstantAccuracy,
   AgmIdentities,
@@ -148,6 +150,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "DigammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "FiniteQuadratureIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "FiniteQuadratureAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "AgmIdentities", "scalar_math"},
@@ -268,7 +272,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == AiryIdentities || probe == AiryAccuracy || probe == UpperGammaIdentities ||
+    if (probe == FiniteQuadratureIdentities || probe == FiniteQuadratureAccuracy || probe == AiryIdentities ||
+        probe == AiryAccuracy || probe == UpperGammaIdentities ||
         probe == UpperGammaAccuracy || probe == ZetaIdentities || probe == ZetaAccuracy || probe == ExpintIdentities ||
         probe == ExpintAccuracy || probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities ||
         probe == BetaAccuracy || probe == BetaPortableAccuracy || probe == DigammaIdentities ||
@@ -369,6 +374,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case DilogAccuracy:
       case DigammaAccuracy:
       case FactorialAccuracy:
+      case FiniteQuadratureAccuracy:
       case ThetaConstantAccuracy:
       case AgmAccuracy:
       case ReciprocalFunctionAccuracy:

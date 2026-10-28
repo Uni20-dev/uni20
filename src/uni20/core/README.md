@@ -17,6 +17,8 @@ layers such as tensor, linalg, backend, async, or symmetry.
 - `numeric_limits.hpp`: Uni20 numeric-limits customization point for generic
   scalar algorithms.
 - `math.hpp`: shared `uni20::math` dispatch and scalar classification/construction helpers.
+- `finite_quadrature.hpp`: opt-in finite tanh-sinh integration with endpoint
+  distances, explicit working precision and component error diagnostics.
 - `elliptic_theta.hpp`: scaled rectangular theta constants at native or explicit
   MPFR precision; see [the numerical contract](../../../docs/tensor/elliptic_theta.md).
 - `buildinfo.hpp.in`: generated build/environment metadata.
@@ -33,4 +35,5 @@ layers such as tensor, linalg, backend, async, or symmetry.
 
 - [Source tree map](../)
 - [Scalar policy](../../../docs/tensor/scalar_policy.md)
+- [Finite-interval quadrature](../../../docs/tensor/finite_quadrature.md)
 - [Build information](../../../docs/development/build_information.md)
