@@ -1,5 +1,8 @@
 # Shared scalar math dispatch
 
+For the opt-in reusable complex special-function context, see
+[complex log-Gamma and real-shift ratios](complex_log_gamma.md).
+
 The host scalar-math interface lives in `<uni20/core/math.hpp>`, in namespace
 `uni20::math`. It supplies one place for native overload selection and
 class-specific argument-dependent lookup (ADL). Algorithms no longer need

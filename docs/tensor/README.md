@@ -47,6 +47,7 @@ reference comparisons, and measured limitations.
 - [Exponential Integral](native_expint.md)
 - [Dilogarithm](native_dilogarithm.md)
 - [Upper Incomplete Gamma](native_upper_gamma.md)
+- [Complex Log-Gamma and Real-Shift Ratios](complex_log_gamma.md)
 - [Airy Ai](native_airy.md)
 - [Finite-Interval Quadrature](finite_quadrature.md)
 

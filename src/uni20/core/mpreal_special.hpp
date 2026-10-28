@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/exact_bernoulli.hpp"
 #include "detail/math_integer.hpp"
 #include "math_results.hpp"
 #include "mpreal.hpp"
@@ -36,14 +37,7 @@ inline mpreal exact_zeta(exact_constant const& x)
     // Zeta(-m) = -B_(m+1)/(m+1) for odd positive m. This exact
     // Bernoulli recurrence has no floating-point approximation or ambient precision.
     auto order = exact_nonnegative_order(-x) + 1;
-    std::vector<exact_constant> row(order + 1);
-    for (unsigned long m = 0; m <= order; ++m)
-    {
-      row[m] = exact_constant{1} / exact_constant{m + 1};
-      for (unsigned long j = m; j > 0; --j)
-        row[j - 1] = exact_constant{j} * (row[j - 1] - row[j]);
-    }
-    return mpreal(-row[0] / exact_constant{order});
+    return mpreal(-exact_bernoulli(order) / exact_constant{order});
   }
   throw std::logic_error("Zeta requires finite precision except at nonpositive integers");
 }

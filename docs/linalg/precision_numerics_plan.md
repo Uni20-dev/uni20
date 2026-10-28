@@ -257,6 +257,12 @@ reduced QR. Name the matrix and norm in every future QR diagnostic.
 
 ## 5. Complex Gamma/Barnes extraction
 
+The first extraction is implemented in
+[complex log-Gamma and real-shift ratios](../tensor/complex_log_gamma.md): an
+immutable right-half-plane Gamma context, shared exact Bernoulli/native Stirling
+coefficients, and a paired log-ratio that avoids subtracting large phases.
+Barnes G remains separate work; Gamma callers do not initialize Barnes data.
+
 The model-independent `GammaBarnes<Real>` implementation in
 `bethe-6spinon/include/bethe/special_functions.hpp` is the starting point.
 Preserve its finite `Re(z)>0` domain and two distinct functions:
