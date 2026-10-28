@@ -21,6 +21,8 @@ layers such as tensor, linalg, backend, async, or symmetry.
   distances, explicit working precision and component error diagnostics.
 - `elliptic_theta.hpp`: scaled rectangular theta constants at native or explicit
   MPFR precision; see [the numerical contract](../../../docs/tensor/elliptic_theta.md).
+- `complex_log_gamma.hpp`: immutable right-half-plane log-Gamma and stable
+  real-shift log-ratio contexts with explicit precision and diagnostics.
 - `buildinfo.hpp.in`: generated build/environment metadata.
 - `dummy.*`: minimal target source used to keep build targets well-formed where
   needed.

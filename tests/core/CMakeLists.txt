@@ -1,5 +1,6 @@
 # tests/core/CMakeLists.txt
 
+add_test_module(complex_log_gamma SOURCES test_complex_log_gamma.cpp LIBS uni20_core uni20_async TBB::tbb)
 add_test_module(finite_quadrature SOURCES test_finite_quadrature.cpp LIBS uni20_core)
 
 if(UNI20_HAS_MPREAL)
