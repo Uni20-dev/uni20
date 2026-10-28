@@ -57,8 +57,10 @@ Current properties:
   representation.
 - Equality compares canonical identity.
 - Component names such as `N` and `Sz` are semantic, not decorative.
-- The current implementation interns canonical symmetry instances for process
-  lifetime.
+- The intern registry and its canonical symmetry instances are retained for
+  process lifetime, including during static destruction. Storage grows with
+  distinct canonical symmetry definitions, not with repeated use of one
+  definition; there is no reference-counting or shutdown cleanup.
 
 `Symmetry` also exposes:
 
