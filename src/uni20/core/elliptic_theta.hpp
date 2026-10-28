@@ -49,10 +49,9 @@ template <ThetaReal R> theta_constant_result<R> theta_constant_series(unsigned k
   R const decay = dual ? pi_value / t : pi_value * t;
   R const target = numeric_limits<R>::epsilon(t) / number(16);
   if (!(target > zero)) throw std::underflow_error("theta constant series tolerance exceeds scalar range");
-  R sum = series_kind == 2 ? two : one, correction = zero;
+  R sum = series_kind == 2 ? two : one, correction = zero, n = one;
   for (std::size_t index = 0; index < max_terms; ++index)
   {
-    R const n = number(index) + one;
     R const power = series_kind == 2 ? n * (n + one) : n * n;
     R const term = two * math::exp(-decay * power);
     // In the reduced domain t>=1 successive absolute terms have ratio at
@@ -63,6 +62,7 @@ template <ThetaReal R> theta_constant_result<R> theta_constant_series(unsigned k
     R const next = sum + signed_term;
     correction += (sum - next) + signed_term; // |sum| > |signed_term|.
     sum = next;
+    n += one;
   }
   throw std::runtime_error("theta constant series exhausted its term budget");
 }
