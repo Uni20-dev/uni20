@@ -46,6 +46,7 @@ reference comparisons, and measured limitations.
 - [Dilogarithm](native_dilogarithm.md)
 - [Upper Incomplete Gamma](native_upper_gamma.md)
 - [Airy Ai](native_airy.md)
+- [Finite-Interval Quadrature](finite_quadrature.md)
 
 ## Coverage Plans
 

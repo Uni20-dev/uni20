@@ -1,5 +1,7 @@
 # tests/core/CMakeLists.txt
 
+add_test_module(finite_quadrature SOURCES test_finite_quadrature.cpp LIBS uni20_core)
+
 if(UNI20_HAS_MPREAL)
   # Compile the real/complex dispatch headers with UBSan even in ordinary CI
   # builds. No executable or sanitizer runtime is needed for this regression.
