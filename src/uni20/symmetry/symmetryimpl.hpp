@@ -41,7 +41,8 @@ struct SymmetryFactorSpec
 ///
 /// \internal
 /// The first implementation supports only named U(1) factors. Canonicalization is
-/// process-local and intentionally leaks the interned `SymmetryImpl` instances.
+/// process-local and retains the intern map and its `SymmetryImpl` instances for
+/// the lifetime of the process.
 /// \endinternal
 class SymmetryImpl {
   public:
@@ -254,8 +255,10 @@ class SymmetryImpl {
     /// \return Process-global mapping from canonical strings to canonical instances.
     static auto intern_map() -> std::unordered_map<std::string, SymmetryImpl const*>&
     {
-      static std::unordered_map<std::string, SymmetryImpl const*> map;
-      return map;
+      // Canonical instances have process lifetime. Keep their registry alive
+      // too, so static destruction does not orphan the retained instances.
+      static auto* const map = new std::unordered_map<std::string, SymmetryImpl const*>;
+      return *map;
     }
 
     /// \brief Return the mutex protecting the global intern map.
