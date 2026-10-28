@@ -258,7 +258,12 @@ class NodeInfo {
     /// \return Pointer to the new NodeInfo (never deallocated).
     ///
     /// \post The returned NodeInfo outlives all references (process lifetime).
-    template <typename T> static NodeInfo const* create(T const* value) { return new NodeInfo(value); }
+    // Keep the diagnostic-only allocation frame visible to sanitizer symbolizers.
+    // GCC's libbacktrace can omit inlined frames even with full debug information.
+    template <typename T> [[gnu::noinline]] static NodeInfo const* create(T const* value)
+    {
+      return new NodeInfo(value);
+    }
 
     /// \brief Factory method to create a NodeInfo for shared async storage.
     ///
@@ -267,7 +272,7 @@ class NodeInfo {
     /// \return Pointer to the new NodeInfo (never deallocated).
     ///
     /// \post The returned NodeInfo outlives all references (process lifetime).
-    template <typename T> static NodeInfo const* create(shared_storage<T> const& storage)
+    template <typename T> [[gnu::noinline]] static NodeInfo const* create(shared_storage<T> const& storage)
     {
       return new NodeInfo(storage);
     }

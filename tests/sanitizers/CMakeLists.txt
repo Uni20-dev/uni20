@@ -1,3 +1,19 @@
+# Keep diagnostic allocation filtering separate from real owning-value leaks.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND ("address" IN_LIST UNI20_SANITIZE_LIST OR "leak" IN_LIST UNI20_SANITIZE_LIST))
+  add_executable(uni20_dag_metadata_probe dag_metadata_probe.cpp)
+  target_link_libraries(uni20_dag_metadata_probe PRIVATE uni20_common)
+  target_compile_options(uni20_dag_metadata_probe PRIVATE -O1 -g1)
+  add_test(NAME Sanitizers.DagMetadataPolicy
+    COMMAND "${CMAKE_COMMAND}"
+      "-Dprobe=$<TARGET_FILE:uni20_dag_metadata_probe>"
+      "-Dsuppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan.supp"
+      "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dag_metadata.cmake")
+  set_tests_properties(Sanitizers.DagMetadataPolicy PROPERTIES
+    LABELS sanitizers TIMEOUT 120)
+endif()
+
 # LSan subprocess controls intentionally fail on real leaks. Other builds do
 # not register these checks; Linux is the validated LSan runtime here.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND UNI20_HAS_MPREAL
