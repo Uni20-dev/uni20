@@ -1,3 +1,4 @@
+file(MAKE_DIRECTORY "${test_binary_dir}")
 file(WRITE "${test_binary_dir}/dag-no-suppressions.supp" "")
 
 function(check mode policy expected)

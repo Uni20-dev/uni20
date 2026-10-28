@@ -12,6 +12,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dag_metadata.cmake")
   set_tests_properties(Sanitizers.DagMetadataPolicy PROPERTIES
     LABELS sanitizers TIMEOUT 120)
+
+  # Exercise the qualified-symbol rule independently of source-line lookup.
+  add_executable(uni20_dag_metadata_symbol_probe dag_metadata_probe.cpp)
+  target_link_libraries(uni20_dag_metadata_symbol_probe PRIVATE uni20_common)
+  target_compile_options(uni20_dag_metadata_symbol_probe PRIVATE -O1 -g0)
+  add_test(NAME Sanitizers.DagMetadataSymbolPolicy
+    COMMAND "${CMAKE_COMMAND}"
+      "-Dprobe=$<TARGET_FILE:uni20_dag_metadata_symbol_probe>"
+      "-Dsuppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan.supp"
+      "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/symbol-policy"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dag_metadata.cmake")
+  set_tests_properties(Sanitizers.DagMetadataSymbolPolicy PROPERTIES
+    LABELS sanitizers TIMEOUT 120)
 endif()
 
 # LSan subprocess controls intentionally fail on real leaks. Other builds do

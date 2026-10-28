@@ -1,7 +1,9 @@
-# Intentionally retained Uni20 debug DAG metadata. Clang -g1 may omit the
-# NodeInfo qualification on inlined create<T> frames, so match its header.
+# Intentionally retained Uni20 debug DAG metadata. Some symbolizers omit the
+# source location of template instances; others omit inline qualification.
+# Match the retained factory frame or its header, covering both cases.
 # Do not suppress Async generally or disable leak detection.
 leak:uni20/async/async_node.hpp
+leak:uni20::async::NodeInfo::create<
 
 # MPFR's per-thread caches/pools can outlive terminating provider threads.
 # Match actual MPFR C frames, not libmpfr/GMP or Uni20's owning scalar wrappers.
