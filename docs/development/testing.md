@@ -130,7 +130,8 @@ whose qualified names are absent from reduced debug information. Leak detection
 remains enabled; general Async allocation stacks are not suppressed.
 
 The same file suppresses observed MPFR cache/pool allocations through the exact
-C functions `mpfr_atan`, `mpfr_cos`, and `mpfr_cache`. These caches belong to
+C functions `mpfr_atan`, `mpfr_cos`, `mpfr_cache`, and `mpfr_exp_2` (the
+exponential's internal evaluation path). These caches belong to
 operating-system threads and can remain allocated after a provider thread
 terminates. They are separate from the result storage owned by `mpreal`, which
 is released by its destructor. See [MPFR's memory-handling contract](https://www.mpfr.org/mpfr-current/mpfr.html#Memory-Handling).
@@ -144,8 +145,9 @@ frame, and an unanchored `mpfr_atan` also matches the C++ wrapper
 `mpreal_access::apply<&mpfr_atan>`. That wrapper allocates the owning result
 *before* calling MPFR, so a substring rule could hide a real leaked payload.
 Linux ASan/LSan builds with MPFR register `Sanitizers.MpfrCachePolicy`, which
-compares retained caches with explicit local cleanup and verifies that leaked
-`mpreal` payloads and ordinary heap allocations still fail. The isolated probe
+compares retained trigonometric and exponential caches with explicit local
+cleanup and verifies that leaked `atan`/`exp` result payloads and ordinary heap
+allocations still fail. The isolated probe
 disables LSan's TLS roots to expose cache allocations without depending on
 worker scheduling or termination; ordinary application tests retain TLS roots.
 Local symbolization must be available for these checks; set
