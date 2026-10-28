@@ -96,6 +96,17 @@ TEST(ComplexLogGamma, FiniteAnswersNearNativeRangeLimit)
   EXPECT_TRUE(uni20::isfinite(c.roundoff_indicator));
 }
 
+TEST(ComplexLogGamma, LeadingProductCancelsBeforeOverflow)
+{
+  log_gamma_context<double> context;
+  // Independent 700-dps mpmath evaluation at the exact binary64 inputs.
+  // x*(log(abs(z))-1) overflows, but subtracting y*arg(z) brings it into range.
+  auto result = context.log_gamma_right({2.56e305, 2.56e304});
+  EXPECT_NEAR(result.value.real() / 1.79769208043994335407225e308, 1, 2e-15);
+  EXPECT_NEAR(result.value.imag() / 1.80026911311875497651912e307, 1, 2e-15);
+  EXPECT_TRUE(uni20::isfinite(result.roundoff_indicator));
+}
+
 #if UNI20_HAS_MPREAL
 TEST(ComplexLogGamma, IndependentReferencesThrough1024Bits)
 {

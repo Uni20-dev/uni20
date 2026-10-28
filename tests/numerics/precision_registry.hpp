@@ -10,6 +10,7 @@ namespace uni20::test
 enum class PrecisionProbe
 {
   ComplexLogGammaIdentities,
+  ComplexLogGammaScaledComponents,
   ComplexLogGammaReferenceAccuracy,
   EpsilonAndRetainedIncrement,
   GenericPrecisionQueries,
@@ -112,6 +113,7 @@ struct ProbeDescription
 
 inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "ComplexLogGammaIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ComplexLogGammaScaledComponents", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ComplexLogGammaReferenceAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "EpsilonAndRetainedIncrement", "scalar"},
     ProbeDescription{"NumericalScalar", "GenericPrecisionQueries", "scalar"},
@@ -242,7 +244,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
         return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK for binary128 decompositions"};
 #endif
     }
-    if (probe == ComplexLogGammaIdentities || probe == ComplexLogGammaReferenceAccuracy)
+    if (probe == ComplexLogGammaIdentities || probe == ComplexLogGammaScaledComponents ||
+        probe == ComplexLogGammaReferenceAccuracy)
       if constexpr (!C::is_complex) return {"not_applicable", "complex right-half-plane log-Gamma API"};
     bool const cpu_lu = probe == CpuLuResolvesSmallGap || probe == CpuLuAccuracyImprovesWithPrecision ||
                         probe == CpuLogDeterminantRetainsPrecision ||

@@ -42,10 +42,13 @@ term multiplied by $\sec^{2n}(\arg(z)/2)$. That estimate is evaluated in logs
 with scaled components so an overflowing magnitude or underflowing power
 does not incorrectly decide when to stop shifting.
 
-Leading terms use `z*(log(z)-1)` before multiplication so intermediate
-`z*log(z)` overflow does not reject a finite answer. Roundoff accumulation is
-scaled by epsilon before taking magnitudes; this also permits finite complex
-components whose Euclidean magnitude exceeds the scalar range.
+Leading terms use `z*(log(z)-1)`, with the real component evaluated by fused
+multiply-add so cancellation occurs before an overflowing product rounds.
+Near the positive real axis, `x*atan(y/x)` is evaluated as `y` when its cubic
+correction is below working roundoff. This preserves the phase when `y/x`
+underflows. Roundoff accumulation is scaled by epsilon before taking
+magnitudes; this also permits finite complex components whose Euclidean
+magnitude exceeds the scalar range.
 
 For the ratio, both arguments use a common recurrence, starting from the
 smaller real part; negative shifts reverse the resulting difference. Reciprocal-power
@@ -59,8 +62,19 @@ $$
 
 The final parenthesis is evaluated as its own convergent series. This avoids
 forming `z*log(1+w)-h` and retains the leading difference even if `z+h` rounds
-back to `z`. Large relative shifts use differences of the argument logarithms,
-never differences of separately computed log-Gamma values. The ratio's
+back to `z`. Large relative shifts cancel the common binary scale before
+forming differences of argument logarithms, preserving accuracy when both
+arguments are tiny. Near the positive real axis, the paired leading phase is
+evaluated as
+
+$$
+y\left[\log(1+h/x)+\frac{h}{2x(x+h)}\right].
+$$
+
+This first-order expression is used only when `abs(y/x) <= sqrt(epsilon)/2`,
+so its omitted relative correction is below working roundoff. The product
+`y*h/x` keeps its binary exponent separate until the final scaling; neither
+`y/x` nor `h/x` needs to be representable separately. The ratio's
 truncation diagnostic includes both Stirling remainders and the small-logarithm
 series tails.
 
@@ -107,6 +121,10 @@ run tests. Dedicated MPFR checks cover 128, 256, 333 and 1,024 bits.
 
 Range regressions include tiny arguments, tiny imaginary parts, shifts smaller
 than an argument ULP, and a ratio phase at very large imaginary arguments
-where separate log-Gamma subtraction demonstrably fails. Work-budget,
-precision-mismatch and branch tests are separate from numerical accuracy
-checks. The reusable context stores no per-call mutable scratch.
+where separate log-Gamma subtraction demonstrably fails. Componentwise phase
+checks span all configured precisions, including native ratios whose
+intermediate angle underflows. Finite results whose unfused leading product
+overflows are checked across all configured native types against an MPFR
+oracle. Work-budget, precision-mismatch and branch tests are separate from
+numerical accuracy checks. The reusable context stores no per-call mutable
+scratch.

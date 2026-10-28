@@ -7,6 +7,7 @@
 #endif
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -95,6 +96,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
       }
       log_coefficient_ = math::log(math::abs(coefficients_.back()));
       log_target_ = math::log(numeric_limits<R>::epsilon(work_) / this->number(32));
+      small_angle_ = math::sqrt(numeric_limits<R>::epsilon(work_)) / this->number(2);
       half_log_two_pi_ = math::log(this->number(2) * (pi<R> * this->number(1))) / this->number(2);
     }
 
@@ -118,9 +120,14 @@ template <detail::LogGammaReal R> class log_gamma_context {
         log_tail = this->log_remainder(z);
       }
       auto const log_z = this->logarithm(z);
-      // Form z*(log(z)-1) before multiplication: z*log(z) can overflow
-      // even when the final log-Gamma is representable.
-      sum.add(z * (log_z - one));
+      // Fuse the cancellation in the real component before the product rounds.
+      // Near the real axis, x*atan(y/x) rounds to y at working precision;
+      // evaluating the ratio first can underflow and lose that contribution.
+      R const leading_real = math::fma(z.real(), log_z.real() - one, -z.imag() * log_z.imag());
+      R const leading_imag = this->near_real(z)
+                                 ? z.imag() * log_z.real()
+                                 : math::fma(z.imag(), log_z.real() - one, z.real() * log_z.imag());
+      sum.add(complex_type(leading_real, leading_imag));
       sum.add(-half * log_z);
       sum.add(complex_type(half_log_two_pi_));
       complex_type inverse = this->reciprocal(z), power = inverse;
@@ -179,17 +186,32 @@ template <detail::LogGammaReal R> class log_gamma_context {
         tail1 = this->log_remainder(upper);
       }
       auto const delta = this->log_difference(z, h);
+      bool const near_real = this->near_real(z);
+      auto add_leading = [&](complex_type const& term) {
+        sum.add(near_real ? complex_type(term.real(), zero) : term);
+      };
       if (delta.small)
       {
-        sum.add(h * this->logarithm(z));
-        sum.add((h - half) * delta.log1p);
-        sum.add(h * delta.relative_remainder);
+        add_leading(h * this->logarithm(z));
+        add_leading((h - half) * delta.log1p);
+        add_leading(h * delta.relative_remainder);
         logarithm_tail += math::abs(h - half) * delta.log_error + math::abs(h) * delta.relative_error;
       }
       else
       {
-        sum.add(h * (this->logarithm(upper) - one));
-        sum.add((z - half) * delta.log1p);
+        add_leading(h * (this->logarithm(upper) - one));
+        add_leading((z - half) * delta.log1p);
+      }
+      if (near_real)
+      {
+        // First-order imaginary part of the paired leading term:
+        // y*[log(1+h/x) + h/(2*x*(x+h))]. The omitted relative correction
+        // is O((y/x)^2), below working roundoff in this branch. Preserve y*h/x
+        // even when either y/x or h/x cannot be represented on its own.
+        R const product = this->product_quotient(z.imag(), h, z.real());
+        R const phase = delta.small ? product * (one + delta.relative_remainder.real())
+                                    : z.imag() * delta.log1p.real();
+        sum.add(complex_type(zero, phase + (half * product) / upper.real()));
       }
       complex_type const inv0 = this->reciprocal(z), inv1 = this->reciprocal(upper);
       complex_type const square0 = inv0 * inv0, square1 = inv1 * inv1;
@@ -264,6 +286,18 @@ template <detail::LogGammaReal R> class log_gamma_context {
     }
     // Scaling avoids overflow of abs(z), and avoids squaring tiny components.
     R scale(complex_type const& z) const { return std::max(math::abs(z.real()), math::abs(z.imag())); }
+    bool near_real(complex_type const& z) const { return math::abs(z.imag()) <= z.real() * small_angle_; }
+    // Only the final product/quotient is rounded into the scalar exponent range.
+    R product_quotient(R const& a, R const& b, R const& c) const
+    {
+      auto const aa = math::frexp(a), bb = math::frexp(b), cc = math::frexp(c);
+      auto const exponent = static_cast<__int128_t>(aa.exponent) + bb.exponent - cc.exponent;
+      // MPFR permits exponent ranges whose intermediate sum exceeds int64.
+      // Beyond these limits the final scaling necessarily overflows/underflows.
+      auto const limited = std::clamp(exponent, static_cast<__int128_t>(std::numeric_limits<std::int64_t>::min()),
+                                      static_cast<__int128_t>(std::numeric_limits<std::int64_t>::max()));
+      return math::ldexp((aa.fraction * bb.fraction) / cc.fraction, static_cast<std::int64_t>(limited));
+    }
     complex_type logarithm(complex_type const& z) const
     {
       R const scale = this->scale(z), re = z.real() / scale, im = z.imag() / scale;
@@ -295,23 +329,35 @@ template <detail::LogGammaReal R> class log_gamma_context {
         complex_type power = -w;
         accumulator remainder(zero);
         R const target = numeric_limits<R>::epsilon(work_) / this->number(32);
+        R denominator = this->number(2);
         for (std::size_t k = 0; k < options_.max_terms; ++k)
         {
-          complex_type const term = power / this->number(k + 2);
+          complex_type const term = power / denominator;
           remainder.add(term);
           power *= -w;
           // The next term and all successors are <= |power|/(k+3)/(1-1/8).
           if (math::abs(power) <= target)
           {
             complex_type const r = remainder.sum + remainder.correction;
-            R const error = (math::abs(power) / this->number(k + 3)) * (this->number(8) / this->number(7));
+            R const error = (math::abs(power) / (denominator + one)) * (this->number(8) / this->number(7));
             return {w * (one + r), r, math::abs(w) * error, error, true};
           }
+          denominator += one;
         }
         throw std::runtime_error("log-Gamma ratio exhausted its logarithm term budget");
       }
       complex_type const upper(z.real() + h, z.imag());
-      return {this->logarithm(upper) - this->logarithm(z), complex_type(zero), zero, zero, false};
+      R const upper_scale = this->scale(upper);
+      auto const lower_binary = math::frexp(scale), upper_binary = math::frexp(upper_scale);
+      R const lower_magnitude = lower_binary.fraction * math::hypot(z.real() / scale, z.imag() / scale);
+      R const upper_magnitude =
+          upper_binary.fraction * math::hypot(upper.real() / upper_scale, upper.imag() / upper_scale);
+      // Cancel the common binary scale before taking logarithms. Subtracting
+      // log magnitudes separately loses digits when both arguments are tiny.
+      R const real = math::log(upper_magnitude / lower_magnitude) +
+                     this->number(upper_binary.exponent - lower_binary.exponent) * math::log(this->number(2));
+      R const imag = math::atan2(upper.imag(), upper.real()) - math::atan2(z.imag(), z.real());
+      return {complex_type(real, imag), complex_type(zero), zero, zero, false};
     }
     void check_shift(std::size_t shifts, complex_type const& z) const
     {
@@ -335,6 +381,6 @@ template <detail::LogGammaReal R> class log_gamma_context {
     Precision precision_, work_;
     log_gamma_options options_;
     std::vector<R> coefficients_;
-    R log_coefficient_, log_target_, half_log_two_pi_;
+    R log_coefficient_, log_target_, small_angle_, half_log_two_pi_;
 };
 } // namespace uni20
