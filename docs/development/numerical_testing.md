@@ -167,6 +167,7 @@ The `uni20_numerical_precision_tests` target currently covers:
 | Native/MPFR digamma | Absolute error near zeros, relative accuracy away from zeros, reflection/pole neighborhoods, full exponent range and independent harmonic identities |
 | Native Beta fallback / MPFR | Separate portable and public probes; Gamma-ratio cancellation, extreme parameter ratios, original-input error bounds, range limits and independent integer products; large-argument log-Gamma oracle with additional cancellation guard bits |
 | Typed factorial | Every native finite order, exact-integer references, overflow boundaries and checked result precision |
+| Native/MPFR theta constants | Scaled rectangular constants, Jacobi products and a Gamma-function reference; modular joins, truncation budgets, full native range and precision gains |
 | Native/MPFR AGM | Extreme operand ratios, subnormal inputs, symmetry, equal-input identities and independent elliptic-integral series |
 | Native/MPFR reciprocal functions | Original-input phase, signed zeros, poles and hyperbolic tails beyond sinh/cosh overflow; full-range oracle scans and independent series references |
 | Native/MPFR compound | Original increment and integer exponent retention; signed64 limits; range and subnormal neighborhoods; independent exact rational references; public and portable paths |

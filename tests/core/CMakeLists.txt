@@ -43,3 +43,5 @@ if(UNI20_HAS_MPLAPACK_FLOAT128)
   target_compile_definitions(uni20_mplapack_binary128_tests PRIVATE UNIT_TEST)
   gtest_discover_tests(uni20_mplapack_binary128_tests)
 endif()
+
+add_test_module(elliptic_theta SOURCES test_elliptic_theta.cpp LIBS uni20_core)
