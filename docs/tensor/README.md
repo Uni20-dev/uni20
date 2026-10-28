@@ -37,6 +37,8 @@ reference comparisons, and measured limitations.
 - [Exponential and Logarithmic Extensions](native_exponential_extensions.md)
 - [Reciprocal Functions and Catalan's Constant](native_reciprocal_math.md)
 - [Compound Powers](native_compound.md)
+- [Scaled Rectangular Theta Constants](elliptic_theta.md) provides native and
+  explicit-precision MPFR constants without reconstructing tiny exponentials.
 - [Arithmetic-Geometric Mean](native_agm.md)
 - [Typed Factorial](native_factorial.md)
 - [Digamma](native_digamma.md)

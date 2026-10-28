@@ -17,6 +17,8 @@ layers such as tensor, linalg, backend, async, or symmetry.
 - `numeric_limits.hpp`: Uni20 numeric-limits customization point for generic
   scalar algorithms.
 - `math.hpp`: shared `uni20::math` dispatch and scalar classification/construction helpers.
+- `elliptic_theta.hpp`: scaled rectangular theta constants at native or explicit
+  MPFR precision; see [the numerical contract](../../../docs/tensor/elliptic_theta.md).
 - `buildinfo.hpp.in`: generated build/environment metadata.
 - `dummy.*`: minimal target source used to keep build targets well-formed where
   needed.

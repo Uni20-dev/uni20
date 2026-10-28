@@ -50,6 +50,8 @@ enum class PrecisionProbe
   DigammaAccuracy,
   FactorialIdentities,
   FactorialAccuracy,
+  ThetaConstantIdentities,
+  ThetaConstantAccuracy,
   AgmIdentities,
   AgmAccuracy,
   ReciprocalFunctionIdentities,
@@ -146,6 +148,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "DigammaAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FactorialAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ThetaConstantIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ThetaConstantAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "AgmIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "AgmAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ReciprocalFunctionIdentities", "scalar_math"},
@@ -265,13 +269,13 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
     if (probe == AiryIdentities || probe == AiryAccuracy || probe == UpperGammaIdentities ||
-        probe == UpperGammaAccuracy || probe == ZetaIdentities || probe == ZetaAccuracy ||
-        probe == ExpintIdentities || probe == ExpintAccuracy ||
-        probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy ||
-        probe == BetaPortableAccuracy || probe == DigammaIdentities || probe == DigammaAccuracy ||
-        probe == FactorialIdentities ||
-        probe == FactorialAccuracy || probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities ||
-        probe == PiScaledAccuracy || probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
+        probe == UpperGammaAccuracy || probe == ZetaIdentities || probe == ZetaAccuracy || probe == ExpintIdentities ||
+        probe == ExpintAccuracy || probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities ||
+        probe == BetaAccuracy || probe == BetaPortableAccuracy || probe == DigammaIdentities ||
+        probe == DigammaAccuracy || probe == FactorialIdentities || probe == ThetaConstantIdentities ||
+        probe == ThetaConstantAccuracy || probe == FactorialAccuracy || probe == AgmIdentities ||
+        probe == AgmAccuracy || probe == PiScaledIdentities || probe == PiScaledAccuracy ||
+        probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
         probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities || probe == CompoundAccuracy ||
         probe == CompoundPortableAccuracy || probe == ExponentialExtensionIdentities ||
         probe == ExponentialExtensionAccuracy || probe == ExponentialExtensionPortableAccuracy)
@@ -365,6 +369,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case DilogAccuracy:
       case DigammaAccuracy:
       case FactorialAccuracy:
+      case ThetaConstantAccuracy:
       case AgmAccuracy:
       case ReciprocalFunctionAccuracy:
       case CompoundAccuracy:
