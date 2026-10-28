@@ -43,6 +43,29 @@ the entire suite built. Record compiler/configuration details, actual failures,
 and skip counts, and identify unavailable configurations explicitly. Do not claim
 GPU, MPI, or macOS validation from a Linux CPU run.
 
+## README example check
+
+With `UNI20_BUILD_TESTS=ON`, Python 3 is required to extract the README's marked
+`product_step` definition and calls into generated includes. The
+`uni20_docs_tests` target compiles those exact snippets with ordinary and async
+matrices, then CTest checks both results against an independent exact fixture.
+The optional combined test executable includes the same test.
+
+The invisible `tested-snippet` HTML markers must immediately precede their
+`cpp` fences, with optional blank lines. Missing, duplicated, empty, or malformed
+blocks fail the build. Changes to the README or extraction script regenerate the
+includes; compiler diagnostics point back to README source lines. Keep the
+example code in the README rather than maintaining a copy in the test harness.
+
+```sh
+cmake --build build --target uni20_docs_tests
+ctest --test-dir build --output-on-failure -R 'ReadmeExample|Documentation.SnippetExtraction'
+```
+
+The extraction script's regression tests also run in Docs PR CI through
+`python3 -m unittest discover -s tests/docs -v`; compilation and execution of the
+README example belong to the normal C++ build and test jobs.
+
 ## Sanitizer boundaries
 
 Use `-DUNI20_SANITIZE=address,undefined` to instrument Uni20. Commas and
@@ -151,7 +174,7 @@ Current test modules include:
 - `tests/common`
 - `tests/cmake` (downstream configure, build, and execution regressions)
 - `tests/core`
-- `tests/docs` (Python documentation-checker regressions, run by Docs PR CI)
+- `tests/docs` (compiled README example and Python documentation-tool tests)
 - `tests/kernel`
 - `tests/krylov`
 - `tests/linalg`
