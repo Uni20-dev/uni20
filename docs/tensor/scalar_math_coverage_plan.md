@@ -269,3 +269,11 @@ CUDA MPFR execution, or new linear-algebra providers.
 - [MPFR arithmetic functions](https://www.mpfr.org/mpfr-current/mpfr.html#Arithmetic-Functions).
 - [MPFR integer and remainder functions](https://www.mpfr.org/mpfr-current/mpfr.html#Integer-and-Remainder-Related-Functions).
 - [MPFR miscellaneous functions](https://www.mpfr.org/mpfr-current/mpfr.html#Miscellaneous-Functions).
+
+### MPC hyperbolic coverage
+
+`complex<mpreal>` now supplies `sinh`, `cosh` and principal `acosh`, including
+explicit-precision overloads. Other complex hyperbolic operations are not
+implied by their real MPFR availability. Core tests use the shared precision
+contexts at 80/160/256 bits, independent real-component identities, exact
+input rejection/conversion and both signed-zero sides of the inverse cut.
