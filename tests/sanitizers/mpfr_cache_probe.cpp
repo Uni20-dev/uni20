@@ -17,7 +17,9 @@ enum class Operation
 {
   {
     auto const precision = uni20::Precision::bits(333);
-    uni20::mpreal input(3, precision);
+    // Use the positive noninteger Stirling path exercised by numerical
+    // integrands; the integer log-Gamma shortcut has separate MPFR pools.
+    uni20::mpreal input(operation == Operation::log_gamma ? "3.5" : "3", precision);
     auto compute = [&]() -> uni20::mpreal {
       switch (operation)
       {
