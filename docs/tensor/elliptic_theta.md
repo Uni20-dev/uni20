@@ -127,14 +127,20 @@ each result field to `p`, without modifying ambient precision or exponent limits
 
 The evaluator reduces the argument to the fundamental rectangle, sums a
 compensated Fourier series for `t>=1` or a Gaussian series for `t<1`, and restores
-quasi-periods with differentiated phase factors. Even functions use a local
-Taylor expansion near zero to retain a tiny first derivative. Exact symmetry
+quasi-periods with differentiated phase factors. Gaussian derivatives use their
+centered arguments to avoid cancellation of the curvature at small `t`.
+Theta2 and theta3 use integer-centered Gaussian sums directly, retaining small
+arguments that a real half-period translation would erase. Even functions use a
+local Taylor expansion near zero to retain a tiny first derivative. Exact symmetry
 zeros are restored explicitly. Reduction is limited by both the scalar's
 significand and a signed integer period count; an unresolvable reduction raises
 an overflow error. A scale or scaled derivative outside the scalar's range also
 raises an overflow error. At extreme Fourier parameters, decay and growth are
 combined as nonnegative factors before multiplication, avoiding spurious
-`infinity - infinity` when the scaled jet is finite.
+`infinity - infinity` when the scaled jet is finite. Period contributions and the
+reduced logarithmic scale are combined with fused multiply-add, and period
+phases are reduced in cycles before multiplication by pi; exact quarter cycles
+retain their exact phases.
 
 Each reduced series uses a precision-dependent term count with a conservative
 Gaussian-tail margin. The final `max_terms` argument (default 4096) bounds this
@@ -150,7 +156,7 @@ selected components and scales must be finite with common precision. A zero
 denominator raises a domain error; a zero numerator gives a precision-correct
 zero. An unrepresentable nonzero ratio raises an overflow error. Small
 denominators and differences of rounded scales still amplify errors. Finite
-complex components may have a norm outside the scalar range; component-scaled
+complex components may have an overflowing or subnormal norm; component-scaled
 logarithmic norms and unit phases keep representable ratios evaluable.
 
 The shared complex precision cases check conjugation, real and imaginary

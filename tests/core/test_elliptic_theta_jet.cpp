@@ -148,6 +148,63 @@ TYPED_TEST(ThetaJetNative, RatioAvoidsOverflowOfFiniteComponentNorms)
   }
 }
 
+TYPED_TEST(ThetaJetNative, GaussianCurvatureAndTinyDisplacements)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const eps = numeric_limits<R>::epsilon(), pi_value = R(4) * math::atan(R(1));
+  R const t = eps * eps;
+  for (unsigned kind : {2u, 3u})
+    for (R x : {R(0), t})
+    {
+      auto const jet = elliptic_theta_jet(kind, C(x, 0), t);
+      C const first = jet.derivative[1] / jet.derivative[0];
+      C const second = jet.derivative[2] / jet.derivative[0];
+      // Poisson summation is a single Gaussian here; other terms are negligible.
+      EXPECT_LE(math::abs(first + R(2) * pi_value * (x / t)), R(256) * eps);
+      EXPECT_LE(math::abs(second * t + R(2) * pi_value - R(4) * pi_value * pi_value * (x / t) * x), R(256) * eps);
+    }
+}
+
+TYPED_TEST(ThetaJetNative, PeriodScaleCanCancelBeforeOverflow)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const t = numeric_limits<R>::max() / 3, pi_value = R(4) * math::atan(R(1));
+  auto const jet = elliptic_theta_jet(2, C(0, t), t);
+  R const expected = pi_value * ((t / 4) * 3);
+  EXPECT_TRUE(uni20::isfinite(jet.log_scale));
+  EXPECT_LE(math::abs(jet.log_scale / expected - 1), R(8) * numeric_limits<R>::epsilon());
+  EXPECT_LE(math::abs(jet.derivative[0] - R(2)), R(64) * numeric_limits<R>::epsilon());
+}
+
+TYPED_TEST(ThetaJetNative, SubnormalRatioRetainsUnitPhase)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const d = math::next_up(R(0)), eps = numeric_limits<R>::epsilon();
+  C const zero(0, 0), z(d, d);
+  theta_jet_result<C> const a{{z, zero, zero}, R(2)}, b{{z, uni20::conj(z), zero}, R(0)};
+  R const value = math::exp(R(2));
+  EXPECT_LE(math::abs(elliptic_theta_ratio(a, 0, b, 0) / value - R(1)), R(256) * eps);
+  EXPECT_LE(math::abs(elliptic_theta_ratio(a, 0, b, 1) / value - C(0, 1)), R(256) * eps);
+}
+
+TYPED_TEST(ThetaJetNative, LargeExactPeriodsRetainExactPhaseCycles)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  int const exponent = std::min(30, numeric_limits<R>::digits() / 3);
+  R const periods = math::ldexp(R(1), exponent), t = math::ldexp(R(1), -2 * exponent);
+  for (unsigned kind = 1; kind <= 4; ++kind)
+  {
+    auto const base = elliptic_theta_jet(kind, C(R(1) / 4, 0), t);
+    auto const shifted = elliptic_theta_jet(kind, C(R(1) / 4, periods * t), t);
+    EXPECT_LE(math::abs(shifted.derivative[0] - base.derivative[0]),
+              R(256) * numeric_limits<R>::epsilon() * math::abs(base.derivative[0]));
+  }
+}
+
 TEST(ThetaJet, DomainBudgetAndRatio)
 {
   using C = complex<double>;
