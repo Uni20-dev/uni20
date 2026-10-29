@@ -147,8 +147,10 @@ uses the original inputs in a fused multiply-add. Exact symmetry zeros are
 restored explicitly. Reduction is limited by both the scalar's
 significand and a signed integer period count; an unresolvable reduction raises
 an overflow error. A scale or scaled derivative outside the scalar's range also
-raises an overflow error. At extreme Fourier parameters, decay and growth are
-combined as nonnegative factors before multiplication, avoiding spurious
+raises an overflow error. Fourier exponential terms combine decay and growth
+as nonnegative factors before multiplication by pi. This preserves small finite
+exponents near imaginary half-periods, where subtracting separately rounded
+large terms can lose accuracy even without overflow, and also avoids spurious
 `infinity - infinity` when the scaled jet is finite. Period contributions and the
 reduced logarithmic scale are combined with fused multiply-add, and period
 phases, Gaussian phases, Fourier sine/cosine terms and theta4 translations all
@@ -189,4 +191,6 @@ of a large common logarithmic scale does not mask phase errors. A direct
 1280-bit Gaussian reference supplies these small-`t` comparisons; at moderate
 `t` its ratios are checked against the independent Jacobi products. Product
 comparisons also cover both sides of the real half-period translation boundary.
+Large-lattice checks use the surviving leading Fourier terms to verify values
+and both derivatives next to imaginary half-periods at every configured precision.
 Physical prefactors, anisotropy conversion and model branches remain in Bethe.

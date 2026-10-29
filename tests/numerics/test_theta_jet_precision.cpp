@@ -73,6 +73,43 @@ UNI20_PRECISION_TEST(NumericalScalar, ThetaJetIdentities)
       auto const ratio = near.derivative[1] / (C::scalar(zero, delta) * center.derivative[2]);
       expect_error_at_most(ratio, C::scalar(one, zero), C::epsilon() * 512);
     }
+
+  // At a large lattice, only the leading Fourier terms survive near t/2.
+  // The distance to the half-period is small and exactly representable, while
+  // subtracting separately rounded pi*t and 2*pi*y loses its exponent.
+  auto const large_t = one / (4 * C::epsilon());
+  for (auto const& x : {zero, one / 8})
+    for (int sign : {-1, 1})
+      for (int steps : {1, 4})
+      {
+        auto y = large_t / 2;
+        for (int i = 0; i < steps; ++i) y = math::next_down(y);
+        auto const distance = large_t / 2 - y;
+        auto const weight = math::exp(-2 * pi_value * distance);
+        auto const phase = math::exp(C::scalar(zero, -sign * pi_value * x));
+        for (unsigned kind = 1; kind <= 4; ++kind)
+        {
+          SCOPED_TRACE(::testing::Message() << "large lattice kind=" << kind << " sign=" << sign
+                                           << " steps=" << steps << " x=" << format_scalar(x));
+          auto const jet = elliptic_theta_jet(kind, C::scalar(x, sign * y), large_t);
+          auto const contribution = kind < 3 ? (kind == 1 ? C::scalar(zero, C::real(sign)) * phase : phase)
+                                            : (kind == 3 ? one : -one) * weight * phase * phase;
+          auto const frequency = C::scalar(zero, -sign * (kind < 3 ? 1 : 2) * pi_value);
+          std::array expected{kind < 3 ? contribution : C::scalar(one, zero) + contribution,
+                              frequency * contribution, frequency * (frequency * contribution)};
+          for (unsigned d = 0; d < 3; ++d)
+          {
+            C::expect_precision(jet.derivative[d]);
+            expect_error_at_most(jet.derivative[d], expected[d],
+                                 C::epsilon() * 128 * (one + math::abs(expected[d])));
+          }
+          C::expect_precision(jet.log_scale);
+          auto const expected_scale = kind < 3 ? -pi_value * (large_t / 4 - y) : zero;
+          // MPC rounds its guarded scale once; the reference uses pi at the
+          // tested precision, so bitwise equality is not required.
+          expect_error_at_most(jet.log_scale, expected_scale, C::epsilon() * 4 * math::abs(expected_scale));
+        }
+      }
 }
 
 #if UNI20_HAS_MPREAL

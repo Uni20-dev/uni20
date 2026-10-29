@@ -80,15 +80,16 @@ template <ThetaReal R> complex<R> phase_quotient(R const& a, R const& y, R const
   return phase;
 }
 
-// Recover a Fourier exponent without subtracting overflowing decay/growth
-// terms. In the reduced rectangle t +/- 2*y is nonnegative, so an overflow
-// here can only mean a vanishing exponential, never a lost cancellation.
-template <ThetaReal R> R fourier_exponent(unsigned n, bool half_series, R const& t, R const& y, R const& pi)
+// Combine Fourier decay and growth before multiplication by pi. This retains
+// finite exponents near a half-period as well as avoiding infinity-infinity.
+// In the reduced rectangle t +/- 2*y is nonnegative, so an overflow here can
+// only mean a vanishing exponential, never a lost cancellation.
+template <ThetaReal R> R fourier_exponent(R const& n, bool half_series, R const& t, R const& y, R const& pi)
 {
-  if (!half_series) return -pi * (R(n) + 1) * (R(n) * t + (t + 2 * y));
+  if (!half_series) return -pi * (n + 1) * (n * t + (t + 2 * y));
   R const edge = math::abs(y) + y;
   if (n == 0) return -pi * edge;
-  return -pi * (R(n) * (R(n) * t + (t + 2 * y)) + edge);
+  return -pi * (n * (n * t + (t + 2 * y)) + edge);
 }
 // Fundamental rectangle |Re(u)|<=1/2, |Im(u)|<=t/2. Both representations
 // converge geometrically faster than exp(-pi*n*n) in their selected regimes.
@@ -110,15 +111,18 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
   else
     result.log_scale = -pi * (t / Real{4} - math::abs(y));
   std::array<Sum<C>, 3> sums{Sum<C>(zero_complex), Sum<C>(zero_complex), Sum<C>(zero_complex)};
-  for (unsigned n = 0; n < terms; ++n)
+  // Finite-precision counters reuse MPFR storage through in-place +=.
+  Real a = half, n_real = zero;
+  for (unsigned n = 0; n < terms; ++n, a += one, n_real += one)
   {
-    Real const a = Real(n) + half, sign = n % 2 ? -one : one;
+    Real const sign = n % 2 ? -one : one;
     Complex value, first, second;
     if (!gaussian)
     {
-      Real const omega = Real{2} * pi * a, fall = (Real(n) * Real(n + 1)) * t * pi;
+      Real const omega = Real{2} * pi * a;
       if (math::abs(omega * y) <= one)
       {
+        Real const fall = (n_real * (n_real + one)) * t * pi;
         Real const weight = math::exp(-fall - pi * math::abs(y));
         auto const phase = phase_product(a, x);
         Real const sh = math::sinh(omega * y), ch = math::cosh(omega * y);
@@ -127,12 +131,8 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       }
       else
       {
-        Real ep = -fall - omega * y - pi * math::abs(y), em = -fall + omega * y - pi * math::abs(y);
-        if (!uni20::isfinite(ep) || !uni20::isfinite(em))
-        {
-          ep = fourier_exponent(n, true, t, y, pi);
-          em = fourier_exponent(n, true, t, -y, pi);
-        }
+        Real const ep = fourier_exponent(n_real, true, t, y, pi),
+                   em = fourier_exponent(n_real, true, t, -y, pi);
         auto const phase = phase_product(a, x);
         Complex const positive = math::exp(ep) * phase;
         Complex const negative = math::exp(em) * uni20::conj(phase);
@@ -143,7 +143,7 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
     }
     else
     {
-      Real const omega = Real{2} * pi * a / t, fall = Real(n) * Real(n + 1);
+      Real const omega = Real{2} * pi * a / t, fall = n_real * (n_real + one);
       Complex difference, sum;
       if (math::abs(omega * x) <= one)
       {
@@ -217,9 +217,10 @@ template <Complex C> theta_jet_result<C> even_gaussian(unsigned kind, C u, make_
   };
   add(zero, zero, one);
   auto const terms = term_count(t, max_terms);
-  for (unsigned n = 1; n <= terms; ++n)
+  R a = one;
+  for (unsigned n = 1; n <= terms; ++n, a += one)
   {
-    R const a = scalar_at_precision<R>(n, p), sign = kind == 2 && n % 2 ? -one : one;
+    R const sign = kind == 2 && n % 2 ? -one : one;
     add(a, -pi * a * ((a - 2 * x) / t), sign);
     add(-a, -pi * a * ((a + 2 * x) / t), sign);
   }
@@ -264,15 +265,16 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
   std::array<Sum<C>, 3> sums{Sum<C>(zero_complex), Sum<C>(zero_complex), Sum<C>(zero_complex)};
   if (!half_series) sums[0].add(Complex(one, zero));
   auto const terms = term_count(t, max_terms);
-  for (unsigned n = 0; n < terms; ++n)
+  Real a = half_series ? half : one, n_real = zero;
+  for (unsigned n = 0; n < terms; ++n, a += one, n_real += one)
   {
-    Real const a = Real(n) + (half_series ? half : one), omega = Real{2} * pi * a;
+    Real const omega = Real{2} * pi * a;
     Real const sign = kind == 4 && n % 2 == 0 ? -one : one;
-    Real const fall = (half_series ? Real(n) * Real(n + 1) : a * a) * t * pi,
-               shift = half_series ? pi * math::abs(u.imag()) : zero;
     Complex value, first;
     if (math::abs(omega * u.imag()) <= one)
     {
+      Real const fall = (half_series ? n_real * (n_real + one) : a * a) * t * pi,
+                 shift = half_series ? pi * math::abs(u.imag()) : zero;
       Real const weight = Real{2} * sign * math::exp(-fall - shift);
       auto const phase = phase_product(a, u.real());
       Real const sh = math::sinh(omega * u.imag()), ch = math::cosh(omega * u.imag());
@@ -281,12 +283,8 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
     }
     else
     {
-      Real ep = -fall - shift - omega * u.imag(), em = -fall - shift + omega * u.imag();
-      if (!uni20::isfinite(ep) || !uni20::isfinite(em))
-      {
-        ep = fourier_exponent(n, half_series, t, u.imag(), pi);
-        em = fourier_exponent(n, half_series, t, -u.imag(), pi);
-      }
+      Real const ep = fourier_exponent(n_real, half_series, t, u.imag(), pi),
+                 em = fourier_exponent(n_real, half_series, t, -u.imag(), pi);
       auto const phase = phase_product(a, u.real());
       Complex const aterm = math::exp(ep) * phase;
       Complex const bterm = math::exp(em) * uni20::conj(phase);
