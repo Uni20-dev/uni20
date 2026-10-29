@@ -33,6 +33,14 @@ def has_debug_info(path):
     return re.search(r'\.(?:zdebug_info|debug_info)\b', result.stdout) is not None
 
 
+def file_sha256(path):
+    hasher = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(65536), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def prepare(library, output, symbolizer, debug_file=None, server=None):
     library = Path(library).resolve(strict=True)
     symbolizer_path = shutil.which(str(symbolizer))
@@ -82,7 +90,7 @@ def prepare(library, output, symbolizer, debug_file=None, server=None):
     wrapper.write_text('#!/bin/sh\nexport DEBUGINFOD_URLS=\nexec ' + shlex.join(command) + ' "$@"\n')
     wrapper.chmod(0o755)
     receipt = {'library': str(library), 'build_id': identity, 'debug_file': str(target),
-               'debug_sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+               'debug_sha256': file_sha256(target),
                'symbolizer': symbolizer_path, 'wrapper': str(wrapper)}
     (output / 'symbols.json').write_text(json.dumps(receipt, indent=2) + '\n')
     return wrapper
