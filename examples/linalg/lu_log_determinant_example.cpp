@@ -32,14 +32,22 @@ int main()
   fmt::print("Making the first column zero gives a singular diagnostic and the conventional (0, -infinity).\n");
   if (singular.info.status != SolveStatus::singular || !singular.value || singular.value->phase != 0) return 1;
 
-#if UNI20_HAS_MPLAPACK_MPREAL
+#if UNI20_HAS_MPREAL
   auto p = Precision::bits(256);
   DenseMatrix<mpreal> tiny(2, 2, Precision::exact());
   tiny[0, 0] = mpreal(exact_rational("1e-1000"));
   tiny[1, 1] = mpreal(exact_rational("1e-1000"));
-  auto high_precision = slogdet(tiny, p);
+  auto mp_factors = lu_factor(tiny, p);
+  DenseMatrix<mpreal> rhs(2, 1, Precision::exact());
+  rhs[0, 0] = tiny[0, 0];
+  rhs[1, 0] = 2 * tiny[1, 1];
+  auto solution = lu_solve(mp_factors, rhs);
+  if (solution[0, 0] != 1 || solution[1, 0] != 2 || solution.default_precision() != p) return 1;
+  auto high_precision = slogdet(mp_factors);
   fmt::print("MPFR: diag(1e-1000, 1e-1000), factored at 256 bits, has log(abs(det)) = {}.\n"
-             "The exact source stays exact; the logarithm is approximate at the requested precision.\n",
+             "The same factors solve b = [1e-1000, 2e-1000], giving x = [1, 2].\n"
+             "The exact source stays exact; the logarithm is approximate at the requested precision.\n"
+             "These MPFR operations also work without MPLAPACK, using the CPU fallback.\n",
              uni20::presentation::format_real(high_precision.log_absolute, {}));
   if (high_precision.phase != 1 || high_precision.log_absolute.precision() != p) return 1;
 #endif

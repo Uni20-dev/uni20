@@ -252,9 +252,14 @@ numerical subsystem. In the current implementation:
   generic complex division can silently overflow; default dispatch uses the CPU
   implementation, but that fallback does not count as provider validation.
 - MPFR/MPC CPU matrix norms and reductions have shared probes. Their CPU GEMM
-  kernel accepts exact mode only; finite-precision GEMM, solve and reusable
-  LU/log determinants use MPLAPACK. LU probes inspect factor, solution and
-  determinant precision at both 128 and 256 bits.
+  kernel accepts exact mode only; finite-precision GEMM uses MPLAPACK.
+  Square solves, reusable LU and log determinants have independent CPU and
+  MPLAPACK probes. CPU probes run with MPLAPACK disabled too, inspecting
+  factor, solution and determinant precision at both 128 and 256 bits.
+  Runtime LU integration tests also cover mixed element precisions, exact
+  inputs converted to finite precision, row swaps, multiple RHS columns,
+  factor reuse across providers, failure statuses, views and concurrent Async
+  solves at different working precisions.
 - Float80 and MPFR/MPC projected LAPACK wrappers and end-to-end Krylov solvers
   remain unsupported here. Helper-level runtime epsilon tests do not establish
   Lanczos, Arnoldi, or exponential-action support.

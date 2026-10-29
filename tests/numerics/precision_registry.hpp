@@ -73,8 +73,10 @@ enum class PrecisionProbe
   ProviderGemmRetainsIncrement,
   CpuSolveResolvesSmallGap,
   ProviderSolveResolvesSmallGap,
-  SolvePreservesExtendedExponentRange,
-  SolveAccuracyImprovesWithPrecision,
+  CpuSolvePreservesExtendedExponentRange,
+  ProviderSolvePreservesExtendedExponentRange,
+  CpuSolveAccuracyImprovesWithPrecision,
+  ProviderSolveAccuracyImprovesWithPrecision,
   CpuLuResolvesSmallGap,
   ProviderLuResolvesSmallGap,
   CpuLuAccuracyImprovesWithPrecision,
@@ -176,8 +178,10 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalLinalg", "ProviderGemmRetainsIncrement", "blas_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "CpuSolveResolvesSmallGap", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "ProviderSolveResolvesSmallGap", "lapack_or_mplapack"},
-    ProbeDescription{"NumericalLinalg", "SolvePreservesExtendedExponentRange", "cpu_or_mplapack_mpfr"},
-    ProbeDescription{"NumericalLinalg", "SolveAccuracyImprovesWithPrecision", "cpu_or_mplapack_mpfr"},
+    ProbeDescription{"NumericalLinalg", "CpuSolvePreservesExtendedExponentRange", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderSolvePreservesExtendedExponentRange", "lapack_or_mplapack"},
+    ProbeDescription{"NumericalLinalg", "CpuSolveAccuracyImprovesWithPrecision", "cpu_reference"},
+    ProbeDescription{"NumericalLinalg", "ProviderSolveAccuracyImprovesWithPrecision", "lapack_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "CpuLuResolvesSmallGap", "cpu_reference"},
     ProbeDescription{"NumericalLinalg", "ProviderLuResolvesSmallGap", "lapack_or_mplapack"},
     ProbeDescription{"NumericalLinalg", "CpuLuAccuracyImprovesWithPrecision", "cpu_reference"},
@@ -247,16 +251,12 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     if (probe == ComplexLogGammaIdentities || probe == ComplexLogGammaScaledComponents ||
         probe == ComplexLogGammaReferenceAccuracy)
       if constexpr (!C::is_complex) return {"not_applicable", "complex right-half-plane log-Gamma API"};
-    bool const cpu_lu = probe == CpuLuResolvesSmallGap || probe == CpuLuAccuracyImprovesWithPrecision ||
-                        probe == CpuLogDeterminantRetainsPrecision ||
-                        probe == CpuLogDeterminantPreservesExtendedExponentRange;
     [[maybe_unused]] bool const provider =
         probe == ProviderGemmRetainsIncrement || probe == ProviderSolveResolvesSmallGap ||
+        probe == ProviderSolvePreservesExtendedExponentRange || probe == ProviderSolveAccuracyImprovesWithPrecision ||
         probe == ProviderLuResolvesSmallGap || probe == ProviderLuAccuracyImprovesWithPrecision ||
         probe == ProviderLogDeterminantRetainsPrecision ||
         probe == ProviderLogDeterminantPreservesExtendedExponentRange;
-    if constexpr (C::runtime)
-      if (cpu_lu) return {"unsupported", "CPU LU declines runtime-precision scalars"};
 #if !UNI20_BACKEND_BLAS
     if constexpr (!C::runtime && !C::binary80_provider)
       if (probe == ProviderGemmRetainsIncrement)
@@ -398,7 +398,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case ElementaryAccuracyImprovesWithPrecision:
       case ReciprocalAccuracyImprovesWithPrecision:
       case GmresAccuracyImprovesWithPrecision:
-      case SolveAccuracyImprovesWithPrecision:
+      case CpuSolveAccuracyImprovesWithPrecision:
+      case ProviderSolveAccuracyImprovesWithPrecision:
       case CpuLuAccuracyImprovesWithPrecision:
       case ProviderLuAccuracyImprovesWithPrecision:
 #if !UNI20_HAS_MPREAL
@@ -408,10 +409,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case CpuGemmRetainsIncrement:
         if constexpr (C::runtime) return {"unsupported", "CPU GEMM handles exact mode only for runtime scalars"};
         break;
-      case CpuSolveResolvesSmallGap:
-        if constexpr (C::runtime) return {"unsupported", "CPU solve declines runtime-precision scalars"};
-        break;
-      case SolvePreservesExtendedExponentRange:
+      case CpuSolvePreservesExtendedExponentRange:
+      case ProviderSolvePreservesExtendedExponentRange:
       case CpuLogDeterminantPreservesExtendedExponentRange:
       case ProviderLogDeterminantPreservesExtendedExponentRange:
         if constexpr (!C::runtime)
@@ -433,8 +432,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     }
 #if !UNI20_HAS_MPLAPACK_MPREAL
     if constexpr (C::runtime)
-      if (provider || probe == SolvePreservesExtendedExponentRange || probe == SolveAccuracyImprovesWithPrecision ||
-          probe == GenericPrecisionOperations)
+      if (provider || probe == GenericPrecisionOperations)
         return {"unavailable", "enable mpreal and UNI20_BACKEND_MPLAPACK"};
 #endif
     return {};

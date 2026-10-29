@@ -209,10 +209,17 @@ operations select from the materialized host workspace:
 
 | provider | scalars | implementation |
 | --- | --- | --- |
-| `CpuReferenceBackend` | native real/complex, including configured float80/float128 | Accessor-respecting partial-pivot LU and triangular substitution. |
+| `CpuReferenceBackend` | native real/complex, including configured float80/float128; mpreal and complex&lt;mpreal&gt; | Accessor-respecting partial-pivot LU and triangular substitution. Runtime values convert to finite working precision without MPLAPACK. |
 | `LapackBackend` | native LAPACK scalars; optional binary128 | GETRF and GETRS with direct compatible storage. |
 | `LapackBackend` | mpreal and complex&lt;mpreal&gt; | Optional finite-precision MPLAPACK MPFR/MPC GETRF and GETRS, with explicit provider packing. |
 | `LapackBackend` | float80; complex160 with a compatible provider type | Optional binary80 provider via value-preserving conversion; [complex arithmetic restriction](mplapack_binary80.md). |
+
+MPFR-only builds support CPU LU, reusable solves and log determinants with the
+same API. Runtime CPU kernels convert actual inputs at the selected finite
+precision; they do not change a global or thread-local precision default.
+Exact-default inputs still require an explicit finite operation precision.
+Condition estimation remains provider-dependent. Numerical failure completes
+dispatch and never retries a second backend on modified workspaces.
 
 Providers may be mixed between factorization and reuse when their scalar
 coverage permits it. Backend kernels consume the same packed factors and
@@ -220,7 +227,10 @@ zero-based pivot convention. Direct `lu_solve_op` dispatch requires already
 successful factors; it does not rescan their numerical invariants on every solve.
 
 The CPU factorization kernel also accepts direct row-major and strided workspaces.
-For strided mappings, its trailing-submatrix update places the smaller-stride
-axis in the inner loop; mappings without stride information put rows in the inner
-loop. This affects traversal only: accesses still go through the supplied
-accessor, and owning factors returned by `lu_factor` remain column-major.
+Native kernels place the smaller-stride axis of the trailing-submatrix update
+in the inner loop; mappings without stride information put rows in the inner
+loop. Runtime-precision adapters pack logical values into a column-major
+workspace at the operation precision, then copy results back through the
+accessor. Reusable solves convert only the RHS; successful factors already
+carry their working precision. Owning factors returned by `lu_factor` remain
+column-major.
