@@ -277,14 +277,13 @@ template <Complex C>
   requires detail::ThetaReal<make_real_t<C>>
 theta_jet_result<C> elliptic_theta_jet(unsigned kind, C const& u, make_real_t<C> const& t, std::size_t max_terms = 4096)
 {
-  using R = make_real_t<C>;
   auto const p = precision_of(t);
   if (kind < 1 || kind > 4 || max_terms == 0 || p.is_exact() || precision_of(u) != p)
     throw std::invalid_argument("theta jet requires kind 1..4, a positive budget and matching finite precision");
   if (!detail::theta_jet_detail::finite(u) || !uni20::isfinite(t) || !(t > 0))
     throw std::invalid_argument("theta jet requires finite u and finite t>0");
 #if UNI20_HAS_MPREAL
-  if constexpr (std::same_as<R, mpreal>)
+  if constexpr (std::same_as<make_real_t<C>, mpreal>)
   {
     if (p.bit_count() > std::numeric_limits<Precision::bit_count_type>::max() - 32)
       throw std::overflow_error("theta jet guard precision exceeds supported range");
