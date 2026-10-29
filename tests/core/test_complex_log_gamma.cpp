@@ -46,8 +46,8 @@ template <class R> void check_unit_shift_ratios(Precision p)
   R const zero = uni20::scalar_at_precision<R>(0, p), one = uni20::scalar_like(zero, 1);
   R const eps = uni20::numeric_limits<R>::epsilon(p);
   log_gamma_context<R> context(p);
-  for (R const x : {one / 4, one / 2, one, 16 * one})
-    for (R const y : {zero, one / 16, 2 * one, eps * eps})
+  for (R const& x : {one / 4, one / 2, one, 16 * one})
+    for (R const& y : {zero, one / 16, 2 * one, eps * eps})
     {
       complex<R> const z(x, y);
       auto const forward = context.log_gamma_ratio_right(z, one);
@@ -56,14 +56,21 @@ template <class R> void check_unit_shift_ratios(Precision p)
       EXPECT_LE(uni20::math::abs(forward.value.real() - expected.real()),
                 4096 * eps * std::max(one, uni20::math::abs(expected.real())));
       if (y == zero)
+      {
         EXPECT_EQ(forward.value.imag(), zero);
+      }
       else
+      {
         EXPECT_LE(uni20::math::abs(forward.value.imag() / expected.imag() - one), 4096 * eps);
+      }
       EXPECT_EQ(backward.value.real(), -forward.value.real());
       EXPECT_EQ(backward.value.imag(), -forward.value.imag());
       EXPECT_TRUE(uni20::isfinite(forward.roundoff_indicator));
       EXPECT_GE(forward.truncation_bound, zero);
-      if (x == one / 4) EXPECT_GT(forward.shifts, 0u);
+      if (x == one / 4)
+      {
+        EXPECT_GT(forward.shifts, 0u);
+      }
     }
 }
 
