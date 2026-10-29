@@ -23,7 +23,7 @@ layers such as tensor, linalg, backend, async, or symmetry.
 - `math.hpp`: shared `uni20::math` dispatch and scalar classification/construction helpers.
 - `finite_quadrature.hpp`: opt-in finite tanh-sinh integration with endpoint
   distances, explicit working precision and component error diagnostics.
-- `elliptic_theta.hpp`: scaled rectangular theta constants at native or explicit
+- `elliptic_theta.hpp`, `elliptic_theta_jet.hpp`: scaled rectangular theta constants and complex derivative jets at native or explicit
   MPFR precision; see [the numerical contract](../../../docs/tensor/elliptic_theta.md).
 - `complex_log_gamma.hpp`: immutable right-half-plane log-Gamma and stable
   real-shift log-ratio contexts with explicit precision and diagnostics.

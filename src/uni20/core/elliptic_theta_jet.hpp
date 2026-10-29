@@ -80,7 +80,7 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
     Complex value, first, second;
     if (!gaussian)
     {
-      Real const omega = Real{2} * pi * a, fall = pi * t * (Real(n) * Real(n + 1));
+      Real const omega = Real{2} * pi * a, fall = (Real(n) * Real(n + 1)) * t * pi;
       if (math::abs(omega * y) <= one)
       {
         Real const weight = math::exp(-fall - pi * math::abs(y));
