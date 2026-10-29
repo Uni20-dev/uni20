@@ -1,4 +1,13 @@
 # Keep diagnostic allocation filtering separate from real owning-value leaks.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME Sanitizers.PrepareSymbols
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_prepare_symbols.py")
+    set_tests_properties(Sanitizers.PrepareSymbols PROPERTIES LABELS sanitizers TIMEOUT 30)
+  endif()
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND ("address" IN_LIST UNI20_SANITIZE_LIST OR "leak" IN_LIST UNI20_SANITIZE_LIST))
   add_executable(uni20_dag_metadata_probe dag_metadata_probe.cpp)
