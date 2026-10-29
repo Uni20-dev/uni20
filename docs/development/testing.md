@@ -115,6 +115,12 @@ UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
   ctest --test-dir build --output-on-failure
 ```
 
+The MPFR rules include its log-Gamma Bernoulli cache (`mpfr_bernoulli_cache`).
+The subprocess policy tests compare retained-cache and local-cleanup runs,
+then deliberately leak an owning log-Gamma result to verify that its storage
+is still reported. These rules affect only opt-in leak checking, not runtime
+cache lifetime or reclamation.
+
 Automated sanitizer runs should clear `DEBUGINFOD_URLS` in their test environment
 so symbolization does not depend on remote debug-symbol downloads. A stalled
 request can otherwise consume the test timeout while a sanitizer formats its

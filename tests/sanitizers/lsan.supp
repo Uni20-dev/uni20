@@ -15,3 +15,5 @@ leak:^mpfr_atan$
 leak:^mpfr_cos$
 leak:^mpfr_cache$
 leak:^mpfr_exp_2$
+# Log-Gamma retains a per-thread Bernoulli-number table.
+leak:^mpfr_bernoulli_cache$
