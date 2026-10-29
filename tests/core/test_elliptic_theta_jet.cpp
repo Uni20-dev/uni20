@@ -104,6 +104,50 @@ TYPED_TEST(ThetaJetNative, LargeLatticeRetainsFiniteScale)
   }
 }
 
+TYPED_TEST(ThetaJetNative, LargeImaginaryHalfPeriodHasFiniteScaledDerivatives)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const t = numeric_limits<R>::max() / 16;
+  R const pi_value = R(4) * math::atan(R(1)), eps = numeric_limits<R>::epsilon();
+  for (R sign : {R(-1), R(1)})
+  {
+    // In this limit all other Fourier terms are smaller than the scalar range.
+    // The leading term (two terms for theta3/4) gives each derivative directly.
+    std::array<std::array<C, 3>, 4> const expected{
+        {{C(0, sign), C(pi_value, 0), C(0, -sign * pi_value * pi_value)},
+         {C(1, 0), C(0, -sign * pi_value), C(-pi_value * pi_value, 0)},
+         {C(2, 0), C(0, -sign * R(2) * pi_value), C(-R(4) * pi_value * pi_value, 0)},
+         {C(0, 0), C(0, sign * R(2) * pi_value), C(R(4) * pi_value * pi_value, 0)}}};
+    for (unsigned kind = 1; kind <= 4; ++kind)
+    {
+      SCOPED_TRACE(kind);
+      auto const jet = elliptic_theta_jet(kind, C(0, sign * (t / 2)), t);
+      EXPECT_EQ(jet.log_scale, kind < 3 ? pi_value * (t / 4) : R(0));
+      for (unsigned d = 0; d < 3; ++d)
+        EXPECT_LE(math::abs(jet.derivative[d] - expected[kind - 1][d]),
+                  R(256) * eps * (R(1) + math::abs(expected[kind - 1][d])));
+    }
+  }
+}
+
+TYPED_TEST(ThetaJetNative, RatioAvoidsOverflowOfFiniteComponentNorms)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const large = (numeric_limits<R>::max() / 4) * 3;
+  R const eps = numeric_limits<R>::epsilon();
+  C const zero(0, 0), diagonal(large, large), conjugate(large, -large);
+  for (R shift : {R(-2), R(2)})
+  {
+    theta_jet_result<C> const a{{diagonal, zero, zero}, shift};
+    theta_jet_result<C> const b{{diagonal, conjugate, zero}, R(0)};
+    C const real_expected(math::exp(shift), 0), imag_expected(0, math::exp(shift));
+    EXPECT_LE(math::abs(elliptic_theta_ratio(a, 0, b, 0) - real_expected), R(256) * eps * math::abs(real_expected));
+    EXPECT_LE(math::abs(elliptic_theta_ratio(a, 0, b, 1) - imag_expected), R(256) * eps * math::abs(imag_expected));
+  }
+}
+
 TEST(ThetaJet, DomainBudgetAndRatio)
 {
   using C = complex<double>;

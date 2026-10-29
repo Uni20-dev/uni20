@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace uni20
 {
@@ -54,6 +55,16 @@ template <ThetaReal R> std::size_t term_count(R const& t, std::size_t max_terms)
     throw std::runtime_error("theta jet exhausted its term budget");
   return static_cast<std::size_t>(integral_value(count));
 }
+// Recover a Fourier exponent without subtracting overflowing decay/growth
+// terms. In the reduced rectangle t +/- 2*y is nonnegative, so an overflow
+// here can only mean a vanishing exponential, never a lost cancellation.
+template <ThetaReal R> R fourier_exponent(unsigned n, bool half_series, R const& t, R const& y, R const& pi)
+{
+  if (!half_series) return -pi * (R(n) + 1) * (R(n) * t + (t + 2 * y));
+  R const edge = math::abs(y) + y;
+  if (n == 0) return -pi * edge;
+  return -pi * (R(n) * (R(n) * t + (t + 2 * y)) + edge);
+}
 // Fundamental rectangle |Re(u)|<=1/2, |Im(u)|<=t/2. Both representations
 // converge geometrically faster than exp(-pi*n*n) in their selected regimes.
 template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, bool gaussian, std::size_t max_terms)
@@ -89,8 +100,14 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       }
       else
       {
-        Complex const positive = math::exp(Complex(-fall - omega * y - pi * math::abs(y), omega * x));
-        Complex const negative = math::exp(Complex(-fall + omega * y - pi * math::abs(y), -omega * x));
+        Real ep = -fall - omega * y - pi * math::abs(y), em = -fall + omega * y - pi * math::abs(y);
+        if (!uni20::isfinite(ep) || !uni20::isfinite(em))
+        {
+          ep = fourier_exponent(n, true, t, y, pi);
+          em = fourier_exponent(n, true, t, -y, pi);
+        }
+        Complex const positive = math::exp(Complex(ep, omega * x));
+        Complex const negative = math::exp(Complex(em, -omega * x));
         value = Complex(zero, -sign) * (positive - negative);
         first = sign * omega * (positive + negative);
       }
@@ -175,8 +192,14 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
     }
     else
     {
-      Complex const aterm = math::exp(Complex(-fall - shift - omega * u.imag(), omega * u.real()));
-      Complex const bterm = math::exp(Complex(-fall - shift + omega * u.imag(), -omega * u.real()));
+      Real ep = -fall - shift - omega * u.imag(), em = -fall - shift + omega * u.imag();
+      if (!uni20::isfinite(ep) || !uni20::isfinite(em))
+      {
+        ep = fourier_exponent(n, half_series, t, u.imag(), pi);
+        em = fourier_exponent(n, half_series, t, -u.imag(), pi);
+      }
+      Complex const aterm = math::exp(Complex(ep, omega * u.real()));
+      Complex const bterm = math::exp(Complex(em, -omega * u.real()));
       value = sign * (aterm + bterm);
       first = Complex(zero, sign * omega) * (aterm - bterm);
     }
@@ -345,9 +368,20 @@ C elliptic_theta_ratio(theta_jet_result<C> const& a, unsigned da, theta_jet_resu
     auto const direct = (a.derivative[da] / b.derivative[db]) * math::exp(shift);
     if (detail::theta_jet_detail::finite(direct) && math::abs(direct) > zero) return direct;
   }
-  R const magnitude = math::exp(a.log_scale - b.log_scale + math::log(numerator) - math::log(denominator));
+  auto log_norm_and_phase = [&](C const& z, R const& norm) -> std::pair<R, C> {
+    if (uni20::isfinite(norm)) return {math::log(norm), z / norm};
+    // Finite components can have an unrepresentable Euclidean norm. Normalize
+    // the components first; the logarithmic norm and unit phase remain finite.
+    R const scale = std::max(math::abs(z.real()), math::abs(z.imag()));
+    C const scaled = z / scale;
+    R const scaled_norm = math::abs(scaled);
+    return {math::log(scale) + math::log(scaled_norm), scaled / scaled_norm};
+  };
+  auto const [ln_a, phase_a] = log_norm_and_phase(a.derivative[da], numerator);
+  auto const [ln_b, phase_b] = log_norm_and_phase(b.derivative[db], denominator);
+  R const magnitude = math::exp(a.log_scale - b.log_scale + ln_a - ln_b);
   if (!uni20::isfinite(magnitude) || !(magnitude > zero))
     throw std::overflow_error("theta ratio magnitude is outside scalar range");
-  return magnitude * (a.derivative[da] / numerator) * uni20::conj(b.derivative[db] / denominator);
+  return magnitude * phase_a * uni20::conj(phase_b);
 }
 } // namespace uni20

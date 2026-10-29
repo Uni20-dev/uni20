@@ -132,7 +132,9 @@ Taylor expansion near zero to retain a tiny first derivative. Exact symmetry
 zeros are restored explicitly. Reduction is limited by both the scalar's
 significand and a signed integer period count; an unresolvable reduction raises
 an overflow error. A scale or scaled derivative outside the scalar's range also
-raises an overflow error.
+raises an overflow error. At extreme Fourier parameters, decay and growth are
+combined as nonnegative factors before multiplication, avoiding spurious
+`infinity - infinity` when the scaled jet is finite.
 
 Each reduced series uses a precision-dependent term count with a conservative
 Gaussian-tail margin. The final `max_terms` argument (default 4096) bounds this
@@ -147,7 +149,9 @@ without reconstructing the two functions. Orders must be 0 through 2, and the
 selected components and scales must be finite with common precision. A zero
 denominator raises a domain error; a zero numerator gives a precision-correct
 zero. An unrepresentable nonzero ratio raises an overflow error. Small
-denominators and differences of rounded scales still amplify errors.
+denominators and differences of rounded scales still amplify errors. Finite
+complex components may have a norm outside the scalar range; component-scaled
+logarithmic norms and unit phases keep representable ratios evaluable.
 
 The shared complex precision cases check conjugation, real and imaginary
 quasi-periods, derivative transformations, symmetry zeros and scaled ratios.
