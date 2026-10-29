@@ -125,9 +125,18 @@ not in the library or the user's global shell configuration. See
 [LLVM's debuginfod options](https://llvm.org/docs/CommandGuide/llvm-symbolizer.html#cmdoption-llvm-symbolizer-debuginfod).
 
 The file matches allocation stacks in `uni20/async/async_node.hpp`, the
-debug-metadata header. Matching the source path also covers inlined factories
-whose qualified names are absent from reduced debug information. Leak detection
-remains enabled; general Async allocation stacks are not suppressed.
+debug-metadata header, or the qualified `uni20::async::NodeInfo::create<`
+factory name. Reduced debug information can omit a frame's qualification or
+source location. The factories retain a non-inlined allocation frame so that
+the qualified symbol remains available even when GCC's built-in `libbacktrace`
+omits the source location. Neither rule matches general Async constructors or
+changes payload ownership.
+`Sanitizers.DagMetadataPolicy` and `Sanitizers.DagMetadataSymbolPolicy` check
+both factories with and without source-line information, and verify that
+orphaned owned payloads and unrelated heap allocations still fail. Like any LSan
+suppression, the rule can also hide allocations reachable from a suppressed
+metadata object; these controls do not certify that all leaks are detectable.
+Leak detection remains enabled; general Async allocation stacks are not suppressed.
 
 The same file suppresses observed MPFR cache/pool allocations through the exact
 C functions `mpfr_atan`, `mpfr_cos`, `mpfr_cache`, and `mpfr_exp_2` (the
