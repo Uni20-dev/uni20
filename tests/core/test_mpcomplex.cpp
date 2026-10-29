@@ -451,6 +451,7 @@ TEST(MpComplex, HyperbolicExactAndExplicitPrecision)
   EXPECT_EQ(math::acosh(C{1}), C{});
   EXPECT_TRUE(math::acosh(C{1}).is_exact());
   C exact(mpreal{2}, mpreal{1});
+  C const finite("1.234567890123456789", "-0.9876543210987654321", high);
   using Unary = C (*)(C const&);
   using Explicit = C (*)(C const&, Precision);
   std::array<Unary, 3> ordinary{&uni20::sinh, &uni20::cosh, &uni20::acosh};
@@ -462,7 +463,6 @@ TEST(MpComplex, HyperbolicExactAndExplicitPrecision)
     auto result = explicit_p[i](exact, p);
     EXPECT_EQ(result.precision(), p);
     EXPECT_EQ(result, ordinary[i](exact.at(p)));
-    C finite("1.234567890123456789", "-0.9876543210987654321", high);
     EXPECT_EQ(explicit_p[i](finite, p), ordinary[i](finite.at(p)));
     EXPECT_EQ(finite.precision(), high);
     EXPECT_THROW(explicit_p[i](exact, Precision::exact()), std::logic_error);
