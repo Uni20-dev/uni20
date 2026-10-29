@@ -46,3 +46,5 @@ if(UNI20_HAS_MPLAPACK_FLOAT128)
 endif()
 
 add_test_module(elliptic_theta SOURCES test_elliptic_theta.cpp LIBS uni20_core)
+
+add_test_module(elliptic_theta_jet SOURCES test_elliptic_theta_jet.cpp LIBS uni20_core)
