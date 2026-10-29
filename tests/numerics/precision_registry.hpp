@@ -57,6 +57,8 @@ enum class PrecisionProbe
   FiniteQuadratureAccuracy,
   ThetaConstantIdentities,
   ThetaConstantAccuracy,
+  ThetaJetIdentities,
+  ThetaJetAccuracy,
   AgmIdentities,
   AgmAccuracy,
   ReciprocalFunctionIdentities,
@@ -162,6 +164,8 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "FiniteQuadratureAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ThetaJetIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "ThetaJetAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "AgmIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "AgmAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ReciprocalFunctionIdentities", "scalar_math"},
@@ -251,6 +255,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     if (probe == ComplexLogGammaIdentities || probe == ComplexLogGammaScaledComponents ||
         probe == ComplexLogGammaReferenceAccuracy)
       if constexpr (!C::is_complex) return {"not_applicable", "complex right-half-plane log-Gamma API"};
+    if (probe == ThetaJetIdentities || probe == ThetaJetAccuracy)
+      if constexpr (!C::is_complex) return {"not_applicable", "complex rectangular theta jet API"};
     [[maybe_unused]] bool const provider =
         probe == ProviderGemmRetainsIncrement || probe == ProviderSolveResolvesSmallGap ||
         probe == ProviderSolvePreservesExtendedExponentRange || probe == ProviderSolveAccuracyImprovesWithPrecision ||
@@ -386,6 +392,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
       case FactorialAccuracy:
       case FiniteQuadratureAccuracy:
       case ThetaConstantAccuracy:
+      case ThetaJetAccuracy:
       case AgmAccuracy:
       case ReciprocalFunctionAccuracy:
       case CompoundAccuracy:

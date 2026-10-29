@@ -1,4 +1,4 @@
-# Scaled rectangular theta constants
+# Scaled rectangular theta functions
 
 `<uni20/core/elliptic_theta.hpp>` supplies
 `uni20::elliptic_theta_constant(kind, t)` for the positive real constants
@@ -41,8 +41,9 @@ bounds the inspected nonconstant terms, including the first omitted term used
 to test convergence. Exhausting it raises a runtime error instead of returning
 an unfinished approximation.
 
-This interface covers zero argument and rectangular lattices only. It does not
-provide complex arguments, derivatives, complex lattice parameters or theta1.
+The constant interface covers zero argument and rectangular lattices only.
+Complex arguments and derivatives use the separate jet interface below; neither
+interface accepts a general complex lattice parameter.
 It is a prerequisite for elliptic excitation bands; physical prefactors,
 anisotropy conversions and branch selection remain in the application.
 
@@ -93,10 +94,103 @@ Precision-growth tests distinguish every family from its preceding precision.
 Core tests cover invalid inputs, budget failure, very low MPFR precisions,
 extreme native ranges and MPFR inputs of order $10^{\pm7000}$.
 
-## Follow-up scope
+## Complex arguments and derivatives
 
-Nonzero-argument theta values and derivatives need their own scaled complex
-representation, reduction limits and cancellation diagnostics. That extension
-can share the conventions here, but it is not implied by constant support.
-XXZ bulk-energy quadrature is a separate prerequisite for making the entire
-Bethe XXZ dispersion frontend precision-generic.
+`<uni20/core/elliptic_theta_jet.hpp>` supplies
+`elliptic_theta_jet(kind, u, t)` for $f_j(u)=\theta_j(\pi u\mid it)$,
+$j=1,2,3,4$. The complex argument is **u**, not $\pi u$. The first two
+derivatives are with respect to **u**, so they include factors of $\pi$ and
+$\pi^2$ relative to derivatives with respect to the conventional theta argument.
+
+The owning `theta_jet_result<C>` contains `derivative[0..2]` and a real
+`log_scale`, representing $f_j^{(r)}(u)=e^{\mathrm{log\_scale}}
+\mathrm{derivative}[r]$. All three components have the same scale. The scale is
+an evaluation device, not a function to differentiate when using these fields.
+
+```cpp
+#include <uni20/core/elliptic_theta_jet.hpp>
+
+auto jet = uni20::elliptic_theta_jet(1, uni20::complex<double>(0.125, 0.0625), 0.5);
+auto logarithmic_derivative = uni20::elliptic_theta_ratio(jet, 1, jet, 0);
+
+// Complex MPFR/MPC uses the same explicit precision as the real lattice parameter.
+auto p = uni20::Precision::bits(256);
+using R = uni20::mpreal;
+auto wide = uni20::elliptic_theta_jet(1, uni20::complex<R>(R("1/8", p), R("1/16", p)), R("1/2", p));
+```
+
+Inputs must be finite, with positive real `t` and matching finite precision.
+The explicit overload `elliptic_theta_jet(kind, u, t, p)` rounds both inputs to
+`p`, accepting exact MPC/MPFR values. Native types require their own precision.
+Native arithmetic stays native; MPC evaluation uses 32 guard bits and rounds
+each result field to `p`, without modifying ambient precision or exponent limits.
+
+The evaluator reduces the argument to the fundamental rectangle, applies the
+[real half-period identities](https://dlmf.nist.gov/20.2.iii) to exchange
+theta1/theta2 or theta3/theta4 when needed, and evaluates within
+`|Re(u)|<=1/4`. Subtracting the nearest real half-period preserves displacements
+from both zeros and stationary points; separately rounded terms at the edge
+can otherwise cancel away meaningful derivatives. It sums a compensated
+Fourier series for `t>=1` or a Gaussian series for `t<1`, then restores
+quasi-periods with differentiated phase factors. Gaussian derivatives use their
+centered arguments to avoid cancellation of the curvature at small `t`.
+Vanished Gaussian terms are skipped, and weights are applied before successive
+derivative factors so an overflowing squared frequency does not invalidate a
+representable derivative.
+Theta2 and theta3 use integer-centered Gaussian sums directly, retaining small
+arguments that a real half-period translation would erase. Even functions use a
+local Taylor expansion after reduction to retain tiny first derivatives near
+period-equivalent origins. Theta4 is translated toward its nearest imaginary
+half-period after reduction, preserving displacements from its zeros. Period
+selection avoids rounding an addition of one-half, and the imaginary residual
+uses the original inputs in a fused multiply-add. Exact symmetry zeros are
+restored explicitly. Reduction is limited by both the scalar's
+significand and a signed integer period count; an unresolvable reduction raises
+an overflow error. A scale or scaled derivative outside the scalar's range also
+raises an overflow error. Fourier exponential terms combine decay and growth
+as nonnegative factors before multiplication by pi. This preserves small finite
+exponents near imaginary half-periods, where subtracting separately rounded
+large terms can lose accuracy even without overflow, and also avoids spurious
+`infinity - infinity` when the scaled jet is finite. Period contributions and the
+reduced logarithmic scale are combined with fused multiply-add, and period
+phases, Gaussian phases, Fourier sine/cosine terms and theta4 translations all
+use the same cycle-based `sinpi`/`cospi` evaluation. Exact quarter cycles retain
+their exact phases. Fused multiply-add residuals retain low product and quotient
+bits beside these cycles without first adding them back to a rounded argument.
+This avoids amplifying a spurious `sin(pi)` or `cos(pi/2)` residual by factors
+of `1/t` or `1/t^2` in the derivatives.
+
+Each reduced series uses a precision-dependent term count with a conservative
+Gaussian-tail margin. The final `max_terms` argument (default 4096) bounds this
+count; zero is invalid, and an insufficient budget raises a runtime error. This
+is a truncation strategy, not a certified floating-point error bound. Cancellation
+near zeros, elementary-function rounding, and reconstruction from a rounded
+logarithmic scale can require additional precision. Correct rounding and uniform
+relative accuracy of vanishing derivatives are not claimed.
+
+`elliptic_theta_ratio(a, da, b, db)` forms a ratio of selected derivatives
+without reconstructing the two functions. Orders must be 0 through 2, and the
+selected components and scales must be finite with common precision. A zero
+denominator raises a domain error; a zero numerator gives a precision-correct
+zero. An unrepresentable nonzero ratio raises an overflow error. Small
+denominators and differences of rounded scales still amplify errors. Finite
+complex components may have an overflowing or subnormal norm; component-scaled
+logarithmic norms and unit phases keep representable ratios evaluable.
+
+The shared complex precision cases check conjugation, real and imaginary
+quasi-periods, derivative transformations, symmetry zeros and scaled ratios.
+Independent Jacobi products differentiated through logarithmic derivatives
+provide 1280-bit references, including the original inputs' low bits. Error
+comparisons distinguish each configured scalar family from the preceding
+precision. Core tests add 80/160/256/333-bit convergence, tiny arguments,
+finite ratios of underflowing functions, domain and term-budget failures.
+Shared cases also check half-period derivative identities and tiny displacements
+from stationary points in every configured precision. Adjacent representable
+inputs near theta3/theta4 zeros are compared using derivative ratios, so rounding
+of a large common logarithmic scale does not mask phase errors. A direct
+1280-bit Gaussian reference supplies these small-`t` comparisons; at moderate
+`t` its ratios are checked against the independent Jacobi products. Product
+comparisons also cover both sides of the real half-period translation boundary.
+Large-lattice checks use the surviving leading Fourier terms to verify values
+and both derivatives next to imaginary half-periods at every configured precision.
+Physical prefactors, anisotropy conversion and model branches remain in Bethe.
