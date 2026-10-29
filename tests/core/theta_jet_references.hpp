@@ -44,5 +44,34 @@ inline std::array<C, 3> product_reference(unsigned kind, C const& u, R const& t)
   throw std::runtime_error("independent theta product did not converge");
 }
 
+// Direct differentiated Poisson sum for t<=1/8 near the fundamental rectangle.
+// Work at 1280 bits, including the complex exponential and polynomial derivative
+// factors. No production shifts, paired sums, phase reduction or jet calls.
+// The omitted centers are at least 8 periods away for these inputs; their
+// relative contribution is below exp(-500*pi), including the derivative factors.
+inline std::array<C, 3> gaussian_reference(unsigned kind, C const& u, R const& t)
+{
+  auto const p = precision_of(t);
+  R const zero(0, p), one(1, p), pi_value = uni20::pi<R>.at(p);
+  R const shift = kind == 1 || kind == 4 ? one / 2 : zero;
+  R nearest_distance = one;
+  for (int n = -1; n <= 1; ++n)
+    nearest_distance = std::min(nearest_distance, math::abs(u.real() - (R(n, p) + shift)));
+  R const common = pi_value * (u.imag() * u.imag() - nearest_distance * nearest_distance) / t;
+  C const cz(zero, zero);
+  std::array<C, 3> sum{cz, cz, cz};
+  for (int n = -8; n <= 8; ++n)
+  {
+    C const displacement = u - (R(n, p) + shift);
+    C term = math::exp(-pi_value * displacement * displacement / t - common);
+    if ((kind == 1 || kind == 2) && n % 2) term = -term;
+    C const slope = -2 * pi_value * displacement / t;
+    sum[0] += term;
+    sum[1] += slope * term;
+    sum[2] += (slope * slope - 2 * pi_value / t) * term;
+  }
+  return sum;
+}
+
 } // namespace uni20::test::theta_jet_reference
 #endif

@@ -55,6 +55,31 @@ template <ThetaReal R> std::size_t term_count(R const& t, std::size_t max_terms)
     throw std::runtime_error("theta jet exhausted its term budget");
   return static_cast<std::size_t>(integral_value(count));
 }
+// Keep phases in cycles until sinpi/cospi reduce the quadrant. Evaluating a
+// rounded multiple of pi creates nonzero cos(pi/2) or sin(pi) residuals which
+// derivative factors can amplify by 1/t or 1/t^2.
+template <ThetaReal R> complex<R> phase_cycles(R const& cycles)
+{
+  R const twice = 2 * cycles;
+  return {math::cospi(twice), math::sinpi(twice)};
+}
+template <ThetaReal R> complex<R> phase_product(R const& a, R const& b)
+{
+  R const product = a * b, residual = math::fma(a, b, -product);
+  auto phase = phase_cycles(product);
+  // Retain fractional cycles lost in a large product, and low bits beside a
+  // quarter cycle. Multiplying the phases avoids rounding the residual away.
+  if (residual != 0) phase *= phase_cycles(residual);
+  return phase;
+}
+template <ThetaReal R> complex<R> phase_quotient(R const& a, R const& y, R const& t)
+{
+  R const quotient = y / t, residual = math::fma(-quotient, t, y);
+  auto phase = phase_product(a, quotient);
+  if (residual != 0) phase *= phase_product(a, residual / t);
+  return phase;
+}
+
 // Recover a Fourier exponent without subtracting overflowing decay/growth
 // terms. In the reduced rectangle t +/- 2*y is nonnegative, so an overflow
 // here can only mean a vanishing exponential, never a lost cancellation.
@@ -95,8 +120,10 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       if (math::abs(omega * y) <= one)
       {
         Real const weight = math::exp(-fall - pi * math::abs(y));
-        value = Real{2} * sign * weight * math::sin(omega * u);
-        first = Real{2} * sign * omega * weight * math::cos(omega * u);
+        auto const phase = phase_product(a, x);
+        Real const sh = math::sinh(omega * y), ch = math::cosh(omega * y);
+        value = Real{2} * sign * weight * Complex(phase.imag() * ch, phase.real() * sh);
+        first = Real{2} * sign * omega * weight * Complex(phase.real() * ch, -phase.imag() * sh);
       }
       else
       {
@@ -106,8 +133,9 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
           ep = fourier_exponent(n, true, t, y, pi);
           em = fourier_exponent(n, true, t, -y, pi);
         }
-        Complex const positive = math::exp(Complex(ep, omega * x));
-        Complex const negative = math::exp(Complex(em, -omega * x));
+        auto const phase = phase_product(a, x);
+        Complex const positive = math::exp(ep) * phase;
+        Complex const negative = math::exp(em) * uni20::conj(phase);
         value = Complex(zero, -sign) * (positive - negative);
         first = sign * omega * (positive + negative);
       }
@@ -119,10 +147,12 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       Complex difference, sum;
       if (math::abs(omega * x) <= one)
       {
-        Complex const weight = math::exp(Complex(-pi * (fall + math::abs(x)) / t, -Real{2} * pi * x * (y / t)));
+        Complex const weight = math::exp(-pi * (fall + math::abs(x)) / t) * phase_quotient(-x, y, t);
         if (weight == zero_complex) continue;
-        difference = Real{2} * weight * math::sinh(omega * u);
-        sum = Real{2} * weight * math::cosh(omega * u);
+        auto const phase = phase_quotient(a, y, t);
+        Real const sh = math::sinh(omega * x), ch = math::cosh(omega * x);
+        difference = Real{2} * weight * Complex(sh * phase.real(), ch * phase.imag());
+        sum = Real{2} * weight * Complex(ch * phase.real(), sh * phase.imag());
         Complex const center = Real{2} * pi * (u / t);
         value = sign * difference;
         first = sign * (-center * difference + omega * sum);
@@ -133,10 +163,10 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       }
       else
       {
-        Complex const positive =
-            math::exp(Complex(-pi * (fall + math::abs(x) - Real{2} * a * x) / t, -Real{2} * pi * (x - a) * (y / t)));
-        Complex const negative =
-            math::exp(Complex(-pi * (fall + math::abs(x) + Real{2} * a * x) / t, -Real{2} * pi * (x + a) * (y / t)));
+        Complex const positive = math::exp(-pi * (fall + math::abs(x) - Real{2} * a * x) / t) *
+                                 phase_quotient(a - x, y, t);
+        Complex const negative = math::exp(-pi * (fall + math::abs(x) + Real{2} * a * x) / t) *
+                                 phase_quotient(-x - a, y, t);
         // Differentiate each centered Gaussian before combining the pair.
         // Expanding (u +/- a)^2 would cancel terms of order 1/t^2 near a center.
         auto derivative = [&](Complex const& term, Complex const& displacement, unsigned order) {
@@ -170,25 +200,16 @@ template <Complex C> theta_jet_result<C> even_gaussian(unsigned kind, C u, make_
   using R = make_real_t<C>;
   auto const p = precision_of(t);
   R const zero = scalar_at_precision<R>(0, p), one = scalar_at_precision<R>(1, p);
-  R const pi = R(4) * math::atan(one), half = one / 2;
+  R const pi = R(4) * math::atan(one);
   C const cz(zero, zero);
-  if (kind == 2 && math::abs(u.real()) > one / 4)
-  {
-    bool const positive = u.real() > zero;
-    auto result = theta1_reduced(u + (positive ? -half : half), t, true, max_terms);
-    if (positive)
-      for (auto& d : result.derivative)
-        d = -d;
-    return result;
-  }
-  R const x = u.real(), y_over_t = u.imag() / t, root_t = math::sqrt(t);
+  R const x = u.real(), root_t = math::sqrt(t);
   R const sx = x / root_t, sy = u.imag() / root_t;
   theta_jet_result<C> result{{cz, cz, cz}, pi * (sy * sy - sx * sx) - math::log(t) / 2};
   std::array<Sum<C>, 3> sums{Sum<C>(cz), Sum<C>(cz), Sum<C>(cz)};
   auto add = [&](R const& center, R const& exponent, R const& sign) {
     R const weight = math::exp(exponent);
     if (weight == zero) return;
-    C const term = sign * weight * math::exp(C(zero, -2 * pi * (x - center) * y_over_t));
+    C const term = sign * weight * phase_quotient(center - x, u.imag(), t);
     C const slope = -2 * pi * ((u - center) / t);
     sums[0].add(term);
     sums[1].add(slope * term);
@@ -204,7 +225,6 @@ template <Complex C> theta_jet_result<C> even_gaussian(unsigned kind, C u, make_
   }
   for (unsigned d = 0; d < 3; ++d)
     result.derivative[d] = sums[d].value();
-  if (kind == 3 && math::abs(x) == half && math::abs(u.imag()) == t / 2) result.derivative[0] = cz;
   return result;
 }
 
@@ -221,7 +241,7 @@ template <Complex C> theta_jet_result<C> theta4_gaussian(C u, make_real_t<C> t, 
   C const slope(zero, sign * pi);
   result.derivative[2] += R(2) * slope * result.derivative[1] + slope * slope * result.derivative[0];
   result.derivative[1] += slope * result.derivative[0];
-  C const phase = C(zero, -sign) * math::exp(C(zero, sign * pi * u.real()));
+  C const phase = C(zero, -sign) * phase_product(sign / 2, u.real());
   for (auto& d : result.derivative)
     d *= phase;
   result.log_scale -= pi * (t / 4 + sign * u.imag());
@@ -238,16 +258,6 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
   Real const half = one / 2;
   Complex const zero_complex(zero, zero);
   Real const pi = Real{4} * math::atan(one);
-  // Translate theta2 near its real zero without subtracting rounded cosines.
-  if (kind == 2 && math::abs(u.real()) > one / 4)
-  {
-    bool const positive = u.real() > zero;
-    auto result = theta1_reduced(u + (positive ? -half : half), t, false, max_terms);
-    if (positive)
-      for (auto& d : result.derivative)
-        d = -d;
-    return result;
-  }
   theta_jet_result<C> result{{zero_complex, zero_complex, zero_complex}, zero};
   bool const half_series = kind == 2;
   result.log_scale = half_series ? -pi * (t / Real{4} - math::abs(u.imag())) : zero;
@@ -264,8 +274,10 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
     if (math::abs(omega * u.imag()) <= one)
     {
       Real const weight = Real{2} * sign * math::exp(-fall - shift);
-      value = weight * math::cos(omega * u);
-      first = -weight * omega * math::sin(omega * u);
+      auto const phase = phase_product(a, u.real());
+      Real const sh = math::sinh(omega * u.imag()), ch = math::cosh(omega * u.imag());
+      value = weight * Complex(phase.real() * ch, -phase.imag() * sh);
+      first = -weight * omega * Complex(phase.imag() * ch, phase.real() * sh);
     }
     else
     {
@@ -275,8 +287,9 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
         ep = fourier_exponent(n, half_series, t, u.imag(), pi);
         em = fourier_exponent(n, half_series, t, -u.imag(), pi);
       }
-      Complex const aterm = math::exp(Complex(ep, omega * u.real()));
-      Complex const bterm = math::exp(Complex(em, -omega * u.real()));
+      auto const phase = phase_product(a, u.real());
+      Complex const aterm = math::exp(ep) * phase;
+      Complex const bterm = math::exp(em) * uni20::conj(phase);
       value = sign * (aterm + bterm);
       first = Complex(zero, sign * omega) * (aterm - bterm);
     }
@@ -286,8 +299,7 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
   }
   for (unsigned d = 0; d < 3; ++d)
     result.derivative[d] = sums[d].value();
-  if (math::abs(u.imag()) == t / Real{2} &&
-      ((kind == 3 && math::abs(u.real()) == half) || (kind == 4 && u.real() == zero)))
+  if (kind == 4 && u.real() == zero && math::abs(u.imag()) == t / Real{2})
     result.derivative[0] = zero_complex;
   return result;
 }
@@ -321,32 +333,42 @@ template <Complex C> theta_jet_result<C> theta1(C u, make_real_t<C> t, unsigned 
   ry = math::fma(-mr, t, u.imag());
   auto const n = integral_value(nr), m = integral_value(mr);
   Complex const reduced(u.real() - nr, ry), cz(zero, zero);
-  bool const taylor = kind > 1 && t < one && reduced != cz && math::abs(reduced) < math::sqrt(eps) * t / Real(8);
-  Complex const at = taylor ? cz : reduced;
-  auto result = kind == 1 ? theta1_reduced(at, t, t < one, max_terms)
-                : t < one ? (kind == 4 ? theta4_gaussian(at, t, max_terms) : even_gaussian(kind, at, t, max_terms))
-                          : even_reduced(kind, at, t, max_terms);
-  if (kind > 1 && at == cz) result.derivative[1] = cz;
+  // Real half-period translations exchange theta1/theta2 and theta3/theta4.
+  // Subtract the nearest half-period before evaluation: this preserves small
+  // displacements from zeros and stationary points instead of cancelling
+  // separately rounded Fourier/Gaussian terms at the edge of the rectangle.
+  Complex centered = reduced;
+  unsigned centered_kind = kind;
+  bool negate = false;
+  if (math::abs(reduced.real()) > one / 4)
+  {
+    bool const positive = reduced.real() > zero;
+    centered.real(reduced.real() + (positive ? -half : half));
+    centered_kind = kind < 3 ? 3 - kind : 7 - kind;
+    negate = (kind == 1 && !positive) || (kind == 2 && positive);
+  }
+  bool const taylor = centered_kind > 1 && t < one && centered != cz &&
+                      math::abs(centered) < math::sqrt(eps) * t / Real(8);
+  Complex const at = taylor ? cz : centered;
+  auto result = centered_kind == 1 ? theta1_reduced(at, t, t < one, max_terms)
+                : t < one ? (centered_kind == 4 ? theta4_gaussian(at, t, max_terms)
+                                               : even_gaussian(centered_kind, at, t, max_terms))
+                          : even_reduced(centered_kind, at, t, max_terms);
+  if (centered_kind > 1 && at == cz) result.derivative[1] = cz;
   if (taylor)
   {
-    result.derivative[0] += result.derivative[2] * reduced * reduced / Real(2);
-    result.derivative[1] = result.derivative[2] * reduced;
+    result.derivative[0] += result.derivative[2] * centered * centered / Real(2);
+    result.derivative[1] = result.derivative[2] * centered;
   }
+  if (negate)
+    for (auto& d : result.derivative)
+      d = -d;
   // Quasi-periodicity, differentiated before reconstructing the common scale.
   Complex const slope(zero, -Real{2} * pi * mr);
   result.derivative[2] += Real{2} * slope * result.derivative[1] + slope * slope * result.derivative[0];
   result.derivative[1] += slope * result.derivative[0];
   auto const parity = kind == 1 ? n + m : kind == 2 ? n : kind == 4 ? m : 0;
-  // Reduce phase cycles before multiplying by pi. The FMA recovers fractional
-  // bits lost in a large product; exact quarter cycles stay exact.
-  Real const product = mr * reduced.real();
-  Real cycles = product - math::floor(product) + math::fma(mr, reduced.real(), -product);
-  cycles -= math::floor(cycles + half);
-  Complex phase = cycles == zero              ? Complex(one, zero)
-                  : math::abs(cycles) == half ? Complex(-one, zero)
-                  : cycles == one / 4         ? Complex(zero, -one)
-                  : cycles == -one / 4        ? Complex(zero, one)
-                                              : math::exp(Complex(zero, -Real{2} * pi * cycles));
+  Complex phase = phase_product(-mr, reduced.real());
   if (parity % 2) phase = -phase;
   for (auto& d : result.derivative)
     d *= phase;

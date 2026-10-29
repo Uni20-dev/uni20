@@ -125,8 +125,13 @@ The explicit overload `elliptic_theta_jet(kind, u, t, p)` rounds both inputs to
 Native arithmetic stays native; MPC evaluation uses 32 guard bits and rounds
 each result field to `p`, without modifying ambient precision or exponent limits.
 
-The evaluator reduces the argument to the fundamental rectangle, sums a
-compensated Fourier series for `t>=1` or a Gaussian series for `t<1`, and restores
+The evaluator reduces the argument to the fundamental rectangle, applies the
+[real half-period identities](https://dlmf.nist.gov/20.2.iii) to exchange
+theta1/theta2 or theta3/theta4 when needed, and evaluates within
+`|Re(u)|<=1/4`. Subtracting the nearest real half-period preserves displacements
+from both zeros and stationary points; separately rounded terms at the edge
+can otherwise cancel away meaningful derivatives. It sums a compensated
+Fourier series for `t>=1` or a Gaussian series for `t<1`, then restores
 quasi-periods with differentiated phase factors. Gaussian derivatives use their
 centered arguments to avoid cancellation of the curvature at small `t`.
 Vanished Gaussian terms are skipped, and weights are applied before successive
@@ -146,8 +151,12 @@ raises an overflow error. At extreme Fourier parameters, decay and growth are
 combined as nonnegative factors before multiplication, avoiding spurious
 `infinity - infinity` when the scaled jet is finite. Period contributions and the
 reduced logarithmic scale are combined with fused multiply-add, and period
-phases are reduced in cycles before multiplication by pi; exact quarter cycles
-retain their exact phases.
+phases, Gaussian phases, Fourier sine/cosine terms and theta4 translations all
+use the same cycle-based `sinpi`/`cospi` evaluation. Exact quarter cycles retain
+their exact phases. Fused multiply-add residuals retain low product and quotient
+bits beside these cycles without first adding them back to a rounded argument.
+This avoids amplifying a spurious `sin(pi)` or `cos(pi/2)` residual by factors
+of `1/t` or `1/t^2` in the derivatives.
 
 Each reduced series uses a precision-dependent term count with a conservative
 Gaussian-tail margin. The final `max_terms` argument (default 4096) bounds this
@@ -173,4 +182,11 @@ provide 1280-bit references, including the original inputs' low bits. Error
 comparisons distinguish each configured scalar family from the preceding
 precision. Core tests add 80/160/256/333-bit convergence, tiny arguments,
 finite ratios of underflowing functions, domain and term-budget failures.
+Shared cases also check half-period derivative identities and tiny displacements
+from stationary points in every configured precision. Adjacent representable
+inputs near theta3/theta4 zeros are compared using derivative ratios, so rounding
+of a large common logarithmic scale does not mask phase errors. A direct
+1280-bit Gaussian reference supplies these small-`t` comparisons; at moderate
+`t` its ratios are checked against the independent Jacobi products. Product
+comparisons also cover both sides of the real half-period translation boundary.
 Physical prefactors, anisotropy conversion and model branches remain in Bethe.
