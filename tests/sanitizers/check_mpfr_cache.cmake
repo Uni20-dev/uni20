@@ -35,3 +35,10 @@ check(cache-exp "${test_binary_dir}/metadata-only.supp" 23)
 check(clean-exp "${test_binary_dir}/metadata-only.supp" 0)
 check(cache-exp "${suppressions}" 0)
 check(owned-exp "${suppressions}" 23)
+
+# Log-Gamma uses a Bernoulli-number cache, distinct from the constant and
+# exponential pools. Local cleanup must release it; owning results still leak.
+check(cache-lgamma "${test_binary_dir}/metadata-only.supp" 23)
+check(clean-lgamma "${test_binary_dir}/metadata-only.supp" 0)
+check(cache-lgamma "${suppressions}" 0)
+check(owned-lgamma "${suppressions}" 23)
