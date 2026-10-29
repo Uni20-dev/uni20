@@ -49,6 +49,10 @@ add_library(uni20_core INTERFACE)
 set(UNI20_HAS_MPREAL TRUE)
 add_subdirectory("${UNI20_SOURCE_DIR}/tests/sanitizers" mpfr_policy)
 get_directory_property(policy_tests DIRECTORY "${UNI20_SOURCE_DIR}/tests/sanitizers" TESTS)
+# The hermetic Python symbol-preparation check does not use instrumentation
+# and is intentionally available even when the sanitizer policy is disabled.
+# All remaining tests here must still obey the instrumentation gate.
+list(REMOVE_ITEM policy_tests "Sanitizers.PrepareSymbols")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND case MATCHES "^enabled_")
   if(NOT "Sanitizers.MpfrCachePolicy" IN_LIST policy_tests)
     message(FATAL_ERROR "Missing MPFR cache-policy test for ${UNI20_SANITIZE}")
