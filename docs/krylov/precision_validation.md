@@ -205,7 +205,7 @@ that provider/helper inventory.
 | --- | --- | --- | --- |
 | Scalar aliases, numeric limits, scalar concepts, and scalar I/O | yes | yes | `MplapackBinary128Test.Uni20NumericLimitsSeesBackendScalar`, `Uni20ScalarConceptsSeeBackendScalar`, `Uni20ScalarIo*` |
 | MPBLAS wrapper surface | yes | yes | `MplapackBinary128Test.LinksMpblasTransitively`, `Uni20BlasWrappersPreserveBinary128OnlyIncrements` |
-| Dense one-norm and linear solve through CPU helpers | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuMatrixOneNormRetainsIncrement`, `SolvePreservesExtendedExponentRange` |
+| Dense one-norm and linear solve through CPU helpers | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuMatrixOneNormRetainsIncrement`, `CpuSolvePreservesExtendedExponentRange` |
 | Tensor reductions through the CPU reference backend | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuReductionsRetainIncrement` |
 | Dense matrix exponential prescaling | yes | no | `MplapackBinary128CpuOpsTest.MatrixExponentialPrescalesWithinBinary128` |
 | Exact Tensor SVD | yes | yes | `MplapackBinary128CpuOpsTest.ExactSvdPreservesRealAndComplexBinary128Values`, `AsyncSvdTest.SupportsConfiguredFloat128Backend` |

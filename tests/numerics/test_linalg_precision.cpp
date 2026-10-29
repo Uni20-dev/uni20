@@ -105,16 +105,17 @@ UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveResolvesSmallGap)
   check_solve<C>(linalg::LapackBackend{}, false);
 }
 
-UNI20_PRECISION_TEST(NumericalLinalg, SolvePreservesExtendedExponentRange)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuSolvePreservesExtendedExponentRange)
 {
   using C = TypeParam;
-  this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-#if UNI20_HAS_MPLAPACK_MPREAL
-  if constexpr (C::runtime)
-    check_solve<C>(linalg::LapackBackend{}, true);
-  else
-#endif
-    check_solve<C>(linalg::CpuReferenceBackend{}, true);
+  this->RecordProperty("backend", "cpu_reference");
+  check_solve<C>(linalg::CpuReferenceBackend{}, true);
+}
+
+UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolvePreservesExtendedExponentRange)
+{
+  this->RecordProperty("backend", "lapack_or_mplapack");
+  check_solve<TypeParam>(linalg::LapackBackend{}, true);
 }
 
 #if UNI20_HAS_MPREAL
@@ -143,16 +144,15 @@ template <class C, class Backend> void check_solve_accuracy(Backend backend)
 #endif
 
 #if UNI20_HAS_MPREAL
-UNI20_PRECISION_TEST(NumericalLinalg, SolveAccuracyImprovesWithPrecision)
+UNI20_PRECISION_TEST(NumericalLinalg, CpuSolveAccuracyImprovesWithPrecision)
 {
   using C = TypeParam;
-  this->RecordProperty("backend", "cpu_or_mplapack_mpfr");
-#if UNI20_HAS_MPLAPACK_MPREAL
-  if constexpr (C::runtime)
-    check_solve_accuracy<C>(linalg::LapackBackend{});
-  else
-#endif
-    check_solve_accuracy<C>(linalg::CpuReferenceBackend{});
+  this->RecordProperty("backend", "cpu_reference");
+  check_solve_accuracy<C>(linalg::CpuReferenceBackend{});
+}
+UNI20_PRECISION_TEST(NumericalLinalg, ProviderSolveAccuracyImprovesWithPrecision)
+{
+  check_solve_accuracy<TypeParam>(linalg::LapackBackend{});
 }
 #endif
 } // namespace uni20::test

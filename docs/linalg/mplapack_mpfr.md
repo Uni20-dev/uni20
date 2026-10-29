@@ -27,9 +27,13 @@ variants disabled. Provider-internal parallelism is outside this adapter's
 precision contract.
 
 The scalar option enables both `mpreal` and `mpcomplex`, using GMP, MPFR and
-MPC. Without `UNI20_BACKEND_MPLAPACK`, scalar arithmetic and tensor storage
-remain available without MPLAPACK. With it, the MPFR component is selected
-automatically, alongside components for any enabled fixed-precision families.
+MPC. Without `UNI20_BACKEND_MPLAPACK`, scalar arithmetic, tensor storage,
+CPU QR least squares, square solves, reusable LU and log determinants remain
+available. The CPU LU family uses the same finite-precision and failure
+contracts as the MPLAPACK adapter; it also provides an explicitly selectable
+reference implementation. LU condition estimates, SVD and eigensystems still
+require their provider. Enabling `UNI20_BACKEND_MPLAPACK` selects the MPFR
+component automatically, alongside components for enabled fixed-precision families.
 To request only arbitrary-precision kernels, set `UNI20_ENABLE_FLOAT80=OFF`
 and `UNI20_ENABLE_FLOAT128=OFF`.
 

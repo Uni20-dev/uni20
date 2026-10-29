@@ -6,10 +6,12 @@
  * \brief Reference CPU backend for dense general linear systems.
  */
 
+#include "lu_common.hpp"
 #include <uni20/common/trace.hpp>
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/core/scalar_traits.hpp>
 #include <uni20/linalg/backends/linear_solve_common.hpp>
+#include <uni20/linalg/backends/packed_matrix.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/mdspan/concepts.hpp>
@@ -49,23 +51,6 @@ template <class CoefficientMdspan, class RhsMdspan> consteval auto linear_solve_
     return kernel_types_yes;
   else
     return kernel_types_no;
-}
-
-template <class MatrixMdspan>
-void swap_rows(MatrixMdspan& matrix, std::size_t lhs, std::size_t rhs, std::size_t columns)
-{
-  if (lhs == rhs) return;
-  using index_type = typename std::remove_cvref_t<MatrixMdspan>::index_type;
-  for (std::size_t col = 0; col < columns; ++col)
-  {
-    auto const left_index = static_cast<index_type>(lhs);
-    auto const right_index = static_cast<index_type>(rhs);
-    auto const column = static_cast<index_type>(col);
-    auto temporary = static_cast<typename std::remove_cvref_t<MatrixMdspan>::value_type>(matrix[left_index, column]);
-    auto right_value = static_cast<typename std::remove_cvref_t<MatrixMdspan>::value_type>(matrix[right_index, column]);
-    matrix[left_index, column] = right_value;
-    matrix[right_index, column] = temporary;
-  }
 }
 
 template <class CoefficientMdspan, class RhsMdspan>
@@ -207,6 +192,60 @@ KernelAttempt try_kernel(CpuReferenceBackend, linear_solve_op const&, Coefficien
   auto coefficient_span = coefficient_access.mdspan();
   auto rhs_span = rhs_access.mdspan();
   return detail::cpu_reference::linear_solve(coefficient_span, rhs_span, info, options);
+}
+
+/// \brief Accept runtime-precision host solves with an explicit finite working precision.
+template <MutableRankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
+  requires HostWritableMdspec<A> && HostWritableMdspec<B> && RealOrComplex<typename A::value_type> &&
+           has_runtime_precision_v<typename A::value_type> &&
+           std::same_as<typename A::value_type, typename B::value_type>
+consteval auto kernel_accepts_types(CpuReferenceBackend, linear_solve_op const&, A&, B&, SolveInfo&,
+                                    SolveOptions<make_real_t<typename A::value_type>> const&, Precision)
+{
+  return kernel_types_yes;
+}
+
+/// \brief Convert runtime workspaces, then use reference LU and triangular substitution.
+template <MutableRankedMdspecLike<2> A, MutableRankedMdspecLike<2> B>
+  requires HostWritableMdspec<A> && HostWritableMdspec<B> && RealOrComplex<typename A::value_type> &&
+           has_runtime_precision_v<typename A::value_type> &&
+           std::same_as<typename A::value_type, typename B::value_type>
+KernelAttempt try_kernel(CpuReferenceBackend, linear_solve_op const&, A& a, B& b, SolveInfo& info,
+                         SolveOptions<make_real_t<typename A::value_type>> const& options, Precision p)
+{
+  using R = make_real_t<typename A::value_type>;
+  (void)p.bit_count();
+  ERROR_IF(a.extent(0) != a.extent(1) || a.extent(0) != b.extent(0), "solve operand shapes do not agree");
+  detail::require_solve_options(options);
+  info = {};
+  if (a.extent(0) == 0 || b.extent(1) == 0) return KernelAttempt::success;
+  auto aa = acquire_host_write_access_sync(a);
+  auto ba = acquire_host_write_access_sync(b);
+  auto as = aa.mdspan();
+  auto bs = ba.mdspan();
+  if (!detail::solve_matrix_is_finite(as) || !detail::solve_matrix_is_finite(bs))
+  {
+    info.status = SolveStatus::nonfinite_input;
+    return KernelAttempt::success;
+  }
+  auto av = packed_detail::pack(as, p), bv = packed_detail::pack(bs, p);
+  auto aw = av.mdspan();
+  auto bw = bv.mdspan();
+  if (!detail::solve_matrix_is_finite(aw) || !detail::solve_matrix_is_finite(bw))
+  {
+    info.status = SolveStatus::nonfinite_result;
+    return KernelAttempt::success;
+  }
+  SolveOptions<R> converted{.relative_pivot_tolerance = scalar_at_precision<R>(options.relative_pivot_tolerance, p)};
+  std::vector<std::size_t> pivots(std::size_t(a.extent(0)));
+  detail::cpu_reference::lu_factor(aw, std::span(pivots), nullptr, info, converted, scalar_at_precision<R>(0, p));
+  packed_detail::unpack(av, as);
+  if (info.succeeded())
+  {
+    detail::cpu_reference::lu_solve(aw, std::span<std::size_t const>(pivots), bw, info);
+    packed_detail::unpack(bv, bs);
+  }
+  return KernelAttempt::success;
 }
 
 } // namespace uni20::linalg

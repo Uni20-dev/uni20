@@ -1,3 +1,7 @@
+if(UNI20_HAS_MPREAL)
+  add_test_module(cpu_runtime_lu SOURCES test_cpu_runtime_lu.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+endif()
+
 add_test_module(lu_refine SOURCES test_lu_refine.cpp LIBS uni20_linalg)
 
 add_test_module(rank_aware SOURCES test_rank_aware.cpp LIBS uni20_linalg)

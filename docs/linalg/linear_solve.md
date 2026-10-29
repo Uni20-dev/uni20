@@ -138,8 +138,13 @@ Diagnostics follow the ordinary output-by-reference kernel convention.
 - `LapackBackend` also selects the scalar-specific [MPFR/MPC adapter](mplapack_mpfr.md),
   which packs provider objects and establishes working precision per call.
   [Binary80](mplapack_binary80.md) uses the same LAPACK family with its own scalar adapter.
-- CPU reference uses accessor-respecting partial-pivoted Gaussian elimination,
-  including row-major workspaces and native long double.
+- CPU reference uses accessor-respecting partial-pivoted Gaussian elimination
+  for native scalars, including row-major workspaces and native long double.
+  For `mpreal` and `complex<mpreal>`, it converts workspaces to the finite
+  operation precision and shares partial-pivot LU and triangular substitution
+  with the reusable-factor interface. This path requires MPFR/MPC, not MPLAPACK.
+  Normal host dispatch prefers an available LAPACK provider; an explicit
+  `CpuReferenceBackend{}` selects the reference implementation.
 - A dispatch decline preserves `A`, `B`, and `SolveInfo`.
 - An executed numerical failure writes `SolveInfo` and returns
   `KernelAttempt::success`. Dispatch must **not** retry another backend on
