@@ -25,7 +25,7 @@ UNI20_PRECISION_TEST(NumericalScalar, ThetaJetIdentities)
       auto const slope = C::scalar(zero, -2 * pi_value);
       auto const multiplier = vertical_sign * math::exp(pi_value * t + slope * u);
       std::array expected{actual(a, 0), actual(a, 1) + slope * actual(a, 0),
-                          actual(a, 2) + 2 * slope * actual(a, 1) + slope * slope * actual(a, 0)};
+                          actual(a, 2) + C::real(2) * slope * actual(a, 1) + slope * slope * actual(a, 0)};
       for (unsigned d = 0; d < 3; ++d)
       {
         C::expect_precision(a.derivative[d]);
