@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <uni20/core/scalar_io.hpp>
 #include <uni20/core/elliptic_theta_jet.hpp>
+#include <uni20/core/scalar_io.hpp>
 
 namespace
 {
@@ -73,8 +73,11 @@ TYPED_TEST(ThetaJetNative, PeriodsParityAndCommonScale)
                       R(32768) * eps * (R(1) + math::abs(expected[d])));
         }
       auto zero = elliptic_theta_jet(k, C{}, t);
-      EXPECT_EQ(zero.derivative[k == 1 ? 0 : 1], C{});
-      if (k == 1) EXPECT_EQ(zero.derivative[2], C{});
+      EXPECT_TRUE(zero.derivative[k == 1 ? 0 : 1] == C{});
+      if (k == 1)
+      {
+        EXPECT_TRUE(zero.derivative[2] == C{});
+      }
     }
   // Both theta1 and theta2 are too small to reconstruct, but their quotient is finite.
   auto a = elliptic_theta_jet(1, C(R(1) / 8, 0), R(10000));
@@ -166,7 +169,10 @@ TEST(ThetaJetMpfr, IndependentProductsAndPrecisionGrowth)
         }
         EXPECT_EQ(precision_of(jet.log_scale), p);
         EXPECT_LT(worst, previous / R("1e15", hp));
-        if (bits >= 256) EXPECT_LT(worst, R("1e-70", hp));
+        if (bits >= 256)
+        {
+          EXPECT_LT(worst, R("1e-70", hp));
+        }
         previous = worst;
       }
     }

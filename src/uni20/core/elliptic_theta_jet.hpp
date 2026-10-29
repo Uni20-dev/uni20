@@ -34,6 +34,17 @@ template <Complex C> class Sum {
   private:
     C sum_, correction_;
 };
+// Inputs have already been bounded to the signed reduction range (or to the
+// much smaller series count). Conversion therefore cannot narrow a live index.
+template <ThetaReal R> std::int64_t integral_value(R const& value)
+{
+#if UNI20_HAS_MPREAL
+  if constexpr (std::same_as<R, mpreal>)
+    return mpfr_get_sj(value.native_handle(), MPFR_RNDN);
+  else
+#endif
+    return static_cast<std::int64_t>(value);
+}
 template <ThetaReal R> std::size_t term_count(R const& t, std::size_t max_terms)
 {
   R const one = scalar_at_precision<R>(1, precision_of(t));
@@ -41,7 +52,7 @@ template <ThetaReal R> std::size_t term_count(R const& t, std::size_t max_terms)
   R const count = math::ceil(math::sqrt((-math::log(numeric_limits<R>::epsilon(t)) + R{32}) / pi)) + R{3};
   if (count > scalar_at_precision<R>(max_terms, precision_of(t)))
     throw std::runtime_error("theta jet exhausted its term budget");
-  return static_cast<std::size_t>(count);
+  return static_cast<std::size_t>(integral_value(count));
 }
 // Fundamental rectangle |Re(u)|<=1/2, |Im(u)|<=t/2. Both representations
 // converge geometrically faster than exp(-pi*n*n) in their selected regimes.
@@ -195,7 +206,7 @@ template <Complex C> theta_jet_result<C> theta1(C u, make_real_t<C> t, unsigned 
   if (!uni20::isfinite(vertical) || math::abs(u.real()) > limit || math::abs(vertical) > limit)
     throw std::overflow_error("theta argument reduction exceeds scalar precision");
   Real const nr = math::floor(u.real() + half), mr = math::floor(vertical + half);
-  auto const n = static_cast<std::int64_t>(nr), m = static_cast<std::int64_t>(mr);
+  auto const n = integral_value(nr), m = integral_value(mr);
   Complex const reduced(u.real() - nr, u.imag() - mr * t);
   auto result = kind == 1 ? theta1_reduced(reduced, t, t < one, max_terms) : even_reduced(kind, reduced, t, max_terms);
   // Quasi-periodicity, differentiated before reconstructing the common scale.
