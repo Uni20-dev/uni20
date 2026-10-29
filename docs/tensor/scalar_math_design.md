@@ -176,3 +176,11 @@ and contracts for arithmetic, decomposition, classification, constants and
 special functions.
 The elementary expansion covers real scalars; existing native complex and MPC
 operations remain available only where those implementations provide overloads.
+
+For MPC-backed `complex<mpreal>`, `sinh`, `cosh` and principal `acosh` are
+available with either the input's finite precision or an explicit final
+`Precision` argument. Explicit evaluation first converts the input to that
+precision. Imaginary signed zero selects the side of the `acosh` cut along
+the real axis below one. Exact `sinh(0)`, `cosh(0)` and `acosh(1)` return exact
+zero, one and zero; other exact inputs require finite precision. These
+operations use MPC directly and require no matrix provider.

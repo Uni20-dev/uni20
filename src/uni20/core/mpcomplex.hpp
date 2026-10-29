@@ -251,15 +251,16 @@ struct mpcomplex_access
           return exact_sqrt(x);
         else
         {
-          if constexpr (same_function_v<Operation, mpc_exp> || same_function_v<Operation, mpc_cos>)
+          if constexpr (same_function_v<Operation, mpc_exp> || same_function_v<Operation, mpc_cos> ||
+                        same_function_v<Operation, mpc_cosh>)
           {
             if (q.re == 0 && q.im == 0) return mpcomplex{1};
           }
-          else if constexpr (same_function_v<Operation, mpc_log>)
+          else if constexpr (same_function_v<Operation, mpc_log> || same_function_v<Operation, mpc_acosh>)
           {
             if (q.re == 1 && q.im == 0) return mpcomplex{};
           }
-          else if constexpr (same_function_v<Operation, mpc_sin>)
+          else if constexpr (same_function_v<Operation, mpc_sin> || same_function_v<Operation, mpc_sinh>)
           {
             if (q.re == 0 && q.im == 0) return mpcomplex{};
           }
@@ -504,6 +505,13 @@ inline mpcomplex exp(mpcomplex const& z) { return detail::mpcomplex_access::unar
 inline mpcomplex log(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_log>(z); }
 inline mpcomplex sin(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_sin>(z); }
 inline mpcomplex cos(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_cos>(z); }
+/// \brief Hyperbolic sine at the input precision; exact zero remains exact.
+inline mpcomplex sinh(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_sinh>(z); }
+/// \brief Hyperbolic cosine at the input precision; exact zero returns exact one.
+inline mpcomplex cosh(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_cosh>(z); }
+/// \brief Principal inverse hyperbolic cosine, with imaginary signed zero selecting the cut side.
+/// \details Exact one returns exact zero; other exact arguments require an explicit finite precision.
+inline mpcomplex acosh(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_acosh>(z); }
 inline mpcomplex pow(mpcomplex const& a, mpcomplex const& b) { return detail::mpcomplex_access::binary<mpc_pow>(a, b); }
 /// \brief Evaluate `sqrt(z.at(p))`, returning an approximation at finite precision p.
 /// \details MPC's principal branches and signed-zero rules apply after input conversion.
@@ -525,6 +533,18 @@ inline mpcomplex sin(mpcomplex const& z, Precision p) { return detail::mpcomplex
 /// \details MPC's principal branches and signed-zero rules apply after input conversion.
 /// \throws std::logic_error If p is exact or z is unset.
 inline mpcomplex cos(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_cos>(z, p); }
+/// \brief Evaluate `sinh(z.at(p))`, returning an approximation at finite precision p.
+/// \details MPC's principal branches and signed-zero rules apply after input conversion.
+/// \throws std::logic_error If p is exact or z is unset.
+inline mpcomplex sinh(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_sinh>(z, p); }
+/// \brief Evaluate `cosh(z.at(p))`, returning an approximation at finite precision p.
+/// \details MPC's principal branches and signed-zero rules apply after input conversion.
+/// \throws std::logic_error If p is exact or z is unset.
+inline mpcomplex cosh(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_cosh>(z, p); }
+/// \brief Evaluate `acosh(z.at(p))`, returning an approximation at finite precision p.
+/// \details MPC's principal branches and signed-zero rules apply after input conversion.
+/// \throws std::logic_error If p is exact or z is unset.
+inline mpcomplex acosh(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_acosh>(z, p); }
 /// \brief Evaluate `abs(z.at(p))`, returning an approximation at finite precision p.
 /// \details MPC's principal branches and signed-zero rules apply after input conversion.
 /// \throws std::logic_error If p is exact or z is unset.

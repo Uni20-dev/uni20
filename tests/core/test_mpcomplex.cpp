@@ -1,3 +1,5 @@
+#include "../numerics/precision_cases.hpp"
+#include <array>
 #include <gtest/gtest.h>
 #include <uni20/async/async.hpp>
 #include <uni20/async/tbb_scheduler.hpp>
@@ -394,4 +396,110 @@ TEST(MpComplex, ExplicitMathPrecisionOverridesInputsAndPreservesCutSide)
   EXPECT_EQ(sqrt(C("-4", "-0", high), p), C("0", "-2", p));
   EXPECT_LT(log(C("-1", "-0", high), p).imag(), 0);
   EXPECT_GT(log(C{-1}, p).imag(), 0); // Exact zero has no negative sign.
+}
+
+namespace
+{
+template <int Bits> mpreal hyperbolic_accuracy()
+{
+  using Case = uni20::test::PrecisionContext<mpreal, true, Bits>;
+  auto const oracle = Precision::bits(768);
+  auto const one = Case::real(1);
+  C z(one / 3, Case::real(2) / 7);
+  auto sh = math::sinh(z), ch = math::cosh(z), ah = math::acosh(z);
+  for (auto const& result : {sh, ch, ah})
+    Case::expect_precision(result);
+  // Independent real-component identities; no MPC hyperbolic call in the oracle.
+  auto x = z.real().at(oracle), y = z.imag().at(oracle);
+  C sh_ref(math::sinh(x) * math::cos(y), math::cosh(x) * math::sin(y));
+  C ch_ref(math::cosh(x) * math::cos(y), math::sinh(x) * math::sin(y));
+  auto const a = (math::hypot(x + 1, y) + math::hypot(x - 1, y)) / 2;
+  C ah_ref(math::acosh(a), math::acos(x / a)); // y > 0 selects the upper half-plane.
+  auto error = std::max(
+      {math::abs(sh.at(oracle) - sh_ref), math::abs(ch.at(oracle) - ch_ref), math::abs(ah.at(oracle) - ah_ref)});
+  EXPECT_LT(error, 8 * Case::epsilon().at(oracle));
+  EXPECT_LT(math::abs(math::cosh(ah) - z), 16 * Case::epsilon());
+  EXPECT_EQ(math::sinh(conj(z)), conj(sh));
+  EXPECT_EQ(math::cosh(conj(z)), conj(ch));
+  EXPECT_EQ(math::acosh(conj(z)), conj(ah));
+  // A tiny imaginary part is retained independently of the O(1) real part.
+  C tiny(one, Case::power_of_two(-Bits + 8));
+  auto imag = math::sinh(tiny).imag();
+  EXPECT_NE(imag, 0);
+  EXPECT_LT(math::abs(imag / tiny.imag() - math::cosh(one)), 8 * Case::epsilon());
+  return error;
+}
+} // namespace
+
+TEST(MpComplex, HyperbolicFunctionsGainAccuracy)
+{
+  auto const ambient = mpfr_get_default_prec();
+  auto a = hyperbolic_accuracy<80>(), b = hyperbolic_accuracy<160>(), c = hyperbolic_accuracy<256>();
+  EXPECT_LT(b, a * mpreal("1e-15", a.precision()));
+  EXPECT_LT(c, b * mpreal("1e-15", a.precision()));
+  EXPECT_LT(c, mpreal("1e-75", c.precision()));
+  EXPECT_EQ(mpfr_get_default_prec(), ambient);
+}
+
+TEST(MpComplex, HyperbolicExactAndExplicitPrecision)
+{
+  auto const p = Precision::bits(160), high = Precision::bits(400);
+  EXPECT_TRUE(math::sinh(C{}).is_exact());
+  EXPECT_EQ(math::sinh(C{}), C{});
+  EXPECT_EQ(math::cosh(C{}), C{1});
+  EXPECT_TRUE(math::cosh(C{}).is_exact());
+  EXPECT_EQ(math::acosh(C{1}), C{});
+  EXPECT_TRUE(math::acosh(C{1}).is_exact());
+  C exact(mpreal{2}, mpreal{1});
+  using Unary = C (*)(C const&);
+  using Explicit = C (*)(C const&, Precision);
+  std::array<Unary, 3> ordinary{&uni20::sinh, &uni20::cosh, &uni20::acosh};
+  std::array<Explicit, 3> explicit_p{&uni20::sinh, &uni20::cosh, &uni20::acosh};
+  for (std::size_t i = 0; i < ordinary.size(); ++i)
+  {
+    EXPECT_THROW(ordinary[i](exact), std::logic_error);
+    EXPECT_THROW(ordinary[i](C(uninitialized)), std::logic_error);
+    auto result = explicit_p[i](exact, p);
+    EXPECT_EQ(result.precision(), p);
+    EXPECT_EQ(result, ordinary[i](exact.at(p)));
+    C finite("1.234567890123456789", "-0.9876543210987654321", high);
+    EXPECT_EQ(explicit_p[i](finite, p), ordinary[i](finite.at(p)));
+    EXPECT_EQ(finite.precision(), high);
+    EXPECT_THROW(explicit_p[i](exact, Precision::exact()), std::logic_error);
+    EXPECT_THROW(explicit_p[i](C(uninitialized), p), std::logic_error);
+  }
+  EXPECT_EQ(math::sinh(exact, p), sinh(exact, p));
+  EXPECT_EQ(math::cosh(exact, p), cosh(exact, p));
+  EXPECT_EQ(math::acosh(exact, p), acosh(exact, p));
+}
+
+TEST(MpComplex, AcoshPrincipalCutAndSignedZero)
+{
+  for (int bits : {80, 160, 256})
+  {
+    auto p = Precision::bits(bits);
+    for (char const* x : {"-2", "-1", "-0.5", "0", "0.5", "1", "2"})
+      for (char const* y : {"0", "-0"})
+      {
+        C z(x, y, p);
+        auto value = math::acosh(z);
+        mpreal re(0, p), im(0, p), r(x, p);
+        if (r >= 1)
+          re = math::acosh(r);
+        else if (r <= -1)
+        {
+          re = math::acosh(-r);
+          im = pi<mpreal>.at(p);
+        }
+        else
+          im = math::acos(r);
+        if (signbit(z.imag())) im = -im;
+        EXPECT_EQ(value.real(), re);
+        EXPECT_EQ(value.imag(), im);
+        EXPECT_FALSE(signbit(value.real()));
+        EXPECT_EQ(signbit(value.imag()), signbit(z.imag()));
+        EXPECT_EQ(value.precision(), p);
+      }
+    EXPECT_GT(math::acosh(C{-2}, p).imag(), 0); // Exact zero chooses the upper side.
+  }
 }
