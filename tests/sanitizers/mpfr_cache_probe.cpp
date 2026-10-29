@@ -17,9 +17,10 @@ enum class Operation
 {
   {
     auto const precision = uni20::Precision::bits(333);
-    // Use the positive noninteger Stirling path exercised by numerical
-    // integrands; the integer log-Gamma shortcut has separate MPFR pools.
-    uni20::mpreal input(operation == Operation::log_gamma ? "3.5" : "3", precision);
+    // A large argument isolates the Bernoulli cache in the direct Stirling
+    // path. Small-argument reconstruction also retains temporary mpz pools,
+    // whose unrelated allocation frames this narrow policy does not cover.
+    uni20::mpreal input(operation == Operation::log_gamma ? "4096" : "3", precision);
     auto compute = [&]() -> uni20::mpreal {
       switch (operation)
       {
