@@ -115,6 +115,51 @@ UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
   ctest --test-dir build --output-on-failure
 ```
 
+The MPFR rules include its log-Gamma Bernoulli cache (`mpfr_bernoulli_cache`).
+The subprocess policy tests compare retained-cache and local-cleanup runs,
+then deliberately leak an owning log-Gamma result to verify that its storage
+is still reported. These rules affect only opt-in leak checking, not runtime
+cache lifetime or reclamation.
+
+Remainder operations also retain temporary integers in MPFR's thread-local
+pool. Their allocation frame, `mpfr_rem1`, is private and can be absent from
+a stripped system library. Its exact suppression needs matching local debug
+symbols. Prepare these **before** launching sanitizer tests, for example on
+Ubuntu with its explicit debuginfod server:
+
+```sh
+python3 scripts/prepare-sanitizer-symbols.py \
+  --library /usr/lib/x86_64-linux-gnu/libmpfr.so.6 \
+  --output-dir build/sanitizer-symbols --symbolizer llvm-symbolizer-19 \
+  --server https://debuginfod.ubuntu.com
+export ASAN_SYMBOLIZER_PATH="$PWD/build/sanitizer-symbols/llvm-symbolizer"
+```
+
+Use the actual MPFR shared-library path selected by your build (recorded as
+`UNI20_MPFR_LIBRARY` in `CMakeCache.txt`). Other distributions need their own
+server or `--debug-file /path/to/libmpfr.debug`. The helper verifies the GNU
+build ID and DWARF information, reuses a verified local file, and records its
+SHA-256 in `symbols.json`. No server is consulted if a verified file is already
+cached. Preparation fails explicitly for missing or mismatched symbols.
+The generated wrapper supplies the local search path and disables remote
+symbol lookup during tests; it does not change the library or global shell
+configuration. The helper requires Python 3, `readelf` and `llvm-symbolizer`.
+
+This wrapper supplies LLVM's symbolizer. GCC's sanitizer runtime can instead
+use its built-in `libbacktrace`, which does not use LLVM's search directory.
+For that configuration, install the matching distribution debug symbols in
+the standard GNU build-ID/debuglink locations. An isolated check can also load
+an unchanged copy of the shared library with its matching debuglink file in
+an adjacent `.debug/` directory. Verify that the remainder allocation is named
+in the report before relying on the suppression; setting the LLVM wrapper
+alone does not establish that GCC can resolve the private frame.
+
+`Sanitizers.MpfrCachePolicy` checks retained remainder pools, explicit cleanup,
+the policy with only the remainder rule removed, and deliberately leaked
+owning remainder results. A failed retained-pool check with an unnamed MPFR
+frame means symbol preparation is incomplete; do not suppress all GMP, MPFR,
+or owning scalar allocations to hide it.
+
 Automated sanitizer runs should clear `DEBUGINFOD_URLS` in their test environment
 so symbolization does not depend on remote debug-symbol downloads. A stalled
 request can otherwise consume the test timeout while a sanitizer formats its
