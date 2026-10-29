@@ -9,7 +9,7 @@ UNI20_PRECISION_TEST(NumericalScalar, ThetaJetIdentities)
   using C = TypeParam;
   this->RecordProperty("backend", "scalar_math");
   auto const zero = C::real(0), one = C::real(1);
-  auto const pi_value = pi<typename C::real_type>.at(C::precision());
+  auto const pi_value = pi<typename C::real_type> * one;
   auto const u = C::scalar(one / 8, one / 16);
   auto actual = [](auto const& jet, unsigned d) { return math::exp(jet.log_scale) * jet.derivative[d]; };
   for (int index : {1, 4, 8, 16})
