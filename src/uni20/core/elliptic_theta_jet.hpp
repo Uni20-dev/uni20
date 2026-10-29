@@ -120,13 +120,16 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
       if (math::abs(omega * x) <= one)
       {
         Complex const weight = math::exp(Complex(-pi * (fall + math::abs(x)) / t, -Real{2} * pi * x * (y / t)));
+        if (weight == zero_complex) continue;
         difference = Real{2} * weight * math::sinh(omega * u);
         sum = Real{2} * weight * math::cosh(omega * u);
         Complex const center = Real{2} * pi * (u / t);
         value = sign * difference;
         first = sign * (-center * difference + omega * sum);
-        second =
-            sign * ((center * center + omega * omega - Real{2} * pi / t) * difference - Real{2} * center * omega * sum);
+        // Apply the Gaussian weight before each frequency factor: omega^2 can
+        // overflow even when omega*(omega*difference) is representable.
+        second = sign * (center * (center * difference) + omega * (omega * difference) -
+                         (Real{2} * pi * difference) / t - Real{2} * center * (omega * sum));
       }
       else
       {
@@ -139,7 +142,7 @@ template <Complex C> theta_jet_result<C> theta1_reduced(C u, make_real_t<C> t, b
         auto derivative = [&](Complex const& term, Complex const& displacement, unsigned order) {
           if (term == zero_complex) return zero_complex;
           Complex const slope = -Real{2} * pi * (displacement / t);
-          return order == 1 ? slope * term : (slope * slope - Real{2} * pi / t) * term;
+          return order == 1 ? slope * term : slope * (slope * term) - (Real{2} * pi * term) / t;
         };
         value = sign * (positive - negative);
         first = sign * (derivative(positive, u - a, 1) - derivative(negative, u + a, 1));
@@ -189,7 +192,7 @@ template <Complex C> theta_jet_result<C> even_gaussian(unsigned kind, C u, make_
     C const slope = -2 * pi * ((u - center) / t);
     sums[0].add(term);
     sums[1].add(slope * term);
-    sums[2].add((slope * slope - 2 * pi / t) * term);
+    sums[2].add(slope * (slope * term) - (2 * pi * term) / t);
   };
   add(zero, zero, one);
   auto const terms = term_count(t, max_terms);
@@ -202,6 +205,27 @@ template <Complex C> theta_jet_result<C> even_gaussian(unsigned kind, C u, make_
   for (unsigned d = 0; d < 3; ++d)
     result.derivative[d] = sums[d].value();
   if (kind == 3 && math::abs(x) == half && math::abs(u.imag()) == t / 2) result.derivative[0] = cz;
+  return result;
+}
+
+// Translate only after reducing u. Choose the nearest imaginary half-period,
+// subtracting it so a displacement from a theta4 zero is not rounded away.
+template <Complex C> theta_jet_result<C> theta4_gaussian(C u, make_real_t<C> t, std::size_t max_terms)
+{
+  using R = make_real_t<C>;
+  auto const p = precision_of(t);
+  R const zero = scalar_at_precision<R>(0, p), one = scalar_at_precision<R>(1, p);
+  R const pi = R(4) * math::atan(one), sign = u.imag() > zero ? -one : one;
+  C const shifted(u.real(), u.imag() + sign * (t / 2));
+  auto result = theta1_reduced(shifted, t, true, max_terms);
+  C const slope(zero, sign * pi);
+  result.derivative[2] += R(2) * slope * result.derivative[1] + slope * slope * result.derivative[0];
+  result.derivative[1] += slope * result.derivative[0];
+  C const phase = C(zero, -sign) * math::exp(C(zero, sign * pi * u.real()));
+  for (auto& d : result.derivative)
+    d *= phase;
+  result.log_scale -= pi * (t / 4 + sign * u.imag());
+  if (u == C(zero, zero)) result.derivative[1] = C(zero, zero);
   return result;
 }
 
@@ -281,12 +305,33 @@ template <Complex C> theta_jet_result<C> theta1(C u, make_real_t<C> t, unsigned 
   Real const vertical = u.imag() / t;
   if (!uni20::isfinite(vertical) || math::abs(u.real()) > limit || math::abs(vertical) > limit)
     throw std::overflow_error("theta argument reduction exceeds scalar precision");
-  Real const nr = math::floor(u.real() + half), mr = math::floor(vertical + half);
+  auto nearest_integer = [&](Real const& value) {
+    Real const lower = math::floor(value);
+    return value - lower < half ? lower : lower + one;
+  };
+  Real const nr = nearest_integer(u.real());
+  Real mr = nearest_integer(vertical);
+  Real ry = math::fma(-mr, t, u.imag());
+  // Division may round across a half-period. Decide from the residual of the
+  // original inputs, without rounding away a small displacement from a zero.
+  if (ry >= t / 2)
+    mr += one;
+  else if (ry < -t / 2)
+    mr -= one;
+  ry = math::fma(-mr, t, u.imag());
   auto const n = integral_value(nr), m = integral_value(mr);
-  Complex const reduced(u.real() - nr, u.imag() - mr * t);
-  auto result = kind == 1 ? theta1_reduced(reduced, t, t < one, max_terms)
-                : t < one ? even_gaussian(kind, reduced, t, max_terms)
-                          : even_reduced(kind, reduced, t, max_terms);
+  Complex const reduced(u.real() - nr, ry), cz(zero, zero);
+  bool const taylor = kind > 1 && t < one && reduced != cz && math::abs(reduced) < math::sqrt(eps) * t / Real(8);
+  Complex const at = taylor ? cz : reduced;
+  auto result = kind == 1 ? theta1_reduced(at, t, t < one, max_terms)
+                : t < one ? (kind == 4 ? theta4_gaussian(at, t, max_terms) : even_gaussian(kind, at, t, max_terms))
+                          : even_reduced(kind, at, t, max_terms);
+  if (kind > 1 && at == cz) result.derivative[1] = cz;
+  if (taylor)
+  {
+    result.derivative[0] += result.derivative[2] * reduced * reduced / Real(2);
+    result.derivative[1] = result.derivative[2] * reduced;
+  }
   // Quasi-periodicity, differentiated before reconstructing the common scale.
   Complex const slope(zero, -Real{2} * pi * mr);
   result.derivative[2] += Real{2} * slope * result.derivative[1] + slope * slope * result.derivative[0];
@@ -311,40 +356,11 @@ template <Complex C> theta_jet_result<C> theta1(C u, make_real_t<C> t, unsigned 
 template <Complex C> theta_jet_result<C> evaluate(unsigned kind, C u, make_real_t<C> t, std::size_t max_terms)
 {
   using Real = make_real_t<C>;
-  using Complex = C;
   auto const p = precision_of(t);
-  Real const zero = scalar_at_precision<Real>(0, p), one = scalar_at_precision<Real>(1, p);
-  Complex const zero_complex(zero, zero);
+  Real const zero = scalar_at_precision<Real>(0, p);
   if (kind < 1 || kind > 4 || !finite(u) || !uni20::isfinite(t) || !(t > zero))
     throw std::invalid_argument("theta requires kind 1..4, finite u, and finite t>0");
-  Real const pi = Real{4} * math::atan(one);
-  if (kind > 1 && t < one && u != zero_complex &&
-      math::abs(u) < math::sqrt(uni20::numeric_limits<Real>::epsilon(t)) * t / Real{8})
-  {
-    // Avoid losing tiny arguments when adding a half-period to an even function.
-    auto result = evaluate(kind, zero_complex, t, max_terms);
-    result.derivative[0] += result.derivative[2] * u * u / Real{2};
-    result.derivative[1] = result.derivative[2] * u;
-    return result;
-  }
-  // Theta2/3 have direct integer-centered Gaussian series; only theta4 needs
-  // the imaginary half-period translation through theta1.
-  Complex shifted = u;
-  bool const translate = t < one && kind == 4;
-  if (translate) shifted += Complex(zero, t / Real{2});
-  auto result = theta1(shifted, t, translate ? 1u : kind, max_terms);
-  if (translate)
-  {
-    Complex const slope(zero, pi);
-    result.derivative[2] += Real{2} * slope * result.derivative[1] + slope * slope * result.derivative[0];
-    result.derivative[1] += slope * result.derivative[0];
-    Complex const phase =
-        (kind == 4 ? Complex(zero, -one) : Complex(one, zero)) * math::exp(Complex(zero, pi * u.real()));
-    for (auto& d : result.derivative)
-      d *= phase;
-    result.log_scale -= pi * (t / Real{4} + u.imag());
-  }
-  if (kind > 1 && u == zero_complex) result.derivative[1] = zero_complex;
+  auto result = theta1(u, t, kind, max_terms);
   if (!uni20::isfinite(result.log_scale)) throw std::overflow_error("theta logarithmic scale exceeds precision");
   for (auto d : result.derivative)
     if (!finite(d)) throw std::overflow_error("theta scaled derivatives exceed precision");

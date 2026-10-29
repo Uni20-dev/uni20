@@ -129,10 +129,17 @@ The evaluator reduces the argument to the fundamental rectangle, sums a
 compensated Fourier series for `t>=1` or a Gaussian series for `t<1`, and restores
 quasi-periods with differentiated phase factors. Gaussian derivatives use their
 centered arguments to avoid cancellation of the curvature at small `t`.
+Vanished Gaussian terms are skipped, and weights are applied before successive
+derivative factors so an overflowing squared frequency does not invalidate a
+representable derivative.
 Theta2 and theta3 use integer-centered Gaussian sums directly, retaining small
 arguments that a real half-period translation would erase. Even functions use a
-local Taylor expansion near zero to retain a tiny first derivative. Exact symmetry
-zeros are restored explicitly. Reduction is limited by both the scalar's
+local Taylor expansion after reduction to retain tiny first derivatives near
+period-equivalent origins. Theta4 is translated toward its nearest imaginary
+half-period after reduction, preserving displacements from its zeros. Period
+selection avoids rounding an addition of one-half, and the imaginary residual
+uses the original inputs in a fused multiply-add. Exact symmetry zeros are
+restored explicitly. Reduction is limited by both the scalar's
 significand and a signed integer period count; an unresolvable reduction raises
 an overflow error. A scale or scaled derivative outside the scalar's range also
 raises an overflow error. At extreme Fourier parameters, decay and growth are

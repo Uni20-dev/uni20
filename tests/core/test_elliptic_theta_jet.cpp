@@ -205,6 +205,72 @@ TYPED_TEST(ThetaJetNative, LargeExactPeriodsRetainExactPhaseCycles)
   }
 }
 
+TYPED_TEST(ThetaJetNative, Theta4LargeRealPeriods)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const eps = numeric_limits<R>::epsilon(), t = R(1) / 2;
+  R const period = math::ldexp(R(1), std::min(50, numeric_limits<R>::digits() - 8));
+  auto base = elliptic_theta_jet(4, C(0, 0), t);
+  for (R shift : {period, -period})
+  {
+    auto translated = elliptic_theta_jet(4, C(shift, 0), t);
+    EXPECT_EQ(translated.log_scale, base.log_scale);
+    for (unsigned d = 0; d < 3; ++d)
+      EXPECT_LE(math::abs(translated.derivative[d] - base.derivative[d]),
+                R(256) * eps * (R(1) + math::abs(base.derivative[d])));
+  }
+}
+
+TYPED_TEST(ThetaJetNative, WeightedGaussianDerivativesRemainFinite)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const eps = numeric_limits<R>::epsilon(), pi_value = R(4) * math::atan(R(1));
+  R const t = math::ldexp(R(1), -numeric_limits<R>::max_exponent / 2 - 4);
+  R const x = t * t;
+  auto jet = elliptic_theta_jet(1, C(x, 0), t);
+  // The leading paired Gaussians give f'=2*pi/t and f''=2*pi^3/t here.
+  // Their individual squared frequencies overflow, although these jets do not.
+  EXPECT_LE(math::abs(jet.derivative[1] * t / (R(2) * pi_value) - R(1)), R(256) * eps);
+  EXPECT_LE(math::abs(jet.derivative[2] * t / (R(2) * pi_value * pi_value * pi_value) - R(1)), R(256) * eps);
+}
+
+TYPED_TEST(ThetaJetNative, Theta4NearImaginaryHalfPeriodRetainsDisplacement)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const eps = numeric_limits<R>::epsilon(), t = R(1) / 2, half_t = t / 2;
+  auto at_zero = elliptic_theta_jet(4, C(0, half_t), t);
+  EXPECT_TRUE(at_zero.derivative[0] == C(0, 0));
+  for (R y : {math::next_down(half_t), math::next_up(half_t)})
+  {
+    auto near = elliptic_theta_jet(4, C(0, y), t);
+    C const delta(0, y - half_t);
+    // Taylor about the simple zero uses its independently evaluated derivative;
+    // the relative O(delta) correction is bounded here by 256 epsilon.
+    C ratio = elliptic_theta_ratio(near, 0, at_zero, 1) / delta;
+    EXPECT_LE(math::abs(ratio - R(1)), R(256) * eps);
+    EXPECT_NO_THROW((void)elliptic_theta_ratio(at_zero, 1, near, 0));
+  }
+}
+
+TYPED_TEST(ThetaJetNative, TinyEvenDerivativesSurviveRealPeriods)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const eps = numeric_limits<R>::epsilon(), delta = eps * eps, t = R(1) / 2;
+  for (unsigned kind : {2u, 3u, 4u})
+  {
+    auto base = elliptic_theta_jet(kind, C(0, delta), t);
+    auto translated = elliptic_theta_jet(kind, C(1, delta), t);
+    R const sign = kind == 2 ? R(-1) : R(1);
+    EXPECT_GT(math::abs(base.derivative[1]), R(0));
+    EXPECT_LE(math::abs(translated.derivative[1] - sign * base.derivative[1]),
+              R(128) * eps * math::abs(base.derivative[1]));
+  }
+}
+
 TEST(ThetaJet, DomainBudgetAndRatio)
 {
   using C = complex<double>;
