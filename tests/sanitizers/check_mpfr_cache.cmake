@@ -5,6 +5,9 @@ file(WRITE "${test_binary_dir}/unanchored.supp"
 file(READ "${suppressions}" bernoulli_policy)
 string(REPLACE "leak:^mpfr_bernoulli_cache$" "" bernoulli_policy "${bernoulli_policy}")
 file(WRITE "${test_binary_dir}/without-bernoulli.supp" "${bernoulli_policy}")
+file(READ "${suppressions}" remainder_policy)
+string(REPLACE "leak:^mpfr_rem1$" "" remainder_policy "${remainder_policy}")
+file(WRITE "${test_binary_dir}/without-remainder.supp" "${remainder_policy}")
 
 function(check mode policy expected)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E env
@@ -47,3 +50,11 @@ check(clean-lgamma "${test_binary_dir}/metadata-only.supp" 0)
 check(cache-lgamma "${test_binary_dir}/without-bernoulli.supp" 23)
 check(cache-lgamma "${suppressions}" 0)
 check(owned-lgamma "${suppressions}" 23)
+
+# Remainder uses MPFR's temporary mpz pool. Its private C frame requires local
+# debug symbols, prepared before running tests (never fetched during reports).
+check(cache-remainder "${test_binary_dir}/metadata-only.supp" 23)
+check(clean-remainder "${test_binary_dir}/metadata-only.supp" 0)
+check(cache-remainder "${test_binary_dir}/without-remainder.supp" 23)
+check(cache-remainder "${suppressions}" 0)
+check(owned-remainder "${suppressions}" 23)

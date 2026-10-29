@@ -17,3 +17,6 @@ leak:^mpfr_cache$
 leak:^mpfr_exp_2$
 # Log-Gamma retains a per-thread Bernoulli-number table.
 leak:^mpfr_bernoulli_cache$
+# Remainder retains temporary mpz limbs in MPFR's thread-local pool. This
+# private frame needs matching local MPFR debug symbols; see testing.md.
+leak:^mpfr_rem1$

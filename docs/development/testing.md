@@ -121,6 +121,36 @@ then deliberately leak an owning log-Gamma result to verify that its storage
 is still reported. These rules affect only opt-in leak checking, not runtime
 cache lifetime or reclamation.
 
+Remainder operations also retain temporary integers in MPFR's thread-local
+pool. Their allocation frame, `mpfr_rem1`, is private and can be absent from
+a stripped system library. Its exact suppression needs matching local debug
+symbols. Prepare these **before** launching sanitizer tests, for example on
+Ubuntu with its explicit debuginfod server:
+
+```sh
+python3 scripts/prepare-sanitizer-symbols.py \
+  --library /usr/lib/x86_64-linux-gnu/libmpfr.so.6 \
+  --output-dir build/sanitizer-symbols --symbolizer llvm-symbolizer-19 \
+  --server https://debuginfod.ubuntu.com
+export ASAN_SYMBOLIZER_PATH="$PWD/build/sanitizer-symbols/llvm-symbolizer"
+```
+
+Use the actual MPFR shared-library path selected by your build (recorded as
+`UNI20_MPFR_LIBRARY` in `CMakeCache.txt`). Other distributions need their own
+server or `--debug-file /path/to/libmpfr.debug`. The helper verifies the GNU
+build ID and DWARF information, reuses a verified local file, and records its
+SHA-256 in `symbols.json`. No server is consulted if a verified file is already
+cached. Preparation fails explicitly for missing or mismatched symbols.
+The generated wrapper supplies the local search path and disables remote
+symbol lookup during tests; it does not change the library or global shell
+configuration. The helper requires Python 3, `readelf` and `llvm-symbolizer`.
+
+`Sanitizers.MpfrCachePolicy` checks retained remainder pools, explicit cleanup,
+the policy with only the remainder rule removed, and deliberately leaked
+owning remainder results. A failed retained-pool check with an unnamed MPFR
+frame means symbol preparation is incomplete; do not suppress all GMP, MPFR,
+or owning scalar allocations to hide it.
+
 Automated sanitizer runs should clear `DEBUGINFOD_URLS` in their test environment
 so symbolization does not depend on remote debug-symbol downloads. A stalled
 request can otherwise consume the test timeout while a sanitizer formats its

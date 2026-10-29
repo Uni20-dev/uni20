@@ -1,4 +1,5 @@
 #include <uni20/core/mpreal.hpp>
+#include <uni20/core/mpreal_functions.hpp>
 #include <uni20/core/mpreal_special.hpp>
 
 #include <cstdlib>
@@ -9,7 +10,8 @@ enum class Operation
 {
   trigonometric,
   exponential,
-  log_gamma
+  log_gamma,
+  remainder
 };
 
 // Intentional leaks are confined to subprocess negative controls.
@@ -28,6 +30,8 @@ enum class Operation
           return exp(input);
         case Operation::log_gamma:
           return lgamma(input);
+        case Operation::remainder:
+          return uni20::remainder(input, uni20::mpreal("0.9", precision));
         case Operation::trigonometric:
           return atan(input);
       }
@@ -71,6 +75,11 @@ int main(int argc, char** argv)
   {
     operation = Operation::log_gamma;
     mode.remove_suffix(7);
+  }
+  else if (mode.ends_with("-remainder"))
+  {
+    operation = Operation::remainder;
+    mode.remove_suffix(10);
   }
   if (mode != "cache" && mode != "clean" && mode != "owned" && mode != "plain") return 2;
 
