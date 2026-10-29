@@ -124,9 +124,8 @@ template <detail::LogGammaReal R> class log_gamma_context {
       // Near the real axis, x*atan(y/x) rounds to y at working precision;
       // evaluating the ratio first can underflow and lose that contribution.
       R const leading_real = math::fma(z.real(), log_z.real() - one, -z.imag() * log_z.imag());
-      R const leading_imag = this->near_real(z)
-                                 ? z.imag() * log_z.real()
-                                 : math::fma(z.imag(), log_z.real() - one, z.real() * log_z.imag());
+      R const leading_imag = this->near_real(z) ? z.imag() * log_z.real()
+                                                : math::fma(z.imag(), log_z.real() - one, z.real() * log_z.imag());
       sum.add(complex_type(leading_real, leading_imag));
       sum.add(-half * log_z);
       sum.add(complex_type(half_log_two_pi_));
@@ -171,25 +170,28 @@ template <detail::LogGammaReal R> class log_gamma_context {
       std::size_t shifts = 0;
       // Each remainder <= target/2, so their sum <= target. The factor two
       // is handled in logs to avoid underflow changing the admission decision.
-      R const threshold = log_target_ - math::log(this->number(2));
-      R tail0 = this->log_remainder(z), tail1 = this->log_remainder(upper);
-      while (std::max(tail0, tail1) > threshold)
+      R const two = this->number(2), eight = this->number(8);
+      R const threshold = log_target_ - math::log(two);
+      R tail0 = this->log_remainder(z), tail1 = zero;
+      while (true)
       {
+        // A failing first bound already requires another shift. Evaluate the
+        // second bound only when it can change that decision.
+        if (tail0 <= threshold)
+        {
+          tail1 = this->log_remainder(upper);
+          if (tail1 <= threshold) break;
+        }
         this->check_shift(shifts, z);
-        auto const recurrence = this->log_difference(z, h);
-        sum.add(-recurrence.log1p);
-        logarithm_tail += recurrence.log_error;
+        sum.add(-this->log_increment(z, h, two, eight));
         z += one;
         upper = complex_type(z.real() + h, z.imag());
         ++shifts;
         tail0 = this->log_remainder(z);
-        tail1 = this->log_remainder(upper);
       }
       auto const delta = this->log_difference(z, h);
       bool const near_real = this->near_real(z);
-      auto add_leading = [&](complex_type const& term) {
-        sum.add(near_real ? complex_type(term.real(), zero) : term);
-      };
+      auto add_leading = [&](complex_type const& term) { sum.add(near_real ? complex_type(term.real(), zero) : term); };
       if (delta.small)
       {
         add_leading(h * this->logarithm(z));
@@ -209,8 +211,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
         // is O((y/x)^2), below working roundoff in this branch. Preserve y*h/x
         // even when either y/x or h/x cannot be represented on its own.
         R const product = this->product_quotient(z.imag(), h, z.real());
-        R const phase = delta.small ? product * (one + delta.relative_remainder.real())
-                                    : z.imag() * delta.log1p.real();
+        R const phase = delta.small ? product * (one + delta.relative_remainder.real()) : z.imag() * delta.log1p.real();
         sum.add(complex_type(zero, phase + (half * product) / upper.real()));
       }
       complex_type const inv0 = this->reciprocal(z), inv1 = this->reciprocal(upper);
@@ -317,6 +318,21 @@ template <detail::LogGammaReal R> class log_gamma_context {
       // DLMF 5.11(ii): first omitted term times sec^(2n)(arg(z)/2).
       return log_coefficient_ + n * math::log(sec2) -
              (this->number(2) * n - this->number(1)) * (math::log(scale) + math::log(norm));
+    }
+    // Recurrence needs only log(1+h/z), whereas the leading Stirling term
+    // also needs log(1+h/z)/(h/z)-1 without cancellation. Avoid evaluating
+    // that separate power series at every recurrence step. Here h>0; when
+    // h/scale<=1/8 the normalized denominators are in [1, 2+1/8], so the
+    // log1p/atan2 arguments cannot overflow or hide a representable quotient.
+    complex_type log_increment(complex_type const& z, R const& h, R const& two, R const& eight) const
+    {
+      R const scale = this->scale(z);
+      if (h > scale / eight) return this->log_difference(z, h).log1p;
+      R const re = z.real() / scale, im = z.imag() / scale, delta = h / scale;
+      R const norm = re * re + im * im;
+      R const real = math::log1p(delta * (two * re + delta) / norm) / two;
+      R const imag = math::atan2(-delta * im, norm + delta * re);
+      return {real, imag};
     }
     logarithm_difference log_difference(complex_type const& z, R const& h) const
     {

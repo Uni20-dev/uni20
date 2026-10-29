@@ -41,6 +41,56 @@ TEST(ComplexLogGamma, BranchRecurrenceAndConjugation)
   EXPECT_NEAR(context.log_gamma_right({0.5, 0}).value.real(), std::log(std::sqrt(std::acos(-1.0))), 2e-14);
 }
 
+template <class R> void check_unit_shift_ratios(Precision p)
+{
+  R const zero = uni20::scalar_at_precision<R>(0, p), one = uni20::scalar_like(zero, 1);
+  R const eps = uni20::numeric_limits<R>::epsilon(p);
+  log_gamma_context<R> context(p);
+  for (R const& x : {one / 4, one / 2, one, 16 * one})
+    for (R const& y : {zero, one / 16, 2 * one, eps * eps})
+    {
+      complex<R> const z(x, y);
+      auto const forward = context.log_gamma_ratio_right(z, one);
+      auto const backward = context.log_gamma_ratio_right(z + one, -one);
+      auto const expected = uni20::math::log(z);
+      EXPECT_LE(uni20::math::abs(forward.value.real() - expected.real()),
+                4096 * eps * std::max(one, uni20::math::abs(expected.real())));
+      if (y == zero)
+      {
+        EXPECT_EQ(forward.value.imag(), zero);
+      }
+      else
+      {
+        EXPECT_LE(uni20::math::abs(forward.value.imag() / expected.imag() - one), 4096 * eps);
+      }
+      EXPECT_EQ(backward.value.real(), -forward.value.real());
+      EXPECT_EQ(backward.value.imag(), -forward.value.imag());
+      EXPECT_TRUE(uni20::isfinite(forward.roundoff_indicator));
+      EXPECT_GE(forward.truncation_bound, zero);
+      if (x == one / 4)
+      {
+        EXPECT_GT(forward.shifts, 0u);
+      }
+    }
+}
+
+TEST(ComplexLogGamma, RepeatedUnitShiftRatiosPreserveNativeComponents)
+{
+  check_unit_shift_ratios<double>(uni20::native_precision<double>());
+  check_unit_shift_ratios<long double>(uni20::native_precision<long double>());
+#if UNI20_HAS_FLOAT128
+  check_unit_shift_ratios<uni20::float128>(uni20::native_precision<uni20::float128>());
+#endif
+}
+
+#if UNI20_HAS_MPREAL
+TEST(ComplexLogGamma, RepeatedUnitShiftRatiosPreserveExplicitPrecision)
+{
+  for (int bits : {80, 160, 256})
+    check_unit_shift_ratios<uni20::mpreal>(Precision::bits(bits));
+}
+#endif
+
 TEST(ComplexLogGamma, PairedRatioRetainsLargeArgumentPhase)
 {
   log_gamma_context<double> context;
