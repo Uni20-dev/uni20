@@ -87,6 +87,23 @@ TYPED_TEST(ThetaJetNative, PeriodsParityAndCommonScale)
   EXPECT_LE(math::abs(elliptic_theta_ratio(a, 0, b, 0) - math::tan(pi_value / 8)), R(64) * eps);
 }
 
+TYPED_TEST(ThetaJetNative, LargeLatticeRetainsFiniteScale)
+{
+  using R = TypeParam;
+  using C = complex<R>;
+  R const t = numeric_limits<R>::max() / 2, one = R(1);
+  R const pi_value = R(4) * math::atan(one), eps = numeric_limits<R>::epsilon();
+  C const u(one / 8, 0);
+  for (unsigned kind : {1u, 2u})
+  {
+    auto jet = elliptic_theta_jet(kind, u, t);
+    EXPECT_TRUE(uni20::isfinite(jet.log_scale));
+    EXPECT_EQ(jet.log_scale, -pi_value * (t / 4));
+    C const expected = R(2) * (kind == 1 ? math::sin(pi_value * u) : math::cos(pi_value * u));
+    EXPECT_LE(math::abs(jet.derivative[0] - expected), R(32) * eps);
+  }
+}
+
 TEST(ThetaJet, DomainBudgetAndRatio)
 {
   using C = complex<double>;

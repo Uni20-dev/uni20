@@ -164,7 +164,7 @@ template <Complex C> theta_jet_result<C> even_reduced(unsigned kind, C u, make_r
   {
     Real const a = Real(n) + (half_series ? half : one), omega = Real{2} * pi * a;
     Real const sign = kind == 4 && n % 2 == 0 ? -one : one;
-    Real const fall = pi * t * (half_series ? Real(n) * Real(n + 1) : a * a),
+    Real const fall = (half_series ? Real(n) * Real(n + 1) : a * a) * t * pi,
                shift = half_series ? pi * math::abs(u.imag()) : zero;
     Complex value, first;
     if (math::abs(omega * u.imag()) <= one)
