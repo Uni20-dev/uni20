@@ -145,6 +145,15 @@ The generated wrapper supplies the local search path and disables remote
 symbol lookup during tests; it does not change the library or global shell
 configuration. The helper requires Python 3, `readelf` and `llvm-symbolizer`.
 
+This wrapper supplies LLVM's symbolizer. GCC's sanitizer runtime can instead
+use its built-in `libbacktrace`, which does not use LLVM's search directory.
+For that configuration, install the matching distribution debug symbols in
+the standard GNU build-ID/debuglink locations. An isolated check can also load
+an unchanged copy of the shared library with its matching debuglink file in
+an adjacent `.debug/` directory. Verify that the remainder allocation is named
+in the report before relying on the suppression; setting the LLVM wrapper
+alone does not establish that GCC can resolve the private frame.
+
 `Sanitizers.MpfrCachePolicy` checks retained remainder pools, explicit cleanup,
 the policy with only the remainder rule removed, and deliberately leaked
 owning remainder results. A failed retained-pool check with an unnamed MPFR
