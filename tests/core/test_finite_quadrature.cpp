@@ -188,8 +188,14 @@ TEST(FiniteQuadrature, BoundedReusePreservesGeometryAndComponents)
     EXPECT_EQ(cached.evaluations + cached.reused_samples, baseline.evaluations);
     EXPECT_GT(cached.reused_samples, 0u);
     EXPECT_LE(cached.reused_samples, bound * (cached.levels - 1));
-    if (bound == 1) EXPECT_EQ(cached.reused_samples, cached.levels - 1);
-    if (bound == 2048) EXPECT_LT(cached.evaluations * 3, baseline.evaluations * 2);
+    if (bound == 1)
+    {
+      EXPECT_EQ(cached.reused_samples, cached.levels - 1);
+    }
+    if (bound == 2048)
+    {
+      EXPECT_LT(cached.evaluations * 3, baseline.evaluations * 2);
+    }
     // Neither callback arrays nor work counters persist into a new integration.
     calls = 0;
     auto const repeated = tanh_sinh_integrate(f, 1.0, 2.0, options);
