@@ -505,6 +505,13 @@ inline mpcomplex exp(mpcomplex const& z) { return detail::mpcomplex_access::unar
 inline mpcomplex log(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_log>(z); }
 inline mpcomplex sin(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_sin>(z); }
 inline mpcomplex cos(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_cos>(z); }
+/// \brief Principal inverse tangent; real signed zero selects the imaginary-axis cut side.
+/// \details Exact zero remains exact; other exact inputs require finite operation precision.
+inline mpcomplex atan(mpcomplex const& z)
+{
+  if (z.is_exact() && z == 0) return z;
+  return detail::mpcomplex_access::unary<mpc_atan>(z);
+}
 /// \brief Hyperbolic sine at the input precision; exact zero remains exact.
 inline mpcomplex sinh(mpcomplex const& z) { return detail::mpcomplex_access::unary<mpc_sinh>(z); }
 /// \brief Hyperbolic cosine at the input precision; exact zero returns exact one.
@@ -533,6 +540,10 @@ inline mpcomplex sin(mpcomplex const& z, Precision p) { return detail::mpcomplex
 /// \details MPC's principal branches and signed-zero rules apply after input conversion.
 /// \throws std::logic_error If p is exact or z is unset.
 inline mpcomplex cos(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_cos>(z, p); }
+/// \brief Evaluate the principal inverse tangent of `z.at(p)` at finite precision p.
+/// \details MPC's signed-zero branch rules apply after explicit input conversion.
+/// \throws std::logic_error If p is exact or z is unset.
+inline mpcomplex atan(mpcomplex const& z, Precision p) { return detail::mpcomplex_access::unary<mpc_atan>(z, p); }
 /// \brief Evaluate `sinh(z.at(p))`, returning an approximation at finite precision p.
 /// \details MPC's principal branches and signed-zero rules apply after input conversion.
 /// \throws std::logic_error If p is exact or z is unset.

@@ -503,3 +503,86 @@ TEST(MpComplex, AcoshPrincipalCutAndSignedZero)
     EXPECT_GT(math::acosh(C{-2}, p).imag(), 0); // Exact zero chooses the upper side.
   }
 }
+
+namespace
+{
+template <int Bits> mpreal atan_accuracy()
+{
+  using Case = uni20::test::PrecisionContext<mpreal, true, Bits>;
+  auto const oracle = Precision::bits(768);
+  auto const one = Case::real(1);
+  C const z(one / 3, Case::real(2) / 7);
+  auto const value = math::atan(z);
+  Case::expect_precision(value);
+  // Independent real-component formula at widened ORIGINAL input values.
+  // The oracle does not call MPC atan or the complex production overload.
+  auto const x = z.real().at(oracle), y = z.imag().at(oracle);
+  C const reference(math::atan2(2 * x, 1 - x * x - y * y) / 2,
+                    math::log((x * x + (y + 1) * (y + 1)) / (x * x + (y - 1) * (y - 1))) / 4);
+  auto const error = math::abs(value.at(oracle) - reference);
+  EXPECT_LT(error, 4 * Case::epsilon().at(oracle));
+  EXPECT_EQ(math::atan(conj(z)), conj(value));
+  EXPECT_EQ(math::atan(-z), -value);
+  return error;
+}
+} // namespace
+
+TEST(MpComplex, AtanAccuracyAndExplicitPrecision)
+{
+  auto const ambient = mpfr_get_default_prec();
+  auto const a = atan_accuracy<80>(), b = atan_accuracy<160>(), c = atan_accuracy<256>();
+  EXPECT_LT(b, a * mpreal("1e-15", a.precision()));
+  EXPECT_LT(c, b * mpreal("1e-15", a.precision()));
+  EXPECT_LT(c, mpreal("1e-75", c.precision()));
+  auto const p = Precision::bits(160), high = Precision::bits(400);
+  EXPECT_TRUE(math::atan(C{}).is_exact());
+  EXPECT_EQ(math::atan(C{}), C{});
+  C const exact(mpreal{2}, mpreal{1});
+  EXPECT_THROW(math::atan(exact), std::logic_error);
+  EXPECT_THROW(math::atan(C(uninitialized)), std::logic_error);
+  EXPECT_THROW(math::atan(exact, Precision::exact()), std::logic_error);
+  EXPECT_THROW(math::atan(C(uninitialized), p), std::logic_error);
+  EXPECT_EQ(math::atan(exact, p), math::atan(exact.at(p)));
+  C const finite("1.234567890123456789", "-0.9876543210987654321", high);
+  EXPECT_EQ(math::atan(finite, p), math::atan(finite.at(p)));
+  EXPECT_EQ(math::atan(finite, p).precision(), p);
+  EXPECT_EQ(finite.precision(), high);
+  EXPECT_EQ(math::atan(exact, p), uni20::atan(exact, p));
+  EXPECT_FALSE(math::atan(C{}, p).is_exact());
+  EXPECT_EQ(mpfr_get_default_prec(), ambient);
+}
+
+TEST(MpComplex, AtanPrincipalCutsAndSignedZero)
+{
+  for (int bits : {80, 160, 256})
+  {
+    auto const p = Precision::bits(bits);
+    mpreal const zero(0, p), one(1, p), eps = numeric_limits<mpreal>::epsilon(zero);
+    for (char const* x : {"0", "-0"})
+      for (int sign : {-1, 1})
+      {
+        C const z(mpreal(x, p), sign * 2 * one);
+        auto const value = math::atan(z);
+        mpreal const re = (signbit(z.real()) ? -one : one) * pi<mpreal>.at(p) / 2;
+        mpreal const im = sign * math::log(3 * one) / 2;
+        EXPECT_EQ(value.real(), re);
+        EXPECT_LE(math::abs(value.imag() - im), eps);
+        EXPECT_EQ(math::atan(z, p), value);
+        C const pole(mpreal(x, p), sign * one);
+        auto const infinite = math::atan(pole);
+        EXPECT_EQ(infinite.real(), zero);
+        EXPECT_EQ(signbit(infinite.real()), signbit(pole.real()));
+        EXPECT_TRUE(isinf(infinite.imag()));
+        EXPECT_EQ(signbit(infinite.imag()), sign < 0);
+      }
+    // The signs of both numerical zeros are preserved, unlike exact zero.
+    for (char const* x : {"0", "-0"})
+      for (char const* y : {"0", "-0"})
+      {
+        C const z(x, y, p), value = math::atan(z);
+        EXPECT_EQ(value, C{});
+        EXPECT_EQ(signbit(value.real()), signbit(z.real()));
+        EXPECT_EQ(signbit(value.imag()), signbit(z.imag()));
+      }
+  }
+}
