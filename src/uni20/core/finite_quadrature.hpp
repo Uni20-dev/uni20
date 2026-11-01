@@ -95,18 +95,11 @@ template <class R> struct quadrature_sum
 };
 } // namespace detail
 
-/// \brief Integrate N real components over lo<=hi using successive tanh-sinh meshes.
-/// \details f(quadrature_point<R> const&) returns std::array<R,N> at the bounds' finite
-///          precision. Both bounds and every tolerance must have that same precision.
-///          Two consecutive mesh agreements are required. Mesh agreement with a large
-///          endpoint indicator returns endpoint_limit: increase endpoint_power or change
-///          variables. Estimates cannot certify unresolved narrow features, integrand
-///          error or arbitrary endpoint tails. Split interior singularities beforehand.
-///          Callback exceptions propagate. Numerical range/budget failures retain the last
-///          complete mesh. No global scalar settings or scheduler state are changed.
-template <Real R, std::size_t N, class F>
-quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi,
-                                            tanh_sinh_options<R, N> const& options)
+namespace detail
+{
+template <bool ReuseSamples, Real R, std::size_t N, class F>
+quadrature_result<R, N> tanh_sinh_integrate_impl(F const& f, R const& lo, R const& hi,
+                                                 tanh_sinh_options<R, N> const& options)
 {
   auto const p = precision_of(lo);
   if (p.is_exact() || precision_of(hi) != p || precision_of(options.relative_tolerance) != p)
@@ -161,7 +154,7 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
     edge.fill(zero);
     auto sample = [&](R const& x, R const& lower, R const& upper, R const& unscaled_weight, bool endpoint,
                       std::size_t previous_index) {
-      bool const reuse = previous_index < previous_samples.size();
+      bool const reuse = ReuseSamples && previous_index < previous_samples.size();
       if (!reuse && out.evaluations == options.max_evaluations)
       {
         out.status = quadrature_status::evaluation_limit;
@@ -202,7 +195,8 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
           return false;
         }
       }
-      if (samples.size() < options.max_cached_samples) samples.push_back(std::move(y));
+      if constexpr (ReuseSamples)
+        if (samples.size() < options.max_cached_samples) samples.push_back(std::move(y));
       return true;
     };
     R const half = width / two;
@@ -222,10 +216,12 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
       R const z = math::exp(-argument), denominator = one + z;
       R const distance = width * (z / denominator), far = width / denominator;
       R const unscaled_weight = distance * (pi_value * math::cosh(t) / denominator);
-      if (!sample(lo + distance, distance, far, unscaled_weight, endpoint, node % 2 == 0 ? node - 1 : fresh) ||
-          !sample(hi - distance, far, distance, unscaled_weight, endpoint, node % 2 == 0 ? node : fresh))
+      if (!sample(lo + distance, distance, far, unscaled_weight, endpoint,
+                  ReuseSamples && node % 2 == 0 ? node - 1 : fresh) ||
+          !sample(hi - distance, far, distance, unscaled_weight, endpoint,
+                  ReuseSamples && node % 2 == 0 ? node : fresh))
         return out;
-      ++node;
+      if constexpr (ReuseSamples) ++node;
       t = next;
       argument = next_argument;
     }
@@ -262,7 +258,7 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
       out.status = quadrature_status::endpoint_limit;
       return out;
     }
-    previous_samples = std::move(samples);
+    if constexpr (ReuseSamples) previous_samples = std::move(samples);
     previous = out.value;
     h /= two;
     if (!(h > zero))
@@ -272,5 +268,25 @@ quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi
     }
   }
   return out;
+}
+} // namespace detail
+
+/// \brief Integrate N real components over lo<=hi using successive tanh-sinh meshes.
+/// \details f(quadrature_point<R> const&) returns std::array<R,N> at the bounds' finite
+///          precision. Both bounds and every tolerance must have that same precision.
+///          Two consecutive mesh agreements are required. Mesh agreement with a large
+///          endpoint indicator returns endpoint_limit: increase endpoint_power or change
+///          variables. Estimates cannot certify unresolved narrow features, integrand
+///          error or arbitrary endpoint tails. Split interior singularities beforehand.
+///          Callback exceptions propagate. Numerical range/budget failures retain the last
+///          complete mesh. No global scalar settings or scheduler state are changed.
+template <Real R, std::size_t N, class F>
+quadrature_result<R, N> tanh_sinh_integrate(F const& f, R const& lo, R const& hi,
+                                            tanh_sinh_options<R, N> const& options)
+{
+  // Select once per integration: the uncached loop needs no per-sample cache
+  // indexing, storage or reuse branches, even for cheap native integrands.
+  if (options.max_cached_samples == 0) return detail::tanh_sinh_integrate_impl<false>(f, lo, hi, options);
+  return detail::tanh_sinh_integrate_impl<true>(f, lo, hi, options);
 }
 } // namespace uni20
