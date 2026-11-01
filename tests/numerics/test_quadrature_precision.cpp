@@ -48,6 +48,49 @@ UNI20_PRECISION_TEST(NumericalScalar, FiniteQuadratureIdentities)
   C::expect_precision(zero_result.value[0]);
 }
 
+UNI20_PRECISION_TEST(NumericalScalar, FiniteQuadratureSampleReuse)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  this->RecordProperty("backend", "scalar_math");
+  tanh_sinh_options<R, 3> options(C::precision());
+  auto const one = C::real(1), two = C::real(2);
+  std::size_t calls = 0;
+  auto f = [&](quadrature_point<R> const& x) {
+    ++calls;
+    return std::array<R, 3>{one / math::sqrt(x.lower_distance), math::log(x.upper_distance), one / x.value};
+  };
+  auto const baseline = tanh_sinh_integrate(f, one, two, options);
+  ASSERT_EQ(baseline.status, quadrature_status::converged);
+  EXPECT_EQ(calls, baseline.evaluations);
+  for (std::size_t bound : {1, 17, 2048})
+  {
+    SCOPED_TRACE(bound);
+    options.max_cached_samples = bound;
+    calls = 0;
+    auto const result = tanh_sinh_integrate(f, one, two, options);
+    EXPECT_EQ(result.status, baseline.status);
+    EXPECT_EQ(result.levels, baseline.levels);
+    EXPECT_EQ(result.value, baseline.value);
+    EXPECT_EQ(result.error, baseline.error);
+    EXPECT_EQ(result.absolute_integral, baseline.absolute_integral);
+    EXPECT_EQ(result.endpoint_indicator, baseline.endpoint_indicator);
+    EXPECT_EQ(result.evaluations, calls);
+    EXPECT_EQ(result.evaluations + result.reused_samples, baseline.evaluations);
+    EXPECT_GT(result.reused_samples, 0u);
+    expect_error_at_most(result.value[0], two, C::epsilon() * 128);
+    expect_error_at_most(result.value[1], -one, C::epsilon() * 64);
+    expect_error_at_most(result.value[2], math::log(two), C::epsilon() * 64);
+    for (std::size_t j = 0; j < 3; ++j)
+    {
+      C::expect_precision(result.value[j]);
+      C::expect_precision(result.error[j]);
+      C::expect_precision(result.absolute_integral[j]);
+      C::expect_precision(result.endpoint_indicator[j]);
+    }
+  }
+}
+
 #if UNI20_HAS_MPREAL
 UNI20_PRECISION_TEST(NumericalScalar, FiniteQuadratureAccuracy)
 {

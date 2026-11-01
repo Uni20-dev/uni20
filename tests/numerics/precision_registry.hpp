@@ -55,6 +55,7 @@ enum class PrecisionProbe
   FactorialAccuracy,
   FiniteQuadratureIdentities,
   FiniteQuadratureAccuracy,
+  FiniteQuadratureSampleReuse,
   ThetaConstantIdentities,
   ThetaConstantAccuracy,
   ThetaJetIdentities,
@@ -162,6 +163,7 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalScalar", "FactorialAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FiniteQuadratureIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "FiniteQuadratureAccuracy", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "FiniteQuadratureSampleReuse", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaConstantAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ThetaJetIdentities", "scalar_math"},
@@ -287,14 +289,14 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
           probe == FusedArithmeticRoundsOnce || probe == UtilitiesBoundarySemantics ||
           probe == UtilityAccuracyImprovesWithPrecision)
         return {"not_applicable", "elementary and utility expansion covers real scalars"};
-    if (probe == FiniteQuadratureIdentities || probe == FiniteQuadratureAccuracy || probe == AiryIdentities ||
-        probe == AiryAccuracy || probe == UpperGammaIdentities ||
-        probe == UpperGammaAccuracy || probe == ZetaIdentities || probe == ZetaAccuracy || probe == ExpintIdentities ||
-        probe == ExpintAccuracy || probe == DilogIdentities || probe == DilogAccuracy || probe == BetaIdentities ||
-        probe == BetaAccuracy || probe == BetaPortableAccuracy || probe == DigammaIdentities ||
-        probe == DigammaAccuracy || probe == FactorialIdentities || probe == ThetaConstantIdentities ||
-        probe == ThetaConstantAccuracy || probe == FactorialAccuracy || probe == AgmIdentities ||
-        probe == AgmAccuracy || probe == PiScaledIdentities || probe == PiScaledAccuracy ||
+    if (probe == FiniteQuadratureIdentities || probe == FiniteQuadratureAccuracy ||
+        probe == FiniteQuadratureSampleReuse || probe == AiryIdentities || probe == AiryAccuracy ||
+        probe == UpperGammaIdentities || probe == UpperGammaAccuracy || probe == ZetaIdentities ||
+        probe == ZetaAccuracy || probe == ExpintIdentities || probe == ExpintAccuracy || probe == DilogIdentities ||
+        probe == DilogAccuracy || probe == BetaIdentities || probe == BetaAccuracy || probe == BetaPortableAccuracy ||
+        probe == DigammaIdentities || probe == DigammaAccuracy || probe == FactorialIdentities ||
+        probe == ThetaConstantIdentities || probe == ThetaConstantAccuracy || probe == FactorialAccuracy ||
+        probe == AgmIdentities || probe == AgmAccuracy || probe == PiScaledIdentities || probe == PiScaledAccuracy ||
         probe == PiScaledPortableAccuracy || probe == ReciprocalFunctionIdentities ||
         probe == ReciprocalFunctionAccuracy || probe == CompoundIdentities || probe == CompoundAccuracy ||
         probe == CompoundPortableAccuracy || probe == ExponentialExtensionIdentities ||
