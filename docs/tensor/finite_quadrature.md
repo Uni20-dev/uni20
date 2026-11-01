@@ -69,7 +69,9 @@ A zero-width interval returns typed zeros without invoking the callback.
 The result retains the last **complete** mesh even if the next mesh exhausts
 its budget or encounters a numerical failure. `evaluations` counts every
 callback invocation, including failed or discarded-mesh samples; `levels`
-counts complete meshes. No sample cache persists between meshes or calls.
+counts complete meshes. `reused_samples` counts contributions obtained from a
+retained callback array instead of invoking the callback, including samples on
+an interrupted mesh. Both counts are zero for an empty interval.
 
 | Field or status | Meaning |
 | --- | --- |
@@ -95,6 +97,31 @@ counts nonzero callback components on that mesh. The absolute allowance prevents
 underflow from turning the estimated error into zero for a subnormal integral.
 An identically zero component retains a zero floor. This allowance is still a
 diagnostic estimate, not a bound on the callback's own error.
+
+## Reusing deterministic callback values
+
+For an expensive deterministic integrand, set `options.max_cached_samples` to
+a positive bound, for example 2048. The default is zero: every sample invokes
+the callback. Opting in promises that the callback returns the same array for
+the same complete `quadrature_point` throughout that integration. Invocation
+counts and side effects must not determine its numerical result. Reuse is
+local to one integration; no values survive into another call.
+
+The midpoint and even transformed nodes of a refined mesh also belong to the
+preceding mesh. The integrator retains a bounded prefix of those callback arrays,
+with at most two mesh buffers of the requested size. Each array contains `N`
+working-precision values, so the memory cost depends on component count and
+scalar precision. Samples outside the retained prefix are evaluated normally.
+The identity is the transformed node, including both endpoint distances; equal
+rounded `point.value` alone never makes two samples interchangeable.
+
+Every weighted term is still accumulated in its original order, including the
+roundoff and endpoint diagnostics. Reuse does not relax tolerances or omit
+nodes. `evaluations` and `max_evaluations` continue to mean actual callback
+invocations; cache hits only increment `reused_samples`. A fixed callback budget
+can therefore reach more meshes with reuse enabled. For a matched comparison,
+allow sufficient evaluations for both runs and compare status, complete-mesh
+count and every numerical diagnostic; compare work using both counters.
 
 ## Meshes and endpoint truncation
 
@@ -139,6 +166,10 @@ across scalar families; additional MPFR tests run through 1,024 bits against a
 
 Focused core tests cover endpoint-cutoff sensitivity, rounded-coordinate
 failure, invalid/mixed/exact/unset precision, budget exhaustion, callback
-exceptions and preservation of the last complete mesh. See
+exceptions and preservation of the last complete mesh. Bounded-reuse checks
+compare complete numerical diagnostics against uncached integration across the
+precision registry, and independently check analytic values and callback counts.
+They also cover small cache bounds, rounded endpoints, callback budgets,
+failures, low-precision mesh limits and MPFR exponent range. See
 [numerical testing](../development/numerical_testing.md) for coverage-report
 semantics and configuration requirements.

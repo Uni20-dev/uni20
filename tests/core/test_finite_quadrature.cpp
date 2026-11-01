@@ -149,6 +149,152 @@ TEST(FiniteQuadrature, StrongSingularityNeedsDeeperEndpoints)
   EXPECT_LE(math::abs(deep.value[0] - 4), options.relative_tolerance * 4);
 }
 
+template <class R, std::size_t N>
+void expect_same_mesh(quadrature_result<R, N> const& a, quadrature_result<R, N> const& b)
+{
+  EXPECT_EQ(a.status, b.status);
+  EXPECT_EQ(a.levels, b.levels);
+  EXPECT_EQ(a.value, b.value);
+  EXPECT_EQ(a.error, b.error);
+  EXPECT_EQ(a.absolute_integral, b.absolute_integral);
+  EXPECT_EQ(a.endpoint_indicator, b.endpoint_indicator);
+}
+
+TEST(FiniteQuadrature, BoundedReusePreservesGeometryAndComponents)
+{
+  tanh_sinh_options<double, 3> options;
+  std::size_t calls = 0, rounded = 0;
+  auto f = [&](quadrature_point<double> const& point) {
+    ++calls;
+    rounded += point.value == 2.0;
+    return std::array{1.0 / math::sqrt(point.upper_distance), math::log(point.lower_distance),
+                      point.value * point.value};
+  };
+  auto const baseline = tanh_sinh_integrate(f, 1.0, 2.0, options);
+  ASSERT_EQ(baseline.status, Status::converged);
+  EXPECT_EQ(calls, baseline.evaluations);
+  EXPECT_EQ(baseline.reused_samples, 0u);
+  EXPECT_GT(rounded, 0u);
+  EXPECT_LE(math::abs(baseline.value[0] - 2), options.relative_tolerance * 2);
+  for (std::size_t bound : {1, 2, 3, 17, 2048})
+  {
+    SCOPED_TRACE(bound);
+    options.max_cached_samples = bound;
+    calls = rounded = 0;
+    auto const cached = tanh_sinh_integrate(f, 1.0, 2.0, options);
+    expect_same_mesh(cached, baseline);
+    EXPECT_EQ(calls, cached.evaluations);
+    EXPECT_GT(rounded, 0u);
+    EXPECT_EQ(cached.evaluations + cached.reused_samples, baseline.evaluations);
+    EXPECT_GT(cached.reused_samples, 0u);
+    EXPECT_LE(cached.reused_samples, bound * (cached.levels - 1));
+    if (bound == 1)
+    {
+      EXPECT_EQ(cached.reused_samples, cached.levels - 1);
+    }
+    if (bound == 2048)
+    {
+      EXPECT_LT(cached.evaluations * 3, baseline.evaluations * 2);
+    }
+    // Neither callback arrays nor work counters persist into a new integration.
+    calls = 0;
+    auto const repeated = tanh_sinh_integrate(f, 1.0, 2.0, options);
+    expect_same_mesh(repeated, cached);
+    EXPECT_EQ(calls, cached.evaluations);
+    EXPECT_EQ(repeated.reused_samples, cached.reused_samples);
+  }
+}
+
+TEST(FiniteQuadrature, ReuseBudgetCountsActualCallbacks)
+{
+  tanh_sinh_options<double> options;
+  options.max_levels = 1;
+  auto const first = tanh_sinh_integrate(constant, 0.0, 1.0, options);
+  options.max_levels = 12;
+  options.max_evaluations = first.evaluations;
+  options.max_cached_samples = 1;
+  std::size_t calls = 0;
+  auto counted = [&](auto const&) {
+    ++calls;
+    return std::array{1.0};
+  };
+  auto const interrupted = tanh_sinh_integrate(counted, 0.0, 1.0, options);
+  EXPECT_EQ(interrupted.status, Status::evaluation_limit);
+  EXPECT_EQ(interrupted.evaluations, first.evaluations);
+  EXPECT_EQ(calls, first.evaluations);
+  // The second mesh can reuse the midpoint even with no callback budget left.
+  EXPECT_EQ(interrupted.reused_samples, 1u);
+  EXPECT_EQ(interrupted.levels, first.levels);
+  EXPECT_EQ(interrupted.value, first.value);
+  EXPECT_EQ(interrupted.error, first.error);
+  EXPECT_EQ(interrupted.absolute_integral, first.absolute_integral);
+  EXPECT_EQ(interrupted.endpoint_indicator, first.endpoint_indicator);
+  options.max_evaluations = 0;
+  auto const empty = tanh_sinh_integrate(counted, 2.0, 2.0, options);
+  EXPECT_EQ(empty.status, Status::converged);
+  EXPECT_EQ(empty.evaluations, 0u);
+  EXPECT_EQ(empty.reused_samples, 0u);
+  EXPECT_EQ(calls, first.evaluations);
+}
+
+TEST(FiniteQuadrature, ReusePreservesLimitedAndSubnormalEstimates)
+{
+  auto compare = [](auto const& f, double lo, double hi, tanh_sinh_options<double> options) {
+    auto const baseline = tanh_sinh_integrate(f, lo, hi, options);
+    options.max_cached_samples = 17;
+    auto const cached = tanh_sinh_integrate(f, lo, hi, options);
+    expect_same_mesh(cached, baseline);
+    EXPECT_EQ(cached.evaluations + cached.reused_samples, baseline.evaluations);
+    return cached;
+  };
+  tanh_sinh_options<double> options;
+  EXPECT_EQ(compare(constant, 0.0, 1e-300, options).status, Status::arithmetic_range);
+  auto subnormal = [](auto const&) { return std::array{numeric_limits<double>::denorm_min() * 32}; };
+  EXPECT_EQ(compare(subnormal, 0.0, 1.0, options).status, Status::refinement_limit);
+  options.endpoint_power = 2;
+  auto singular = [](auto const& x) {
+    return std::array{1.0 / math::sqrt(x.lower_distance * math::sqrt(x.lower_distance))};
+  };
+  EXPECT_EQ(compare(singular, 0.0, 1.0, options).status, Status::endpoint_limit);
+  options.max_levels = 1;
+  EXPECT_EQ(compare(constant, 0.0, 1.0, options).status, Status::refinement_limit);
+}
+
+TEST(FiniteQuadrature, ReuseDoesNotHideFailureAtNewNodes)
+{
+  tanh_sinh_options<double> options;
+  options.max_levels = 1;
+  std::vector<std::array<double, 3>> first_nodes;
+  auto record = [&](auto const& point) {
+    first_nodes.push_back({point.value, point.lower_distance, point.upper_distance});
+    return std::array{1.0};
+  };
+  auto const first = tanh_sinh_integrate(record, 0.0, 1.0, options);
+  auto is_new = [&](auto const& point) {
+    return std::find(first_nodes.begin(), first_nodes.end(),
+                     std::array{point.value, point.lower_distance, point.upper_distance}) == first_nodes.end();
+  };
+  auto bad = [&](auto const& point) { return std::array{is_new(point) ? numeric_limits<double>::quiet_NaN() : 1.0}; };
+  options.max_levels = 12;
+  auto const baseline = tanh_sinh_integrate(bad, 0.0, 1.0, options);
+  ASSERT_EQ(baseline.status, Status::nonfinite_integrand);
+  EXPECT_EQ(baseline.levels, 1u);
+  options.max_cached_samples = 2048;
+  auto const cached = tanh_sinh_integrate(bad, 0.0, 1.0, options);
+  expect_same_mesh(cached, baseline);
+  EXPECT_EQ(cached.evaluations, first.evaluations + 1);
+  EXPECT_EQ(cached.reused_samples, 1u);
+  auto throws = [&](auto const& point) {
+    if (is_new(point)) throw std::runtime_error("new-node callback");
+    return std::array{1.0};
+  };
+  EXPECT_THROW(tanh_sinh_integrate(throws, 0.0, 1.0, options), std::runtime_error);
+  auto infinite = [](auto const&) { return std::array{numeric_limits<double>::infinity()}; };
+  EXPECT_EQ(tanh_sinh_integrate(infinite, 0.0, 1.0, options).status, Status::nonfinite_integrand);
+  auto huge = [](auto const&) { return std::array{numeric_limits<double>::max()}; };
+  EXPECT_EQ(tanh_sinh_integrate(huge, 0.0, 4.0, options).status, Status::arithmetic_range);
+}
+
 #if UNI20_HAS_MPREAL
 TEST(FiniteQuadratureMpfr, LowPrecisionCannotStallTheMesh)
 {
@@ -165,6 +311,39 @@ TEST(FiniteQuadratureMpfr, LowPrecisionCannotStallTheMesh)
     EXPECT_LT(result.evaluations, options.max_evaluations);
     EXPECT_EQ(result.value[0].precision(), p);
   }
+}
+
+TEST(FiniteQuadratureMpfr, ReuseRetainsLowPrecisionAndExtendedRangeFailures)
+{
+  for (int bits : {1, 2, 3, 4, 128, 333})
+  {
+    SCOPED_TRACE(bits);
+    auto p = Precision::bits(bits);
+    tanh_sinh_options<mpreal> options(p);
+    if (bits < 5) options.relative_tolerance = numeric_limits<mpreal>::epsilon(p) / 64;
+    for (char const* text : {"1", "1e-7000", "1e7000"})
+    {
+      SCOPED_TRACE(text);
+      auto scale = mpreal(text, p), one = mpreal(1, p);
+      auto f = [&](auto const& point) { return std::array<mpreal, 1>{one / (scale + point.value)}; };
+      options.max_cached_samples = 0;
+      auto const baseline = tanh_sinh_integrate(f, mpreal(0, p), scale, options);
+      options.max_cached_samples = 17;
+      auto const cached = tanh_sinh_integrate(f, mpreal(0, p), scale, options);
+      expect_same_mesh(cached, baseline);
+      EXPECT_EQ(cached.evaluations + cached.reused_samples, baseline.evaluations);
+      EXPECT_EQ(cached.value[0].precision(), p);
+      if (bits < 5)
+        EXPECT_EQ(cached.status, Status::arithmetic_range);
+      else
+        EXPECT_EQ(cached.status, Status::converged);
+    }
+  }
+  auto p = Precision::bits(128), q = Precision::bits(256);
+  tanh_sinh_options<mpreal> options(p);
+  options.max_cached_samples = 2048;
+  auto wrong = [q](auto const&) { return std::array{mpreal(1, q)}; };
+  EXPECT_THROW(tanh_sinh_integrate(wrong, mpreal(0, p), mpreal(1, p), options), std::invalid_argument);
 }
 
 TEST(FiniteQuadratureMpfr, PrecisionFailuresAndTypedEmptyResults)
