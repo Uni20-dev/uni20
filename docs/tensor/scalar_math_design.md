@@ -184,3 +184,10 @@ precision. Imaginary signed zero selects the side of the `acosh` cut along
 the real axis below one. Exact `sinh(0)`, `cosh(0)` and `acosh(1)` return exact
 zero, one and zero; other exact inputs require finite precision. These
 operations use MPC directly and require no matrix provider.
+
+MPC-backed `atan(z)` uses the principal inverse tangent. Real signed zero
+selects the side of its imaginary-axis cuts beyond `+i` and `-i`; model-specific
+quantum-number conventions must be applied by the caller. Exact `atan(0)` is
+exact zero. Other exact inputs require `atan(z, p)`, which converts the input
+to finite precision `p` before evaluation. Unset inputs remain errors, and
+neither overload reads or changes ambient MPFR precision.
