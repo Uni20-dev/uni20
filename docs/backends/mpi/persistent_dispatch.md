@@ -10,6 +10,9 @@ The general distributed planning, commitment, and local-composition constraints
 are recorded in
 [`distributed_kernel_dispatch.md`](../../architecture/distributed_kernel_dispatch.md).
 This document develops the root-controller / worker-runtime form of that design.
+The complementary [Async I/O design direction](../../async/external_io_design.md)
+discusses external completion, buffer ownership and bounded progress services
+that could support materialization without blocking numerical workers.
 
 The main design premise is:
 

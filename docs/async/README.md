@@ -14,7 +14,7 @@ The docs are split into two groups:
 | Group | Documents | Use this when |
 |---|---|---|
 | Primary (canonical) | `getting_started.md`, `coroutines_primer.md`, `runtime_model.md`, `buffers_and_awaiters.md`, `storage.md`, `kernel_authoring.md`, `cookbook.md`, `exceptions_and_cancellation.md`, `schedulers.md`, `tbb_execution_primer.md`, `reverse_mode_ad.md`, `task_registry_debug.md`, `dag_debug_examples.md`, `quick_reference.md` | you want current behavior and API usage |
-| Supplemental (design/history) | `scheduler_migration.md`, `tensor_lifetime_and_dispatch_draft.md`, `audit_legacy_docs.md` | you need design rationale or migration context |
+| Supplemental (design/history) | `scheduler_migration.md`, `external_io_design.md`, `tensor_lifetime_and_dispatch_draft.md`, `audit_legacy_docs.md` | you need design rationale, future directions or migration context |
 
 ## Read Path by Audience
 
@@ -54,6 +54,7 @@ The docs are split into two groups:
 | [`schedulers.md`](schedulers.md) | `DebugScheduler`, `TbbScheduler`, `TbbNumaScheduler` behavior | Performance and integration work |
 | [`tbb_execution_primer.md`](tbb_execution_primer.md) | oneTBB threads, arenas, concurrency, constraints, task groups, and resumable waits | TBB scheduler contributors |
 | [`scheduler_migration.md`](scheduler_migration.md) | Typed admission, shared rescheduling, task domains, and scheduler-route migration | Async and CUDA runtime designers |
+| [`external_io_design.md`](external_io_design.md) | Future I/O adapters, external completion, buffer ownership and backpressure; no implemented API | Async and I/O runtime designers |
 | [`reverse_mode_ad.md`](reverse_mode_ad.md) | Dataflow reverse-mode concepts and `Var<T>` behavior | AD contributors |
 | [`task_registry_debug.md`](task_registry_debug.md) | Debug dumps, stacktraces, runtime controls | Debugging and test triage |
 | [`dag_debug_examples.md`](dag_debug_examples.md) | Graphviz DAG examples, including deadlock snapshots | Runtime debugging |

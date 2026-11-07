@@ -223,6 +223,9 @@ not add a second meaning to the current fixed-rank mdspan-based `Tensor`.
   cost when instrumentation is disabled.
 - Integrate future CUDA/MPI external completions with targeted readiness
   notifications, including when no CPU tasks are runnable.
+- Explore optional [Async I/O adapters](async/external_io_design.md) for
+  streaming, checkpoint output and external services, keeping I/O progress,
+  buffer lifetime and bounded admission separate from compute scheduling.
 
 ### 4. Extend the symmetry-aware block tensor
 
