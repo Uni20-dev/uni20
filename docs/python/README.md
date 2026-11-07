@@ -4,6 +4,10 @@
   module, build requirements, error boundary, tests, and presentation guidance.
 - [Dtype Promotion](dtype_promotion.md) is a design note for future Tensor
   arithmetic. It is not current Python API behavior.
+- [Extensions and asynchronous numerical values](extensions_and_async_design.md)
+  is a proposal for modular bindings, NumPy interoperability and deferred
+  observation, using Bethe and a small array interface as initial prototypes.
+  It records recommendations and open alternatives; implementation is deferred.
 
 Binding source lives under [`bindings/python`](../../bindings/python/).
 The [Python example](../../examples/python/) demonstrates loading the compiled
