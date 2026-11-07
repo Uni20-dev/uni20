@@ -261,7 +261,9 @@ The first extraction is implemented in
 [complex log-Gamma and real-shift ratios](../tensor/complex_log_gamma.md): an
 immutable right-half-plane Gamma context, shared exact Bernoulli/native Stirling
 coefficients, and a paired log-ratio that avoids subtracting large phases.
-Barnes G remains separate work; Gamma callers do not initialize Barnes data.
+The separate [Barnes magnitude context](../tensor/log_barnes_g.md) adds real
+`log|G|` and paired real-shift log-ratios with native and explicit-precision
+MPFR arithmetic. Gamma callers do not initialize Barnes data.
 
 The model-independent `GammaBarnes<Real>` implementation in
 `bethe-6spinon/include/bethe/special_functions.hpp` is the starting point.
