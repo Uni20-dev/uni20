@@ -113,9 +113,9 @@ The canonical real aliases are:
 `uni20::float80` has 64 significand bits (about 19 decimal digits) and the x87
 extended exponent range. CMake automatically detects the native `long double`
 format from its numerical limits; it does not infer precision from `sizeof`.
-An fp80 object can occupy 12 or 16 bytes because of padding. `complex160` aliases
-`complex<float80>` under the same availability guard. There is no software
-emulation or silent substitution: on platforms where
+An fp80 object can occupy 12 or 16 bytes because of padding. `complex160` and
+`cfloat80` alias `complex<float80>` under the same availability guard. There is no
+software emulation or silent substitution: on platforms where
 `long double` is binary64 or binary128, `UNI20_HAS_FLOAT80=0` and the alias is
 absent. Ordinary `long double` remains a valid Uni20 real scalar on all those
 platforms. Guard direct references to `uni20::float80` with `UNI20_HAS_FLOAT80`.
@@ -189,6 +189,7 @@ The canonical complex aliases are:
 | `uni20::complex<T>` | project-level complex scalar alias |
 | `uni20::complex64`, `uni20::cfloat` | `uni20::complex<float>` |
 | `uni20::complex128`, `uni20::cdouble` | `uni20::complex<double>` |
+| `uni20::complex160`, `uni20::cfloat80` | `uni20::complex<uni20::float80>` when `UNI20_HAS_FLOAT80=1` |
 | `uni20::complex256`, `uni20::cfloat128` | `uni20::complex<uni20::float128>` when `UNI20_HAS_FLOAT128=1` |
 
 Project code, tests, examples, and documentation should use

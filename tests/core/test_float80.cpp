@@ -21,7 +21,7 @@ TEST(Float80Test, AvailabilityRequiresNativeFormat)
 using Real80 = uni20::float80;
 static_assert(std::same_as<Real80, long double>);
 static_assert(uni20::Real<Real80>);
-static_assert(uni20::Complex<uni20::complex<Real80>>);
+static_assert(uni20::Complex<uni20::cfloat80>);
 static_assert(!uni20::BlasReal<Real80> && !uni20::LapackReal<Real80>);
 static_assert(!uni20::BlasComplex<uni20::complex<Real80>> && !uni20::LapackComplex<uni20::complex<Real80>>);
 
@@ -52,6 +52,6 @@ TEST(Float80Test, ScalarIoRoundTripsBeyondDouble)
   }
   Real80 const value = uni20::parse_real<Real80>("1.000000000000000001");
   EXPECT_NE(value, Real80(static_cast<double>(value)));
-  EXPECT_FALSE(uni20::format_complex(uni20::complex<Real80>{value, -value}).empty());
+  EXPECT_FALSE(uni20::format_complex(uni20::cfloat80{value, -value}).empty());
 }
 #endif
