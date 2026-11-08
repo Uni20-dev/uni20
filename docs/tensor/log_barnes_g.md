@@ -84,6 +84,14 @@ $$
 This retains the shift even when `z+h` rounds back to `z`, and avoids
 forming `v*v` on the small-relative-shift path. The `log(1+q)` term is also
 evaluated by a convergent series for `|q|<=1/8`, with geometric tail bounds.
+Both series factor out `q` before testing convergence: the next power in
+`log(1+q)/q` and `T(q)/q` is compared with working epsilon divided by 64.
+Consequently a tiny `q` does not trigger an early stop just because the whole
+answer is absolutely small. Multiplying the sums and tail bounds by `q`
+restores their original scale. This controls the series relative to that
+factor; it does not promise relative accuracy near a zero of the complete
+paired result. The other asymptotic bounds and returned diagnostics remain
+absolute quantities.
 Larger shifts use a factored polynomial difference and a scaled logarithm
 ratio. Reciprocal-power differences use a product recurrence rather than
 subtracting two powers. Real sums use Neumaier compensation.
@@ -144,7 +152,10 @@ with recurrence, conjugation, negative shifts, output precision, large-argument
 paired differences and independent reference checks. Fixtures are produced
 by `tests/core/generate_log_barnes_g_references.py` using mpmath at 600 decimal
 digits and retain 400 digits; mpmath is not a runtime or test dependency.
-Dedicated MPFR tests cover 128, 256, 333 and 1,024 bits. Native-only tests
+Dedicated MPFR tests cover 128, 256, 333, 512 and 1,024 bits. Tiny-shift
+fixtures at `z=2+3i`, `h=+/-2^-200` detect premature absolute stopping even
+when the shift itself was retained. Additional fixtures approach the domain
+boundary from positive real parts and by negative shifts. Native-only tests
 also check cases where separate evaluation loses the answer or overflows.
 An Async test shares immutable contexts at two precisions and verifies
 deterministic values without changing MPFR precision or exponent settings.

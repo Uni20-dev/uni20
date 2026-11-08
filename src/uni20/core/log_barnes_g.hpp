@@ -287,24 +287,32 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
         // This avoids v^2*log1p(h/v), even when v^2 would overflow.
         R const s = this->scale(v);
         complex_type const w = complex_type(h / s) / complex_type(v.real() / s, v.imag() / s);
-        complex_type power = w, log1p(zero), remainder(zero);
+        // Factor out w so stopping is relative to the small shift. An
+        // absolute test on w^(k+1) can discard relatively significant terms
+        // when the entire log1p(w) is much smaller than working epsilon.
+        complex_type power(one), log1p_over_w(zero), remainder_over_w(zero);
+        R index = one, next_index = two, following_index = this->number(3);
         R log_tail = zero, remainder_tail = zero;
         bool done = false;
         auto const target = numeric_limits<R>::epsilon(work_) / this->number(64);
         for (std::size_t k = 1; k <= options_.max_terms; ++k)
         {
-          log1p += power / this->number(k);
-          remainder += power / (this->number(k) * this->number(k + 1) * this->number(k + 2));
+          log1p_over_w += power / index;
+          remainder_over_w += power / (index * next_index * following_index);
           power *= -w;
           if (math::abs(power) <= target)
           {
-            log_tail = math::abs(power) * this->number(8) / (this->number(7) * this->number(k + 1));
-            remainder_tail = log_tail / (this->number(k + 2) * this->number(k + 3));
+            log_tail = (math::abs(w) * math::abs(power)) * this->number(8) / (this->number(7) * next_index);
+            remainder_tail = log_tail / (following_index * (following_index + one));
             done = true;
             break;
           }
+          index += one;
+          next_index += one;
+          following_index += one;
         }
         if (!done) throw std::runtime_error("Barnes small-shift series budget exhausted");
+        auto const log1p = w * log1p_over_w, remainder = w * remainder_over_w;
         auto const hv = h * v;
         R const square = h * h;
         sum.account(hv);

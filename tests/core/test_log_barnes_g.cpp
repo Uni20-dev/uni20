@@ -61,7 +61,7 @@ TEST(LogBarnesG, IndependentReferencesThrough1024Bits)
 {
   using uni20::mpreal;
   auto const oracle = Precision::bits(1400);
-  for (int bits : {128, 256, 333, 1024})
+  for (int bits : {128, 256, 333, 512, 1024})
   {
     SCOPED_TRACE(bits);
     auto p = Precision::bits(bits);
