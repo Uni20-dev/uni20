@@ -21,6 +21,7 @@ TEST(LogBarnesG, DomainPrecisionAndWorkBudgets)
                std::invalid_argument);
   EXPECT_THROW((log_barnes_g_context<double>(Precision::exact())), std::invalid_argument);
   EXPECT_THROW((log_barnes_g_context<double>(Precision::bits(24))), std::invalid_argument);
+  EXPECT_THROW((log_barnes_g_context<double>({.max_terms = 0})), std::invalid_argument);
   EXPECT_THROW((log_barnes_g_context<double>({.max_terms = 2})), std::invalid_argument);
   // Normalization is prepared at construction and shares the explicit work budget.
   EXPECT_THROW((log_barnes_g_context<double>({.max_shifts = 0})), std::runtime_error);
@@ -57,28 +58,67 @@ TEST(LogBarnesG, PairedDifferenceSurvivesLossAndOverflowOfSeparateValues)
 }
 
 #if UNI20_HAS_MPREAL
-TEST(LogBarnesG, ExplicitSeriesBudgetCanBeRaisedAfterConstruction)
+TEST(LogBarnesG, PrecisionAwareBudgetsAndExplicitLimits)
 {
   using uni20::mpreal;
-  auto const p = Precision::bits(2000);
-  complex<mpreal> const z(2, p);
-  auto const h = mpreal(30, p);
-  // Coefficient preparation can fit the budget while a particular call's
-  // small-relative-shift series needs more terms. No partial value is returned.
-  log_barnes_g_context<mpreal> limited(p);
-  EXPECT_THROW(limited.log_abs_barnes_g_ratio_right(z, h), std::runtime_error);
-  log_barnes_g_context<mpreal> expanded(p, {.max_terms = 1024});
-  auto const result = expanded.log_abs_barnes_g_ratio_right(z, h);
-  auto const oracle = Precision::bits(2200);
-  auto expected = mpreal(0, oracle);
-  // G(32)/G(2) = product_{k=1}^{30} k!; independent elementary logarithms.
-  for (int k = 1; k <= 30; ++k)
-    expected += mpreal(31 - k, oracle) * uni20::math::log(mpreal(k, oracle));
-  auto const error = uni20::math::abs(result.value.at(oracle) - expected);
-  auto const eps = mpreal(uni20::numeric_limits<mpreal>::epsilon(p), oracle);
-  EXPECT_LE(error, 16 * eps * uni20::math::abs(expected));
-  EXPECT_LE(error, result.truncation_bound.at(oracle) + result.roundoff_indicator.at(oracle));
-  EXPECT_EQ(uni20::precision_of(result.value), p);
+  for (int bits : {2000, 2900})
+  {
+    SCOPED_TRACE(bits);
+    auto const p = Precision::bits(bits), oracle = Precision::bits(bits + 200);
+    log_barnes_g_context<mpreal> automatic(p);
+    log_barnes_g_context<mpreal> limited(p, {.max_terms = 512});
+    log_barnes_g_context<mpreal> expanded(p, {.max_terms = 1024});
+    complex<mpreal> const z(2, p);
+    // Explicit limits remain strict even when coefficient preparation succeeds.
+    EXPECT_THROW(limited.log_abs_barnes_g_ratio_right(z, mpreal(30, p)), std::runtime_error);
+    auto const eps = mpreal(uni20::numeric_limits<mpreal>::epsilon(p), oracle);
+    for (int h : {8, 19, 30, 40, 58})
+    {
+      SCOPED_TRACE(h);
+      // G(2+h)/G(2) = product(k!, k=1,...,h): independent elementary logs.
+      auto expected = mpreal(0, oracle);
+      for (int k = 1; k <= h; ++k)
+        expected += mpreal(h + 1 - k, oracle) * uni20::math::log(mpreal(k, oracle));
+      for (int sign : {-1, 1})
+      {
+        SCOPED_TRACE(sign);
+        complex<mpreal> const input(sign > 0 ? 2 : 2 + h, p);
+        auto const shift = mpreal(sign * h, p);
+        auto const result = automatic.log_abs_barnes_g_ratio_right(input, shift);
+        auto const larger = expanded.log_abs_barnes_g_ratio_right(input, shift);
+        auto const error = uni20::math::abs(result.value.at(oracle) - sign * expected);
+        EXPECT_LE(error, 16 * eps * uni20::math::abs(expected));
+        EXPECT_LE(error, result.truncation_bound.at(oracle) + result.roundoff_indicator.at(oracle));
+        EXPECT_EQ(uni20::precision_of(result.value), p);
+        EXPECT_EQ(result.value, larger.value);
+        EXPECT_EQ(result.truncation_bound, larger.truncation_bound);
+        EXPECT_EQ(result.roundoff_indicator, larger.roundoff_indicator);
+        EXPECT_EQ(result.terms, larger.terms);
+        EXPECT_EQ(result.shifts, larger.shifts);
+      }
+    }
+    // No recurrence is needed here: v=z-1 has scale 2048, so h=256
+    // is exactly the existing small-shift cutoff. Check both sides and signs.
+    // This compares budget policies, not independent numerical algorithms.
+    for (int im : {0, 1024})
+      for (int h : {255, 256, 257})
+        for (int sign : {-1, 1})
+        {
+          SCOPED_TRACE(im);
+          SCOPED_TRACE(h);
+          SCOPED_TRACE(sign);
+          complex<mpreal> const input(mpreal(sign > 0 ? 2049 : 2049 + h, p), mpreal(im, p));
+          auto const shift = mpreal(sign * h, p);
+          auto const result = automatic.log_abs_barnes_g_ratio_right(input, shift);
+          auto const larger = expanded.log_abs_barnes_g_ratio_right(input, shift);
+          EXPECT_EQ(result.value, larger.value);
+          EXPECT_EQ(result.truncation_bound, larger.truncation_bound);
+          EXPECT_EQ(result.roundoff_indicator, larger.roundoff_indicator);
+          EXPECT_EQ(result.terms, larger.terms);
+          EXPECT_EQ(result.shifts, 0);
+          EXPECT_EQ(result.shifts, larger.shifts);
+        }
+  }
 }
 
 TEST(LogBarnesG, IndependentReferencesThrough1024Bits)

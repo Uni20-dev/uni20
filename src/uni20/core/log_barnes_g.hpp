@@ -1,6 +1,7 @@
 #pragma once
 
 #include "complex_log_gamma.hpp"
+#include <optional>
 
 namespace uni20
 {
@@ -8,7 +9,8 @@ namespace uni20
 struct log_barnes_g_options
 {
     std::size_t max_shifts = 4096;
-    std::size_t max_terms = 512;
+    /// \brief Hard term limit; unset selects defaults at each context's working precision.
+    std::optional<std::size_t> max_terms = {};
 };
 
 /// \brief Real logarithm of a Barnes magnitude, with separate numerical diagnostics.
@@ -45,16 +47,17 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
 
     /// \brief Prepare coefficients and normalization at explicit finite precision.
     explicit log_barnes_g_context(Precision p, log_barnes_g_options options = {})
-        : precision_(p), work_(this->working_precision(p)), options_(options),
+        : precision_(p), work_(this->working_precision(p)), max_shifts_(options.max_shifts),
+          max_terms_(detail::logarithm_term_budget(work_, options.max_terms)),
           gamma_(work_, {.max_shifts = options.max_shifts, .max_terms = options.max_terms})
     {
-      if (options.max_terms < 3) throw std::invalid_argument("Barnes G needs at least three coefficient slots");
+      if (max_terms_ < 3) throw std::invalid_argument("Barnes G needs at least three coefficient slots");
       std::size_t count = 16;
 #if UNI20_HAS_MPREAL
       if constexpr (std::same_as<R, mpreal>)
       {
         auto const wanted = static_cast<std::uint64_t>(work_.bit_count() / 6 + 8);
-        if (wanted > options.max_terms || wanted > (std::numeric_limits<std::size_t>::max() - 1) / 2)
+        if (wanted > max_terms_ || wanted > (std::numeric_limits<std::size_t>::max() - 1) / 2)
           throw std::invalid_argument("Barnes coefficient budget is too small for requested precision");
         count = static_cast<std::size_t>(wanted);
         detail::exact_bernoulli_sequence sequence(2 * count);
@@ -68,7 +71,7 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
       else
 #endif
       {
-        count = std::min(count, options.max_terms);
+        count = std::min(count, max_terms_);
         auto table = detail::native_stirling_coefficients<R>();
         coefficients_.assign(table.begin(), table.begin() + count);
       }
@@ -261,7 +264,7 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
     }
     void check_shift(std::size_t n, complex_type const& z) const
     {
-      if (n == options_.max_shifts) throw std::runtime_error("Barnes recurrence budget exhausted");
+      if (n == max_shifts_) throw std::runtime_error("Barnes recurrence budget exhausted");
       R const next = z.real() + this->number(1);
       if (!uni20::isfinite(next) || !(next > z.real()))
         throw std::overflow_error("Barnes recurrence cannot advance at working precision");
@@ -295,7 +298,7 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
         R log_tail = zero, remainder_tail = zero;
         bool done = false;
         auto const target = numeric_limits<R>::epsilon(work_) / this->number(64);
-        for (std::size_t k = 1; k <= options_.max_terms; ++k)
+        for (std::size_t k = 1; k <= max_terms_; ++k)
         {
           log1p_over_w += power / index;
           remainder_over_w += power / (index * next_index * following_index);
@@ -385,7 +388,7 @@ template <detail::LogGammaReal R> class log_barnes_g_context {
     }
 
     Precision precision_, work_;
-    log_barnes_g_options options_;
+    std::size_t max_shifts_, max_terms_;
     log_gamma_context<R> gamma_;
     std::vector<R> coefficients_;
     R log_coefficient_, log_target_, half_log_two_pi_;

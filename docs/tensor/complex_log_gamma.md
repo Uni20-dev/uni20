@@ -100,10 +100,19 @@ from exact rational arithmetic at the working precision; the shared Bernoulli
 recurrence also supplies exact zeta values. Its internal conventional output
 has `B_1=-1/2`.
 
-`log_gamma_options` defaults to 4,096 recurrence steps and 512 term slots.
+`log_gamma_options` defaults to 4,096 recurrence steps and an automatic term
+limit. An unset `max_terms` selects `max(512, floor(working_bits/3)+8)` during
+construction. At the small-logarithm cutoff, `|h/z| <= 1/8`, each series step
+gains at least three bits; this limit covers the worst-case stopping target
+with a small rounding margin. An explicit `max_terms` is a strict cap and is
+never enlarged automatically. The default is an upper limit, not a requested
+iteration count: convergence still ends the loop immediately.
+
 Native evaluation uses at most 16 coefficient slots; MPFR selects
 `floor(working_bits/6)+8`, including the first omitted coefficient. An
 insufficient MPFR coefficient budget is rejected before coefficient generation.
+Raising the default allowance does not increase the precision-selected
+coefficient count; explicit native caps below 16 can shorten the table.
 The term budget also limits each small-logarithm series. Exhausting recurrence
 or series work throws `std::runtime_error`; invalid inputs/precision throw
 `std::invalid_argument`, and unrepresentable arithmetic or diagnostics throw

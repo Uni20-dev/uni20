@@ -133,7 +133,17 @@ can underflow to zero. Arithmetic or diagnostics outside the scalar range
 throw rather than reporting convergence; the implementation does not promise
 every mathematically representable answer when intermediate products overflow.
 
-`log_barnes_g_options` defaults to 4,096 recurrence steps and 512 term slots.
+`log_barnes_g_options` defaults to 4,096 recurrence steps and an automatic term
+limit. An unset `max_terms` selects `max(512, floor(working_bits/3)+8)` during
+construction. The small-shift region has `|h/v| <= 1/8`, so each iteration
+gains at least three bits; the limit covers the worst-case stopping target
+with a small rounding margin. The internal Gamma context independently
+resolves its default at its own higher working precision. An explicit
+`max_terms` applies as a strict cap to both contexts and is never enlarged.
+
+These are upper limits: the loops still stop as soon as they converge.
+Raising the default allowance does not increase the precision-selected
+coefficient count; explicit native caps below 16 can shorten the table.
 Native coefficients reuse the 16-slot Stirling table. MPFR coefficients are
 generated from exact Bernoulli rationals, with a precision-dependent count;
 the internal Gamma context has its own count at its guarded precision. The
@@ -145,14 +155,15 @@ insufficient recurrence budget can fail at construction. Invalid domains or
 precision mismatches throw `std::invalid_argument`; unrepresentable
 arithmetic or diagnostics throw `std::overflow_error`.
 
-Successful construction establishes the coefficient and normalization budgets;
-it does not guarantee that every argument's series fits the per-call budget.
-For example, at 2,000-bit output the default 512 slots prepare the context but
-the real-shift call `z=2`, `h=30` exhausts its small-shift series. Constructing
-the context with `{.max_terms = 1024}` permits that evaluation at the same
-requested precision. The failure is explicit and returns no partial value.
-Applications can retry with a larger work budget separately from increasing
-precision. This distinction also applies to the internal Gamma context.
+Successful construction does not guarantee success for every argument:
+recurrence limits and representability still apply, and an explicit term cap
+can permit coefficient preparation while being insufficient for a call's
+small-shift series. At 2,000-bit output, the default context evaluates `z=2`,
+`h=30` successfully; `{.max_terms = 512}` exhausts its series, while
+`{.max_terms = 1024}` permits the same-precision evaluation. Failure is explicit
+and returns no partial value. Applications may deliberately choose a smaller
+work cap and retry with a larger one separately from increasing precision.
+This distinction also applies to the internal Gamma context.
 
 ## Validation
 
@@ -168,5 +179,9 @@ boundary from positive real parts and by negative shifts. Native-only tests
 also check cases where separate evaluation loses the answer or overflows.
 An Async test shares immutable contexts at two precisions and verifies
 deterministic values without changing MPFR precision or exponent settings.
-A 2,000-bit failure-and-retry test checks the work-budget contract against the
-independent finite product `G(32)/G(2) = product(k!, k=1,...,30)`.
+Tests at 2,000 and 2,900 bits check automatic budgets, explicit failure/retry,
+both shift signs and the existing series/factored boundaries. Integer shifts
+at `z=2` use independent elementary finite-product logarithms; standalone
+Gamma tests use its corresponding finite-product identity. Comparisons with
+larger explicit limits check that automatic budgets preserve values,
+diagnostics and coefficient/recurrence counts.
