@@ -66,18 +66,6 @@ class DebugScheduler : public IAsyncScheduler {
     explicit DebugScheduler(DebugSchedulerOptions options = {}) : options_(options), random_engine_(options.random_seed)
     {}
 
-    /// \brief Enqueue a task for later run.
-    /// \param task An AsyncTask bound to *this* scheduler.
-    void schedule(AsyncTask&& task) override
-    {
-      TRACE_MODULE(ASYNC, "Scheduling a task", &task, task.coroutine_handle());
-      TaskRegistry::record_task_scheduled(task.coroutine_handle());
-      if (task.set_scheduler(this))
-      {
-        this->enqueue_task(std::move(task));
-      }
-    }
-
     /// \brief Destructor.
     ~DebugScheduler()
     {
@@ -136,6 +124,18 @@ class DebugScheduler : public IAsyncScheduler {
     [[nodiscard]] DebugSchedulerOptions const& options() const noexcept { return options_; }
 
   private:
+    /// \brief Enqueue a task for later run.
+    /// \param task Admitted host task to bind to this scheduler.
+    void schedule_host(BasicTask&& task) override
+    {
+      TRACE_MODULE(ASYNC, "Scheduling a task", &task, task.coroutine_handle());
+      TaskRegistry::record_task_scheduled(task.coroutine_handle());
+      if (task.set_scheduler(this))
+      {
+        this->enqueue_task(std::move(task));
+      }
+    }
+
     void execute_batch_impl(LightweightTaskBatch const& batch) override
     {
       std::vector<std::size_t> indices(batch.size());
@@ -234,7 +234,7 @@ class ScopedScheduler {
 
 /// \brief Schedule a task on the currently configured global scheduler.
 /// \param task Task to schedule.
-inline void schedule(AsyncTask&& task) { get_global_scheduler()->schedule(std::move(task)); }
+template <HostTask Task> void schedule(Task&& task) { get_global_scheduler()->schedule(std::move(task)); }
 
 /// \brief Execute a synchronous lightweight batch on the global scheduler.
 /// \tparam Function Callable accepting one `std::size_t` index.

@@ -38,7 +38,8 @@ BasicTask   = move-only ownership claim for either concrete task kind
 
 The concrete type controls initial scheduler admission:
 
-- `IAsyncScheduler::schedule(AsyncTask&&)` admits ordinary host tasks;
+- `IAsyncScheduler::schedule(task)` admits movable `HostTask` types, including
+  `AsyncTask` and other tasks whose concrete promise declares the host domain;
 - `ICudaScheduler::schedule(CudaTask&&)` admits a CUDA task without affinity and
   routes it through the scheduler's default device;
 - `ICudaScheduler::schedule(CudaTask&&, int)` admits a CUDA task and binds an
@@ -48,7 +49,10 @@ The concrete type controls initial scheduler admission:
 
 Each concrete promise constructs its declared public task directly. After
 admission, schedulers and awaiters store and route the task as `BasicTask`.
-Both concrete task types consequently use the same tested implementation for:
+The public host template forwards to the private virtual
+`schedule_host(BasicTask&&)` implementation; it does not construct another
+coroutine or change the concrete promise.
+All admitted task types consequently use the same tested implementation for:
 
 - coroutine ownership and cancellation;
 - buffer and epoch awaiters;

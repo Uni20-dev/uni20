@@ -21,6 +21,19 @@ namespace uni20::async
 class AsyncTask;
 class TaskPromiseBase;
 
+/// \brief Movable typed coroutine task eligible for initial host-scheduler admission.
+/// \details The concrete promise declares the execution domain. Erased BasicTask
+///          ownership and CUDA task types do not satisfy this concept.
+///          Type metadata ignores cv/ref qualifiers, but conversion from T&&
+///          must transfer ownership: lvalues and const/volatile tasks are rejected.
+template <class T>
+concept HostTask =
+    std::derived_from<std::remove_cvref_t<T>, BasicTask> && std::convertible_to<T&&, BasicTask&&> && requires {
+      typename std::remove_cvref_t<T>::promise_type;
+      requires TaskPromise<typename std::remove_cvref_t<T>::promise_type>;
+      requires std::remove_cvref_t<T>::promise_type::task_domain == TaskDomain::host;
+    };
+
 /// \brief Borrowed type-erased description of a synchronous lightweight task batch.
 /// \details The callable and its arguments remain owned by the caller. Scheduler
 ///          implementations may invoke distinct indices concurrently, but this
@@ -85,15 +98,18 @@ class IScheduler {
     virtual void reschedule(BasicTask&& task) = 0;
 };
 
-/// \brief Scheduler interface for initial `AsyncTask` submission and host-side progress.
+/// \brief Scheduler interface for initial typed host-task submission and host-side progress.
 class IAsyncScheduler : public virtual IScheduler {
   public:
     /// \brief Virtual destructor.
     ~IAsyncScheduler() override = default;
 
-    /// \brief Schedule a coroutine for its initial execution.
+    /// \brief Schedule a host coroutine for its initial execution.
+    /// \details Accepts AsyncTask and other task types with host-domain promises.
+    ///          Ownership is erased only after checking the concrete task type;
+    ///          the original coroutine frame and promise remain unchanged.
     /// \param task Task to bind to this scheduler and submit.
-    virtual void schedule(AsyncTask&& task) = 0;
+    template <HostTask Task> void schedule(Task&& task) { this->schedule_host(std::move(task)); }
 
     /// \brief Execute a synchronous batch of independent lightweight work items.
     /// \details On successful return, the callable has been invoked exactly once
@@ -181,6 +197,9 @@ class IAsyncScheduler : public virtual IScheduler {
     virtual void wait_for(WaitRequest const& request) { this->wait_for(request.is_ready); }
 
   private:
+    /// \brief Bind and initially enqueue a task admitted through the typed host interface.
+    virtual void schedule_host(BasicTask&& task) = 0;
+
     /// \brief Scheduler-specific execution of a synchronous lightweight batch.
     /// \details The default is serial and preserves increasing index order.
     virtual void execute_batch_impl(LightweightTaskBatch const& batch)

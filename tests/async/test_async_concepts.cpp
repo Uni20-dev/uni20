@@ -122,6 +122,10 @@ template <typename Scheduler>
 concept PubliclySchedulesAsyncTask =
     requires(Scheduler& scheduler, AsyncTask&& task) { scheduler.schedule(std::move(task)); };
 
+template <typename Scheduler, typename Task>
+concept PubliclySchedulesTask =
+    requires(Scheduler& scheduler, Task&& task) { scheduler.schedule(std::forward<Task>(task)); };
+
 template <typename Scheduler>
 concept PubliclyReschedulesBasicTask =
     requires(Scheduler& scheduler, BasicTask&& task) { scheduler.reschedule(std::move(task)); };
@@ -141,6 +145,27 @@ TEST(ConceptTest, SchedulerInterfacesSeparateInitialSubmissionFromInternalResche
   static_assert(!std::constructible_from<TaskHandle, std::coroutine_handle<>, TaskPromiseBase*>);
   static_assert(std::derived_from<IAsyncScheduler, IScheduler>);
   static_assert(PubliclySchedulesAsyncTask<IAsyncScheduler>);
+  static_assert(HostTask<AsyncTask>);
+  static_assert(HostTask<AsyncTask&&>);
+  static_assert(!HostTask<AsyncTask&>);
+  static_assert(!HostTask<AsyncTask const>);
+  static_assert(!HostTask<AsyncTask const&>);
+  static_assert(!HostTask<AsyncTask const&&>);
+  static_assert(!HostTask<AsyncTask volatile>);
+  static_assert(!HostTask<AsyncTask volatile&>);
+  static_assert(!HostTask<AsyncTask volatile&&>);
+  static_assert(!HostTask<AsyncTask const volatile&&>);
+  static_assert(!HostTask<CudaTask>);
+  static_assert(!HostTask<CudaTask&&>);
+  static_assert(!HostTask<BasicTask>);
+  static_assert(!HostTask<BasicTask&&>);
+  static_assert(PubliclySchedulesTask<IAsyncScheduler, AsyncTask&&>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, CudaTask>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, BasicTask>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, AsyncTask&>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, AsyncTask const>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, AsyncTask volatile>);
+  static_assert(!PubliclySchedulesTask<IAsyncScheduler, AsyncTask const volatile>);
   static_assert(!PubliclySchedulesAsyncTask<IScheduler>);
   static_assert(!PubliclyReschedulesBasicTask<IScheduler>);
   static_assert(!PubliclyReschedulesBasicTask<IAsyncScheduler>);

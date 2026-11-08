@@ -6,7 +6,7 @@ They do not define dependency legality; epochs do that. If a coroutine is not ca
 it will still suspend regardless of scheduler choice.
 
 A scheduler owns queued runnable activations, not every coroutine whose promise
-records that scheduler. Before admission, the public `AsyncTask` or `CudaTask`
+records that scheduler. Before admission, the typed host task (normally `AsyncTask`) or `CudaTask`
 owns the frame. After a running coroutine suspends, its awaiter owns the
 `BasicTask` until readiness publishes another activation. The recorded scheduler
 pointer is only a non-owning resumption route. Consequently, a scheduler does
@@ -28,10 +28,27 @@ Most async code uses the global scheduler helpers from `debug_scheduler.hpp`:
 - `set_global_scheduler(...)`
 - `get_global_scheduler()`
 - `reset_global_scheduler()`
-- `schedule(AsyncTask&&)`
+- `schedule(task)` for any movable `HostTask`
 - `ScopedScheduler`
 
 If you do not override it, the global scheduler defaults to an internal `DebugScheduler`.
+
+Host admission is constrained by the concrete task's `promise_type`: it must
+derive from `TaskPromiseBase` and declare `TaskDomain::host`. This accepts
+`AsyncTask` and separately implemented host task/promise types without a wrapper
+coroutine. CUDA tasks and already-erased `BasicTask` values cannot enter this
+interface. The task must be passed as an rvalue, transferring ownership.
+`HostTask` strips cv/ref qualifiers when inspecting type metadata, but
+checks ownership conversion on the original argument type: both
+`HostTask<AsyncTask>` and `HostTask<AsyncTask&&>` hold, while lvalue
+references and const/volatile tasks are rejected.
+
+Scheduler implementations override the private
+`schedule_host(BasicTask&&)` hook. The public template checks the typed task
+before forwarding the original ownership handle to that hook; normal initial
+binding, diagnostic events, pause handling and NUMA selection remain there.
+Accounting policies need no scheduler-specific overload. `TbbNumaScheduler`
+also accepts these task types in `schedule(task, numa_node)`.
 
 `ScopedScheduler` is the standard way to override scheduler context in tests.
 It changes the selected scheduler but does not own it or extend its lifetime.

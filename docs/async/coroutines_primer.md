@@ -63,7 +63,9 @@ routing is implemented behavior, not a future CUDA facility.
 `AsyncTask` and `CudaTask` are distinct initial-admission types with distinct
 promise types. Their promises derive from the common `TaskPromiseBase`, and all
 suspended tasks use the same promise-neutral `TaskHandle` identity and
-`BasicTask` ownership machinery. A CPU scheduler therefore cannot initially
+`BasicTask` ownership machinery. Host schedulers also accept separately defined
+task types whose concrete promise declares `TaskDomain::host`, through the
+`HostTask`-constrained `schedule(...)` interface. A CPU scheduler cannot initially
 admit a `CudaTask`, while buffer awaiters, rescheduling, and continuations remain
 shared. Promise type identifies the task kind declared by the coroutine; the
 scheduler recorded in the common promise routes each later activation.
