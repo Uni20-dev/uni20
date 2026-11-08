@@ -92,13 +92,6 @@ class TbbScheduler : public IAsyncScheduler {
       this->wait_for_submitted_tasks();
     }
 
-    /// \brief Schedule a coroutine for initial execution.
-    void schedule(AsyncTask&& t) override
-    {
-      TaskRegistry::record_task_scheduled(t.coroutine_handle());
-      if (t.set_scheduler(this)) this->enqueue_task(std::move(t));
-    }
-
     /// \brief Block until all tasks scheduled on this scheduler are complete.
     ///
     /// \note This guarantees quiescence with respect to tasks that were
@@ -159,6 +152,13 @@ class TbbScheduler : public IAsyncScheduler {
     }
 
   private:
+    /// \brief Schedule a coroutine for initial execution.
+    void schedule_host(BasicTask&& t) override
+    {
+      TaskRegistry::record_task_scheduled(t.coroutine_handle());
+      if (t.set_scheduler(this)) this->enqueue_task(std::move(t));
+    }
+
     void execute_batch_impl(LightweightTaskBatch const& batch) override
     {
       if (batch.size() == 0) return;

@@ -21,7 +21,7 @@ For explanations, see:
 | `WriteBuffer<T>` | Exclusive mutable gate for one epoch | `co_await writer`, `transfer()`, `storage()`, `take()`, `take_release()`, `release()` |
 | `AsyncTask` | Owns an initially suspended coroutine before admission | schedule via `schedule(...)` |
 | `IScheduler` | Internal route for resuming an already-bound task | no public submission API |
-| `IAsyncScheduler` | Host `AsyncTask` scheduler interface | `schedule`, `pause`, `resume`, wait hooks |
+| `IAsyncScheduler` | Typed host-task scheduler interface | `schedule`, `pause`, `resume`, wait hooks |
 
 Task ownership cycle:
 

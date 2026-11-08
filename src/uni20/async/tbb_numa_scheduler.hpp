@@ -51,18 +51,12 @@ class TbbNumaScheduler final : public IAsyncScheduler {
       fmt::print("[uni20] TbbNumaScheduler: initialized {} NUMA nodes\n", arenas_.size());
     }
 
-    /// \brief Schedule a coroutine, choosing an arena based on NUMA preference.
-    void schedule(AsyncTask&& task) override
-    {
-      TaskRegistry::record_task_scheduled(task.coroutine_handle());
-      int target = task.preferred_numa_node().value_or(this->select_next_numa_node());
-      this->schedule_on_node(std::move(task), target);
-    }
+    using IAsyncScheduler::schedule;
 
     /// \brief Schedule a coroutine on a specific NUMA node.
     /// \param task Coroutine to dispatch.
     /// \param numa_node Requested NUMA node identifier.
-    void schedule(AsyncTask&& task, int numa_node)
+    template <HostTask Task> void schedule(Task&& task, int numa_node)
     {
       TaskRegistry::record_task_scheduled(task.coroutine_handle());
       this->schedule_on_node(std::move(task), numa_node);
@@ -111,6 +105,14 @@ class TbbNumaScheduler final : public IAsyncScheduler {
     }
 
   private:
+    /// \brief Schedule a coroutine, choosing an arena based on NUMA preference.
+    void schedule_host(BasicTask&& task) override
+    {
+      TaskRegistry::record_task_scheduled(task.coroutine_handle());
+      int target = task.preferred_numa_node().value_or(this->select_next_numa_node());
+      this->schedule_on_node(std::move(task), target);
+    }
+
     void execute_batch_impl(LightweightTaskBatch const& batch) override
     {
       CHECK(!arenas_.empty(), "TbbNumaScheduler must retain at least one arena");
@@ -162,7 +164,7 @@ class TbbNumaScheduler final : public IAsyncScheduler {
       return arenas_[index].numa_node;
     }
 
-    void schedule_on_node(AsyncTask&& task, int numa_node)
+    void schedule_on_node(BasicTask&& task, int numa_node)
     {
       CHECK(!arenas_.empty(), "TbbNumaScheduler must retain at least one arena");
       auto index = this->index_for_node(numa_node);
@@ -173,7 +175,7 @@ class TbbNumaScheduler final : public IAsyncScheduler {
         std::lock_guard<std::mutex> lock(counts_mutex_);
         ++scheduled_counts_[index];
       }
-      arena.scheduler->schedule(std::move(task));
+      arena.scheduler->schedule_host(std::move(task));
     }
 
     void reschedule_on_node(BasicTask&& task, int numa_node)

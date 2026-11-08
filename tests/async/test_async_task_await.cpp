@@ -16,9 +16,45 @@ namespace
 struct NestedTaskError
 {};
 
+class AlternateHostPromise;
+class AlternateHostTask final : public BasicTask {
+  public:
+    using promise_type = AlternateHostPromise;
+    AlternateHostTask(AlternateHostTask&&) = default;
+
+  private:
+    explicit AlternateHostTask(TaskHandle handle) : BasicTask(handle, construction_key{}) {}
+    friend AlternateHostPromise;
+};
+
+// Independent of the optional accounting experiment: initial host admission
+// must preserve any concrete host promise and its destruction behavior.
+class AlternateHostPromise final : public TaskPromiseBase {
+  public:
+    static constexpr TaskDomain task_domain = TaskDomain::host;
+    template <class... Args>
+    AlternateHostPromise(int& destructions, Args&... args)
+        : TaskPromiseBase(destructions, args...), destructions_(&destructions)
+    {}
+    AlternateHostTask get_return_object() noexcept
+    {
+      return AlternateHostTask(this->initialize_task(std::coroutine_handle<AlternateHostPromise>::from_promise(*this)));
+    }
+    ~AlternateHostPromise() { ++*destructions_; }
+
+  private:
+    int* destructions_;
+};
+
+AlternateHostTask alternate_host_task(int& destructions, int& calls)
+{
+  ++calls;
+  co_return;
+}
+
 class RejectingDirectTransferScheduler final : public IAsyncScheduler {
   public:
-    void schedule(AsyncTask&& task) override
+    void schedule_host(BasicTask&& task) override
     {
       if (task.set_scheduler(this)) tasks_.push_back(std::move(task));
     }
@@ -75,6 +111,33 @@ struct HoldTask
 };
 
 } // namespace
+
+TEST(AsyncTaskAwaitTest, InitialAdmissionPreservesAlternateHostPromise)
+{
+  static_assert(HostTask<AlternateHostTask>);
+  DebugScheduler scheduler;
+  ScopedScheduler scoped(&scheduler);
+  IAsyncScheduler& interface = scheduler;
+  int calls = 0, destructions = 0;
+
+  scheduler.pause();
+  interface.schedule(alternate_host_task(destructions, calls));
+  scheduler.run_all();
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(destructions, 0);
+  scheduler.resume();
+  scheduler.run_all();
+  EXPECT_EQ(calls, 1);
+  EXPECT_EQ(destructions, 1);
+
+  schedule(alternate_host_task(destructions, calls));
+  auto cancelled = alternate_host_task(destructions, calls);
+  cancelled.set_cancel_on_resume();
+  scheduler.schedule(std::move(cancelled));
+  scheduler.run_all();
+  EXPECT_EQ(calls, 2);
+  EXPECT_EQ(destructions, 3);
+}
 
 TEST(AsyncTaskAwaitTest, ErasedTaskHandlesRetainConcretePromiseDomains)
 {
