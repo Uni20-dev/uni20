@@ -13,7 +13,7 @@ The docs are split into two groups:
 
 | Group | Documents | Use this when |
 |---|---|---|
-| Primary (canonical) | `getting_started.md`, `coroutines_primer.md`, `runtime_model.md`, `buffers_and_awaiters.md`, `storage.md`, `kernel_authoring.md`, `cookbook.md`, `exceptions_and_cancellation.md`, `schedulers.md`, `tbb_execution_primer.md`, `reverse_mode_ad.md`, `task_registry_debug.md`, `dag_debug_examples.md`, `quick_reference.md` | you want current behavior and API usage |
+| Primary (canonical) | `getting_started.md`, `coroutines_primer.md`, `runtime_model.md`, `buffers_and_awaiters.md`, `storage.md`, `kernel_authoring.md`, `cookbook.md`, `exceptions_and_cancellation.md`, `schedulers.md`, `tbb_execution_primer.md`, `reverse_mode_ad.md`, `task_registry_debug.md`, `task_accounting.md`, `dag_debug_examples.md`, `quick_reference.md` | you want current behavior and API usage |
 | Supplemental (design/history) | `scheduler_migration.md`, `external_io_design.md`, `tensor_lifetime_and_dispatch_draft.md`, `audit_legacy_docs.md` | you need design rationale, future directions or migration context |
 
 ## Read Path by Audience
@@ -38,6 +38,8 @@ The docs are split into two groups:
 3. [`kernel_authoring.md`](kernel_authoring.md)
 4. [`exceptions_and_cancellation.md`](exceptions_and_cancellation.md)
 5. [`task_registry_debug.md`](task_registry_debug.md)
+
+Optional stage timings: [`task_accounting.md`](task_accounting.md).
 
 ## Document Map
 

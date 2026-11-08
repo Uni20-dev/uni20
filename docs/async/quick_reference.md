@@ -20,6 +20,7 @@ For explanations, see:
 | `ReadBuffer<T>` | Read gate for one epoch | `co_await reader`, `transfer()`, `maybe()`, `or_cancel()`, `wait()`, `release()` |
 | `WriteBuffer<T>` | Exclusive mutable gate for one epoch | `co_await writer`, `transfer()`, `storage()`, `take()`, `take_release()`, `release()` |
 | `AsyncTask` | Owns an initially suspended coroutine before admission | schedule via `schedule(...)` |
+| `AccountedTask` | Host coroutine with optional wall/thread CPU measurements | `receipt()`, `schedule(...)`; see [accounting](task_accounting.md) |
 | `IScheduler` | Internal route for resuming an already-bound task | no public submission API |
 | `IAsyncScheduler` | Typed host-task scheduler interface | `schedule`, `pause`, `resume`, wait hooks |
 

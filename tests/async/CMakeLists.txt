@@ -33,3 +33,9 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
       $<TARGET_FILE:uni20_task_registry_signal_startup_test>
   )
 endif()
+
+# Accounting uses real TBB workers; keep it separate from ordinary death tests.
+add_test_module(task_accounting
+  SOURCES test_task_accounting.cpp
+  LIBS uni20_async TBB::tbb
+)
