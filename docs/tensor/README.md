@@ -48,6 +48,7 @@ reference comparisons, and measured limitations.
 - [Dilogarithm](native_dilogarithm.md)
 - [Upper Incomplete Gamma](native_upper_gamma.md)
 - [Complex Log-Gamma and Real-Shift Ratios](complex_log_gamma.md)
+- [Barnes-G Magnitudes and Real-Shift Ratios](log_barnes_g.md)
 - [Airy Ai](native_airy.md)
 - [Finite-Interval Quadrature](finite_quadrature.md)
 

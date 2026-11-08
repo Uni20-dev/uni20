@@ -1,3 +1,4 @@
+add_test_module(log_barnes_g SOURCES test_log_barnes_g.cpp LIBS uni20_core uni20_async TBB::tbb)
 # tests/core/CMakeLists.txt
 
 add_test_module(complex_log_gamma SOURCES test_complex_log_gamma.cpp LIBS uni20_core uni20_async TBB::tbb)

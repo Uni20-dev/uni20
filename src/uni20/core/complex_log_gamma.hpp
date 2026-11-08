@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -18,7 +19,8 @@ namespace uni20
 struct log_gamma_options
 {
     std::size_t max_shifts = 4096;
-    std::size_t max_terms = 512;
+    /// \brief Hard term limit; unset selects a precision-aware default.
+    std::optional<std::size_t> max_terms = {};
 };
 
 /// \brief Analytic log-Gamma value, truncation bound and heuristic roundoff indicator.
@@ -44,6 +46,19 @@ concept LogGammaReal = native_math::NativeReal<R>
                        || std::same_as<R, mpreal>
 #endif
     ;
+
+// At |h/z| <= 1/8, each power-series iteration gains at least three bits.
+// The stricter Barnes test is |q|^K <= epsilon(work)/64 = 2^(-bits-5).
+// bits/3+8 covers that target with at least five extra iterations of margin;
+// it also exceeds the precision-dependent Stirling coefficient count.
+inline std::size_t logarithm_term_budget(Precision work, std::optional<std::size_t> limit)
+{
+  if (limit) return *limit;
+  auto const terms = std::max<std::uint64_t>(512, static_cast<std::uint64_t>(work.bit_count() / 3) + 8);
+  if (terms > std::numeric_limits<std::size_t>::max())
+    throw std::invalid_argument("default logarithm term budget exceeds supported range");
+  return static_cast<std::size_t>(terms);
+}
 } // namespace detail
 
 /// \brief Immutable reusable right-half-plane log-Gamma and real-shift log-ratio context.
@@ -67,15 +82,16 @@ template <detail::LogGammaReal R> class log_gamma_context {
 
     /// \brief Prepare coefficients at explicit finite precision p.
     explicit log_gamma_context(Precision p, log_gamma_options options = {})
-        : precision_(p), work_(this->working_precision(p)), options_(options)
+        : precision_(p), work_(this->working_precision(p)), max_shifts_(options.max_shifts),
+          max_terms_(detail::logarithm_term_budget(work_, options.max_terms))
     {
-      if (options.max_terms < 2) throw std::invalid_argument("log-Gamma needs at least two coefficient slots");
+      if (max_terms_ < 2) throw std::invalid_argument("log-Gamma needs at least two coefficient slots");
       std::size_t count = 16;
 #if UNI20_HAS_MPREAL
       if constexpr (std::same_as<R, mpreal>)
       {
         auto const wanted = static_cast<std::uint64_t>(work_.bit_count() / 6 + 8);
-        if (wanted > options.max_terms || wanted > (std::numeric_limits<std::size_t>::max() - 1) / 2)
+        if (wanted > max_terms_ || wanted > (std::numeric_limits<std::size_t>::max() - 1) / 2)
           throw std::invalid_argument("log-Gamma coefficient budget is too small for requested precision");
         count = static_cast<std::size_t>(wanted);
         coefficients_.reserve(count);
@@ -90,7 +106,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
       else
 #endif
       {
-        count = std::min(count, options.max_terms);
+        count = std::min(count, max_terms_);
         auto table = detail::native_stirling_coefficients<R>();
         coefficients_.assign(table.begin(), table.begin() + count);
       }
@@ -346,7 +362,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
         accumulator remainder(zero);
         R const target = numeric_limits<R>::epsilon(work_) / this->number(32);
         R denominator = this->number(2);
-        for (std::size_t k = 0; k < options_.max_terms; ++k)
+        for (std::size_t k = 0; k < max_terms_; ++k)
         {
           complex_type const term = power / denominator;
           remainder.add(term);
@@ -377,7 +393,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
     }
     void check_shift(std::size_t shifts, complex_type const& z) const
     {
-      if (shifts == options_.max_shifts) throw std::runtime_error("log-Gamma exhausted its recurrence budget");
+      if (shifts == max_shifts_) throw std::runtime_error("log-Gamma exhausted its recurrence budget");
       R const next = z.real() + this->number(1);
       if (!uni20::isfinite(next) || !(next > z.real()))
         throw std::overflow_error("log-Gamma recurrence cannot advance at working precision");
@@ -395,7 +411,7 @@ template <detail::LogGammaReal R> class log_gamma_context {
     }
 
     Precision precision_, work_;
-    log_gamma_options options_;
+    std::size_t max_shifts_, max_terms_;
     std::vector<R> coefficients_;
     R log_coefficient_, log_target_, small_angle_, half_log_two_pi_;
 };

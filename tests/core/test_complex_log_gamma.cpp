@@ -14,6 +14,7 @@ using uni20::Precision;
 TEST(ComplexLogGamma, DomainAndWorkBudgets)
 {
   log_gamma_context<double> context;
+  EXPECT_THROW((log_gamma_context<double>({.max_terms = 0})), std::invalid_argument);
   EXPECT_THROW(context.log_gamma_right({0, 1}), std::invalid_argument);
   EXPECT_THROW(context.log_gamma_right({1, std::numeric_limits<double>::infinity()}), std::invalid_argument);
   EXPECT_THROW(context.log_gamma_ratio_right({0.5, 1}, -0.5), std::invalid_argument);
@@ -183,6 +184,51 @@ TEST(ComplexLogGamma, IndependentReferencesThrough1024Bits)
       compare(g.value, ref.gamma_re, ref.gamma_im);
       compare(r.value, ref.ratio_re, ref.ratio_im);
     }
+  }
+}
+
+TEST(ComplexLogGamma, PrecisionAwareBudgetsAndExplicitLimits)
+{
+  using uni20::mpreal;
+  for (int bits : {2000, 2900})
+  {
+    SCOPED_TRACE(bits);
+    auto const p = Precision::bits(bits), oracle = Precision::bits(bits + 200);
+    log_gamma_context<mpreal> automatic(p);
+    log_gamma_context<mpreal> limited(p, {.max_terms = 512});
+    log_gamma_context<mpreal> expanded(p, {.max_terms = 1024});
+    EXPECT_THROW(limited.log_gamma_ratio_right(complex<mpreal>(2048, p), mpreal(256, p)), std::runtime_error);
+    auto const eps = mpreal(uni20::numeric_limits<mpreal>::epsilon(p), oracle);
+    // With no recurrence, h=256 lies exactly at the small-logarithm cutoff.
+    // Gamma(z+h)/Gamma(z) = product(z+k, k=0,...,h-1) supplies an
+    // independent complex-log oracle on both sides of the cutoff.
+    for (int im : {0, 512})
+      for (int h : {255, 256, 257})
+      {
+        SCOPED_TRACE(im);
+        SCOPED_TRACE(h);
+        complex<mpreal> expected(oracle);
+        for (int k = 0; k < h; ++k)
+          expected += uni20::math::log(complex<mpreal>(mpreal(2048 + k, oracle), mpreal(im, oracle)));
+        for (int sign : {-1, 1})
+        {
+          SCOPED_TRACE(sign);
+          complex<mpreal> const input(mpreal(sign > 0 ? 2048 : 2048 + h, p), mpreal(im, p));
+          auto const shift = mpreal(sign * h, p);
+          auto const result = automatic.log_gamma_ratio_right(input, shift);
+          auto const larger = expanded.log_gamma_ratio_right(input, shift);
+          auto const error = uni20::math::abs(result.value.at(oracle) - sign * expected);
+          EXPECT_LE(error, 16 * eps * uni20::math::abs(expected));
+          EXPECT_LE(error, result.truncation_bound.at(oracle) + result.roundoff_indicator.at(oracle));
+          EXPECT_EQ(uni20::precision_of(result.value), p);
+          EXPECT_EQ(result.value, larger.value);
+          EXPECT_EQ(result.truncation_bound, larger.truncation_bound);
+          EXPECT_EQ(result.roundoff_indicator, larger.roundoff_indicator);
+          EXPECT_EQ(result.terms, larger.terms);
+          EXPECT_EQ(result.shifts, 0);
+          EXPECT_EQ(result.shifts, larger.shifts);
+        }
+      }
   }
 }
 

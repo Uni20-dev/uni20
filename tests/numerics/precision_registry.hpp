@@ -9,6 +9,8 @@ namespace uni20::test
 {
 enum class PrecisionProbe
 {
+  LogBarnesGIdentities,
+  LogBarnesGReferenceAccuracy,
   ComplexLogGammaIdentities,
   ComplexLogGammaScaledComponents,
   ComplexLogGammaReferenceAccuracy,
@@ -117,6 +119,8 @@ struct ProbeDescription
 };
 
 inline constexpr std::array precision_probes{
+    ProbeDescription{"NumericalScalar", "LogBarnesGIdentities", "scalar_math"},
+    ProbeDescription{"NumericalScalar", "LogBarnesGReferenceAccuracy", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ComplexLogGammaIdentities", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ComplexLogGammaScaledComponents", "scalar_math"},
     ProbeDescription{"NumericalScalar", "ComplexLogGammaReferenceAccuracy", "scalar_math"},
@@ -254,6 +258,8 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
         return {"unavailable", "enable float128 and UNI20_BACKEND_MPLAPACK for binary128 decompositions"};
 #endif
     }
+    if (probe == LogBarnesGIdentities || probe == LogBarnesGReferenceAccuracy)
+      if constexpr (!C::is_complex) return {"not_applicable", "complex right-half-plane Barnes magnitude API"};
     if (probe == ComplexLogGammaIdentities || probe == ComplexLogGammaScaledComponents ||
         probe == ComplexLogGammaReferenceAccuracy)
       if constexpr (!C::is_complex) return {"not_applicable", "complex right-half-plane log-Gamma API"};
@@ -376,6 +382,7 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
     }
     switch (probe)
     {
+      case LogBarnesGReferenceAccuracy:
       case ComplexLogGammaReferenceAccuracy:
       case DecompositionAccuracyImprovesWithPrecision:
       case StandardSpecialAccuracy:
