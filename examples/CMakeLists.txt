@@ -3,6 +3,9 @@ function(uni20_add_example target source)
   target_link_libraries(${target} PRIVATE ${ARGN})
 endfunction()
 
+uni20_add_example(task_accounting_example async/task_accounting_example.cpp uni20_async TBB::tbb)
+add_test(NAME TaskAccountingExample COMMAND task_accounting_example)
+
 uni20_add_example(gmres_transfer_example krylov/gmres_transfer_example.cpp uni20_krylov)
 uni20_add_example(gmres_refinement_example krylov/gmres_refinement_example.cpp uni20_krylov)
 add_test(NAME GmresTransferExample COMMAND gmres_transfer_example)

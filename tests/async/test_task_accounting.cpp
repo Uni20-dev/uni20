@@ -1,25 +1,25 @@
-#include "accounting.hpp"
 #include <deque>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <uni20/async/accounted_task.hpp>
 #include <uni20/async/awaiters.hpp>
 #include <uni20/async/tbb_numa_scheduler.hpp>
 #include <uni20/async/tbb_scheduler.hpp>
 #include <vector>
 
 using namespace uni20::async;
-using namespace uni20::async::accounting_experiment;
 
 namespace
 {
 template <class T>
 concept Admitted = requires(IAsyncScheduler& scheduler, T&& task) { scheduler.schedule(std::forward<T>(task)); };
-static_assert(Admitted<Task<>>);
+static_assert(Admitted<AccountedTask>);
 static_assert(Admitted<AsyncTask>);
 static_assert(!Admitted<BasicTask>);
-static_assert(!Admitted<Task<>&>);
-static_assert(!Admitted<Task<> const>);
+static_assert(!Admitted<AccountedTask&>);
+static_assert(!Admitted<AccountedTask const>);
 static_assert(!Admitted<CudaTask>);
+static_assert(std::same_as<decltype(std::declval<AccountedTask&>().debug_name("stage")), AccountedTask&>);
 
 struct FakeState
 {
@@ -40,39 +40,38 @@ struct FakeClock
 {
     static constexpr bool has_cpu = true;
     FakeState* state;
-    std::optional<Duration> wall() noexcept
+    std::optional<AccountingDuration> wall() noexcept
     {
       ++state->wall_reads;
-      return state->wall_available ? std::optional(Duration(state->wall)) : std::nullopt;
+      return state->wall_available ? std::optional(AccountingDuration(state->wall)) : std::nullopt;
     }
-    std::optional<Duration> cpu() noexcept
+    std::optional<AccountingDuration> cpu() noexcept
     {
       ++state->cpu_reads;
-      return state->cpu_available ? std::optional(Duration(state->ticks[state->worker])) : std::nullopt;
+      return state->cpu_available ? std::optional(AccountingDuration(state->ticks[state->worker])) : std::nullopt;
     }
 };
-Options<FakeClock> options(FakeState& state, Mode mode = Mode::cpu_and_wall)
+BasicAccountingOptions<FakeClock> options(FakeState& state, AccountingMode mode = AccountingMode::cpu_and_wall)
 {
   return {.mode = mode, .clock = {&state}};
 }
-Report inspect(Receipt const& receipt)
+AccountingReport inspect(AccountingReceipt const& receipt)
 {
   auto reader = receipt.read();
   EXPECT_TRUE(reader.await_ready());
   return reader.await_resume();
 }
-void expect_cost(Receipt const& receipt, long cpu, long elapsed, unsigned intervals,
-                 Outcome outcome = Outcome::returned)
+void expect_cost(AccountingReceipt const& receipt, long cpu, long elapsed, unsigned intervals,
+                 AccountingOutcome outcome = AccountingOutcome::returned)
 {
   auto report = inspect(receipt);
-  EXPECT_EQ(report.own_cpu, Duration(cpu));
-  EXPECT_EQ(report.active_wall, Duration(cpu));
-  EXPECT_EQ(report.elapsed, Duration(elapsed));
+  EXPECT_EQ(report.own_cpu, AccountingDuration(cpu));
+  EXPECT_EQ(report.active_wall, AccountingDuration(cpu));
+  EXPECT_EQ(report.elapsed, AccountingDuration(elapsed));
   EXPECT_EQ(report.intervals, intervals);
   EXPECT_EQ(report.outcome, outcome);
 }
-// Test-only typed admission. This uses existing erased routing/ownership and
-// adds no coroutine trampoline. It is not the proposed public admission API.
+// Deterministic scheduler for driving suspension and direct-transfer boundaries.
 class Driver final : public IAsyncScheduler {
   public:
     explicit Driver(bool direct = true) : direct_(direct) {}
@@ -142,25 +141,25 @@ AsyncTask plain(FakeState& c, long ticks)
   c.work(ticks);
   co_return;
 }
-Task<FakeClock> leaf(Options<FakeClock> options, long ticks)
+BasicAccountedTask<FakeClock> leaf(BasicAccountingOptions<FakeClock> options, long ticks)
 {
   options.clock.state->work(ticks);
   co_return;
 }
-Task<FakeClock> parent(Options<FakeClock> options, BasicTask child)
+BasicAccountedTask<FakeClock> parent(BasicAccountingOptions<FakeClock> options, BasicTask child)
 {
   options.clock.state->work(2);
   co_await child;
   options.clock.state->work(3);
 }
-AsyncTask ordinary_parent(Task<FakeClock> child) { co_await child; }
-Task<FakeClock> held(Options<FakeClock> options, BasicTask& save)
+AsyncTask ordinary_parent(BasicAccountedTask<FakeClock> child) { co_await child; }
+BasicAccountedTask<FakeClock> held(BasicAccountingOptions<FakeClock> options, BasicTask& save)
 {
   options.clock.state->work(2);
   co_await Hold{&save};
   options.clock.state->work(3);
 }
-Task<FakeClock> ready(Options<FakeClock> options)
+BasicAccountedTask<FakeClock> ready(BasicAccountingOptions<FakeClock> options)
 {
   options.clock.state->work(2);
   ValueAwaiter<int> value{9};
@@ -171,25 +170,25 @@ Task<FakeClock> ready(Options<FakeClock> options)
   co_await AsyncTask{};
   options.clock.state->work(3);
 }
-Task<FakeClock> self_transfer(Options<FakeClock> options)
+BasicAccountedTask<FakeClock> self_transfer(BasicAccountingOptions<FakeClock> options)
 {
   options.clock.state->work(2);
   co_await ReturnSelf{};
   options.clock.state->work(3);
 }
-Task<FakeClock> immediate(Options<FakeClock> options)
+BasicAccountedTask<FakeClock> immediate(BasicAccountingOptions<FakeClock> options)
 {
   options.clock.state->work(2);
   co_await ResumeImmediately{};
   options.clock.state->work(3);
 }
-Task<FakeClock> forwarding(Options<FakeClock> options, BasicTask child)
+BasicAccountedTask<FakeClock> forwarding(BasicAccountingOptions<FakeClock> options, BasicTask child)
 {
   options.clock.state->work(2);
   co_await Transfer{std::move(child)};
   options.clock.state->work(3);
 }
-Task<FakeClock> registration_failure(Options<FakeClock> options)
+BasicAccountedTask<FakeClock> registration_failure(BasicAccountingOptions<FakeClock> options)
 {
   options.clock.state->work(2);
   try
@@ -201,13 +200,13 @@ Task<FakeClock> registration_failure(Options<FakeClock> options)
     options.clock.state->work(3);
   }
 }
-Task<FakeClock> failing(Options<FakeClock> options)
+BasicAccountedTask<FakeClock> failing(BasicAccountingOptions<FakeClock> options)
 {
   options.clock.state->work(7);
   throw std::runtime_error("body failed");
   co_return;
 }
-Task<FakeClock> catches_child(Options<FakeClock> options, BasicTask child)
+BasicAccountedTask<FakeClock> catches_child(BasicAccountingOptions<FakeClock> options, BasicTask child)
 {
   options.clock.state->work(2);
   try
@@ -219,7 +218,7 @@ Task<FakeClock> catches_child(Options<FakeClock> options, BasicTask child)
     options.clock.state->work(3);
   }
 }
-Task<FakeClock> joins(Options<FakeClock> options, ReadBuffer<int> ar, ReadBuffer<int> br)
+BasicAccountedTask<FakeClock> joins(BasicAccountingOptions<FakeClock> options, ReadBuffer<int> ar, ReadBuffer<int> br)
 {
   options.clock.state->work(2);
   auto [x, y] = co_await all(ar, br);
@@ -227,7 +226,7 @@ Task<FakeClock> joins(Options<FakeClock> options, ReadBuffer<int> ar, ReadBuffer
   options.clock.state->work(3);
 }
 
-TEST(AccountingExperiment, ReadyAwaitersPreserveReferencesAndMoveOnlyValues)
+TEST(TaskAccounting, ReadyAwaitersPreserveReferencesAndMoveOnlyValues)
 {
   FakeState c;
   Driver d;
@@ -239,7 +238,7 @@ TEST(AccountingExperiment, ReadyAwaitersPreserveReferencesAndMoveOnlyValues)
   EXPECT_EQ(c.cpu_reads, 2);
   EXPECT_EQ(c.wall_reads, 4);
 }
-TEST(AccountingExperiment, AllNestingCombinationsAndQueuedTransfers)
+TEST(TaskAccounting, AllNestingCombinationsAndQueuedTransfers)
 {
   for (bool direct : {false, true})
   {
@@ -270,7 +269,7 @@ TEST(AccountingExperiment, AllNestingCombinationsAndQueuedTransfers)
     EXPECT_EQ(c.wall - previous, 11);
   }
 }
-TEST(AccountingExperiment, SuspendedWorkExcludedAndCpuEpochChangesAtResume)
+TEST(TaskAccounting, SuspendedWorkExcludedAndCpuEpochChangesAtResume)
 {
   FakeState c;
   Driver d;
@@ -288,7 +287,7 @@ TEST(AccountingExperiment, SuspendedWorkExcludedAndCpuEpochChangesAtResume)
   d.run();
   expect_cost(r, 5, 105, 2);
 }
-TEST(AccountingExperiment, SelfForwardingAndImmediateTransfers)
+TEST(TaskAccounting, SelfForwardingAndImmediateTransfers)
 {
   FakeState c;
   Driver d;
@@ -308,7 +307,7 @@ TEST(AccountingExperiment, SelfForwardingAndImmediateTransfers)
   d.run();
   expect_cost(er, 5, 5, 2);
 }
-TEST(AccountingExperiment, PrePublicationThrowRestartsBeforeHandler)
+TEST(TaskAccounting, PrePublicationThrowRestartsBeforeHandler)
 {
   FakeState c;
   Driver d;
@@ -318,7 +317,7 @@ TEST(AccountingExperiment, PrePublicationThrowRestartsBeforeHandler)
   d.run();
   expect_cost(r, 5, 5, 2);
 }
-TEST(AccountingExperiment, ChildExceptionRetainsBothReports)
+TEST(TaskAccounting, ChildExceptionRetainsBothReports)
 {
   FakeState c;
   Driver d;
@@ -329,9 +328,9 @@ TEST(AccountingExperiment, ChildExceptionRetainsBothReports)
   d.schedule(std::move(t));
   d.run();
   expect_cost(r, 5, 12, 2);
-  expect_cost(cr, 7, 9, 1, Outcome::failed);
+  expect_cost(cr, 7, 9, 1, AccountingOutcome::failed);
 }
-TEST(AccountingExperiment, ExplicitCancellationBeforeBodyEntry)
+TEST(TaskAccounting, ExplicitCancellationBeforeBodyEntry)
 {
   FakeState c;
   auto t = leaf(options(c), 20);
@@ -340,11 +339,11 @@ TEST(AccountingExperiment, ExplicitCancellationBeforeBodyEntry)
     auto cancelled = std::move(t);
     cancelled.set_cancel_on_resume();
   }
-  expect_cost(r, 0, 0, 0, Outcome::cancelled);
+  expect_cost(r, 0, 0, 0, AccountingOutcome::cancelled);
   EXPECT_FALSE(inspect(r).body_entered);
   EXPECT_EQ(c.cpu_reads, 0);
 }
-TEST(AccountingExperiment, DestroyedSuspendedParentDoesNotInventCancellationFlag)
+TEST(TaskAccounting, DestroyedSuspendedParentDoesNotInventCancellationFlag)
 {
   FakeState c;
   Driver d;
@@ -357,10 +356,10 @@ TEST(AccountingExperiment, DestroyedSuspendedParentDoesNotInventCancellationFlag
   d.run();
   save.set_cancel_on_resume();
   save = BasicTask{};
-  expect_cost(cr, 2, 4, 1, Outcome::cancelled);
-  expect_cost(r, 2, 4, 1, Outcome::interrupted);
+  expect_cost(cr, 2, 4, 1, AccountingOutcome::cancelled);
+  expect_cost(r, 2, 4, 1, AccountingOutcome::interrupted);
 }
-TEST(AccountingExperiment, FactoryJoinExcludesOtherWork)
+TEST(TaskAccounting, FactoryJoinExcludesOtherWork)
 {
   FakeState c;
   Driver d;
@@ -382,7 +381,7 @@ TEST(AccountingExperiment, FactoryJoinExcludesOtherWork)
   d.run();
   expect_cost(r, 5, 175, 2);
 }
-TEST(AccountingExperiment, InitialAdmissionHonoursDebugPause)
+TEST(TaskAccounting, InitialAdmissionHonoursDebugPause)
 {
   FakeState c;
   DebugScheduler d;
@@ -398,7 +397,7 @@ TEST(AccountingExperiment, InitialAdmissionHonoursDebugPause)
   d.run_all();
   expect_cost(r, 8, 108, 1);
 }
-TEST(AccountingExperiment, GlobalHelperAdmitsAccountedHostTask)
+TEST(TaskAccounting, GlobalHelperAdmitsAccountedHostTask)
 {
   FakeState c;
   DebugScheduler scheduler;
@@ -410,12 +409,12 @@ TEST(AccountingExperiment, GlobalHelperAdmitsAccountedHostTask)
   expect_cost(receipt, 9, 9, 1);
 }
 
-TEST(AccountingExperiment, NumaAdmissionPreservesPreferenceAndExplicitNode)
+TEST(TaskAccounting, NumaAdmissionPreservesPreferenceAndExplicitNode)
 {
   TbbNumaScheduler scheduler;
   scheduler.pause();
   int node = scheduler.numa_nodes().front();
-  auto body = [](Options<>) static -> Task<> { co_return; };
+  auto body = [](AccountingOptions) static -> AccountedTask { co_return; };
   auto preferred = body({});
   preferred.set_preferred_numa_node(node);
   auto preferred_report = preferred.receipt();
@@ -430,11 +429,11 @@ TEST(AccountingExperiment, NumaAdmissionPreservesPreferenceAndExplicitNode)
   EXPECT_EQ(scheduler.scheduled_count_for(node), 2U);
   EXPECT_FALSE(explicit_report.read().await_ready());
   scheduler.run_all();
-  EXPECT_EQ(inspect(preferred_report).outcome, Outcome::returned);
-  EXPECT_EQ(inspect(explicit_report).outcome, Outcome::returned);
+  EXPECT_EQ(inspect(preferred_report).outcome, AccountingOutcome::returned);
+  EXPECT_EQ(inspect(explicit_report).outcome, AccountingOutcome::returned);
 }
 
-TEST(AccountingExperiment, CrossSchedulerContinuationReturnsToParentRoute)
+TEST(TaskAccounting, CrossSchedulerContinuationReturnsToParentRoute)
 {
   FakeState c;
   Driver outer, inner;
@@ -458,11 +457,11 @@ struct EmptyFactory
     void await_suspend(TaskFactory) const noexcept {}
     void await_resume() const noexcept {}
 };
-TEST(AccountingExperiment, ZeroOwnerFactoryDestroysDuringDelegation)
+TEST(TaskAccounting, ZeroOwnerFactoryDestroysDuringDelegation)
 {
   FakeState c;
   Driver d;
-  auto body = [](Options<FakeClock> options) static -> Task<FakeClock> {
+  auto body = [](BasicAccountingOptions<FakeClock> options) static -> BasicAccountedTask<FakeClock> {
     options.clock.state->work(2);
     co_await EmptyFactory{};
     ADD_FAILURE();
@@ -471,11 +470,11 @@ TEST(AccountingExperiment, ZeroOwnerFactoryDestroysDuringDelegation)
   auto r = t.receipt();
   d.schedule(std::move(t));
   d.run();
-  expect_cost(r, 2, 2, 1, Outcome::interrupted);
+  expect_cost(r, 2, 2, 1, AccountingOutcome::interrupted);
 }
-TEST(AccountingExperiment, WallOnlyModesNeverReadCpuClock)
+TEST(TaskAccounting, WallOnlyModesNeverReadCpuClock)
 {
-  for (auto mode : {Mode::elapsed, Mode::active_wall})
+  for (auto mode : {AccountingMode::elapsed, AccountingMode::active_wall})
   {
     FakeState c;
     Driver d;
@@ -490,20 +489,20 @@ TEST(AccountingExperiment, WallOnlyModesNeverReadCpuClock)
     auto report = inspect(r);
     EXPECT_EQ(c.cpu_reads, 0);
     EXPECT_FALSE(report.own_cpu);
-    EXPECT_EQ(report.elapsed, Duration(105));
-    if (mode == Mode::elapsed)
+    EXPECT_EQ(report.elapsed, AccountingDuration(105));
+    if (mode == AccountingMode::elapsed)
     {
       EXPECT_FALSE(report.active_wall);
       EXPECT_EQ(c.wall_reads, 2);
     }
     else
     {
-      EXPECT_EQ(report.active_wall, Duration(5));
+      EXPECT_EQ(report.active_wall, AccountingDuration(5));
       EXPECT_EQ(c.wall_reads, 6);
     }
   }
 }
-TEST(AccountingExperiment, ClockFailureInvalidatesMetricsWithoutFailingWork)
+TEST(TaskAccounting, ClockFailureInvalidatesMetricsWithoutFailingWork)
 {
   FakeState c;
   Driver d;
@@ -517,9 +516,9 @@ TEST(AccountingExperiment, ClockFailureInvalidatesMetricsWithoutFailingWork)
   d.run();
   auto report = inspect(r);
   EXPECT_FALSE(report.own_cpu);
-  EXPECT_EQ(report.active_wall, Duration(5));
-  EXPECT_EQ(report.outcome, Outcome::returned);
-  auto bad = [](Options<FakeClock> opts) static -> Task<FakeClock> {
+  EXPECT_EQ(report.active_wall, AccountingDuration(5));
+  EXPECT_EQ(report.outcome, AccountingOutcome::returned);
+  auto bad = [](BasicAccountingOptions<FakeClock> opts) static -> BasicAccountedTask<FakeClock> {
     opts.clock.state->wall_available = false;
     co_return;
   };
@@ -530,12 +529,12 @@ TEST(AccountingExperiment, ClockFailureInvalidatesMetricsWithoutFailingWork)
   EXPECT_FALSE(inspect(br).elapsed);
   EXPECT_FALSE(inspect(br).active_wall);
 }
-TEST(AccountingExperiment, NumericalExceptionDoesNotPoisonRetainedReport)
+TEST(TaskAccounting, NumericalExceptionDoesNotPoisonRetainedReport)
 {
   FakeState c;
   DebugScheduler d;
   Async<int> result;
-  auto body = [](Options<FakeClock> opts, WriteBuffer<int> out) static -> Task<FakeClock> {
+  auto body = [](BasicAccountingOptions<FakeClock> opts, WriteBuffer<int> out) static -> BasicAccountedTask<FakeClock> {
     co_await out;
     opts.clock.state->work(7);
     throw std::runtime_error("numerical failure");
@@ -545,13 +544,38 @@ TEST(AccountingExperiment, NumericalExceptionDoesNotPoisonRetainedReport)
   d.schedule(std::move(t));
   d.run_all();
   EXPECT_THROW((void)result.get_wait(d), std::runtime_error);
-  expect_cost(r, 7, 7, 1, Outcome::failed);
+  expect_cost(r, 7, 7, 1, AccountingOutcome::failed);
+}
+
+TEST(TaskAccounting, CopiedReceiptCanBeAwaitedBeforeFailedTaskRuns)
+{
+  FakeState clock;
+  DebugScheduler scheduler;
+  Async<AccountingReport> observed;
+  auto task = failing(options(clock));
+  auto receipt = task.receipt();
+  {
+    auto copy = receipt;
+    auto observe = [](ReadBuffer<AccountingReport> input, WriteBuffer<AccountingReport> output) static -> AsyncTask {
+      auto const& report = co_await input;
+      co_await output = report;
+    };
+    scheduler.schedule(observe(copy.read(), observed.write()));
+  }
+  scheduler.run_all();
+  EXPECT_FALSE(observed.read().await_ready());
+  scheduler.schedule(std::move(task.debug_name("failed measured stage")));
+  scheduler.run_all();
+  auto const& report = observed.get_wait(scheduler);
+  EXPECT_EQ(report.outcome, AccountingOutcome::failed);
+  EXPECT_EQ(report.own_cpu, AccountingDuration(7));
+  EXPECT_EQ(receipt.wait(scheduler).own_cpu, report.own_cpu);
 }
 // A frame parameter outlives promise finalization. Keep this distinction tested:
 // receipt readiness is suitable for statistics, not for resource teardown.
 struct DestructionProbe
 {
-    std::optional<Receipt>* receipt;
+    std::optional<AccountingReceipt>* receipt;
     bool* destroyed;
     bool* ready_before_destruction;
     ~DestructionProbe()
@@ -560,14 +584,15 @@ struct DestructionProbe
       *destroyed = true;
     }
 };
-TEST(AccountingExperiment, ReportPrecedesParameterDestructionButChildJoinFollowsIt)
+TEST(TaskAccounting, ReportPrecedesParameterDestructionButChildJoinFollowsIt)
 {
   FakeState c;
   DebugScheduler d;
-  std::optional<Receipt> receipt;
+  std::optional<AccountingReceipt> receipt;
   bool destroyed = false, ready_before_destruction = false;
-  auto child = [](Options<FakeClock>, std::unique_ptr<DestructionProbe>) static -> Task<FakeClock> { co_return; };
-  auto join = [](Task<FakeClock> task, bool& destroyed) static -> AsyncTask {
+  auto child = [](BasicAccountingOptions<FakeClock>,
+                  std::unique_ptr<DestructionProbe>) static -> BasicAccountedTask<FakeClock> { co_return; };
+  auto join = [](BasicAccountedTask<FakeClock> task, bool& destroyed) static -> AsyncTask {
     co_await task;
     EXPECT_TRUE(destroyed);
   };
@@ -578,7 +603,7 @@ TEST(AccountingExperiment, ReportPrecedesParameterDestructionButChildJoinFollows
   d.run_all();
   EXPECT_TRUE(destroyed);
   EXPECT_TRUE(ready_before_destruction);
-  EXPECT_EQ(inspect(*receipt).outcome, Outcome::returned);
+  EXPECT_EQ(inspect(*receipt).outcome, AccountingOutcome::returned);
 }
 
 std::uint64_t burn(std::uint64_t value, unsigned count)
@@ -587,23 +612,23 @@ std::uint64_t burn(std::uint64_t value, unsigned count)
     value = value * 6364136223846793005ULL + 1442695040888963407ULL;
   return value;
 }
-Task<> real_leaf(Options<> opts, WriteBuffer<std::uint64_t> output, unsigned n)
+AccountedTask real_leaf(AccountingOptions opts, WriteBuffer<std::uint64_t> output, unsigned n)
 {
   (void)opts;
   auto value = burn(9, n);
   co_await output = value;
 }
-TEST(AccountingExperiment, RealTbbAdmissionReportsAndPartialFailures)
+TEST(TaskAccounting, RealTbbAdmissionReportsAndPartialFailures)
 {
   for (int threads : {1, 4})
   {
     TbbScheduler d(threads);
     d.pause();
-    std::vector<Receipt> receipts;
+    std::vector<AccountingReceipt> receipts;
     std::vector<Async<std::uint64_t>> outputs(32);
     for (auto& output : outputs)
     {
-      auto t = real_leaf({.mode = Mode::cpu_and_wall}, output.write(), 20000);
+      auto t = real_leaf({.mode = AccountingMode::cpu_and_wall}, output.write(), 20000);
       receipts.push_back(t.receipt());
       d.schedule(std::move(t));
     }
@@ -616,54 +641,54 @@ TEST(AccountingExperiment, RealTbbAdmissionReportsAndPartialFailures)
       auto r = receipts[i].wait(d);
       EXPECT_TRUE(r.body_entered);
       EXPECT_EQ(r.intervals, 1);
-      EXPECT_EQ(r.outcome, Outcome::returned);
+      EXPECT_EQ(r.outcome, AccountingOutcome::returned);
       ASSERT_TRUE(r.elapsed);
       ASSERT_TRUE(r.active_wall);
       EXPECT_GE(*r.elapsed, *r.active_wall);
       EXPECT_GT(r.active_wall->count(), 0);
-      if (SystemClock::has_cpu)
+      if (SystemAccountingClock::has_cpu)
       {
         ASSERT_TRUE(r.own_cpu);
         EXPECT_GT(r.own_cpu->count(), 0);
       }
     }
-    auto failure = [](Options<>) static -> Task<> {
+    auto failure = [](AccountingOptions) static -> AccountedTask {
       throw std::runtime_error("failed attempt");
       co_return;
     };
     auto t = failure({});
     auto r = t.receipt();
     d.schedule(std::move(t));
-    EXPECT_EQ(r.wait(d).outcome, Outcome::failed);
+    EXPECT_EQ(r.wait(d).outcome, AccountingOutcome::failed);
     // Quiesce activations before destroying scheduler-owned context.
     d.run_all();
   }
 }
-TEST(AccountingExperiment, RealTbbSharedPreparationIsCountedOnce)
+TEST(TaskAccounting, RealTbbSharedPreparationIsCountedOnce)
 {
   TbbScheduler d(4);
   Async<int> prepared;
   auto writer = prepared.write();
-  auto prepare = [](Options<>, WriteBuffer<int> out) static -> Task<> { co_await out = 7; };
-  auto consume = [](Options<>, ReadBuffer<int> in, WriteBuffer<int> out) static -> Task<> {
+  auto prepare = [](AccountingOptions, WriteBuffer<int> out) static -> AccountedTask { co_await out = 7; };
+  auto consume = [](AccountingOptions, ReadBuffer<int> in, WriteBuffer<int> out) static -> AccountedTask {
     auto const& value = co_await in;
     co_await out = value + 1;
   };
   std::vector<Async<int>> outputs(16);
-  std::vector<Receipt> reports;
+  std::vector<AccountingReceipt> reports;
   for (auto& out : outputs)
   {
-    auto t = consume({.mode = Mode::cpu_and_wall}, prepared.read(), out.write());
+    auto t = consume({.mode = AccountingMode::cpu_and_wall}, prepared.read(), out.write());
     reports.push_back(t.receipt());
     d.schedule(std::move(t));
   }
   d.run_all(); // All consumers are suspended, not completed.
   for (auto const& r : reports)
     EXPECT_FALSE(r.read().await_ready());
-  auto t = prepare({.mode = Mode::cpu_and_wall}, std::move(writer));
+  auto t = prepare({.mode = AccountingMode::cpu_and_wall}, std::move(writer));
   auto preparation = t.receipt();
   d.schedule(std::move(t));
-  EXPECT_EQ(preparation.wait(d).outcome, Outcome::returned);
+  EXPECT_EQ(preparation.wait(d).outcome, AccountingOutcome::returned);
   for (std::size_t i = 0; i < outputs.size(); ++i)
   {
     EXPECT_EQ(outputs[i].get_wait(d), 8);
@@ -685,7 +710,7 @@ struct PublishHeldTask
     }
     void await_resume() const noexcept {}
 };
-TEST(AccountingExperiment, RealWorkerToApplicationMigrationRestartsCpuClock)
+TEST(TaskAccounting, RealWorkerToApplicationMigrationRestartsCpuClock)
 {
   TbbScheduler worker(2);
   DebugScheduler application;
@@ -693,14 +718,14 @@ TEST(AccountingExperiment, RealWorkerToApplicationMigrationRestartsCpuClock)
   BasicTask held;
   std::thread::id first, second;
   auto app_thread = std::this_thread::get_id();
-  auto body = [](Options<> opts, BasicTask& held, WriteBuffer<int> signal, std::thread::id& first,
-                 std::thread::id& second) static -> Task<> {
+  auto body = [](AccountingOptions opts, BasicTask& held, WriteBuffer<int> signal, std::thread::id& first,
+                 std::thread::id& second) static -> AccountedTask {
     (void)opts;
     first = std::this_thread::get_id();
     co_await PublishHeldTask{&held, std::move(signal)};
     second = std::this_thread::get_id();
   };
-  auto t = body({.mode = Mode::cpu_and_wall}, held, signal.write(), first, second);
+  auto t = body({.mode = AccountingMode::cpu_and_wall}, held, signal.write(), first, second);
   auto r = t.receipt();
   auto ready = signal.read();
   worker.schedule(std::move(t));
@@ -727,10 +752,10 @@ TEST(AccountingExperiment, RealWorkerToApplicationMigrationRestartsCpuClock)
   EXPECT_EQ(report.intervals, 2);
   EXPECT_TRUE(report.active_wall);
   EXPECT_TRUE(report.elapsed);
-  if (SystemClock::has_cpu)
+  if (SystemAccountingClock::has_cpu)
   {
     EXPECT_TRUE(report.own_cpu);
   }
-  EXPECT_EQ(report.outcome, Outcome::returned);
+  EXPECT_EQ(report.outcome, AccountingOutcome::returned);
 }
 } // namespace

@@ -2,7 +2,7 @@
 #include <uni20/async/debug_scheduler.hpp>
 #include <uni20/async/tbb_scheduler.hpp>
 #if UNI20_ACCOUNTING_PROBE
-#include "accounting.hpp"
+#include <uni20/async/accounted_task.hpp>
 #endif
 #include <chrono>
 #include <cstdint>
@@ -34,8 +34,9 @@ AsyncTask ordinary(WriteBuffer<std::uint64_t> output, unsigned n, unsigned inter
   co_await output = value;
 }
 #if UNI20_ACCOUNTING_PROBE
-namespace ae = uni20::async::accounting_experiment;
-ae::Task<> accounted(ae::Options<> opts, WriteBuffer<std::uint64_t> output, unsigned n, unsigned intervals)
+namespace ae = uni20::async;
+ae::AccountedTask accounted(ae::AccountingOptions opts, WriteBuffer<std::uint64_t> output, unsigned n,
+                            unsigned intervals)
 {
   (void)opts;
   auto value = work(9, n);
@@ -58,7 +59,7 @@ void measure(Scheduler& scheduler, std::string_view scheduler_name, int mode, un
   {
     std::vector<Async<std::uint64_t>> outputs(batch_size);
 #if UNI20_ACCOUNTING_PROBE
-    std::vector<ae::Receipt> receipts;
+    std::vector<ae::AccountingReceipt> receipts;
     receipts.reserve(batch_size);
 #endif
     for (auto& output : outputs)
@@ -66,7 +67,7 @@ void measure(Scheduler& scheduler, std::string_view scheduler_name, int mode, un
 #if UNI20_ACCOUNTING_PROBE
       if (mode >= 0)
       {
-        auto t = accounted({.mode = static_cast<ae::Mode>(mode)}, output.write(), work_count, transfers);
+        auto t = accounted({.mode = static_cast<ae::AccountingMode>(mode)}, output.write(), work_count, transfers);
         receipts.push_back(t.receipt());
         scheduler.schedule(std::move(t));
       }
@@ -79,7 +80,7 @@ void measure(Scheduler& scheduler, std::string_view scheduler_name, int mode, un
       checksum += output.get_wait(scheduler);
 #if UNI20_ACCOUNTING_PROBE
     for (auto const& r : receipts)
-      if (r.wait(scheduler).outcome != ae::Outcome::returned) std::terminate();
+      if (r.wait(scheduler).outcome != ae::AccountingOutcome::returned) std::terminate();
 #endif
   }
   auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();

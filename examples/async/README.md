@@ -32,6 +32,8 @@ diagnostics.
 
 ## DAG And Failure Diagnostics
 
+- [`task_accounting_example.cpp`](task_accounting_example.cpp): selected stage
+  timing, dependency waits, and retained reports after numerical failure.
 - `async_dag_debug_example.cpp`: basic task-registry Graphviz capture.
 - `async_dag_gallery_example.cpp`: branching, kernel-shape, and lifecycle DAG
   snapshots.

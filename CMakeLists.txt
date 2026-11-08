@@ -126,7 +126,6 @@ include(Uni20Scalars)
 option(UNI20_BUILD_TESTS          "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_COMBINED_TESTS "Build combined test executable (in addition to per-module tests)" ${PROJECT_IS_TOP_LEVEL})
 option(UNI20_BUILD_BENCH          "Build benchmarks" ${PROJECT_IS_TOP_LEVEL})
-option(UNI20_BUILD_TASK_ACCOUNTING_EXPERIMENT "Build the isolated Async accounting experiment" OFF)
 option(UNI20_ENABLE_WARNINGS      "Enable compiler warnings" ON)
 # IPO is not a transitive usage requirement. Embedded builds leave the parent
 # responsible for enabling it on both the libraries and their final link targets.
@@ -547,9 +546,6 @@ if(NOT UNI20_DOCS_WEB)
 
   if(UNI20_BUILD_ASM)
     add_subdirectory(asm)
-  endif()
-  if(UNI20_BUILD_TASK_ACCOUNTING_EXPERIMENT)
-    add_subdirectory(experiments/task_accounting)
   endif()
 endif()
 

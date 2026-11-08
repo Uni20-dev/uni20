@@ -1,7 +1,7 @@
 #include <uni20/async/async.hpp>
 #include <uni20/async/debug_scheduler.hpp>
 #if UNI20_ACCOUNTING_PROBE
-#include "accounting.hpp"
+#include <uni20/async/accounted_task.hpp>
 #endif
 
 using namespace uni20::async;

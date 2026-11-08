@@ -24,3 +24,5 @@ add_custom_target(run_benchmarks
     COMMAND uni20_benchmarks
     DEPENDS uni20_benchmarks
 )
+
+add_subdirectory(task_accounting)

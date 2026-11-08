@@ -1,7 +1,7 @@
 #include <uni20/async/async.hpp>
 #include <uni20/async/debug_scheduler.hpp>
 #if UNI20_ACCOUNTING_PROBE
-#include "accounting.hpp"
+#include <uni20/async/accounted_task.hpp>
 #endif
 #include <cstdlib>
 #include <iostream>
@@ -30,8 +30,8 @@ std::size_t calls = 0, bytes = 0, first = 0;
 using namespace uni20::async;
 AsyncTask plain_allocation() { co_return; }
 #if UNI20_ACCOUNTING_PROBE
-namespace ae = uni20::async::accounting_experiment;
-ae::Task<> accounted_allocation(ae::Options<>) { co_return; }
+namespace ae = uni20::async;
+ae::AccountedTask accounted_allocation(ae::AccountingOptions) { co_return; }
 #endif
 int main()
 {
@@ -57,7 +57,7 @@ int main()
   std::cout << "task,creation_allocations,total_bytes,first_allocation_bytes\n";
   measure("ordinary", [] { return plain_allocation(); });
 #if UNI20_ACCOUNTING_PROBE
-  measure("elapsed", [] { return accounted_allocation({.mode = ae::Mode::elapsed}); });
-  measure("cpu_and_wall", [] { return accounted_allocation({.mode = ae::Mode::cpu_and_wall}); });
+  measure("elapsed", [] { return accounted_allocation({.mode = ae::AccountingMode::elapsed}); });
+  measure("cpu_and_wall", [] { return accounted_allocation({.mode = ae::AccountingMode::cpu_and_wall}); });
 #endif
 }
