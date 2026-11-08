@@ -38,6 +38,10 @@ derive from `TaskPromiseBase` and declare `TaskDomain::host`. This accepts
 `AsyncTask` and separately implemented host task/promise types without a wrapper
 coroutine. CUDA tasks and already-erased `BasicTask` values cannot enter this
 interface. The task must be passed as an rvalue, transferring ownership.
+`HostTask` strips cv/ref qualifiers when inspecting type metadata, but
+checks ownership conversion on the original argument type: both
+`HostTask<AsyncTask>` and `HostTask<AsyncTask&&>` hold, while lvalue
+references and const/volatile tasks are rejected.
 
 Scheduler implementations override the private
 `schedule_host(BasicTask&&)` hook. The public template checks the typed task

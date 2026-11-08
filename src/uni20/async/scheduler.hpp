@@ -24,12 +24,15 @@ class TaskPromiseBase;
 /// \brief Movable typed coroutine task eligible for initial host-scheduler admission.
 /// \details The concrete promise declares the execution domain. Erased BasicTask
 ///          ownership and CUDA task types do not satisfy this concept.
+///          Type metadata ignores cv/ref qualifiers, but conversion from T&&
+///          must transfer ownership: lvalues and const/volatile tasks are rejected.
 template <class T>
-concept HostTask = std::derived_from<T, BasicTask> && std::convertible_to<T&&, BasicTask&&> && requires {
-  typename T::promise_type;
-  requires TaskPromise<typename T::promise_type>;
-  requires T::promise_type::task_domain == TaskDomain::host;
-};
+concept HostTask =
+    std::derived_from<std::remove_cvref_t<T>, BasicTask> && std::convertible_to<T&&, BasicTask&&> && requires {
+      typename std::remove_cvref_t<T>::promise_type;
+      requires TaskPromise<typename std::remove_cvref_t<T>::promise_type>;
+      requires std::remove_cvref_t<T>::promise_type::task_domain == TaskDomain::host;
+    };
 
 /// \brief Borrowed type-erased description of a synchronous lightweight task batch.
 /// \details The callable and its arguments remain owned by the caller. Scheduler
