@@ -145,6 +145,15 @@ insufficient recurrence budget can fail at construction. Invalid domains or
 precision mismatches throw `std::invalid_argument`; unrepresentable
 arithmetic or diagnostics throw `std::overflow_error`.
 
+Successful construction establishes the coefficient and normalization budgets;
+it does not guarantee that every argument's series fits the per-call budget.
+For example, at 2,000-bit output the default 512 slots prepare the context but
+the real-shift call `z=2`, `h=30` exhausts its small-shift series. Constructing
+the context with `{.max_terms = 1024}` permits that evaluation at the same
+requested precision. The failure is explicit and returns no partial value.
+Applications can retry with a larger work budget separately from increasing
+precision. This distinction also applies to the internal Gamma context.
+
 ## Validation
 
 The shared numerical registry covers all configured complex scalar families,
@@ -159,3 +168,5 @@ boundary from positive real parts and by negative shifts. Native-only tests
 also check cases where separate evaluation loses the answer or overflows.
 An Async test shares immutable contexts at two precisions and verifies
 deterministic values without changing MPFR precision or exponent settings.
+A 2,000-bit failure-and-retry test checks the work-budget contract against the
+independent finite product `G(32)/G(2) = product(k!, k=1,...,30)`.

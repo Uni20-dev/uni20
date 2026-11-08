@@ -57,6 +57,30 @@ TEST(LogBarnesG, PairedDifferenceSurvivesLossAndOverflowOfSeparateValues)
 }
 
 #if UNI20_HAS_MPREAL
+TEST(LogBarnesG, ExplicitSeriesBudgetCanBeRaisedAfterConstruction)
+{
+  using uni20::mpreal;
+  auto const p = Precision::bits(2000);
+  complex<mpreal> const z(2, p);
+  auto const h = mpreal(30, p);
+  // Coefficient preparation can fit the budget while a particular call's
+  // small-relative-shift series needs more terms. No partial value is returned.
+  log_barnes_g_context<mpreal> limited(p);
+  EXPECT_THROW(limited.log_abs_barnes_g_ratio_right(z, h), std::runtime_error);
+  log_barnes_g_context<mpreal> expanded(p, {.max_terms = 1024});
+  auto const result = expanded.log_abs_barnes_g_ratio_right(z, h);
+  auto const oracle = Precision::bits(2200);
+  auto expected = mpreal(0, oracle);
+  // G(32)/G(2) = product_{k=1}^{30} k!; independent elementary logarithms.
+  for (int k = 1; k <= 30; ++k)
+    expected += mpreal(31 - k, oracle) * uni20::math::log(mpreal(k, oracle));
+  auto const error = uni20::math::abs(result.value.at(oracle) - expected);
+  auto const eps = mpreal(uni20::numeric_limits<mpreal>::epsilon(p), oracle);
+  EXPECT_LE(error, 16 * eps * uni20::math::abs(expected));
+  EXPECT_LE(error, result.truncation_bound.at(oracle) + result.roundoff_indicator.at(oracle));
+  EXPECT_EQ(uni20::precision_of(result.value), p);
+}
+
 TEST(LogBarnesG, IndependentReferencesThrough1024Bits)
 {
   using uni20::mpreal;
