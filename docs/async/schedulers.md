@@ -116,12 +116,33 @@ Execution model:
 - random order is reproducible from `DebugSchedulerOptions::random_seed`,
   which defaults to zero
 - synchronous lightweight batches use the same configured index ordering
-- `run_all()` drains until queue empty
+- `run_all()` is a debugging aid that runs until no task is runnable; it
+  returns while tasks are suspended outside the scheduler (CUDA resources,
+  I/O), so it does not establish completion. Production code and tests that
+  need a result wait on it with `get_wait()` or `wait_for()`
+
+External wakeups:
+
+- an awaiter that hands a suspended task to another thread, such as a CUDA
+  host callback returning a pooled stream or provider handle, calls
+  `BasicTask::begin_external_wait(task)` before publishing it and wakes it
+  with `BasicTask::reschedule_after_external_wait(task)`; the CUDA and cuBLAS
+  resource awaiters do this
+- the runnable queue is guarded, so those wakeups may enqueue from any thread;
+  tasks still execute only on the driving thread
+- `external_waits()` reports the number of registered waits outstanding;
+  destroying the scheduler while any remain is an error
 
 Wait/deadlock behavior:
 
-- `help_while_waiting(...)` drives runnable tasks while waiting
-- if waiting condition is false and no runnable tasks remain, runtime emits `TaskRegistry::dump()` and aborts with deadlock diagnostic
+- `help_while_waiting(...)` drives runnable tasks while waiting, and blocks
+  without a time limit while the queue is empty but a registered external
+  wakeup is pending; external operations may legitimately take minutes
+- if the waiting condition is false, no runnable tasks remain, and no external
+  wakeup is pending, the wait can never complete: runtime emits
+  `TaskRegistry::dump()` and aborts with deadlock diagnostic
+- a wait whose wakeup depends on the waiting thread itself, or on work that has
+  not been scheduled, still deadlocks; it blocks rather than aborting
 
 Use `DebugScheduler` as the first tool for dependency bugs.
 

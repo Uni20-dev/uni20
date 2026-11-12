@@ -3,8 +3,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <numeric>
+#include <semaphore>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -111,6 +114,76 @@ TEST(DebugSchedulerTest, LightweightBatchItemMayScheduleAndWait)
     }(result.write()));
     EXPECT_EQ(result.get_wait(), 42);
   });
+}
+
+// Hands its task to another thread, as a CUDA host callback does. The waker
+// waits for `gate`, then delays briefly so the scheduler is already waiting.
+struct ExternalWakeup
+{
+    std::thread* waker = nullptr;
+    std::binary_semaphore* gate = nullptr;
+
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
+
+    void await_suspend(uni20::async::BasicTask task) const noexcept
+    {
+      uni20::async::BasicTask::begin_external_wait(task);
+      *waker = std::thread(
+          [](uni20::async::BasicTask owned, std::binary_semaphore* opened) {
+            opened->acquire();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            uni20::async::BasicTask::reschedule_after_external_wait(std::move(owned));
+          },
+          std::move(task), gate);
+    }
+
+    void await_resume() const noexcept {}
+};
+
+AsyncTask resume_after(ExternalWakeup wakeup, bool* resumed)
+{
+  co_await wakeup;
+  *resumed = true;
+  co_return;
+}
+
+// run_all() only runs what is runnable; it is not a completion wait.
+TEST(DebugSchedulerTest, RunAllReturnsWhileExternalWakeupIsPending)
+{
+  DebugScheduler scheduler;
+  std::thread waker;
+  std::binary_semaphore gate{0};
+  bool resumed = false;
+
+  scheduler.schedule(resume_after(ExternalWakeup{&waker, &gate}, &resumed));
+  scheduler.run_all();
+  EXPECT_FALSE(resumed);
+  EXPECT_TRUE(scheduler.done());
+  EXPECT_EQ(scheduler.external_waits(), 1U);
+
+  gate.release();
+  scheduler.wait_for([&resumed] { return resumed; });
+  waker.join();
+  EXPECT_TRUE(resumed);
+  EXPECT_EQ(scheduler.external_waits(), 0U);
+}
+
+TEST(DebugSchedulerTest, WaitDoesNotReportDeadlockWhileExternalWakeupIsPending)
+{
+  DebugScheduler scheduler;
+  std::thread waker;
+  std::binary_semaphore gate{0};
+  bool resumed = false;
+
+  scheduler.schedule(resume_after(ExternalWakeup{&waker, &gate}, &resumed));
+  scheduler.run();
+  ASSERT_EQ(scheduler.external_waits(), 1U);
+
+  gate.release();
+  scheduler.wait_for([&resumed] { return resumed; });
+  waker.join();
+  EXPECT_TRUE(resumed);
+  EXPECT_EQ(scheduler.external_waits(), 0U);
 }
 
 } // namespace

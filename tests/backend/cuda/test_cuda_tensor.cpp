@@ -8,11 +8,13 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -528,6 +530,47 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionResolvesPolicyFreePointerMdspans)
   EXPECT_EQ(output, input);
 }
 
+void CUDART_CB wait_for_stream_gate(void* raw_gate)
+{
+  auto& gate = *static_cast<std::atomic<bool>*>(raw_gate);
+  while (!gate.load(std::memory_order_acquire))
+    std::this_thread::yield();
+}
+
+// The only stream returns to its pool from a CUDA host callback, so the task's
+// stream acquisition is woken from outside the scheduler. A wait must block for
+// that wakeup rather than report a deadlock.
+TEST_F(CudaTensorTest, WaitBlocksForStreamReturnedByHostCallback)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  uni20::async::DebugCudaScheduler scheduler(resources.device());
+  std::atomic<bool> gate_open = false;
+  {
+    auto blocker = resources.streams().acquire();
+    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+    uni20::cuda::check(cudaLaunchHostFunc(blocker.native_handle(), &wait_for_stream_gate, &gate_open),
+                       "cudaLaunchHostFunc stream gate", resources.device().ordinal());
+  }
+  ASSERT_EQ(resources.streams().pending_stream_count(), 1U);
+
+  bool acquired = false;
+  auto task = [](uni20::cuda::StreamPool* pool, bool* observed) static -> uni20::async::CudaTask {
+    auto stream = co_await uni20::cuda::acquire_stream(*pool);
+    *observed = true;
+    co_return;
+  }(&resources.streams(), &acquired);
+  scheduler.schedule(std::move(task), resources.device().ordinal());
+  scheduler.run();
+  EXPECT_FALSE(acquired);
+  EXPECT_EQ(scheduler.external_waits(), 1U);
+
+  gate_open.store(true, std::memory_order_release);
+  scheduler.wait_for([&acquired] { return acquired; });
+  EXPECT_TRUE(acquired);
+  EXPECT_EQ(scheduler.external_waits(), 0U);
+  resources.streams().synchronize();
+}
+
 TEST_F(CudaTensorTest, StreamOrderedAccessCanBeCoAwaitedAsTensorView)
 {
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
@@ -548,7 +591,9 @@ TEST_F(CudaTensorTest, StreamOrderedAccessCanBeCoAwaitedAsTensorView)
   }(tensor, submitted);
 
   scheduler.schedule(std::move(task), resources.device().ordinal());
-  scheduler.run_all();
+  // The zero-initialized tensor may still hold the only stream, which returns
+  // from a CUDA host callback, so wait for the task rather than run_all().
+  scheduler.wait_for([&submitted] { return submitted; });
   EXPECT_TRUE(submitted);
   tensor.storage().synchronize();
 
@@ -584,7 +629,9 @@ TEST_F(CudaTensorTest, StreamOrderedDescriptorAccessCanBeCoAwaitedAsMdspanLease)
   }(tensor, submitted);
 
   scheduler.schedule(std::move(task), resources.device().ordinal());
-  scheduler.run_all();
+  // The zero-initialized tensor may still hold the only stream, which returns
+  // from a CUDA host callback, so wait for the task rather than run_all().
+  scheduler.wait_for([&submitted] { return submitted; });
   EXPECT_TRUE(submitted);
   tensor.storage().synchronize();
 }

@@ -85,12 +85,16 @@ final result or operation group. As the [scheduler documentation](schedulers.md)
 explains, `run_all()` establishes activation quiescence; it does not prove
 that externally suspended operations have completed.
 
-Existing host-side waiting also needs an explicit integration plan. For
-example, `DebugScheduler::help_while_waiting()` currently aborts if the
-requested result is unavailable and no task is runnable. A future adapter
-cannot assume that every current scheduler wait already supports independent
-I/O progress. Define how supported wait paths receive external notifications,
-and how deterministic tests drive completion, before exposing the adapter.
+Existing host-side waiting also needs an explicit integration plan.
+`DebugScheduler` supports registered external waits: an awaiter calls
+`BasicTask::begin_external_wait` before handing its task to another thread and
+`BasicTask::reschedule_after_external_wait` to wake it, and
+`help_while_waiting()` then blocks for the wakeup instead of reporting a
+deadlock. Waits have no time limit. The CUDA resource awaiters use this. Other
+schedulers treat the registration as a no-op, and no scheduler's `run_all()`
+waits for externally suspended tasks. A future adapter should register its waits the
+same way and define how deterministic tests drive completion before it is
+exposed.
 
 ## Buffers, bounds and persistence
 
