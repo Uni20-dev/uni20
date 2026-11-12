@@ -80,9 +80,10 @@ using materialized_storage_t =
 /// \details A materialized CUDA tensor is allocated on its source's device, so
 ///          construction never implies a peer transfer either.
 template <class Policy, class InputTensor>
-concept SourceAllocationContext = requires { typename Policy::context_type; } && requires(InputTensor const& input) {
-  { mdspec_of(input).data_descriptor().buffer().resources() } -> std::same_as<typename Policy::context_type&>;
-};
+concept SourceAllocationContext =
+    requires { typename Policy::context_type; } && requires(std::remove_cvref_t<InputTensor> const& input) {
+      { mdspec_of(input).data_descriptor().buffer().resources() } -> std::same_as<typename Policy::context_type&>;
+    };
 
 template <class InputTensor> [[nodiscard]] decltype(auto) source_allocation_context(InputTensor const& input)
 {

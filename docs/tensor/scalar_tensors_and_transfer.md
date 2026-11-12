@@ -247,14 +247,18 @@ auto gpu_x = uni20::to_device(x, device);
 auto gpu1_x = uni20::to_device(x, gpu1);
 ```
 
-The explicit-output form reuses an allocation and accepts strided views:
+The explicit-output form reuses an existing destination allocation:
 
 ```cpp
 uni20::copy(destination, source);
 ```
 
 `to_host` and `to_device` are implemented for canonical contiguous Tensor
-layouts. Fixed-output `copy(destination, source)` uses the same transfer backend.
+layouts. Fixed-output `copy(destination, source)` uses the same transfer
+backend. A host/device `copy` requires both operands to be contiguous with the
+same physical order; only CUDA-to-CUDA copies accept strided or reordered
+views. To transfer a strided CUDA view, first materialize it on its device with
+`make_tensor`, then call `to_host`.
 These are the only transfers. `make_tensor`, `Tensor(view)` deduction, and the
 owning `Tensor` converting constructor stay in the source's storage domain, and
 linear-algebra value operations without a CUDA implementation reject CUDA

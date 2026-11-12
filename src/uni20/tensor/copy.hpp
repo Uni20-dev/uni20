@@ -85,8 +85,9 @@ namespace detail
 /// \brief Tensor whose values are readable on the host without a storage-domain transfer.
 template <class InputTensor>
 concept HostReadableTensor =
-    TensorView<InputTensor> && AccessDomainsCompatible<stdex::default_accessor<tensor_element_t<InputTensor> const>,
-                                                       typename tensor_mdspec_t<InputTensor>::accessor_type>;
+    TensorView<std::remove_cvref_t<InputTensor>> &&
+    AccessDomainsCompatible<stdex::default_accessor<tensor_element_t<std::remove_cvref_t<InputTensor>> const>,
+                            typename tensor_mdspec_t<std::remove_cvref_t<InputTensor>>::accessor_type>;
 
 /// \brief Materialize host work storage for an operation implemented only by host providers.
 /// \details CUDA operands are rejected at compile time rather than copied to
