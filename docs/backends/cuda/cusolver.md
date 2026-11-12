@@ -1,9 +1,9 @@
 # CUDA/cuSOLVER Architecture Notes
 
 **Status:** the first native Tensor backend is implemented. It provides a
-blocking real `float`/`double` exact SVD for tall column-major CUDA matrices and
-a device-resident BlockTensor sector bridge used by the first CUDA two-site
-DMRG sweep path.
+blocking real `float`/`double` exact SVD for tall column-major CUDA matrices,
+blocking real and complex singular values, and a device-resident BlockTensor
+sector bridge used by the first CUDA two-site DMRG sweep path.
 
 The generic host-execution and dispatch contract is defined in
 [CUDA Kernel Dispatch and Device Scheduling](kernel_dispatch.md). This note
@@ -63,6 +63,12 @@ actually-idle stream. The first blocking backend allocates workspace with
 copies `devInfo` to host, and synchronizes that stream before returning. Keeping
 handles independent from streams lets a handle rotate onto whichever pool
 stream becomes idle next.
+
+cuSOLVER launches into the calling thread's current CUDA device. The backend
+therefore selects the operand device for the workspace query, the solver call,
+and the `devInfo` copy, rather than relying on the caller. A device scheduler
+arena already establishes its device on each participant, but application
+threads and the debug scheduler do not.
 
 Do not create and destroy cuSOLVER handles per operation. Handle creation is
 runtime state setup, not useful numerical work. Handles are device-local leased
@@ -229,8 +235,32 @@ the destructive input matrix, singular values, left vectors, and right-adjoint
 vectors. It supports real `float` and `double`, reduced or full vectors, tall
 column-major matrices, valid nonzero buffer offsets, and one CUDA device across
 all operands. Unsupported shapes or layouts decline before resource admission.
-Complex scalars, wide matrices, row-major lowering, singular-values-only forms,
-and an asynchronous Tensor entry point remain future work.
+Complex scalars, wide matrices, row-major lowering, and an asynchronous Tensor
+entry point remain future work for factors.
+
+The singular-values backend (`singular_values_op`) accepts a destructive matrix
+and a real value vector on one device, for real and complex `float` and
+`double`. It calls `gesvd` with `jobu = jobvt = 'N'`, passing null U and VT:
+LAPACK and cuSOLVER do not reference them for job `'N'`. The `rwork` array is
+allocated rather than passed as null. A matrix and its transpose have the same
+singular values, so the backend accepts any workspace whose provider shape is
+tall: tall column-major, or wide row-major read as its tall transpose. Wide
+column-major and tall row-major workspaces decline as unsupported layouts. Empty
+matrices succeed without device work.
+
+`linalg::singular_values` keeps CUDA-buffer inputs of these scalars on their
+device and returns a `CudaTensor` of values there. The preserving form copies to
+column-major work for tall input and row-major work for wide input, on the
+device. The consuming form uses a tall column-major or wide row-major input as
+the workspace directly and otherwise makes the same device copy. Async forms
+follow the same routing. Builds without cuSOLVER keep the host-work path.
+
+Do not pass null U/V buffers to `gesvdj` or `gesvdp` in their no-vector modes.
+cuSOLVER does not document those buffers as unreferenced. Cytnx crashes on
+exactly this for `gesvdj` with rectangular matrices
+([#1102](https://github.com/Cytnx-dev/Cytnx/issues/1102)) and for `gesvdp`
+([#831](https://github.com/Cytnx-dev/Cytnx/issues/831)). The singular-values
+tests run under `compute-sanitizer --tool memcheck` without errors.
 
 The BlockTensor bridge keeps bulk factorization data resident:
 

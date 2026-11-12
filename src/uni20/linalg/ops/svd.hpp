@@ -355,6 +355,123 @@ template <class MatrixTensor> [[nodiscard]] constexpr auto select_singular_value
   return select_backend_for<svd_value_tensor_t<MatrixTensor>, std::remove_cvref_t<MatrixTensor>>(singular_values_op{});
 }
 
+/// \brief Report whether singular values of a matrix stay resident on its CUDA device.
+/// \details True for CUDA-buffer matrices of cuSOLVER-supported scalars when
+///          the cuSOLVER backend is built. Other inputs use host work storage.
+template <class MatrixTensor> consteval bool cuda_resident_singular_values()
+{
+#if UNI20_BACKEND_CUSOLVER
+  using matrix_type = std::remove_cvref_t<MatrixTensor>;
+  if constexpr (requires { typename uni20::tensor_storage_policy_t<matrix_type>; })
+  {
+    if constexpr (std::same_as<uni20::tensor_storage_policy_t<matrix_type>, uni20::CudaStorage>)
+      return uni20::cuda::BufferMdspec<uni20::tensor_mdspec_t<matrix_type>> &&
+             cusolver_backend::CusolverSingularValueScalar<svd_scalar_t<matrix_type>>;
+    else
+      return false;
+  }
+  else
+  {
+    return false;
+  }
+#else
+  return false;
+#endif
+}
+
+/// \brief Select the backend for preserving singular values of `MatrixTensor`.
+template <class MatrixTensor> [[nodiscard]] constexpr auto select_preserving_singular_values_backend()
+{
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (cuda_resident_singular_values<MatrixTensor>())
+    return uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(singular_values_op{});
+  else
+#endif
+    return select_singular_values_backend<svd_matrix_tensor_t<MatrixTensor>>();
+}
+
+#if UNI20_BACKEND_CUSOLVER
+template <class MatrixTensor> using cuda_svd_value_tensor_t = uni20::CudaTensor<svd_real_t<MatrixTensor>, 1>;
+
+template <class MatrixTensor> [[nodiscard]] cuda::DeviceResources& cuda_matrix_resources(MatrixTensor const& matrix)
+{
+  return uni20::mdspec_of(matrix).data_descriptor().buffer().resources();
+}
+
+/// \brief Copy a CUDA matrix to destructive work on its device and return its singular values there.
+/// \details Tall matrices use column-major work and wide matrices use
+///          row-major work, so the provider always receives a tall
+///          column-major matrix or its transpose. The device copy performs any
+///          layout change; no data passes through the host.
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
+[[nodiscard]] auto cuda_singular_values_from_copy(BackendSelector&& selector, MatrixTensor const& matrix, Precision p)
+{
+  using scalar_type = svd_scalar_t<MatrixTensor>;
+  auto& resources = cuda_matrix_resources(matrix);
+  auto const rows = matrix.extent(0);
+  auto const cols = matrix.extent(1);
+  cuda_svd_value_tensor_t<MatrixTensor> values(uni20::uninitialized, resources, std::min(rows, cols));
+  if (rows == 0 || cols == 0)
+  {
+    uni20::detail::record_output_precision(values, p);
+    return values;
+  }
+
+  if (rows >= cols)
+  {
+    uni20::CudaMatrix<scalar_type, uni20::ColumnMajor> matrix_work(uni20::uninitialized, resources, rows, cols);
+    uni20::copy(matrix_work, matrix);
+    dispatch_singular_values(selector, values, matrix_work, p);
+  }
+  else
+  {
+    uni20::CudaMatrix<scalar_type, uni20::RowMajor> matrix_work(uni20::uninitialized, resources, rows, cols);
+    uni20::copy(matrix_work, matrix);
+    dispatch_singular_values(selector, values, matrix_work, p);
+  }
+  return values;
+}
+
+/// \brief Return singular values of a consumed CUDA matrix, using it as workspace when cuSOLVER can.
+/// \details A tall column-major or wide row-major raw CUDA allocation is
+///          destroyed in place. Other layouts are copied to device work first.
+template <KernelBackendSelector BackendSelector, class MatrixTensor>
+[[nodiscard]] auto cuda_singular_values_from_consumed(BackendSelector&& selector, MatrixTensor&& matrix, Precision p)
+{
+  using matrix_type = std::remove_cvref_t<MatrixTensor>;
+  using values_type = cuda_svd_value_tensor_t<matrix_type>;
+  using matrix_spec_type = decltype(uni20::mdspec_of(std::declval<matrix_type&>()));
+  using values_spec_type = decltype(uni20::mdspec_of(std::declval<values_type&>()));
+  if constexpr (cusolver_backend::CusolverSingularValueMdspecs<values_spec_type, matrix_spec_type>)
+  {
+    auto matrix_spec = uni20::mdspec_of(matrix);
+    auto descriptor = cusolver_backend::try_provider_matrix_descriptor(matrix_spec);
+    if (descriptor && descriptor->columns > 0 && descriptor->rows >= descriptor->columns)
+    {
+      values_type values(uni20::uninitialized, cuda_matrix_resources(matrix), descriptor->columns);
+      dispatch_singular_values(selector, values, matrix, p);
+      return values;
+    }
+  }
+  return cuda_singular_values_from_copy(selector, std::as_const(matrix), p);
+}
+#endif
+
+/// \brief Select the backend for consuming singular values of an owning `MatrixTensor`.
+template <class MatrixTensor> [[nodiscard]] constexpr auto select_consuming_singular_values_backend()
+{
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (cuda_resident_singular_values<MatrixTensor>())
+    return uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(singular_values_op{});
+  else
+#endif
+  {
+    using work_type = std::conditional_t<can_transfer_svd_storage<MatrixTensor>(), std::remove_cvref_t<MatrixTensor>,
+                                         svd_matrix_tensor_t<MatrixTensor>>;
+    return select_singular_values_backend<work_type>();
+  }
+}
+
 template <class MatrixTensor> [[nodiscard]] constexpr auto select_svd_left_backend(SvdVectorExtent extent)
 {
   return select_backend_for<svd_value_tensor_t<MatrixTensor>, svd_matrix_tensor_t<MatrixTensor>,
@@ -609,28 +726,38 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
 } // namespace detail
 
 /// \brief Preserve a matrix and return its exact singular values through an explicit selector.
+/// \details Host inputs materialize column-major host work. CUDA-buffer
+///          inputs of cuSOLVER scalars, in builds with cuSOLVER, keep their
+///          work on the input device and return a `CudaTensor` there.
 template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor const& matrix,
                                    std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  return detail::singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (detail::cuda_resident_singular_values<MatrixTensor>())
+    return detail::cuda_singular_values_from_copy(std::forward<BackendSelector>(selector), matrix, p);
+  else
+#endif
+  {
+    auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+    return detail::singular_values_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
+  }
 }
 
 /// \brief Preserve a matrix and return its exact singular values.
+/// \details CUDA residency follows the explicit-selector overload.
 template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto singular_values(MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
-  auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
-  auto selector = detail::select_singular_values_backend<decltype(matrix_work)>();
-  return detail::singular_values_from_work_matrix(std::move(selector), std::move(matrix_work), p);
+  return singular_values(detail::select_preserving_singular_values_backend<MatrixTensor>(), matrix, requested);
 }
 
 /// \brief Consume an owning matrix and return its exact singular values through an explicit selector.
 /// \details The input allocation is used directly as destructive workspace
-///          when its layout is LAPACK-compatible.
+///          when its layout is provider-compatible. For CUDA inputs that
+///          means tall column-major or wide row-major storage; otherwise the
+///          matrix is copied to work on its device first.
 template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
@@ -638,8 +765,14 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
                                    std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  return detail::singular_values_from_consumed_matrix(std::forward<BackendSelector>(selector),
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (detail::cuda_resident_singular_values<MatrixTensor>())
+    return detail::cuda_singular_values_from_consumed(std::forward<BackendSelector>(selector),
                                                       std::forward<MatrixTensor>(matrix), p);
+  else
+#endif
+    return detail::singular_values_from_consumed_matrix(std::forward<BackendSelector>(selector),
+                                                        std::forward<MatrixTensor>(matrix), p);
 }
 
 /// \brief Consume an owning matrix and return its exact singular values.
@@ -648,11 +781,8 @@ template <class MatrixTensor>
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
 [[nodiscard]] auto singular_values(MatrixTensor&& matrix, std::optional<Precision> requested = {})
 {
-  auto const p = detail::decomposition_precision(matrix, requested);
-  using work_type = std::conditional_t<detail::can_transfer_svd_storage<MatrixTensor>(),
-                                       std::remove_cvref_t<MatrixTensor>, detail::svd_matrix_tensor_t<MatrixTensor>>;
-  auto selector = detail::select_singular_values_backend<work_type>();
-  return detail::singular_values_from_consumed_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), p);
+  return singular_values(detail::select_consuming_singular_values_backend<MatrixTensor>(),
+                         std::forward<MatrixTensor>(matrix), requested);
 }
 
 /// \brief Preserve a matrix and return exact left singular vectors and singular values.

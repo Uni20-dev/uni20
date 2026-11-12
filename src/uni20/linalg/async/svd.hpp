@@ -70,7 +70,11 @@ using async_svd_result_t = SvdResult<async::Async<typename Result::left_singular
 template <class Result, class MatrixTensor>
 [[nodiscard]] constexpr auto select_async_consuming_singular_values_backend()
 {
-  if constexpr (can_transfer_svd_storage<MatrixTensor>())
+  if constexpr (cuda_resident_singular_values<MatrixTensor>())
+  {
+    return select_consuming_singular_values_backend<MatrixTensor>();
+  }
+  else if constexpr (can_transfer_svd_storage<MatrixTensor>())
   {
     return select_backend_for<Result, std::remove_cvref_t<MatrixTensor>>(singular_values_op{});
   }
@@ -423,8 +427,7 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Matr
 template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto singular_values(async::Async<MatrixTensor> const& matrix, std::optional<Precision> requested = {})
 {
-  using work_type = detail::svd_matrix_tensor_t<MatrixTensor>;
-  auto selector = detail::select_singular_values_backend<work_type>();
+  auto selector = detail::select_preserving_singular_values_backend<MatrixTensor>();
   return detail::schedule_preserving_singular_values(std::move(selector), matrix, requested);
 }
 

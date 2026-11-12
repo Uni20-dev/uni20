@@ -6,6 +6,14 @@ supports real `float` and `double`, nonempty matrices with rows >= columns,
 column-major provider-compatible storage, and separate factor outputs.
 Unsupported shapes, layouts, or overwrite modes are declined before execution.
 
+The same file implements values-only `singular_values_op` for real and complex
+`float` and `double`, through `gesvd` with `jobu = jobvt = 'N'` and null U/VT.
+It accepts tall column-major workspace or wide row-major workspace read as its
+tall transpose, and returns immediately for empty matrices.
+
+Both operations select the operand device around the provider calls, since
+cuSOLVER launches into the calling thread's current device.
+
 Execution acquires buffer access on the cuSOLVER stream and synchronizes before
 returning, including checking the device convergence status. This is a blocking
 adapter, not a coroutine-native provider task. See the

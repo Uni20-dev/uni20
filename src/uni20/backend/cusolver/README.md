@@ -20,9 +20,10 @@ Tensor-facing exact SVD lowering lives in the linalg backend layer.
   cannot exceed stream capacity.
 - A leased handle is rebound to the operation stream and returned through a
   callback at that stream's completion boundary.
-- The first operation is blocking real `float`/`double` exact SVD through
+- The first operations are blocking real `float`/`double` exact SVD through
   `cusolverDnSgesvd`/`cusolverDnDgesvd` for supported column-major CUDA-buffer
-  descriptors.
+  descriptors, and blocking real and complex singular values through
+  `cusolverDn{S,D,C,Z}gesvd` with `jobu = jobvt = 'N'`.
 - Higher-level entry points belong in the
   [linalg backend layer](../../linalg/backends/).
 
