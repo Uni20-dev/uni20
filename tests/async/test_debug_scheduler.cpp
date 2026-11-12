@@ -186,4 +186,51 @@ TEST(DebugSchedulerTest, WaitDoesNotReportDeadlockWhileExternalWakeupIsPending)
   EXPECT_EQ(scheduler.external_waits(), 0U);
 }
 
+// Hands its task to a thread that wakes it at once, with no gate or delay.
+struct ImmediateExternalWakeup
+{
+    std::thread* waker = nullptr;
+
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
+
+    void await_suspend(uni20::async::BasicTask task) const noexcept
+    {
+      uni20::async::BasicTask::begin_external_wait(task);
+      *waker = std::thread(
+          [](uni20::async::BasicTask owned) {
+            uni20::async::BasicTask::reschedule_after_external_wait(std::move(owned));
+          },
+          std::move(task));
+    }
+
+    void await_resume() const noexcept {}
+};
+
+AsyncTask resume_immediately(ImmediateExternalWakeup wakeup, bool* resumed)
+{
+  co_await wakeup;
+  *resumed = true;
+  co_return;
+}
+
+// Once the woken task has run, the waking thread must no longer use the scheduler: the program
+// may conclude that all its tasks are done and destroy it. Destroy before joining the waker.
+TEST(DebugSchedulerTest, SchedulerMayBeDestroyedOnceTheExternallyWokenTaskHasRun)
+{
+  for (int iteration = 0; iteration < 20000; ++iteration)
+  {
+    std::thread waker;
+    bool resumed = false;
+    {
+      DebugScheduler scheduler;
+      scheduler.schedule(resume_immediately(ImmediateExternalWakeup{&waker}, &resumed));
+      scheduler.run();
+      scheduler.wait_for([&resumed] { return resumed; });
+      ASSERT_EQ(scheduler.external_waits(), 0U) << "iteration " << iteration;
+    }
+    waker.join();
+    ASSERT_TRUE(resumed);
+  }
+}
+
 } // namespace
