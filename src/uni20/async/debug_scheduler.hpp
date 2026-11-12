@@ -174,13 +174,15 @@ class DebugScheduler : public IAsyncScheduler {
       ++external_waits_;
     }
 
-    void end_external_wait() noexcept override
+    void complete_external_wait(BasicTask&& task) override
     {
-      {
-        std::lock_guard lock(mutex_);
-        CHECK(external_waits_ > 0, "DebugScheduler external wait ended without a matching begin");
-        --external_waits_;
-      }
+      TRACE_MODULE(ASYNC, "Completing an external wait", &task, task.coroutine_handle());
+      // Requeue, release the wait and notify in one critical section. The driving thread may run
+      // the task to completion and destroy this scheduler as soon as the lock is released.
+      std::lock_guard lock(mutex_);
+      CHECK(external_waits_ > 0, "DebugScheduler external wait completed without a matching begin");
+      if (task) Handles_.push_back(std::move(task));
+      --external_waits_;
       wakeup_.notify_all();
     }
 
@@ -266,10 +268,8 @@ class DebugScheduler : public IAsyncScheduler {
     /// \details Safe to call from any thread.
     void enqueue_task(BasicTask&& task)
     {
-      {
-        std::lock_guard lock(mutex_);
-        Handles_.push_back(std::move(task));
-      }
+      std::lock_guard lock(mutex_);
+      Handles_.push_back(std::move(task));
       wakeup_.notify_all();
     }
 

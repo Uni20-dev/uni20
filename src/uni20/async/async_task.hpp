@@ -167,9 +167,11 @@ class BasicTask {
     static void begin_external_wait(BasicTask const& task) noexcept;
 
     /// \brief Reschedule a task woken from outside its scheduler and end its external wait.
-    /// \details May be called from any thread. The task is rescheduled before
-    ///          the wait is released, so a scheduler never observes an empty
-    ///          queue with no pending wakeup while the task is in transit.
+    /// \details May be called from any thread. The scheduler requeues the task
+    ///          and releases the wait in one step, so it never observes an
+    ///          empty queue with no pending wakeup while the task is in
+    ///          transit, and the caller does not touch the scheduler after the
+    ///          task can run.
     static void reschedule_after_external_wait(BasicTask task);
 
     /// \brief Retain a task only when it is the sole ownership claimant.

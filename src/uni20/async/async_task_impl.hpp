@@ -33,8 +33,7 @@ inline void BasicTask::reschedule_after_external_wait(BasicTask task)
   DEBUG_CHECK(task.handle_);
   auto* scheduler = task.handle_.promise().scheduler();
   DEBUG_CHECK(scheduler, "unexpected: task scheduler is not set!");
-  BasicTask::reschedule(std::move(task));
-  scheduler->end_external_wait();
+  scheduler->complete_external_wait(BasicTask::make_sole_owner(std::move(task)));
 }
 
 inline BasicTask BasicTask::make_sole_owner(BasicTask&& task)
