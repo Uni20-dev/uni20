@@ -129,6 +129,16 @@ void expect_unchanged(HostMatrix const& expected, DeviceMatrix const& actual)
       EXPECT_EQ((host[row, col]), (expected[row, col]));
 }
 
+template <class HostMatrix, class DeviceMatrix>
+bool device_matches(HostMatrix const& expected, DeviceMatrix const& actual)
+{
+  auto const host = uni20::to_host(actual);
+  for (uni20::index_type row = 0; row < expected.extent(0); ++row)
+    for (uni20::index_type col = 0; col < expected.extent(1); ++col)
+      if (!((host[row, col]) == (expected[row, col]))) return false;
+  return true;
+}
+
 std::string describe(Shape shape, char const* layout)
 {
   return std::to_string(shape.rows) + "x" + std::to_string(shape.cols) + " " + layout;
@@ -181,19 +191,34 @@ TYPED_TEST(CusolverSingularValuesTest, ConsumingCallUsesOrCopiesDeviceWorkspace)
   for (Shape const shape : shapes)
   {
     auto const expected = known_singular_values(static_cast<std::size_t>(std::min(shape.rows, shape.cols)));
+    // gesvd with jobu = jobvt = 'N' overwrites its matrix during bidiagonalization. The caller's
+    // tensor therefore changes exactly when it was used as the workspace, rather than copied.
+    // A matrix with a unit dimension may already be bidiagonal, so only check min(rows, cols) > 1.
+    bool const discriminates = std::min(shape.rows, shape.cols) > 1;
     {
       // Tall column-major input is destroyed in place; wide column-major input is copied to row-major work.
       SCOPED_TRACE(describe(shape, "column-major"));
-      auto device = uni20::to_device(make_known_matrix<scalar_type, uni20::ColumnMajor>(shape, expected), resources);
+      auto const host = make_known_matrix<scalar_type, uni20::ColumnMajor>(shape, expected);
+      auto device = uni20::to_device(host, resources);
       auto const values = uni20::linalg::singular_values(std::move(device));
       expect_known_values<scalar_type>(values, shape, expected);
+      // The rvalue binds by reference, so `device` still owns the buffer the call received.
+      if (discriminates)
+      {
+        EXPECT_EQ(device_matches(host, device), shape.rows < shape.cols);
+      }
     }
     {
-      // Wide row-major input is destroyed in place as its tall transpose.
+      // Wide row-major input is destroyed in place as its tall transpose; tall row-major input is copied.
       SCOPED_TRACE(describe(shape, "row-major"));
-      auto device = uni20::to_device(make_known_matrix<scalar_type, uni20::RowMajor>(shape, expected), resources);
+      auto const host = make_known_matrix<scalar_type, uni20::RowMajor>(shape, expected);
+      auto device = uni20::to_device(host, resources);
       auto const values = uni20::linalg::singular_values(std::move(device));
       expect_known_values<scalar_type>(values, shape, expected);
+      if (discriminates)
+      {
+        EXPECT_EQ(device_matches(host, device), shape.rows > shape.cols);
+      }
     }
   }
 }

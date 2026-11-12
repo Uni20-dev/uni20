@@ -757,9 +757,13 @@ template <uni20::RankedTensorView<2> MatrixTensor>
 /// \details The input allocation is used directly as destructive workspace
 ///          when its layout is provider-compatible. For CUDA inputs that
 ///          means tall column-major or wide row-major storage; otherwise the
-///          matrix is copied to work on its device first.
+///          matrix is copied to work on its device first. CUDA tensors are
+///          not immediately host-readable, so they are admitted separately
+///          from immediate host tensors.
 template <KernelBackendSelector BackendSelector, class MatrixTensor>
-  requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
+  requires uni20::OwningTensor<MatrixTensor> &&
+           (uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> ||
+            detail::cuda_resident_singular_values<MatrixTensor>()) &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
 [[nodiscard]] auto singular_values(BackendSelector&& selector, MatrixTensor&& matrix,
                                    std::optional<Precision> requested = {})
@@ -777,7 +781,9 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
 
 /// \brief Consume an owning matrix and return its exact singular values.
 template <class MatrixTensor>
-  requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> &&
+  requires uni20::OwningTensor<MatrixTensor> &&
+           (uni20::MutableRankedImmediateTensorView<MatrixTensor, 2> ||
+            detail::cuda_resident_singular_values<MatrixTensor>()) &&
            (!std::is_lvalue_reference_v<MatrixTensor>) && (!std::is_const_v<std::remove_reference_t<MatrixTensor>>)
 [[nodiscard]] auto singular_values(MatrixTensor&& matrix, std::optional<Precision> requested = {})
 {
