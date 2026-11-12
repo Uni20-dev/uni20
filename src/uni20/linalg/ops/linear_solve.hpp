@@ -160,8 +160,8 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Coef
   auto p = requested ? *requested : common_default_precision(coefficients, right_hand_sides);
   require_precision<tensor_element_t<CoefficientTensor>>(p);
   detail::require_linear_solve_shape(coefficients, right_hand_sides);
-  auto coefficient_work = uni20::make_tensor<uni20::ColumnMajor>(coefficients);
-  auto solution = uni20::make_tensor<uni20::ColumnMajor>(right_hand_sides);
+  auto coefficient_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(coefficients);
+  auto solution = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(right_hand_sides);
   solve_inplace(std::forward<BackendSelector>(selector), coefficient_work, solution, p);
   uni20::detail::record_output_precision(solution, p);
   return solution;
@@ -174,7 +174,7 @@ template <uni20::RankedTensorView<2> CoefficientTensor, uni20::RankedTensorView<
 [[nodiscard]] auto solve(CoefficientTensor const& coefficients, RhsTensor const& right_hand_sides,
                          std::optional<Precision> requested = {})
 {
-  using work_type = decltype(uni20::make_tensor<uni20::ColumnMajor>(right_hand_sides));
+  using work_type = decltype(uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(right_hand_sides));
   auto selector = select_backend_for<work_type, work_type>(linear_solve_op{});
   return solve(selector, coefficients, right_hand_sides, requested);
 }

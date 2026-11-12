@@ -134,7 +134,7 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Matr
 [[nodiscard]] auto lq(BackendSelector&& selector, MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
   return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
 }
 
@@ -144,7 +144,7 @@ template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto lq(MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_lq_backend<decltype(matrix_work)>();
   return detail::lq_from_work_matrix(std::move(selector), std::move(matrix_work), p);
 }
@@ -165,7 +165,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
   }
   else
   {
-    auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
     return detail::lq_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
   }
 }

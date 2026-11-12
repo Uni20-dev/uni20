@@ -42,6 +42,54 @@ concept DefaultTensorStorage =
     (std::default_initializable<Storage> && requires(Storage& storage) { storage.resize(std::size_t{}); }) ||
     std::constructible_from<Storage, std::size_t> || std::constructible_from<Storage, size_type>;
 
+template <class Accessor>
+inline constexpr bool declares_access_domain = HostAccessibleAccessor<Accessor> || CudaAccessibleAccessor<Accessor>;
+
+/// \brief Whether values read through `SourceAccessor` can be written into storage read through
+///        `DestinationAccessor` without a storage-domain transfer.
+/// \details Two accessors are compatible when they share a declared access
+///          domain. Accessors that declare no domain are not classified and
+///          remain compatible. Moving values between host and CUDA storage is
+///          an explicit `to_host`, `to_device`, or `copy(destination, source)`.
+template <class DestinationAccessor, class SourceAccessor>
+concept AccessDomainsCompatible =
+    !declares_access_domain<DestinationAccessor> || !declares_access_domain<SourceAccessor> ||
+    (HostAccessibleAccessor<DestinationAccessor> && HostAccessibleAccessor<SourceAccessor>) ||
+    (CudaAccessibleAccessor<DestinationAccessor> && CudaAccessibleAccessor<SourceAccessor>);
+
+/// \brief Owning storage policy that materializes values read in `Domain`.
+/// \details The CUDA storage header supplies the `cuda_access_domain` policy.
+template <class Domain> struct domain_materialization_storage;
+
+template <> struct domain_materialization_storage<host_access_domain>
+{
+    using type = HostStorage;
+};
+
+/// \brief Storage policy that materializes a source without a storage-domain transfer.
+/// \details Host-accessible sources, including generated sources valid in
+///          every domain, and sources without a declared domain use host
+///          storage. Sources readable only on CUDA stay in CUDA storage.
+template <class SourceAccessor>
+using materialized_storage_t =
+    typename std::conditional_t<HostAccessibleAccessor<SourceAccessor> || !CudaAccessibleAccessor<SourceAccessor>,
+                                domain_materialization_storage<host_access_domain>,
+                                domain_materialization_storage<cuda_access_domain>>::type;
+
+/// \brief Source whose buffer supplies the allocation context of a `Policy` result.
+/// \details A materialized CUDA tensor is allocated on its source's device, so
+///          construction never implies a peer transfer either.
+template <class Policy, class InputTensor>
+concept SourceAllocationContext =
+    requires { typename Policy::context_type; } && requires(std::remove_cvref_t<InputTensor> const& input) {
+      { mdspec_of(input).data_descriptor().buffer().resources() } -> std::same_as<typename Policy::context_type&>;
+    };
+
+template <class InputTensor> [[nodiscard]] decltype(auto) source_allocation_context(InputTensor const& input)
+{
+  return mdspec_of(input).data_descriptor().buffer().resources();
+}
+
 template <typename Tuple, std::size_t... I> constexpr bool integral_prefix(std::index_sequence<I...>)
 {
   return (std::integral<std::tuple_element_t<I, Tuple>> && ...);
@@ -205,12 +253,18 @@ class Tensor {
     /// \brief Materialize an independent owning tensor from a readable tensor view.
     /// \details The destination's scalar, extents, storage, layout, and accessor
     ///          policies are fixed by this specialization. Values are copied
-    ///          through the ordinary backend-dispatch path.
+    ///          through the ordinary backend-dispatch path. The source must be
+    ///          readable in this tensor's storage domain: host and CUDA tensors
+    ///          do not convert into each other. Use `to_host`, `to_device`, or
+    ///          `copy(destination, source)` to transfer between domains.
     /// \tparam InputTensor Readable tensor-level source with matching static rank.
     /// \param input Source tensor view whose values are materialized.
     template <TensorView InputTensor>
-      requires(tensor_mdspec_t<InputTensor>::rank() == extents_type::rank() &&
-               std::default_initializable<accessor_factory_type> && detail::DefaultTensorStorage<storage_type>)
+      requires(
+          tensor_mdspec_t<InputTensor>::rank() == extents_type::rank() &&
+          std::default_initializable<accessor_factory_type> && detail::DefaultTensorStorage<storage_type> &&
+          detail::AccessDomainsCompatible<const_accessor_type, typename tensor_mdspec_t<InputTensor>::accessor_type> &&
+          !detail::SourceAllocationContext<storage_policy, InputTensor>)
     explicit Tensor(InputTensor const& input)
         : Tensor(uninitialized, convert_tensor_extents<extents_type>(input.extents()))
     {
@@ -218,6 +272,22 @@ class Tensor {
       if constexpr (has_runtime_precision_v<value_type> && requires { input.default_precision_if_set(); })
         if (auto p = input.default_precision_if_set()) data_.default_precision(*p);
 #endif
+      copy(*this, input);
+    }
+
+    /// \brief Materialize a context-bound tensor in its source's allocation context.
+    /// \details A CUDA result is allocated on the source buffer's device, so
+    ///          construction neither transfers between domains nor between devices.
+    template <TensorView InputTensor>
+      requires(
+          tensor_mdspec_t<InputTensor>::rank() == extents_type::rank() &&
+          std::default_initializable<accessor_factory_type> &&
+          detail::AccessDomainsCompatible<const_accessor_type, typename tensor_mdspec_t<InputTensor>::accessor_type> &&
+          detail::SourceAllocationContext<storage_policy, InputTensor>)
+    explicit Tensor(InputTensor const& input)
+        : Tensor(uninitialized, detail::source_allocation_context(input),
+                 convert_tensor_extents<extents_type>(input.extents()))
+    {
       copy(*this, input);
     }
 
@@ -981,13 +1051,18 @@ template <typename ElementType, std::size_t Rank, typename StoragePolicy, typena
 inline constexpr bool
     enable_owning_tensor<Tensor<ElementType, Rank, StoragePolicy, LayoutPolicy, AccessorFactory, Extents>> = true;
 
-/// \brief Deduce a runtime-extents host tensor that materializes a tensor view.
-/// \details Canonical source layout is preserved. Sources without canonical
-///          physical layout deduce the default column-major layout.
+/// \brief Deduce a runtime-extents tensor that materializes a tensor view in its own storage domain.
+/// \details Host-readable sources deduce host storage; CUDA sources deduce
+///          CUDA storage on the source's device. Canonical source layout is
+///          preserved. Sources without canonical physical layout deduce the
+///          default column-major layout.
 template <TensorView InputTensor>
 Tensor(InputTensor const&)
-    -> Tensor<tensor_element_t<InputTensor>, tensor_mdspec_t<InputTensor>::rank(), HostStorage,
-              detail::materialized_layout_t<void, tensor_mdspec_t<InputTensor>>, DefaultAccessorFactory>;
+    -> Tensor<tensor_element_t<InputTensor>, tensor_mdspec_t<InputTensor>::rank(),
+              detail::materialized_storage_t<typename tensor_mdspec_t<InputTensor>::accessor_type>,
+              detail::materialized_layout_t<void, tensor_mdspec_t<InputTensor>>,
+              detail::tensor_accessor_factory_t<
+                  detail::materialized_storage_t<typename tensor_mdspec_t<InputTensor>::accessor_type>>>;
 
 /// \brief Configurable owning tensor with an explicit mdspan extents type.
 /// \ingroup tensor

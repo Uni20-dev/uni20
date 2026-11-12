@@ -128,10 +128,19 @@ async::AsyncTask co_make_tensor(BackendSelector const selector, async::WriteBuff
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  ResultTensor result(uninitialized,
-                      convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
-  uni20::copy(selector, result, input_value);
-  storage.emplace(std::move(result));
+  auto const extents = convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents());
+  if constexpr (SourceAllocationContext<typename ResultTensor::storage_policy, InputTensor>)
+  {
+    ResultTensor result(uninitialized, source_allocation_context(input_value), extents);
+    uni20::copy(selector, result, input_value);
+    storage.emplace(std::move(result));
+  }
+  else
+  {
+    ResultTensor result(uninitialized, extents);
+    uni20::copy(selector, result, input_value);
+    storage.emplace(std::move(result));
+  }
   co_return;
 }
 
@@ -194,23 +203,15 @@ void copy(async::Async<OutputTensor>& output, async::Async<InputTensor> const& i
   }
 }
 
-/// \brief Materialize an async Tensor view as an independent owning host Tensor.
-/// \details The result type and canonical layout match synchronous `make_tensor`.
+/// \brief Materialize an async Tensor view as an independent owning Tensor in the view's storage domain.
+/// \details The result type and canonical layout match synchronous
+///          `make_tensor`; CUDA inputs stay on their device.
 template <TensorView InputTensor> [[nodiscard]] auto make_tensor(async::Async<InputTensor> const& input)
 {
   using result_type = detail::async_materialized_tensor_t<InputTensor>;
   async::Async<result_type> output;
   output.debug_name("make_tensor.result");
-#if UNI20_BACKEND_CUDA
-  auto selector = [&] {
-    if constexpr (detail::is_pageable_cuda_transfer<result_type, InputTensor>)
-      return linalg::CudaReferenceBackend{};
-    else
-      return linalg::select_backend_for<result_type, InputTensor>(linalg::copy_op{});
-  }();
-#else
   auto selector = linalg::select_backend_for<result_type, InputTensor>(linalg::copy_op{});
-#endif
   auto task = detail::co_make_tensor(std::move(selector), output.write(), input.read());
   task.debug_name("make_tensor");
   async::schedule(std::move(task));
@@ -219,11 +220,19 @@ template <TensorView InputTensor> [[nodiscard]] auto make_tensor(async::Async<In
 
 #if UNI20_BACKEND_CUDA
 /// \brief Materialize an async CUDA Tensor as an owning pageable host Tensor.
+/// \details The result type matches synchronous `to_host`. The pageable
+///          transfer blocks only the scheduled task.
 template <TensorView InputTensor>
   requires std::same_as<tensor_storage_policy_t<InputTensor>, CudaStorage>
 [[nodiscard]] auto to_host(async::Async<InputTensor> const& input)
 {
-  return uni20::make_tensor(input);
+  using result_type = std::remove_cvref_t<decltype(uni20::to_host(std::declval<InputTensor const&>()))>;
+  async::Async<result_type> output;
+  output.debug_name("to_host.result");
+  auto task = detail::co_make_tensor(linalg::CudaReferenceBackend{}, output.write(), input.read());
+  task.debug_name("to_host");
+  async::schedule(std::move(task));
+  return output;
 }
 
 /// \brief Materialize an async Tensor on an explicit CUDA device resource domain.

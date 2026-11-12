@@ -247,15 +247,22 @@ auto gpu_x = uni20::to_device(x, device);
 auto gpu1_x = uni20::to_device(x, gpu1);
 ```
 
-An explicit-output form may be useful for allocation reuse and asynchronous
-execution:
+The explicit-output form reuses an existing destination allocation:
 
 ```cpp
-uni20::copy_to(destination, source);
+uni20::copy(destination, source);
 ```
 
 `to_host` and `to_device` are implemented for canonical contiguous Tensor
-layouts. Fixed-output `copy(destination, source)` uses the same transfer backend.
+layouts. Fixed-output `copy(destination, source)` uses the same transfer
+backend. A host/device `copy` requires both operands to be contiguous with the
+same physical order; only CUDA-to-CUDA copies accept strided or reordered
+views. To transfer a strided CUDA view, first materialize it on its device with
+`make_tensor`, then call `to_host`.
+These are the only transfers. `make_tensor`, `Tensor(view)` deduction, and the
+owning `Tensor` converting constructor stay in the source's storage domain, and
+linear-algebra value operations without a CUDA implementation reject CUDA
+operands at compile time.
 Their semantic requirements are:
 
 - transfer does not change tensor rank;
@@ -273,10 +280,10 @@ completion ledger. CUDA issues these synchronous copies through the default
 stream and may synchronize work beyond the individual buffer ledger; they are
 not valid as a transparent stream-capture path.
 CUDA-to-CUDA copies use stream-ordered submission and retain completion in the
-destination buffer ledger. The Async overload is currently limited to
-CUDA-to-CUDA copies; a future pinned-host storage policy will provide genuinely
-non-blocking host transfer rather than blocking a scheduler participant behind
-a misleading Async API.
+destination buffer ledger. The Async `copy`, `to_host`, and `to_device`
+overloads also accept pageable host transfers; the blocking CUDA call then
+runs on, and blocks only, the scheduled task. A future pinned-host storage
+policy will provide genuinely non-blocking host transfer.
 
 `to_host(scalar_tensor)[]` is therefore a valid explicit two-step expression,
 but a caller that only needs the value should prefer `sum_host`, `norm_host`,
