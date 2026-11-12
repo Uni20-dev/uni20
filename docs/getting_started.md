@@ -168,7 +168,7 @@ By default, `cuda::initialize()` enrolls every visible device, chooses the
 first enrolled device as the default, and creates eight actually-idle streams
 per device. It also grants direct peer access between enrolled devices that
 support it. `RuntimeConfig::device_ordinals`, `default_device`,
-`streams_per_device`, `stream_flags`, and `enable_peer_access` customize that
+`streams_per_device`, `stream_flags`, and `peer_access_policy` customize that
 installation. Only one
 runtime may be active in a process. Direct `cuda::DeviceResources`
 construction is reserved for focused tests and low-level bring-up.

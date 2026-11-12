@@ -251,11 +251,23 @@ TEST_F(CudaDeviceTest, RuntimeGrantsPeerAccessForCapablePairsAndRevokesItAtShutd
   }
 }
 
+TEST_F(CudaDeviceTest, RequiredPeerAccessGrantsEveryCapablePair)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1},
+                                          .streams_per_device = 1,
+                                          .peer_access_policy = uni20::cuda::PeerAccessPolicy::required});
+  EXPECT_EQ(runtime.peer_access(0, 1), can_access_peer(0, 1));
+  EXPECT_EQ(runtime.peer_access(1, 0), can_access_peer(1, 0));
+  EXPECT_EQ(device_peer_access_enabled(1, 0), can_access_peer(1, 0));
+}
+
 TEST_F(CudaDeviceTest, RuntimePeerAccessCanBeDisabled)
 {
   if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
-  auto runtime =
-      uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 1, .enable_peer_access = false});
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1},
+                                          .streams_per_device = 1,
+                                          .peer_access_policy = uni20::cuda::PeerAccessPolicy::disabled});
   EXPECT_FALSE(runtime.peer_access(0, 1));
   EXPECT_FALSE(runtime.peer_access(1, 0));
   EXPECT_FALSE(device_peer_access_enabled(1, 0));

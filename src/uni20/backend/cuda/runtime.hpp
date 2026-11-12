@@ -303,6 +303,21 @@ class DeviceResources {
     template <typename> friend class detail::CudaAllocation;
 };
 
+/// \brief How `cuda::initialize()` treats direct peer access between enrolled devices.
+/// \details Policies apply only to pairs that `cudaDeviceCanAccessPeer`
+///          reports as capable. Other pairs are never granted and are not
+///          failures; copies between them stage through host memory.
+enum class PeerAccessPolicy
+{
+  /// Grant no peer access.
+  disabled,
+  /// Grant access for every capable pair. A pair whose grant fails is rolled
+  /// back, reported with a warning, and left to staged copies.
+  best_effort,
+  /// Grant access for every capable pair. A failed grant is an error.
+  required,
+};
+
 /// \brief Configuration for one scoped process-wide CUDA runtime installation.
 struct RuntimeConfig
 {
@@ -314,10 +329,10 @@ struct RuntimeConfig
     std::size_t streams_per_device = 8;
     /// CUDA stream creation flags used by every enrolled device.
     unsigned int stream_flags = cudaStreamNonBlocking;
-    /// Grant direct peer access between every ordered pair of enrolled
-    /// devices that supports it, for both `cudaMalloc` and stream-ordered pool
-    /// allocations. Disable only to measure or diagnose staged transfers.
-    bool enable_peer_access = true;
+    /// Direct peer access between enrolled devices, for both `cudaMalloc`
+    /// and stream-ordered pool allocations. Peer access is a performance
+    /// optimization, so a failed grant is not fatal by default.
+    PeerAccessPolicy peer_access_policy = PeerAccessPolicy::best_effort;
 };
 
 /// \brief Scoped owner of the process-wide CUDA resource installation.
@@ -371,7 +386,17 @@ class Runtime {
 
     explicit Runtime(RuntimeConfig config, construction_key);
 
-    void grant_peer_access();
+    /// \brief CUDA call that failed while granting one pair.
+    struct PeerGrantFailure
+    {
+        cudaError_t status = cudaSuccess;
+        char const* operation = "";
+        int device = -1;
+    };
+
+    void grant_peer_access(PeerAccessPolicy policy);
+    [[nodiscard]] std::optional<PeerGrantFailure> try_grant_peer_access(PeerGrant& grant, bool memory_pools_supported);
+    static void revoke_peer_grant(PeerGrant const& grant) noexcept;
     void revoke_peer_access() noexcept;
 
     std::vector<std::unique_ptr<DeviceResources>> device_resources_;

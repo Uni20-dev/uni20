@@ -65,9 +65,18 @@ them; a kernel reading the peer device's memory reached 85.2 GB/s.
 
 `Runtime::peer_access(accessor, owner)` reports whether a pair was granted.
 Shutdown revokes exactly the access this runtime added, after its allocations
-are drained, so a later runtime starts from the same state. Set
-`RuntimeConfig::enable_peer_access = false` only to measure or diagnose staged
-transfers. Use `nvidia-smi topo -m` to see whether a pair is connected by
+are drained, so a later runtime starts from the same state.
+
+`RuntimeConfig::peer_access_policy` controls grants. Policies apply only to
+pairs that `cudaDeviceCanAccessPeer` reports as capable; other pairs are never
+granted and are not failures.
+
+| Policy | Behavior |
+|---|---|
+| `best_effort` (default) | Grant every capable pair. A pair whose grant fails, for example with `cudaErrorTooManyPeers` beyond eight peers on systems without NVSwitch, is rolled back, reported with a warning, and left to staged copies. |
+| `required` | Grant every capable pair; a failed grant is an error. Use it where staged peer copies would make a run unacceptably slow. |
+| `disabled` | Grant nothing; use it to measure or diagnose staged transfers. |
+ Use `nvidia-smi topo -m` to see whether a pair is connected by
 NVLink (`NV#`), a PCIe switch (`PIX`/`PXB`), or across CPU sockets (`SYS`),
 where peer access is usually unavailable.
 
