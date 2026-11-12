@@ -85,7 +85,7 @@ auto lu_factor_impl(Backend&& backend, A const& a, LuOptions<make_real_t<tensor_
   detail::require_solve_options(pivot_options);
   require_precision<S>(p);
   (void)p.bit_count();
-  auto work = make_tensor<ColumnMajor>(a);
+  auto work = uni20::detail::make_host_work_tensor<ColumnMajor>(a);
   std::vector<std::size_t> pivots(std::size_t(a.extent(0)));
   LuFactorizationResult<S> result{.info = {}, .factor = {}};
   std::optional<LuNorms<make_real_t<S>>> norms;
@@ -200,7 +200,7 @@ template <KernelBackendSelector Backend, RealOrComplex S, RankedTensorView<2> B>
   requires std::same_as<S, tensor_element_t<B>>
 [[nodiscard]] auto lu_solve(Backend&& backend, LuFactorization<S> const& factor, B const& b)
 {
-  auto result = make_tensor<ColumnMajor>(b);
+  auto result = uni20::detail::make_host_work_tensor<ColumnMajor>(b);
   lu_solve_inplace(std::forward<Backend>(backend), factor, result);
   uni20::detail::record_output_precision(result, factor.precision());
   return result;

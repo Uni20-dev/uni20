@@ -388,4 +388,15 @@ struct CudaStorage
     }
 };
 
+namespace detail
+{
+template <class Domain> struct domain_materialization_storage;
+
+/// \brief Values readable only on CUDA materialize in CUDA storage.
+template <> struct domain_materialization_storage<cuda_access_domain>
+{
+    using type = CudaStorage;
+};
+} // namespace detail
+
 } // namespace uni20

@@ -236,7 +236,7 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Matr
 {
   auto const p = detail::decomposition_precision(matrix, requested);
   ERROR_IF(matrix.extent(0) != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
   return detail::eigh_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), triangle, p);
 }
 
@@ -250,7 +250,7 @@ template <uni20::RankedTensorView<2> MatrixTensor>
 {
   auto const p = detail::decomposition_precision(matrix, requested);
   ERROR_IF(matrix.extent(0) != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
-  auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_self_adjoint_eigh_backend<decltype(matrix_work)>(triangle);
   return detail::eigh_from_work_matrix(std::move(selector), std::move(matrix_work), triangle, p);
 }
@@ -274,7 +274,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
   }
   else
   {
-    auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
     return detail::eigh_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), triangle, p);
   }
 }
@@ -306,7 +306,7 @@ template <class MatrixTensor>
   }
   else
   {
-    auto matrix_work = uni20::make_tensor<uni20::ColumnMajor>(matrix);
+    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
     auto selector = detail::select_self_adjoint_eigh_backend<decltype(matrix_work)>(triangle);
     return detail::eigh_from_work_matrix(std::move(selector), std::move(matrix_work), triangle, p);
   }

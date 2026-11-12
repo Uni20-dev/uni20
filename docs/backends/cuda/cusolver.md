@@ -253,7 +253,8 @@ device and returns a `CudaTensor` of values there. The preserving form copies to
 column-major work for tall input and row-major work for wide input, on the
 device. The consuming form uses a tall column-major or wide row-major input as
 the workspace directly and otherwise makes the same device copy. Async forms
-follow the same routing. Builds without cuSOLVER keep the host-work path.
+follow the same routing. Builds without cuSOLVER reject CUDA operands at compile
+time rather than copying them to the host.
 
 Do not pass null U/V buffers to `gesvdj` or `gesvdp` in their no-vector modes.
 cuSOLVER does not document those buffers as unreferenced. Cytnx crashes on

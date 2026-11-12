@@ -25,7 +25,12 @@ namespace uni20
 ///          layout use the default column-major `Tensor` layout. An explicit
 ///          `RequestedLayout` overrides either choice. The result has the
 ///          input's compile-time rank with runtime extents on every axis.
+///          The input must be host-readable; CUDA views are transferred only
+///          through `to_host` or `copy(destination, source)`.
 template <class RequestedLayout = void, class BackendSelector, MdspanLike InputMdspan>
+  requires detail::AccessDomainsCompatible<
+      stdex::default_accessor<std::remove_cv_t<typename std::remove_cvref_t<InputMdspan>::element_type> const>,
+      typename std::remove_cvref_t<InputMdspan>::accessor_type>
 [[nodiscard]] auto make_tensor(BackendSelector&& selector, InputMdspan&& input)
 {
   using input_type = std::remove_cvref_t<InputMdspan>;
@@ -39,19 +44,63 @@ template <class RequestedLayout = void, class BackendSelector, MdspanLike InputM
   return result;
 }
 
-/// \brief Materialize a tensor view as an inferred owning host tensor.
+namespace detail
+{
+template <class RequestedLayout, TensorView InputTensor>
+using materialized_tensor_t =
+    Tensor<tensor_element_t<InputTensor>, tensor_mdspec_t<InputTensor>::rank(),
+           materialized_storage_t<typename tensor_mdspec_t<InputTensor>::accessor_type>,
+           materialized_layout_t<RequestedLayout, tensor_mdspec_t<InputTensor>>,
+           tensor_accessor_factory_t<materialized_storage_t<typename tensor_mdspec_t<InputTensor>::accessor_type>>>;
+} // namespace detail
+
+/// \brief Materialize a tensor view as an inferred owning tensor in the view's storage domain.
 /// \details This is the explicit eager boundary for lazy views such as
-///          `conj(input)`. A canonical resolved layout is preserved unless
-///          `RequestedLayout` is supplied. Generated and other noncanonical
-///          inputs use the default column-major `Tensor` layout.
+///          `conj(input)`. Host-readable and generated inputs produce host
+///          tensors; CUDA inputs produce CUDA tensors on the source device.
+///          Materialization never transfers between domains: use `to_host` or
+///          `to_device` for that. A canonical resolved layout is preserved
+///          unless `RequestedLayout` is supplied. Generated and other
+///          noncanonical inputs use the default column-major `Tensor` layout.
 template <class RequestedLayout = void, TensorView InputTensor> [[nodiscard]] auto make_tensor(InputTensor const& input)
 {
-  using input_mdspan = tensor_mdspec_t<InputTensor>;
-  using layout_type = detail::materialized_layout_t<RequestedLayout, input_mdspan>;
-  using result_type = Tensor<tensor_element_t<InputTensor>, input_mdspan::rank(), HostStorage, layout_type>;
-
-  return result_type(input);
+  using result_type = detail::materialized_tensor_t<RequestedLayout, InputTensor>;
+  if constexpr (std::same_as<std::remove_cvref_t<InputTensor>, result_type> &&
+                !std::is_copy_constructible_v<result_type>)
+  {
+    // Owning CUDA tensors are deliberately not copy-constructible; materialize on the same device.
+    result_type result(uninitialized, detail::source_allocation_context(input),
+                       convert_tensor_extents<typename result_type::extents_type>(input.extents()));
+    copy(result, input);
+    return result;
+  }
+  else
+  {
+    return result_type(input);
+  }
 }
+
+namespace detail
+{
+/// \brief Tensor whose values are readable on the host without a storage-domain transfer.
+template <class InputTensor>
+concept HostReadableTensor =
+    TensorView<InputTensor> && AccessDomainsCompatible<stdex::default_accessor<tensor_element_t<InputTensor> const>,
+                                                       typename tensor_mdspec_t<InputTensor>::accessor_type>;
+
+/// \brief Materialize host work storage for an operation implemented only by host providers.
+/// \details CUDA operands are rejected at compile time rather than copied to
+///          the host. Callers who want a host computation transfer the
+///          operand explicitly with `to_host`.
+template <class RequestedLayout, TensorView InputTensor>
+[[nodiscard]] auto make_host_work_tensor(InputTensor const& input)
+{
+  static_assert(HostReadableTensor<InputTensor>,
+                "this linear-algebra operation has no implementation for CUDA operands; transfer the operand "
+                "explicitly with uni20::to_host() to compute on the host");
+  return make_tensor<RequestedLayout>(input);
+}
+} // namespace detail
 
 #if UNI20_BACKEND_CUDA
 /// \brief Materialize a CUDA tensor as an owning pageable host tensor.

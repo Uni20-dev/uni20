@@ -105,7 +105,15 @@ auto row_owner =
     uni20::make_tensor<uni20::RowMajor>(uni20::ones<double>(3, 4, 5));
 ```
 
-`Tensor(view)` and `make_tensor(view)` both eagerly materialize a tensor view.
+`Tensor(view)` and `make_tensor(view)` both eagerly materialize a tensor view
+in the view's own storage domain. A host-readable or generated source produces
+a host tensor; a CUDA source produces a CUDA tensor on the source's device.
+Materialization never transfers between host and device: `to_host`,
+`to_device`, and `copy(destination, source)` are the explicit transfers, and an
+owning tensor of one domain cannot be constructed from a source in the other.
+`Tensor t(cuda_tensor)` does not compile, because CTAD from an owning tensor
+selects the copy constructor and owning CUDA tensors are not copyable; use
+`make_tensor(cuda_tensor)` for a same-device copy.
 Without an explicit policy, CTAD and `make_tensor` preserve a canonical
 `layout_left` or `layout_right` physical source. A generated or otherwise
 noncanonical source uses the ordinary `Tensor` default, `ColumnMajor`.

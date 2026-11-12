@@ -117,33 +117,39 @@ class CudaDescriptorMatrixView {
     cuda_matrix_type const* tensor_;
 };
 
+#if UNI20_BACKEND_CUSOLVER
+// Singular values stay on the device. Host-only decompositions such as svd or
+// eigh reject CUDA operands with a static_assert instead of copying to the host.
 template <class AsyncTensor>
-concept CanPreserveAsyncDenseDecompositions = requires(AsyncTensor const& matrix) {
-  uni20::linalg::singular_values(matrix);
-  uni20::linalg::svd_left(matrix);
-  uni20::linalg::svd_right(matrix);
-  uni20::linalg::svd(matrix);
-  uni20::linalg::eigh(matrix);
-  uni20::linalg::truncated_svd(matrix);
+concept CanComputeAsyncSingularValuesOnDevice = requires(AsyncTensor const& matrix, AsyncTensor&& consumed) {
+  { uni20::linalg::singular_values(matrix) } -> std::same_as<uni20::async::Async<cuda_vector_type>>;
+  { uni20::linalg::singular_values(std::move(consumed)) } -> std::same_as<uni20::async::Async<cuda_vector_type>>;
 };
-
-template <class AsyncTensor>
-concept CanConsumeAsyncDenseDecompositions = requires(AsyncTensor&& matrix) {
-  uni20::linalg::singular_values(std::move(matrix));
-  uni20::linalg::svd_left(std::move(matrix));
-  uni20::linalg::svd_right(std::move(matrix));
-  uni20::linalg::svd(std::move(matrix));
-  uni20::linalg::eigh(std::move(matrix));
-  uni20::linalg::truncated_svd(std::move(matrix));
-};
+static_assert(CanComputeAsyncSingularValuesOnDevice<async_cuda_matrix_type>);
+#endif
 
 template <class AsyncTensor>
 concept CanFormDeferredAsyncReshape = requires(AsyncTensor& tensor) { uni20::async::reshape_view(tensor, 4); };
 
 static_assert(uni20::TensorView<CudaDescriptorMatrixView>);
-static_assert(CanPreserveAsyncDenseDecompositions<async_cuda_matrix_type>);
-static_assert(CanConsumeAsyncDenseDecompositions<async_cuda_matrix_type>);
 static_assert(CanFormDeferredAsyncReshape<async_cuda_matrix_type>);
+
+// Host and CUDA tensors never convert into each other; to_host, to_device and
+// copy(destination, source) are the explicit transfers.
+static_assert(!std::constructible_from<host_matrix_type, cuda_matrix_type const&>);
+static_assert(!std::constructible_from<cuda_matrix_type, host_matrix_type const&>);
+static_assert(!std::constructible_from<complex_host_matrix_type, complex_cuda_conjugated_view const&>);
+static_assert(std::constructible_from<complex_cuda_matrix_type, complex_cuda_conjugated_view const&>);
+// Materialization keeps the source's storage domain.
+static_assert(std::same_as<decltype(uni20::make_tensor(std::declval<cuda_matrix_type const&>())), cuda_matrix_type>);
+static_assert(std::same_as<decltype(uni20::make_tensor(std::declval<complex_cuda_conjugated_view const&>())),
+                           complex_cuda_matrix_type>);
+static_assert(std::same_as<decltype(uni20::Tensor(std::declval<complex_cuda_conjugated_view const&>())),
+                           complex_cuda_matrix_type>);
+static_assert(
+    std::same_as<decltype(uni20::make_tensor(std::declval<async_cuda_matrix_type const&>())), async_cuda_matrix_type>);
+static_assert(std::same_as<decltype(uni20::to_host(std::declval<async_cuda_matrix_type const&>())),
+                           uni20::async::Async<host_matrix_type>>);
 static_assert(!std::same_as<typename CudaDescriptorMatrixView::storage_policy, uni20::CudaStorage>);
 static_assert(uni20::cuda::BufferMdspec<uni20::tensor_mdspec_t<CudaDescriptorMatrixView>>);
 static_assert(uni20::CudaAccessibleAccessor<uni20::cuda::CudaPointerAccessor<double>>);
@@ -357,6 +363,53 @@ TEST_F(CudaCopyTest, PageableHostRoundTripUsesExplicitTransferFunctions)
 
   EXPECT_EQ(device.storage().device().ordinal(), 0);
   expect_matrix(result);
+}
+
+TEST_F(CudaCopyTest, MaterializationKeepsCudaSourcesOnTheirDevice)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  complex_host_matrix_type source(2, 2);
+  source[0, 0] = complex_type{1.0, 2.0};
+  source[1, 0] = complex_type{-3.0, 4.0};
+  source[0, 1] = complex_type{5.0, -6.0};
+  source[1, 1] = complex_type{-7.0, -8.0};
+  auto device = uni20::to_device(source, 1);
+
+  auto copied = uni20::make_tensor(device);
+  auto conjugated = uni20::make_tensor(uni20::conj(device));
+  uni20::Tensor deduced(uni20::conj(device));
+
+  EXPECT_EQ(copied.storage().device().ordinal(), 1);
+  EXPECT_EQ(conjugated.storage().device().ordinal(), 1);
+  EXPECT_EQ(deduced.storage().device().ordinal(), 1);
+  auto const copied_host = uni20::to_host(copied);
+  auto const conjugated_host = uni20::to_host(conjugated);
+  auto const deduced_host = uni20::to_host(deduced);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type col = 0; col < 2; ++col)
+    {
+      EXPECT_EQ((copied_host[row, col]), (source[row, col]));
+      EXPECT_EQ((conjugated_host[row, col]), uni20::conj(source[row, col]));
+      EXPECT_EQ((deduced_host[row, col]), uni20::conj(source[row, col]));
+    }
+  }
+}
+
+TEST_F(CudaCopyTest, AsyncMaterializationStaysOnDeviceAndToHostTransfers)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(0));
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  async_cuda_matrix_type device = uni20::to_device(make_matrix(), 0);
+
+  auto materialized = uni20::make_tensor(device);
+  auto host = uni20::to_host(device);
+
+  EXPECT_EQ(materialized.get_wait(scheduler).storage().device().ordinal(), 0);
+  expect_matrix(uni20::to_host(materialized.get_wait(scheduler)));
+  expect_matrix(host.get_wait(scheduler));
 }
 
 TEST_F(CudaCopyTest, FixedOutputPageableTransfersResizeAndRoundTrip)

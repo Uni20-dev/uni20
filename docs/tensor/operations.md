@@ -104,8 +104,9 @@ materially clearer.
 | `add_foo(out, ...)` | Compound update. Existing output values participate, so shape is fixed and the output must already exist. |
 | `foo(x)` returning an owner | Preserve lvalue inputs and allocate or materialize an owning result. |
 | `foo(std::move(x))` | Grant permission to consume an owning input and transfer its allocation. Reuse is not guaranteed. |
-| `Tensor(view)` | Eagerly materialize a readable tensor view using CTAD and the inferred physical layout. |
-| `make_tensor(view)` | Explicit eager materialization boundary for a view or generated expression. |
+| `Tensor(view)` | Eagerly materialize a readable tensor view using CTAD and the inferred physical layout, in the view's storage domain. |
+| `make_tensor(view)` | Explicit eager materialization boundary for a view or generated expression, in the view's storage domain. |
+| `to_host(x)`, `to_device(x, device)`, `copy(out, x)` | The only operations that move values between host and CUDA storage. Owning tensors do not convert across domains. |
 
 There is no general rule that assignment to an arbitrary tensor view means
 element assignment. A plain mdspan assignment rebinds a descriptor. A future
@@ -184,7 +185,14 @@ enough to bypass an accessor; a provider backend may do so only for a default
 accessor or a recognized accessor whose semantics it lowers explicitly.
 A bare mdspan carries no storage policy, so its `copy` or `make_tensor`
 operation requires an explicit backend selector. Tensor-level views supply
-their selector through storage policy.
+their selector through storage policy. A bare-mdspan `make_tensor` produces a
+host tensor and therefore requires a host-readable mdspan.
+
+Linear-algebra value operations that only have host providers (`svd`,
+`svd_left`, `svd_right`, `truncated_svd`, `eigh`, `qr`, `lq`, `solve`, LU)
+reject CUDA operands at compile time with a `static_assert` that names
+`to_host`; they never copy a CUDA operand to the host implicitly.
+`singular_values` has a CUDA implementation when cuSOLVER is built.
 
 ### Output Shape
 
@@ -338,7 +346,7 @@ contracts described later in this guide.
 | `assign_transform(out, function, inputs...)` | Nullary or variadic elementwise overwrite through backend dispatch. With no input, the callable generates every output value. The CUDA reference backend registers same-element-type unary and binary arithmetic function objects plus stateful `linalg::scale<Factor>` for positive-strided raw CUDA operands. | A nullary overwrite requires fixed output shape. Other forms resize a resizable output to the first input or validate a fixed output. | Implemented for all-Async Tensor operands. The callable is immediate state owned by the coroutine. |
 | `fill(out, value)` | Constant nullary overwrite; the old output value is never read. | Requires fixed output shape and preserves storage. | Implemented for synchronous and Async host tensors. Async fill takes one write epoch. |
 | `transform_inplace(out, function, inputs...)` | Variadic elementwise update with the old output as the callable's first argument. | Output shape is fixed and the output appears once as a read/write operand. | Implemented for all-Async Tensor operands with one output writer and distinct input readers. |
-| `make_tensor(view)` | Materialize a readable tensor or mdspan as an owning host tensor. | Allocates an inferred runtime-extents owner. | Implemented for `Async<TensorView>`; returns an independent async host owner. |
+| `make_tensor(view)` | Materialize a readable tensor or mdspan as an owning tensor in its storage domain. | Allocates an inferred runtime-extents owner; CUDA sources stay on their device. | Implemented for `Async<TensorView>`; returns an independent async owner. |
 | `to_host`, `to_device` | Materialize at an explicit pageable-host or CUDA placement boundary. | Returns an owning canonical-layout Tensor in the requested domain. | Implemented for Async input. `to_device` requires explicit device resources or an enrolled device; pageable transfer blocks only its scheduled task. |
 | `conjugate_inplace(x)` | Eager element mutation. CPU accessors are evaluated directly; positive-strided CUDA `cfloat` and `cdouble` storage uses the CUDA reference elementwise executor. Real and integer values return as a no-op. | Reuses existing storage and takes one exclusive execution-domain access when work is required. | Implemented through one writer epoch. |
 | `sum(input)` | Full reduction returning a same-element-type `ScalarTensor`. | Allocates a rank-zero result in the selected storage domain; an explicit scalar output is also supported. | Implemented; returns `Async<ScalarTensor>` or writes an explicit async scalar output. |
