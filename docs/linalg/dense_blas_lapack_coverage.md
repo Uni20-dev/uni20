@@ -84,7 +84,12 @@ tall column-major CUDA-buffer matrices, real `float` or `double`, and reduced or
 full left and right vectors. It acquires a device-local handle/stream lease,
 allocates stream-ordered workspace, checks `devInfo` on host, and synchronizes
 the operation stream before return. Complex scalars, wide matrices, other SVD
-forms, and asynchronous completion remain outside this checkpoint.
+forms, and asynchronous completion remain outside this checkpoint for factors.
+Exact singular values use `cusolverDn{S,D,C,Z}gesvd` with `jobu = jobvt = 'N'`
+for real and complex `float` and `double`. They accept tall column-major
+workspace or wide row-major workspace read as its transpose, and
+`linalg::singular_values` returns CUDA-resident values for CUDA inputs. See the
+[cuSOLVER architecture](../backends/cuda/cusolver.md#svd-boundary).
 
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
 lowerings for `s/d/c/z` scalars. They jointly merge the logical M, N, and K
