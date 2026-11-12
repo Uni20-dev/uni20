@@ -314,6 +314,10 @@ struct RuntimeConfig
     std::size_t streams_per_device = 8;
     /// CUDA stream creation flags used by every enrolled device.
     unsigned int stream_flags = cudaStreamNonBlocking;
+    /// Grant direct peer access between every ordered pair of enrolled
+    /// devices that supports it, for both `cudaMalloc` and stream-ordered pool
+    /// allocations. Disable only to measure or diagnose staged transfers.
+    bool enable_peer_access = true;
 };
 
 /// \brief Scoped owner of the process-wide CUDA resource installation.
@@ -341,14 +345,38 @@ class Runtime {
     /// \brief Return the configured default CUDA device ordinal, if any.
     [[nodiscard]] std::optional<int> default_device() const noexcept { return default_device_; }
 
+    /// \brief Return whether code running on `accessor` may directly access memory allocated on `owner`.
+    /// \details True when this runtime granted peer access for the enrolled
+    ///          pair. Kernels on `accessor` may then dereference `owner`
+    ///          allocations, and peer copies between them do not stage
+    ///          through host memory. A device always has access to itself.
+    [[nodiscard]] bool peer_access(int accessor, int owner) const noexcept;
+
   private:
     struct construction_key
     {};
 
+    /// \brief Peer access established by this runtime, reverted on destruction.
+    struct PeerGrant
+    {
+        int accessor = -1;
+        int owner = -1;
+        /// Whether this runtime called `cudaDeviceEnablePeerAccess` for the pair.
+        bool enabled_device_access = false;
+        /// Pool whose access this runtime changed, or null.
+        cudaMemPool_t pool = nullptr;
+        /// Access flags the pool granted `accessor` before this runtime changed them.
+        cudaMemAccessFlags previous_pool_access = cudaMemAccessFlagsProtNone;
+    };
+
     explicit Runtime(RuntimeConfig config, construction_key);
+
+    void grant_peer_access();
+    void revoke_peer_access() noexcept;
 
     std::vector<std::unique_ptr<DeviceResources>> device_resources_;
     std::optional<int> default_device_;
+    std::vector<PeerGrant> peer_grants_;
 
     friend Runtime initialize(RuntimeConfig);
 };

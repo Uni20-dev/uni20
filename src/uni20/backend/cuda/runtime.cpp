@@ -771,6 +771,19 @@ Runtime::Runtime(RuntimeConfig config, construction_key)
     default_device_ = devices.front().ordinal();
   }
 
+  if (config.enable_peer_access)
+  {
+    try
+    {
+      this->grant_peer_access();
+    }
+    catch (...)
+    {
+      this->revoke_peer_access();
+      throw;
+    }
+  }
+
   Runtime* expected = nullptr;
   CHECK(active_runtime.compare_exchange_strong(expected, this, std::memory_order_release, std::memory_order_relaxed),
         "a process-wide CUDA runtime is already installed");
@@ -781,7 +794,83 @@ Runtime::~Runtime() noexcept
   Runtime* expected = this;
   CHECK(active_runtime.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel, std::memory_order_relaxed),
         "destroying a CUDA runtime that is not the active installation");
+  // Drain and free every allocation before narrowing access to the pools that held them.
   device_resources_.clear();
+  this->revoke_peer_access();
+}
+
+void Runtime::grant_peer_access()
+{
+  for (auto const& accessor_resources : device_resources_)
+  {
+    for (auto const& owner_resources : device_resources_)
+    {
+      int const accessor = accessor_resources->device().ordinal();
+      int const owner = owner_resources->device().ordinal();
+      if (accessor == owner) continue;
+
+      int can_access = 0;
+      check(cudaDeviceCanAccessPeer(&can_access, accessor, owner), "cudaDeviceCanAccessPeer", accessor);
+      if (!can_access) continue;
+
+      // Record the grant before changing state so a later failure can revoke it.
+      auto& grant = peer_grants_.emplace_back(PeerGrant{.accessor = accessor, .owner = owner});
+      {
+        // cudaMalloc allocations: access is enabled from the accessing device's context.
+        ScopedDevice guard(accessor);
+        cudaError_t const status = cudaDeviceEnablePeerAccess(owner, 0);
+        if (status == cudaErrorPeerAccessAlreadyEnabled)
+          (void)cudaGetLastError();
+        else
+          check(status, "cudaDeviceEnablePeerAccess", accessor);
+        grant.enabled_device_access = status == cudaSuccess;
+      }
+
+      // Stream-ordered allocations ignore cudaDeviceEnablePeerAccess; the owning pool grants access.
+      if (owner_resources->device().capabilities().memory_pools_supported)
+      {
+        cudaMemPool_t pool = nullptr;
+        check(cudaDeviceGetMemPool(&pool, owner), "cudaDeviceGetMemPool", owner);
+        cudaMemLocation location{.type = cudaMemLocationTypeDevice, .id = accessor};
+        cudaMemAccessFlags previous = cudaMemAccessFlagsProtNone;
+        check(cudaMemPoolGetAccess(&previous, pool, &location), "cudaMemPoolGetAccess", owner);
+        if (previous != cudaMemAccessFlagsProtReadWrite)
+        {
+          cudaMemAccessDesc const access{.location = location, .flags = cudaMemAccessFlagsProtReadWrite};
+          check(cudaMemPoolSetAccess(pool, &access, 1), "cudaMemPoolSetAccess", owner);
+          grant.pool = pool;
+          grant.previous_pool_access = previous;
+        }
+      }
+    }
+  }
+}
+
+void Runtime::revoke_peer_access() noexcept
+{
+  for (auto const& grant : peer_grants_)
+  {
+    if (grant.pool != nullptr)
+    {
+      cudaMemAccessDesc const access{.location = {.type = cudaMemLocationTypeDevice, .id = grant.accessor},
+                                     .flags = grant.previous_pool_access};
+      check_cleanup(cudaMemPoolSetAccess(grant.pool, &access, 1), "cudaMemPoolSetAccess revoke", grant.owner);
+    }
+    if (grant.enabled_device_access)
+    {
+      CleanupDeviceGuard guard(grant.accessor);
+      check_cleanup(cudaDeviceDisablePeerAccess(grant.owner), "cudaDeviceDisablePeerAccess", grant.accessor);
+    }
+  }
+  peer_grants_.clear();
+}
+
+bool Runtime::peer_access(int accessor, int owner) const noexcept
+{
+  if (accessor == owner) return this->has_device(accessor);
+  return std::ranges::any_of(peer_grants_, [accessor, owner](PeerGrant const& grant) {
+    return grant.accessor == accessor && grant.owner == owner;
+  });
 }
 
 bool Runtime::has_device(int device) const noexcept
