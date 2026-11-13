@@ -49,6 +49,8 @@ class CudaResourceAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::deta
       state_.store(registration_state::registering, std::memory_order_relaxed);
       task_ = handle.promise().take_ownership();
       TaskPromiseBase::note_suspended(current);
+      // A pool release may deliver the resource from a CUDA host callback thread.
+      BasicTask::begin_external_wait(task_);
 
       auto lease = pool_->acquire_or_enqueue(*this);
       if (lease)
@@ -58,7 +60,7 @@ class CudaResourceAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::deta
       }
 
       auto const prior = state_.exchange(registration_state::suspended, std::memory_order_acq_rel);
-      if (prior == registration_state::ready) BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::ready) BasicTask::reschedule_after_external_wait(std::move(task_));
       return true;
     }
 
@@ -87,7 +89,7 @@ class CudaResourceAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::deta
     void publish_ready() noexcept
     {
       auto const prior = state_.exchange(registration_state::ready, std::memory_order_acq_rel);
-      if (prior == registration_state::suspended) BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::suspended) BasicTask::reschedule_after_external_wait(std::move(task_));
     }
 
     cuda::ResourcePool<Resource>* pool_;
@@ -120,6 +122,8 @@ class CudaStreamAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::detail
       state_.store(registration_state::registering, std::memory_order_relaxed);
       task_ = handle.promise().take_ownership();
       TaskPromiseBase::note_suspended(current);
+      // A pool release may deliver the resource from a CUDA host callback thread.
+      BasicTask::begin_external_wait(task_);
 
       auto stream = pool_->acquire_or_enqueue(*this);
       if (stream)
@@ -129,7 +133,7 @@ class CudaStreamAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::detail
       }
 
       auto const prior = state_.exchange(registration_state::suspended, std::memory_order_acq_rel);
-      if (prior == registration_state::ready) BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::ready) BasicTask::reschedule_after_external_wait(std::move(task_));
       return true;
     }
 
@@ -160,7 +164,7 @@ class CudaStreamAcquireAwaiter : public CudaTaskAwaiterTag, private cuda::detail
     void publish_ready() noexcept
     {
       auto const prior = state_.exchange(registration_state::ready, std::memory_order_acq_rel);
-      if (prior == registration_state::suspended) BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::suspended) BasicTask::reschedule_after_external_wait(std::move(task_));
     }
 
     cuda::StreamPool* pool_;

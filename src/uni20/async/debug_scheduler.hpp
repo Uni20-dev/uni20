@@ -8,7 +8,10 @@
 #include "scheduler.hpp"
 #include "task_registry.hpp"
 #include <algorithm>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <numeric>
 #include <random>
 #include <uni20/common/display.hpp>
@@ -60,6 +63,11 @@ struct DebugSchedulerOptions
 };
 
 /// \brief Single-threaded scheduler with configurable runnable-batch ordering.
+/// \details Tasks run only on the thread that drives the scheduler. Other
+///          threads, such as CUDA host callbacks, may reschedule tasks that
+///          await an external wakeup registered through
+///          `BasicTask::begin_external_wait`. Waits block for those wakeups
+///          rather than reporting a deadlock; `run_all()` does not.
 class DebugScheduler : public IAsyncScheduler {
   public:
     /// \brief Default-construct an empty scheduler.
@@ -69,7 +77,10 @@ class DebugScheduler : public IAsyncScheduler {
     /// \brief Destructor.
     ~DebugScheduler()
     {
-      TRACE_MODULE(ASYNC, "~DebugScheduler", Handles_.size());
+      TRACE_MODULE(ASYNC, "~DebugScheduler", Handles_.size(), external_waits_);
+      // A pending external wakeup would later reschedule into a destroyed scheduler.
+      if (std::uncaught_exceptions() == 0)
+        CHECK(external_waits_ == 0, "DebugScheduler destroyed while tasks await external wakeups", external_waits_);
 
       if (std::uncaught_exceptions() > 0)
       {
@@ -83,12 +94,20 @@ class DebugScheduler : public IAsyncScheduler {
 
     /// \brief Reports whether at least one runnable task exists.
     /// \return `true` when the scheduler is not paused and has queued tasks.
-    [[nodiscard]] bool can_run() const noexcept { return !Blocked_ && !Handles_.empty(); }
+    [[nodiscard]] bool can_run() const noexcept
+    {
+      std::lock_guard lock(mutex_);
+      return !Blocked_ && !Handles_.empty();
+    }
 
     /// \brief Run one batch of scheduled coroutines in the configured order.
     void run();
 
     /// \brief Run until no runnable tasks remain.
+    /// \details A debugging aid. It returns while tasks are suspended outside
+    ///          the scheduler, for example on a CUDA resource or I/O, so it
+    ///          does not establish completion; wait on a result with
+    ///          `get_wait()` or `wait_for()` for that.
     void run_all();
 
     /// \brief Block the scheduler from running.
@@ -98,7 +117,7 @@ class DebugScheduler : public IAsyncScheduler {
     /// \brief Unblock the scheduler
     void resume() override { Blocked_ = false; }
 
-    /// \brief Drives one runnable task while waiting for readiness.
+    /// \brief Drives one runnable batch, or waits for an external wakeup, while waiting for readiness.
     /// \param is_ready Predicate that reports target readiness.
     void help_while_waiting(const WaitPredicate& is_ready) override
     {
@@ -107,7 +126,24 @@ class DebugScheduler : public IAsyncScheduler {
         return;
       }
 
-      if (Blocked_ || Handles_.empty())
+      bool deadlocked = Blocked_;
+      if (!deadlocked)
+      {
+        std::unique_lock lock(mutex_);
+        if (Handles_.empty())
+        {
+          if (external_waits_ == 0)
+          {
+            deadlocked = true;
+          }
+          else
+          {
+            this->wait_for_runnable_or_no_external_waits(lock);
+            return;
+          }
+        }
+      }
+      if (deadlocked)
       {
         detail::dump_deadlock_graphviz_snapshot();
         TaskRegistry::dump();
@@ -117,8 +153,38 @@ class DebugScheduler : public IAsyncScheduler {
     }
 
     /// \brief Check whether the runnable queue is empty.
-    /// \return `true` if the scheduler has no queued tasks.
-    [[nodiscard]] bool done() const noexcept { return Handles_.empty(); }
+    /// \return `true` if the scheduler has no queued tasks. Tasks awaiting an
+    ///         external wakeup are not queued; see `external_waits()`.
+    [[nodiscard]] bool done() const noexcept
+    {
+      std::lock_guard lock(mutex_);
+      return Handles_.empty();
+    }
+
+    /// \brief Return the number of tasks awaiting a wakeup from outside the scheduler.
+    [[nodiscard]] std::size_t external_waits() const noexcept
+    {
+      std::lock_guard lock(mutex_);
+      return external_waits_;
+    }
+
+    void begin_external_wait() noexcept override
+    {
+      std::lock_guard lock(mutex_);
+      ++external_waits_;
+    }
+
+    void complete_external_wait(BasicTask&& task) override
+    {
+      TRACE_MODULE(ASYNC, "Completing an external wait", &task, task.coroutine_handle());
+      // Requeue, release the wait and notify in one critical section. The driving thread may run
+      // the task to completion and destroy this scheduler as soon as the lock is released.
+      std::lock_guard lock(mutex_);
+      CHECK(external_waits_ > 0, "DebugScheduler external wait completed without a matching begin");
+      if (task) Handles_.push_back(std::move(task));
+      --external_waits_;
+      wakeup_.notify_all();
+    }
 
     /// \brief Return the scheduler's immutable ordering configuration.
     [[nodiscard]] DebugSchedulerOptions const& options() const noexcept { return options_; }
@@ -160,8 +226,18 @@ class DebugScheduler : public IAsyncScheduler {
       this->enqueue_task(std::move(task));
     }
 
+    /// \brief Block until a task is runnable or no external wakeup is pending.
+    void wait_for_runnable_or_no_external_waits(std::unique_lock<std::mutex>& lock)
+    {
+      wakeup_.wait(lock, [this] { return !Handles_.empty() || external_waits_ == 0; });
+    }
+
     bool Blocked_ = false;
 
+    // Guards Handles_ and external_waits_: external wakeups enqueue from other threads.
+    mutable std::mutex mutex_;
+    std::condition_variable wakeup_;
+    std::size_t external_waits_ = 0;
     std::vector<BasicTask> Handles_;
     DebugSchedulerOptions options_;
     std::mt19937_64 random_engine_;
@@ -189,7 +265,13 @@ class DebugScheduler : public IAsyncScheduler {
 
   protected:
     /// \brief Add one already-bound task to the runnable queue.
-    void enqueue_task(BasicTask&& task) { Handles_.push_back(std::move(task)); }
+    /// \details Safe to call from any thread.
+    void enqueue_task(BasicTask&& task)
+    {
+      std::lock_guard lock(mutex_);
+      Handles_.push_back(std::move(task));
+      wakeup_.notify_all();
+    }
 
     /// \brief Resume one queued task in the execution context selected by this scheduler.
     virtual void resume_task(BasicTask& task) { task.resume(); }
@@ -353,17 +435,19 @@ inline void DebugScheduler::run()
     DEBUG_TRACE_MODULE(ASYNC, "run() on a blocked DebugQueue: doing nothing");
     return;
   }
-  TRACE_MODULE(ASYNC, "Got some coroutines to resume", Handles_.size());
-
   std::vector<BasicTask> H;
-  std::swap(H, Handles_);
+  {
+    std::lock_guard lock(mutex_);
+    TRACE_MODULE(ASYNC, "Got some coroutines to resume", Handles_.size());
+    std::swap(H, Handles_);
+  }
   this->order_batch(H);
   for (auto&& h : H)
   {
     TRACE_MODULE(ASYNC, "resuming coroutine...", &h, h.coroutine_handle());
     this->resume_task(h);
     CHECK(!h);
-    TRACE_MODULE(ASYNC, "here", &h, Handles_.size());
+    TRACE_MODULE(ASYNC, "here", &h);
   }
   detail::service_task_registry_debug_requests();
 }

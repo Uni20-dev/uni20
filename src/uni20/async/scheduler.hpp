@@ -96,6 +96,27 @@ class IScheduler {
     /// \brief Schedule an already-bound coroutine to be resumed later.
     /// \param task Basic task state whose scheduler route is already fixed.
     virtual void reschedule(BasicTask&& task) = 0;
+
+    /// \brief Record that a task bound to this scheduler awaits a wakeup from outside it.
+    /// \details An awaiter that hands a suspended task to another party, such
+    ///          as a CUDA host callback, calls this before publishing the task;
+    ///          the wakeup then calls `complete_external_wait()`. A scheduler
+    ///          that runs work only on its calling thread uses the count to wait
+    ///          for the wakeup rather than report a deadlock. Use
+    ///          `BasicTask::begin_external_wait` and
+    ///          `BasicTask::reschedule_after_external_wait` to keep the pair balanced.
+    virtual void begin_external_wait() noexcept {}
+
+    /// \brief Deliver a wakeup recorded by `begin_external_wait()`.
+    /// \details Reschedules `task` when it is non-empty and releases the wait
+    ///          as one step: once the task can run, the caller no longer uses
+    ///          the scheduler, which may then be destroyed after the task
+    ///          completes. Called from any thread.
+    /// \param task Woken task, or empty when another ownership claimant resumes it.
+    virtual void complete_external_wait(BasicTask&& task)
+    {
+      if (task) this->reschedule(std::move(task));
+    }
 };
 
 /// \brief Scheduler interface for initial typed host-task submission and host-side progress.

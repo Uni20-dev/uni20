@@ -45,11 +45,13 @@ class ExecutionAcquireAwaiter : public async::CudaTaskAwaiterTag,
       state_.store(registration_state::registering, std::memory_order_relaxed);
       task_ = handle.promise().take_ownership();
       async::TaskPromiseBase::note_suspended(current);
+      // A pool release may deliver the resource from a CUDA host callback thread.
+      async::BasicTask::begin_external_wait(task_);
 
       this->advance();
 
       auto const prior = state_.exchange(registration_state::suspended, std::memory_order_acq_rel);
-      if (prior == registration_state::ready) async::BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::ready) async::BasicTask::reschedule_after_external_wait(std::move(task_));
       return true;
     }
 
@@ -90,7 +92,7 @@ class ExecutionAcquireAwaiter : public async::CudaTaskAwaiterTag,
     void publish_ready() noexcept
     {
       auto const prior = state_.exchange(registration_state::ready, std::memory_order_acq_rel);
-      if (prior == registration_state::suspended) async::BasicTask::reschedule(std::move(task_));
+      if (prior == registration_state::suspended) async::BasicTask::reschedule_after_external_wait(std::move(task_));
     }
 
     static void handle_available(cuda::detail::ResourceWaiter<HandleSlot>& waiter,

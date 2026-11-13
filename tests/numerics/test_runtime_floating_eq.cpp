@@ -3,7 +3,7 @@
 #undef NDEBUG
 #endif
 
-#include "../numerics/precision_cases.hpp"
+#include "precision_cases.hpp"
 #include <uni20/common/trace.hpp>
 
 #include <csignal>

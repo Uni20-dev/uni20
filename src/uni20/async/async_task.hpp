@@ -161,6 +161,19 @@ class BasicTask {
     /// \brief Reschedule a task when it becomes the sole ownership claimant.
     static void reschedule(BasicTask task);
 
+    /// \brief Record that `task` is about to wait for a wakeup from outside its scheduler.
+    /// \details Call before publishing the task to the external party. Every
+    ///          call must be matched by exactly one `reschedule_after_external_wait`.
+    static void begin_external_wait(BasicTask const& task) noexcept;
+
+    /// \brief Reschedule a task woken from outside its scheduler and end its external wait.
+    /// \details May be called from any thread. The scheduler requeues the task
+    ///          and releases the wait in one step, so it never observes an
+    ///          empty queue with no pending wakeup while the task is in
+    ///          transit, and the caller does not touch the scheduler after the
+    ///          task can run.
+    static void reschedule_after_external_wait(BasicTask task);
+
     /// \brief Retain a task only when it is the sole ownership claimant.
     [[nodiscard]] static BasicTask make_sole_owner(BasicTask&& task);
 
