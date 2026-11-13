@@ -280,6 +280,11 @@ One segmented operation is one submission:
 5. Record one completion through `AccessCompletion` and publish it to every
    acquired child.
 
+On compute capability 9.0 and later, consecutive launches within one
+submission can use same-stream programmatic dependent launch. The kernel's
+setup reads only plan data, so it can overlap the previous launch. See
+[CUDA Runtime](runtime.md#programmatic-dependent-launch).
+
 The descriptor buffer and its host source are pinned by the completion under
 the two-clocks rule in
 [Ordering and Backend Lowering](../../architecture/ordering_and_backend_lowering.md),

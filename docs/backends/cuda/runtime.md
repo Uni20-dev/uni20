@@ -296,6 +296,51 @@ If event overhead becomes significant for tiny operations, the preferred
 solutions are operation coalescing, batched kernels, or CUDA graphs. Reintroduce
 stream-affinity state only if profiling demonstrates a real need.
 
+### Programmatic Dependent Launch
+
+**Status:** not implemented. This records the one case the argument above does
+not cover.
+
+[Programmatic dependent launch](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/programmatic-dependent-launch.html)
+(PDL, compute capability 9.0 and later) lets a dependent kernel start before
+its predecessor finishes. The dependent calls `cudaGridDependencySynchronize()`
+before it reads the predecessor's results. That call waits for the
+predecessor's completion and memory flush. Work that needs only the dependent's
+own inputs, such as loading a cached execution plan, overlaps the predecessor's
+tail. The saving is a few microseconds per dependency edge, so it matters only
+for chains of short kernels that coalescing has not already removed.
+
+PDL needs the consumer enqueued while the producer is still running, which is
+exactly when the producer's stream is unavailable. CUDA offers three forms:
+
+| Form | Scope | Fit for Uni20 |
+|---|---|---|
+| `cudaLaunchAttributeProgrammaticStreamSerialization` | consecutive kernels in one stream | usable among the launches of one submission, which holds one stream lease |
+| Programmatic graph edges (`cudaGraphDependencyTypeProgrammatic`) | any kernel-to-kernel edge, including several predecessors | fits a future graph API for repeated structure |
+| `cudaLaunchAttributeProgrammaticEvent` waited on from another stream | across streams | stream capture turns it into a programmatic edge; use outside capture is undocumented |
+
+Rules if PDL is adopted:
+
+- Do not reintroduce stream affinity for it. Affinity would help only
+  single-input chains, since a multi-input join still needs event waits, and the
+  gain per edge is small.
+- Buffer release, stream-pool return, host waits, and provider and copy
+  dependencies keep using the ordinary completion event. A programmatic event
+  is never a release point.
+- A PDL consumer calls `cudaGridDependencySynchronize()` in every block before
+  it touches any buffer covered by the relaxed dependency. Its own completion
+  then implies its producers' completion, so reasoning that chains completions
+  through the buffer ledgers stays valid.
+- Do not use cross-stream programmatic events outside capture until a test on
+  compute capability 9.0 or later passes. The test should use a producer that
+  stalls before writing and a consumer that checks what it read. If the driver
+  does not register the event wait as a programmatic dependency,
+  `cudaGridDependencySynchronize()` returns at once and the consumer reads
+  early. That is a silent data race, not merely a lost optimization.
+- Older devices use ordinary waits. Kernels guard the synchronization call with
+  `__CUDA_ARCH__ >= 900`, so PDL is a per-device lowering choice within the same
+  backend, not a separate backend.
+
 ## Device Buffers And Scoped Access
 
 For an introductory explanation and complete first-use examples, start with
