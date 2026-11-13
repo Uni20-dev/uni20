@@ -48,8 +48,8 @@ ledger, launch, record a completion. The current per-block callers are:
   operand. These are mapped views and expose no `storage()`, so they never
   qualify for the partitioned path.
 - `assign_scale` (and so `copy`), `add_inplace` and `axpy` whenever the key
-  sets or offsets differ, and every three-operand `add`, which has no
-  partitioned path.
+  sets or offsets differ, and every three-operand `add` whose output aliases
+  neither input, which has no partitioned path.
 - Zero fill of output keys that the input lacks, and of output blocks with no
   contraction binding (`zero_unbound_pairwise_output_blocks` in
   [`block_tensor_contract.hpp`](../../../src/uni20/symmetry/block_tensor_contract.hpp)).

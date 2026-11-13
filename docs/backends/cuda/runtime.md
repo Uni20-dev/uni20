@@ -311,7 +311,9 @@ tail. The saving is a few microseconds per dependency edge, so it matters only
 for chains of short kernels that coalescing has not already removed.
 
 PDL needs the consumer enqueued while the producer is still running, which is
-exactly when the producer's stream is unavailable. CUDA offers three forms:
+exactly when the producer's stream is unavailable to other submissions. The
+submitting operation still enqueues the dependent kernel onto that busy
+stream, which it already leases. CUDA offers three forms:
 
 | Form | Scope | Fit for Uni20 |
 |---|---|---|

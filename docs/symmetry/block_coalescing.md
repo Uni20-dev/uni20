@@ -14,7 +14,7 @@ Related notes:
 - `docs/architecture/execution.md` — coalescing as one use of the cost-model knob.
 - `docs/architecture/backend_dispatch.md` — batched/coalesced kernels as backend capabilities.
 - `docs/tensor_network/rabc_contraction_scheduling.md` — the R/A/B/C apply this most affects.
-- `docs/backends/cuda/segmented_strided_elementwise.md` — the single-node pack and scatter primitive for ragged blocks.
+- `docs/backends/cuda/segmented_strided_elementwise.md` — the dense elementwise primitive that ragged pack and scatter lower to.
 
 ## Summary
 
