@@ -76,7 +76,8 @@ granted and are not failures.
 | `best_effort` (default) | Grant every capable pair. A pair whose grant fails, for example with `cudaErrorTooManyPeers` beyond eight peers on systems without NVSwitch, is rolled back, reported with a warning, and left to staged copies. |
 | `required` | Grant every capable pair; a failed grant is an error. Use it where staged peer copies would make a run unacceptably slow. |
 | `disabled` | Grant nothing; use it to measure or diagnose staged transfers. |
- Use `nvidia-smi topo -m` to see whether a pair is connected by
+
+Use `nvidia-smi topo -m` to see whether a pair is connected by
 NVLink (`NV#`), a PCIe switch (`PIX`/`PXB`), or across CPU sockets (`SYS`),
 where peer access is usually unavailable.
 
