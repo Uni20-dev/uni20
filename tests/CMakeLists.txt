@@ -41,6 +41,10 @@ if(UNI20_BUILD_COMBINED_TESTS AND UNI20_COMBINED_TEST_SRCS)
   target_compile_definitions(uni20_tests PRIVATE
     UNI20_TEST_DEATH_TEST_STYLE_THREADSAFE
     UNI20_KRYLOV_MATRIX_MARKET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/krylov/matrix_market")
+  if(CMAKE_CUDA_COMPILER)
+    # Test modules may contribute CUDA sources; their device code uses C++20.
+    set_target_properties(uni20_tests PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+  endif()
   # gtest_discover_tests(uni20_tests) # we do not nede to discover the tests here - the individial test modules already do this
 elseif(UNI20_BUILD_COMBINED_TESTS)
   message(WARNING "UNI20_BUILD_COMBINED_TESTS is ON, but no test sources were registered.")

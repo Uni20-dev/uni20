@@ -6,8 +6,11 @@
 #include <uni20/common/presentation.hpp>
 #include <uni20/common/trace.hpp>
 
+#include "test_cuda_peer_kernel.hpp"
+
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -172,6 +175,145 @@ TEST_F(CudaDeviceTest, ScopedRuntimeInstallsCanonicalDeviceResources)
     EXPECT_EQ(resources.live_allocation_count(), 0);
   }
   EXPECT_FALSE(uni20::cuda::is_initialized());
+}
+
+namespace
+{
+[[nodiscard]] cudaMemAccessFlags pool_access(int owner, int accessor)
+{
+  cudaMemPool_t pool = nullptr;
+  uni20::cuda::check(cudaDeviceGetMemPool(&pool, owner), "cudaDeviceGetMemPool", owner);
+  cudaMemLocation location{.type = cudaMemLocationTypeDevice, .id = accessor};
+  cudaMemAccessFlags flags = cudaMemAccessFlagsProtNone;
+  uni20::cuda::check(cudaMemPoolGetAccess(&flags, pool, &location), "cudaMemPoolGetAccess", owner);
+  return flags;
+}
+
+// Probes device-level peer access without changing it.
+[[nodiscard]] bool device_peer_access_enabled(int accessor, int owner)
+{
+  uni20::cuda::ScopedDevice guard(accessor);
+  cudaError_t const status = cudaDeviceEnablePeerAccess(owner, 0);
+  (void)cudaGetLastError();
+  if (status == cudaSuccess)
+  {
+    uni20::cuda::check(cudaDeviceDisablePeerAccess(owner), "cudaDeviceDisablePeerAccess", accessor);
+    return false;
+  }
+  return status == cudaErrorPeerAccessAlreadyEnabled;
+}
+
+[[nodiscard]] bool can_access_peer(int accessor, int owner)
+{
+  int can_access = 0;
+  uni20::cuda::check(cudaDeviceCanAccessPeer(&can_access, accessor, owner), "cudaDeviceCanAccessPeer", accessor);
+  return can_access != 0;
+}
+} // namespace
+
+TEST_F(CudaDeviceTest, RuntimeGrantsPeerAccessForCapablePairsAndRevokesItAtShutdown)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  bool const pools = uni20::cuda::Device::get(0).capabilities().memory_pools_supported &&
+                     uni20::cuda::Device::get(1).capabilities().memory_pools_supported;
+  std::array<std::array<int, 2>, 2> const pairs{{{0, 1}, {1, 0}}};
+  for (auto const [accessor, owner] : pairs)
+  {
+    ASSERT_FALSE(device_peer_access_enabled(accessor, owner));
+    if (pools)
+    {
+      ASSERT_NE(pool_access(owner, accessor), cudaMemAccessFlagsProtReadWrite);
+    }
+  }
+
+  {
+    auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 1});
+    EXPECT_TRUE(runtime.peer_access(0, 0));
+    for (auto const [accessor, owner] : pairs)
+    {
+      bool const capable = can_access_peer(accessor, owner);
+      EXPECT_EQ(runtime.peer_access(accessor, owner), capable);
+      EXPECT_EQ(device_peer_access_enabled(accessor, owner), capable);
+      if (pools)
+      {
+        EXPECT_EQ(pool_access(owner, accessor) == cudaMemAccessFlagsProtReadWrite, capable);
+      }
+    }
+  }
+
+  for (auto const [accessor, owner] : pairs)
+  {
+    EXPECT_FALSE(device_peer_access_enabled(accessor, owner));
+    if (pools)
+    {
+      EXPECT_NE(pool_access(owner, accessor), cudaMemAccessFlagsProtReadWrite);
+    }
+  }
+}
+
+TEST_F(CudaDeviceTest, RequiredPeerAccessGrantsEveryCapablePair)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1},
+                                          .streams_per_device = 1,
+                                          .peer_access_policy = uni20::cuda::PeerAccessPolicy::required});
+  EXPECT_EQ(runtime.peer_access(0, 1), can_access_peer(0, 1));
+  EXPECT_EQ(runtime.peer_access(1, 0), can_access_peer(1, 0));
+  EXPECT_EQ(device_peer_access_enabled(1, 0), can_access_peer(1, 0));
+}
+
+TEST_F(CudaDeviceTest, RuntimePeerAccessCanBeDisabled)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1},
+                                          .streams_per_device = 1,
+                                          .peer_access_policy = uni20::cuda::PeerAccessPolicy::disabled});
+  EXPECT_FALSE(runtime.peer_access(0, 1));
+  EXPECT_FALSE(runtime.peer_access(1, 0));
+  EXPECT_FALSE(device_peer_access_enabled(1, 0));
+  if (uni20::cuda::Device::get(0).capabilities().memory_pools_supported)
+  {
+    EXPECT_NE(pool_access(0, 1), cudaMemAccessFlagsProtReadWrite);
+  }
+}
+
+// CudaBuffer allocations come from the stream-ordered pool, which cudaDeviceEnablePeerAccess
+// alone does not open: without the pool grant this kernel faults with an illegal address.
+TEST_F(CudaDeviceTest, KernelReadsPeerDeviceBufferAfterRuntimeGrant)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 1});
+  if (!runtime.peer_access(1, 0)) GTEST_SKIP() << "devices 0 and 1 do not support peer access";
+
+  std::array<double, 1000> input{};
+  for (std::size_t index = 0; index < input.size(); ++index)
+    input[index] = 0.5 * static_cast<double>(index);
+  uni20::cuda::CudaBuffer<double> source(runtime.device_resources(0), input.size());
+  uni20::cuda::CudaBuffer<double> destination(runtime.device_resources(1), input.size());
+  {
+    auto write = source.blocking_write_access();
+    uni20::cuda::ScopedDevice guard(0);
+    uni20::cuda::check(cudaMemcpy(write.data(), input.data(), sizeof(input), cudaMemcpyHostToDevice),
+                       "cudaMemcpy peer source upload", 0);
+  }
+
+  {
+    auto read = source.blocking_read_access();
+    auto write = destination.blocking_write_access();
+    uni20::cuda::ScopedDevice guard(1);
+    uni20::cuda::check(uni20_test_launch_copy_doubles(write.data(), read.data(), input.size(), nullptr),
+                       "peer read kernel launch", 1);
+    uni20::cuda::check(cudaDeviceSynchronize(), "peer read kernel", 1);
+  }
+
+  std::array<double, 1000> output{};
+  {
+    auto read = destination.blocking_read_access();
+    uni20::cuda::ScopedDevice guard(1);
+    uni20::cuda::check(cudaMemcpy(output.data(), read.data(), sizeof(output), cudaMemcpyDeviceToHost),
+                       "cudaMemcpy peer result download", 1);
+  }
+  EXPECT_EQ(output, input);
 }
 
 TEST_F(CudaDeviceTest, ScopedRuntimeMayBeInstalledAgainAfterShutdown)

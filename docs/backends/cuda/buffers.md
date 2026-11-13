@@ -318,7 +318,10 @@ check(cudaMemcpyPeerAsync(
 
 Synchronization does not make arbitrary foreign-device pointer access legal.
 The kernel or provider API must independently support the devices and pointers
-being supplied.
+being supplied. A kernel may read or write another device's buffer only when
+`cuda::runtime().peer_access(kernel_device, buffer_device)` is true; see
+[peer access](runtime.md#peer-access). The same grant makes
+`cudaMemcpyPeerAsync` copy directly rather than through host memory.
 
 ## Async Integration
 

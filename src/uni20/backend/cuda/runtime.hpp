@@ -303,6 +303,21 @@ class DeviceResources {
     template <typename> friend class detail::CudaAllocation;
 };
 
+/// \brief How `cuda::initialize()` treats direct peer access between enrolled devices.
+/// \details Policies apply only to pairs that `cudaDeviceCanAccessPeer`
+///          reports as capable. Other pairs are never granted and are not
+///          failures; copies between them stage through host memory.
+enum class PeerAccessPolicy
+{
+  /// Grant no peer access.
+  disabled,
+  /// Grant access for every capable pair. A pair whose grant fails is rolled
+  /// back, reported with a warning, and left to staged copies.
+  best_effort,
+  /// Grant access for every capable pair. A failed grant is an error.
+  required,
+};
+
 /// \brief Configuration for one scoped process-wide CUDA runtime installation.
 struct RuntimeConfig
 {
@@ -314,6 +329,10 @@ struct RuntimeConfig
     std::size_t streams_per_device = 8;
     /// CUDA stream creation flags used by every enrolled device.
     unsigned int stream_flags = cudaStreamNonBlocking;
+    /// Direct peer access between enrolled devices, for both `cudaMalloc`
+    /// and stream-ordered pool allocations. Peer access is a performance
+    /// optimization, so a failed grant is not fatal by default.
+    PeerAccessPolicy peer_access_policy = PeerAccessPolicy::best_effort;
 };
 
 /// \brief Scoped owner of the process-wide CUDA resource installation.
@@ -341,14 +360,48 @@ class Runtime {
     /// \brief Return the configured default CUDA device ordinal, if any.
     [[nodiscard]] std::optional<int> default_device() const noexcept { return default_device_; }
 
+    /// \brief Return whether code running on `accessor` may directly access memory allocated on `owner`.
+    /// \details True when this runtime granted peer access for the enrolled
+    ///          pair. Kernels on `accessor` may then dereference `owner`
+    ///          allocations, and peer copies between them do not stage
+    ///          through host memory. A device always has access to itself.
+    [[nodiscard]] bool peer_access(int accessor, int owner) const noexcept;
+
   private:
     struct construction_key
     {};
 
+    /// \brief Peer access established by this runtime, reverted on destruction.
+    struct PeerGrant
+    {
+        int accessor = -1;
+        int owner = -1;
+        /// Whether this runtime called `cudaDeviceEnablePeerAccess` for the pair.
+        bool enabled_device_access = false;
+        /// Pool whose access this runtime changed, or null.
+        cudaMemPool_t pool = nullptr;
+        /// Access flags the pool granted `accessor` before this runtime changed them.
+        cudaMemAccessFlags previous_pool_access = cudaMemAccessFlagsProtNone;
+    };
+
     explicit Runtime(RuntimeConfig config, construction_key);
+
+    /// \brief CUDA call that failed while granting one pair.
+    struct PeerGrantFailure
+    {
+        cudaError_t status = cudaSuccess;
+        char const* operation = "";
+        int device = -1;
+    };
+
+    void grant_peer_access(PeerAccessPolicy policy);
+    [[nodiscard]] std::optional<PeerGrantFailure> try_grant_peer_access(PeerGrant& grant, bool memory_pools_supported);
+    static void revoke_peer_grant(PeerGrant const& grant) noexcept;
+    void revoke_peer_access() noexcept;
 
     std::vector<std::unique_ptr<DeviceResources>> device_resources_;
     std::optional<int> default_device_;
+    std::vector<PeerGrant> peer_grants_;
 
     friend Runtime initialize(RuntimeConfig);
 };

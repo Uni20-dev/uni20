@@ -45,6 +45,42 @@ the installation to those devices. The configured default must be enrolled; if
 it is omitted, the first enrolled device is the default. Initialization with no
 visible devices is valid, but default-device resource lookup then fails.
 
+## Peer Access
+
+By default, initialization grants direct peer access between every ordered pair
+of enrolled devices for which `cudaDeviceCanAccessPeer` reports support. Peer
+access needs two grants, because CUDA treats the allocation kinds separately:
+
+- `cudaDeviceEnablePeerAccess`, made from the accessing device, covers
+  `cudaMalloc` allocations;
+- `cudaMemPoolSetAccess` on the owning device's default memory pool covers the
+  stream-ordered `cudaMallocAsync` allocations used by `CudaBuffer`.
+
+With both grants, kernels may dereference the peer device's buffers and
+`cudaMemcpyPeerAsync` copies directly between devices. Without them, peer copies
+still work but the driver stages them through host memory, and a kernel that
+reads a peer pool allocation faults. On two NVLink-bridged Quadro GV100s (`NV4`)
+a 256 MiB peer copy measured 7.9 GB/s without the grants and 96.9 GB/s with
+them; a kernel reading the peer device's memory reached 85.2 GB/s.
+
+`Runtime::peer_access(accessor, owner)` reports whether a pair was granted.
+Shutdown revokes exactly the access this runtime added, after its allocations
+are drained, so a later runtime starts from the same state.
+
+`RuntimeConfig::peer_access_policy` controls grants. Policies apply only to
+pairs that `cudaDeviceCanAccessPeer` reports as capable; other pairs are never
+granted and are not failures.
+
+| Policy | Behavior |
+|---|---|
+| `best_effort` (default) | Grant every capable pair. A pair whose grant fails, for example with `cudaErrorTooManyPeers` beyond eight peers on systems without NVSwitch, is rolled back, reported with a warning, and left to staged copies. |
+| `required` | Grant every capable pair; a failed grant is an error. Use it where staged peer copies would make a run unacceptably slow. |
+| `disabled` | Grant nothing; use it to measure or diagnose staged transfers. |
+
+Use `nvidia-smi topo -m` to see whether a pair is connected by
+NVLink (`NV#`), a PCIe switch (`PIX`/`PXB`), or across CPU sockets (`SYS`),
+where peer access is usually unavailable.
+
 Direct `DeviceResources` construction remains available for isolated unit tests
 and low-level bring-up. Application and backend code should normally use the
 canonical installed instance so stream and provider capacity are shared per
