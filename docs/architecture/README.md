@@ -23,6 +23,10 @@ heterogeneous-execution layers fit together.
   ordering, completion, and lifetime responsibilities across layers.
 - [Storage Kind and Location](storage_kind_and_location.md) separates
   compile-time memory semantics from runtime placement.
+- [Counter-Based Random Number Generation](random_number_generation.md) defines
+  the reproducibility contract, the identity tree that derives Philox keys and
+  counters, how identities attach to allocations in distributed and persistent
+  settings, and Monte Carlo streams. Not implemented.
 
 ## Exploratory Design
 
