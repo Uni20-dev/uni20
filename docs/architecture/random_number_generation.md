@@ -9,8 +9,8 @@ exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.
 This note defines how Uni20 produces random tensor values, randomized-algorithm
 inputs and Monte Carlo streams. Every draw has an identity: a path in a tree
 from a run root down to the allocation or stream where values are generated.
-Uni20 guarantees that no two draws share an identity. It does not promise
-bitwise reproducibility.
+Uni20 guarantees that two draws share an identity only when the program asked
+for that, by reusing a seed. It does not promise bitwise reproducibility.
 
 Related notes:
 
@@ -28,12 +28,25 @@ Related notes:
 
 ## Reproducibility Contract
 
-**Guaranteed: no reuse.** No two draws share a Philox key and counter within a
-run or across runs. The only exception is chance identity collisions, which
-have probability about `N² / 2¹²⁹` (see [Identity Tree](#identity-tree)). This
-holds across operations, components, ranks, devices, restarts and branches
-from a checkpoint. Monte Carlo statistics and randomized algorithms depend on
-this property for correctness.
+**Guaranteed: no unintended reuse.** No two draws share a Philox key and
+counter, apart from chance identity collisions with probability about
+`N² / 2¹²⁹` (see [Identity Tree](#identity-tree)), provided that:
+
+- the runs being compared have distinct roots. Fresh entropy gives this by
+  default (see [Restart and Persistence](#restart-and-persistence)). With a
+  fixed seed, a distinct resume point also gives it;
+- every label is unique among its siblings. Counters and plan-assigned indices
+  supply this, and SPMD mode needs the same control flow on every rank (see
+  [Distributed Execution](#distributed-execution)).
+
+Under those conditions the guarantee holds across operations, components,
+ranks, devices, restarts and branches from a checkpoint. Monte Carlo statistics
+and randomized algorithms depend on it for correctness.
+
+Reuse is deliberate in one case. Rerunning with the same seed, or resuming two
+jobs from one checkpoint with the same seed, reproduces the same draws. That is
+what a fixed seed asks for, so independent replicas need different seeds or
+fresh entropy.
 
 **Best effort: same values under a fixed configuration.** A fixed seed gives
 the same random values when the build and configuration are also the same:
@@ -76,8 +89,9 @@ counter.
 - It passes BigCrush, PractRand at 32 TB and Gjrand at 10 TB without
   systematic failures. Manssen, Weigel and Hartmann found no deviation in a
   1024² Ising Metropolis test.
-- cuRAND, rocRAND, oneMKL, NumPy and C++26 `std::philox4x32` implement it,
-  which makes cross-checking easy.
+- cuRAND, rocRAND, oneMKL and C++26 `std::philox4x32` implement it, which
+  makes cross-checking easy. NumPy's `Philox` is the 4x64 variant and cannot
+  serve as a cross-check.
 
 Uni20 implements the bijection itself, as a `constexpr UNI20_HOST_DEVICE`
 function of about 30 lines, and tests it on host and device against the
@@ -116,9 +130,24 @@ child(node, label)     = Philox4x32-10 under k at counter (h, label)          la
 values(node, position) = Philox4x32-10 under k at counter (h, 2⁶³ + position)  position < 2⁶³
 ```
 
-The 128 output bits of `child` are the child's `(k, h)`. The top bit of the low
-counter word separates derivation from value generation, so a node can both
-spawn children and generate values without overlap.
+The 128 output bits of `child` are the child's `(k, h)`. Bit 63 of the low
+64-bit half of the counter separates derivation from value generation, so a
+node can both spawn children and generate values without overlap.
+
+Version 1 maps the 64-bit quantities onto Philox's 32-bit words as follows,
+with `[hi:lo]` joining two words:
+
+```text
+key     = [key[1] : key[0]]                = k
+counter = [ctr[3] : ctr[2] : ctr[1] : ctr[0]]  where [ctr[3] : ctr[2]] = h
+                                                 [ctr[1] : ctr[0]] = label, or 2⁶³ + position
+child   : k = [out[1] : out[0]],  h = [out[3] : out[2]]
+```
+
+Lane `i` of a value evaluation for a one-word uniform is `out[i]`. For a
+two-word uniform it is `[out[2i + 1] : out[2i]]`, with the top 53 bits used.
+This mapping fixes the values, so it is part of the mapping version, and any
+cross-check against another Philox implementation must use it.
 
 Properties:
 
@@ -196,11 +225,14 @@ An operation chooses one of two position schemes.
 - An element at offset `o` within its allocation takes lane `o mod g` of
   evaluation `⌊o / g⌋`, where `g` is the number of values per evaluation (see
   [Transforms](#transforms)).
-- The strided elementwise plan already computes this offset for its output
-  operand, plus the view's base offset within the allocation. A random fill is
-  therefore an ordinary nullary elementwise operation whose functor receives the
-  output offset, with no index decoding. The current `apply` passes only loaded
-  values, so it needs a small extension.
+- The strided elementwise plan already computes the output offset relative to
+  the view's data handle. Packed block views fold their offset within the
+  allocation into that handle, so the planner must supply the view's base
+  offset separately: per launch for one view, and per segment in the segmented
+  plan. The fill functor adds the two.
+- A random fill is then an ordinary nullary elementwise operation with no index
+  decoding. The current `apply` passes only loaded values, so it needs a small
+  extension to pass the output offset and the base.
 - Values depend on layout. Packed and separate storage, alignment, and row- or
   column-major order all give different values, which the contract allows.
 - The fill covers block views, never padding, so packed alignment padding stays
@@ -208,10 +240,12 @@ An operation chooses one of two position schemes.
 
 **Logical index.**
 
-- The position is the row-major logical index within the component, which is
-  the offset `GeneratedLayout`
-  ([`generated_layout.hpp`](../../src/uni20/mdspan/generated_layout.hpp))
-  already encodes.
+- The position is the row-major linear index within the component's logical
+  extents. This note defines that index as part of the mapping version.
+- The random generator computes the index itself from the decoded indices it
+  receives. It does not rely on the synthetic offset of `GeneratedLayout`
+  ([`generated_layout.hpp`](../../src/uni20/mdspan/generated_layout.hpp)),
+  which that file declares implementation-only.
 - Values are independent of layout. This is required when several physical
   copies with possibly different layouts must hold the same values: replicas,
   or a component regenerated on demand in place of communication.
