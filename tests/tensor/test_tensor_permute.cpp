@@ -1,3 +1,5 @@
+#include <uni20/linalg/dispatch_diagnostics.hpp>
+#include <uni20/linalg/ops/contract.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/tensor.hpp>
 
@@ -47,7 +49,8 @@ template <class Layout> void check_rank_three()
   view[3, 1, 2] = -17;
   EXPECT_EQ((tensor[1, 2, 3]), -17);
 
-  auto packed = uni20::make_tensor(view);
+  auto packed = uni20::Tensor(view);
+  static_assert(std::same_as<decltype(packed), uni20::Tensor<double, 3>>);
   EXPECT_NE(packed.mdspan().data_handle(), tensor.mdspan().data_handle());
   EXPECT_TRUE(packed.mdspan().is_exhaustive());
   EXPECT_EQ((packed[3, 1, 2]), -17);
@@ -90,6 +93,37 @@ TEST(TensorPermuteTest, RankSixRegroupingNeedsNoSymmetryWrapper)
   EXPECT_EQ((packed[0, 1, 1, 0, 0, 1]), 456);
   EXPECT_EQ(packed.extent(2), 3);
   EXPECT_EQ(packed.extent(3), 2);
+}
+
+TEST(TensorPermuteTest, PackedRankSixGramUsesDirectGemm)
+{
+  // Issue #130: the row axes (0, 3) are separated in the contraction output.
+  constexpr uni20::index_type n = 3;
+  uni20::Tensor<double, 6> tensor(n, n, n, n, n, n);
+  double value = 1;
+  for (auto& element : tensor.storage())
+    element = value++;
+  using axis_pair = std::pair<std::size_t, std::size_t>;
+  uni20::Tensor<double, 4> reference(n, n, n, n);
+  uni20::linalg::contract(reference, 1.0, tensor, tensor, std::array<axis_pair, 4>{{{1, 1}, {2, 2}, {4, 4}, {5, 5}}},
+                          0.0);
+
+  auto packed = uni20::Tensor(uni20::permute<0, 3, 1, 2, 4, 5>(tensor));
+  static_assert(std::same_as<decltype(packed), uni20::Tensor<double, 6>>);
+  uni20::Tensor<double, 4> result(n, n, n, n);
+  std::string backend;
+  uni20::linalg::dispatch_diagnostics::scoped_sink const watch([&backend](auto const& event) {
+    if (event.operation == "contract" && event.selected_backend()) backend = *event.selected_backend();
+  });
+  uni20::linalg::contract(result, 1.0, packed, packed, std::array<axis_pair, 4>{{{2, 2}, {3, 3}, {4, 4}, {5, 5}}}, 0.0);
+
+  EXPECT_EQ(backend, "direct_gemm_contraction");
+  // These small integer products and sums are exactly representable in double.
+  for (uni20::index_type a = 0; a < n; ++a)
+    for (uni20::index_type b = 0; b < n; ++b)
+      for (uni20::index_type c = 0; c < n; ++c)
+        for (uni20::index_type d = 0; d < n; ++d)
+          EXPECT_EQ((result[a, b, c, d]), (reference[a, b, c, d]));
 }
 
 TEST(TensorPermuteTest, TemporaryPermutationDescriptorsComposeWithoutRetainingIntermediates)
