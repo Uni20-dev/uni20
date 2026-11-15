@@ -58,8 +58,7 @@ template <NativeReal R> struct portable_exponential_math
 template <NativeReal R> struct exponential_math_provider : portable_exponential_math<R>
 {};
 
-#if UNI20_HAS_EXP10_FLOAT || UNI20_HAS_EXP2M1_FLOAT || UNI20_HAS_EXP10M1_FLOAT || UNI20_HAS_LOG2P1_FLOAT ||            \
-    UNI20_HAS_LOG10P1_FLOAT
+#if UNI20_HAS_EXP10_FLOAT || UNI20_HAS_EXP2M1_FLOAT || UNI20_HAS_EXP10M1_FLOAT
 template <> struct exponential_math_provider<float> : portable_exponential_math<float>
 {
 #if UNI20_HAS_EXP10_FLOAT
@@ -74,17 +73,10 @@ template <> struct exponential_math_provider<float> : portable_exponential_math<
 #if UNI20_HAS_EXP10M1_FLOAT
     static float exp10m1(float x) { return ::exp10m1f(x); }
 #endif
-#if UNI20_HAS_LOG2P1_FLOAT
-    static float log2p1(float x) { return ::log2p1f(x); }
-#endif
-#if UNI20_HAS_LOG10P1_FLOAT
-    static float log10p1(float x) { return ::log10p1f(x); }
-#endif
 };
 #endif
 
-#if UNI20_HAS_EXP10_DOUBLE || UNI20_HAS_EXP2M1_DOUBLE || UNI20_HAS_EXP10M1_DOUBLE || UNI20_HAS_LOG2P1_DOUBLE ||        \
-    UNI20_HAS_LOG10P1_DOUBLE
+#if UNI20_HAS_EXP10_DOUBLE || UNI20_HAS_EXP2M1_DOUBLE || UNI20_HAS_EXP10M1_DOUBLE
 template <> struct exponential_math_provider<double> : portable_exponential_math<double>
 {
 #if UNI20_HAS_EXP10_DOUBLE
@@ -99,17 +91,10 @@ template <> struct exponential_math_provider<double> : portable_exponential_math
 #if UNI20_HAS_EXP10M1_DOUBLE
     static double exp10m1(double x) { return ::exp10m1(x); }
 #endif
-#if UNI20_HAS_LOG2P1_DOUBLE
-    static double log2p1(double x) { return ::log2p1(x); }
-#endif
-#if UNI20_HAS_LOG10P1_DOUBLE
-    static double log10p1(double x) { return ::log10p1(x); }
-#endif
 };
 #endif
 
-#if UNI20_HAS_EXP10_LONG_DOUBLE || UNI20_HAS_EXP2M1_LONG_DOUBLE || UNI20_HAS_EXP10M1_LONG_DOUBLE ||                    \
-    UNI20_HAS_LOG2P1_LONG_DOUBLE || UNI20_HAS_LOG10P1_LONG_DOUBLE
+#if UNI20_HAS_EXP10_LONG_DOUBLE || UNI20_HAS_EXP2M1_LONG_DOUBLE || UNI20_HAS_EXP10M1_LONG_DOUBLE
 template <> struct exponential_math_provider<long double> : portable_exponential_math<long double>
 {
 #if UNI20_HAS_EXP10_LONG_DOUBLE
@@ -124,17 +109,10 @@ template <> struct exponential_math_provider<long double> : portable_exponential
 #if UNI20_HAS_EXP10M1_LONG_DOUBLE
     static long double exp10m1(long double x) { return ::exp10m1l(x); }
 #endif
-#if UNI20_HAS_LOG2P1_LONG_DOUBLE
-    static long double log2p1(long double x) { return ::log2p1l(x); }
-#endif
-#if UNI20_HAS_LOG10P1_LONG_DOUBLE
-    static long double log10p1(long double x) { return ::log10p1l(x); }
-#endif
 };
 #endif
 
-#if UNI20_HAS_FLOAT128 && (UNI20_HAS_EXP10_FLOAT128 || UNI20_HAS_EXP2M1_FLOAT128 || UNI20_HAS_EXP10M1_FLOAT128 ||      \
-                           UNI20_HAS_LOG2P1_FLOAT128 || UNI20_HAS_LOG10P1_FLOAT128)
+#if UNI20_HAS_FLOAT128 && (UNI20_HAS_EXP10_FLOAT128 || UNI20_HAS_EXP2M1_FLOAT128 || UNI20_HAS_EXP10M1_FLOAT128)
 template <> struct exponential_math_provider<float128> : portable_exponential_math<float128>
 {
 #if UNI20_HAS_EXP10_FLOAT128
@@ -149,18 +127,14 @@ template <> struct exponential_math_provider<float128> : portable_exponential_ma
 #if UNI20_HAS_EXP10M1_FLOAT128
     static float128 exp10m1(float128 x) { return ::exp10m1f128(x); }
 #endif
-#if UNI20_HAS_LOG2P1_FLOAT128
-    static float128 log2p1(float128 x) { return ::log2p1f128(x); }
-#endif
-#if UNI20_HAS_LOG10P1_FLOAT128
-    static float128 log10p1(float128 x) { return ::log10p1f128(x); }
-#endif
 };
 #endif
 
 template <NativeReal R> R exp10(R x) { return exponential_math_provider<R>::exp10(x); }
 template <NativeReal R> R exp2m1(R x) { return exponential_math_provider<R>::exp2m1(x); }
 template <NativeReal R> R exp10m1(R x) { return exponential_math_provider<R>::exp10m1(x); }
-template <NativeReal R> R log2p1(R x) { return exponential_math_provider<R>::log2p1(x); }
-template <NativeReal R> R log10p1(R x) { return exponential_math_provider<R>::log10p1(x); }
+// Keep the compensated logarithms even when libc exports these extensions.
+// Typed symbols do not establish the exact identities or accuracy contract.
+template <NativeReal R> R log2p1(R x) { return portable_exponential_math<R>::log2p1(x); }
+template <NativeReal R> R log10p1(R x) { return portable_exponential_math<R>::log10p1(x); }
 } // namespace uni20::detail::native_math

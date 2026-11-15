@@ -42,7 +42,7 @@ template <class C> mpreal compound_error(typename C::real_type const& result, mp
   R rounded = scalar_at_precision<R>(reference, C::precision());
   if (math::isinf(rounded))
   {
-    EXPECT_EQ(result, rounded);
+    expect_equal(result, rounded);
     return mpreal(0, p);
   }
   EXPECT_TRUE(math::isfinite(result));
@@ -50,7 +50,7 @@ template <class C> mpreal compound_error(typename C::real_type const& result, mp
   if (!math::isfinite(result)) return mpreal(100, p);
   if (rounded == 0)
   {
-    EXPECT_EQ(result, 0);
+    expect_equal(result, C::real(0));
   }
   if (reference == 0) return abs(widen(result));
   int exponent = static_cast<int>(math::frexp(reference).exponent);

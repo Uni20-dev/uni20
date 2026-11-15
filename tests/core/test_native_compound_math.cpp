@@ -1,9 +1,12 @@
+#include "../numerics/scalar_assertions.hpp"
+
 #include <gtest/gtest.h>
 #include <uni20/core/math.hpp>
 
 namespace
 {
 namespace m = uni20::math;
+using uni20::test::expect_equal;
 struct ConversionOnly
 {
     operator double() const;
@@ -38,22 +41,24 @@ template <class R, class F> void boundaries(F compound)
     for (int n : {-2, 0, 2})
       EXPECT_TRUE(m::isnan(compound(x, n)));
   for (R x : {R(-1), -R(0), R(0), R(2), inf, nan})
-    EXPECT_EQ(compound(x, 0), R(1));
+    expect_equal(compound(x, 0), R(1));
   for (int n : {-3, -2, -1, 1, 2, 3})
   {
     EXPECT_TRUE(m::isnan(compound(nan, n)));
-    EXPECT_EQ(compound(R(-1), n), n < 0 ? inf : R(0));
+    expect_equal(compound(R(-1), n), n < 0 ? inf : R(0));
     EXPECT_FALSE(m::signbit(compound(R(-1), n)));
-    EXPECT_EQ(compound(inf, n), n > 0 ? inf : R(0));
+    expect_equal(compound(inf, n), n > 0 ? inf : R(0));
     EXPECT_FALSE(m::signbit(compound(inf, n)));
-    EXPECT_EQ(compound(R(0), n), R(1));
-    EXPECT_EQ(compound(-R(0), n), R(1));
+    expect_equal(compound(R(0), n), R(1));
+    expect_equal(compound(-R(0), n), R(1));
   }
   for (auto n : {uni20::numeric_limits<std::int64_t>::min(), uni20::numeric_limits<std::int64_t>::max()})
   {
-    EXPECT_EQ(compound(R(0), n), R(1));
-    EXPECT_EQ(compound(R(1), n), n > 0 ? inf : R(0));
-    EXPECT_EQ(compound(R(-0.5), n), n < 0 ? inf : R(0));
+    expect_equal(compound(R(0), n), R(1));
+    expect_equal(compound(R(1), n), n > 0 ? inf : R(0));
+    // Splitting this into exponentials can produce 0 * infinity instead of 0.
+    expect_equal(compound(m::ldexp(R(1), -25), n), n > 0 ? inf : R(0));
+    expect_equal(compound(R(-0.5), n), n < 0 ? inf : R(0));
   }
   // The exponent stays integer, and the original tiny increment is retained.
   R tiny = m::ldexp(R(1), -60);
@@ -65,13 +70,13 @@ template <class R, class F> void boundaries(F compound)
 
   for (int e : {L::min_exponent - L::digits(), L::min_exponent, -8, 0, 8, L::max_exponent - 1})
   {
-    EXPECT_EQ(compound(R(1), e), m::ldexp(R(1), e));
-    EXPECT_EQ(compound(R(-0.5), -e), m::ldexp(R(1), e));
+    expect_equal(compound(R(1), e), m::ldexp(R(1), e));
+    expect_equal(compound(R(-0.5), -e), m::ldexp(R(1), e));
   }
   // Inverting an already rounded positive power would lose this subnormal.
-  EXPECT_EQ(compound(R(1), -L::max_exponent), m::ldexp(R(1), -L::max_exponent));
-  EXPECT_EQ(compound(R(-0.5), L::max_exponent), m::ldexp(R(1), -L::max_exponent));
-  EXPECT_EQ(compound(m::next_up(R(-1)), -2), m::ldexp(R(1), 2 * L::digits()));
+  expect_equal(compound(R(1), -L::max_exponent), m::ldexp(R(1), -L::max_exponent));
+  expect_equal(compound(R(-0.5), L::max_exponent), m::ldexp(R(1), -L::max_exponent));
+  expect_equal(compound(m::next_up(R(-1)), -2), m::ldexp(R(1), 2 * L::digits()));
 }
 TYPED_TEST(NativeCompound, ValueContractsAndRetainedIncrement)
 {
@@ -82,6 +87,6 @@ TYPED_TEST(NativeCompound, CheckedIntegerExponent)
 {
   auto out_of_range = std::uint64_t(1) << 63;
   EXPECT_THROW(m::compound(TypeParam(0), out_of_range), std::out_of_range);
-  EXPECT_EQ(m::compound(TypeParam(0), out_of_range - 1), TypeParam(1));
+  expect_equal(m::compound(TypeParam(0), out_of_range - 1), TypeParam(1));
 }
 } // namespace
