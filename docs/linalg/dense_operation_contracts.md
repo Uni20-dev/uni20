@@ -105,12 +105,28 @@ and `All` selects every entry. Unselected entries are unchanged. Thus an
 identity initialization requires `All` (the default); setting only `Upper`
 does not clear any existing lower-triangular entries.
 
+## Matrix Exponential
+
 `matrix_exponential(output, input, time)` computes `exp(time * input)`, not
 entrywise exponentiation. Both matrices have the same square shape. Complex
 time can require complex output even for real input. The current CPU
 implementation copies its input before writing output, but that is not a
 general overlap guarantee across backends or Async wrappers. Async fixed
 input/output operations require distinct epoch queues.
+
+The CPU implementation recognizes exactly real, exactly skew-symmetric
+`time * input` matrices of order two or three. For a planar generator
+`[[0, -theta], [theta, 0]]`, it evaluates the analytical rotation using scalar
+`sin(theta)` and `cos(theta)` at the original angle, including complex storage
+whose entries have zero imaginary parts. The 3x3 path uses Rodrigues' formula
+when its rotation angle is representable. These computations retain the
+underlying real scalar's precision and range.
+
+Other inputs use adaptive Padé scaling and squaring. At very large norms,
+repeated squaring can amplify roundoff in both magnitude and phase, even when
+the exact exponential is unitary. The general path therefore has no guarantee
+of unitarity or phase accuracy for arbitrarily large skew-Hermitian inputs.
+Finite, bounded output alone is insufficient evidence of an accurate result.
 
 ## Destructive Eigensystems
 

@@ -73,7 +73,7 @@ template <class C> mpreal grid_error(typename C::real_type const& result, mpreal
   if (!math::isfinite(result)) return mpreal(100, p);
   if (rounded == 0)
   {
-    EXPECT_EQ(result, 0);
+    expect_equal(result, C::real(0));
     EXPECT_EQ(math::signbit(result), math::signbit(rounded));
   }
   if (reference == 0) return abs(widen(result));

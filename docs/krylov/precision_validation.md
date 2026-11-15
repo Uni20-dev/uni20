@@ -208,6 +208,7 @@ that provider/helper inventory.
 | Dense one-norm and linear solve through CPU helpers | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuMatrixOneNormRetainsIncrement`, `CpuSolvePreservesExtendedExponentRange` |
 | Tensor reductions through the CPU reference backend | yes | yes | `NumericalLinalg/{Real,Complex}Float128.CpuReductionsRetainIncrement` |
 | Dense matrix exponential prescaling | yes | no | `MplapackBinary128CpuOpsTest.MatrixExponentialPrescalesWithinBinary128` |
+| Dense planar-rotation exponential, including extended-range angles | yes | yes | `MplapackBinary128CpuOpsTest.HugeSkewSymmetricGeneratorMatchesAnalyticalRotation`; shares scalar-preserving analytical cases with the native typed tests. |
 | Exact Tensor SVD | yes | yes | `MplapackBinary128CpuOpsTest.ExactSvdPreservesRealAndComplexBinary128Values`, `AsyncSvdTest.SupportsConfiguredFloat128Backend` |
 | Reduced Tensor QR and LQ | yes | n/a | `MplapackBinary128CpuOpsTest.ReducedQrAndLqPreserveBinary128Values` |
 | BlockTensor SVD and finite two-site DMRG | yes | yes | `SpinHalfHeisenbergDmrgFloat128Example`, `SpinHalfHeisenbergDmrgComplexFloat128Example`; the analytic four-site energy check requires fp128 agreement beyond double precision. |

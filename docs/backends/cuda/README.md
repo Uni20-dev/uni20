@@ -37,6 +37,7 @@ incomplete.
 ## Active Design
 
 - [CUDA Kernel Dispatch and Device Scheduling](kernel_dispatch.md)
+- [Segmented Strided Elementwise Execution](segmented_strided_elementwise.md)
 - [Runtime Resolution](runtime_resolution.md)
 - [cuSOLVER Architecture](cusolver.md)
 

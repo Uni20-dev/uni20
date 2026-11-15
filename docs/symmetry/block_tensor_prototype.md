@@ -28,7 +28,7 @@ The current concrete target is one or more U(1) factors.
 The current code establishes the storage and boundary seam needed by later
 operations:
 
-- tensor orders zero through four;
+- arbitrary compile-time tensor order, including the tensor-unit scalar;
 - `LocalSpace`, `QNumSpace`, `BlockSpace`, and their `Dual<S>` adaptors in arbitrary
   domain/codomain positions;
 - independent compile-time classification of block-key coordinates and dense
@@ -124,6 +124,27 @@ a logical default afterwards does not retune submitted work. Dense operands are
 still read within their scheduled epochs. Finite MPFR contractions require the
 configured MPLAPACK backend and a supported GEMM lowering; generic finite
 runtime CPU contraction and compressed diagonal contraction remain unsupported.
+
+### Tensor order and operation support
+
+`BlockTensor` has no container-level order cap. The domain and codomain fix its
+order at compile time; block keys and dense-block mappings retain their own
+independently determined coordinate counts and ranks. Pairwise and grouped
+contraction likewise impose no result-order cap. For example, contracting two
+order-four site tensors on one leg produces an order-six tensor.
+
+Block SVD has no factor-order cap: a domain of size `d` and codomain of size `c`
+produce a right-adjoint factor of order `d + 1` and a left factor of order
+`c + 1`. Selection rules, charge sectors, and space orientation remain explicit
+at every order.
+
+This does not extend the capabilities of an individual numerical backend or
+storage policy. The async contraction path still requires its supported
+rank-two dense-block GEMM geometry. CUDA block SVD still requires complete
+storage with rank-two dense blocks; higher-order tensors can meet that
+requirement through coordinate-only or fixed-charge factors. CUDA strided
+elementwise execution accepts at most eight compact iteration dimensions after
+merging. These requirements do not bound the number of tensor legs.
 
 ## 2. Initial Type Shape
 
@@ -929,8 +950,7 @@ boundary may be zero-copy repartitioned to 2/2 and passed directly to
 
 ## 14. Required Prototype Tests
 
-The implemented immediate tests cover all three immediate sparse policies at tensor
-orders zero through four. They exercise the tensor-unit scalar, rank-one identity-sector
+The implemented immediate tests exercise the tensor-unit scalar, rank-one identity-sector
 selection, `BlockSpace` block extents, `LocalSpace` coordinate-only states,
 coordinate-free charged `QNumSpace` factors, explicit dual spaces, MPS matrix
 blocks, rank-zero MPO blocks, canonical sparse keys, repeated local charges,
@@ -955,7 +975,18 @@ updates and reductions.
 Block-SVD tests cover global selection across charge sectors, repeatable kept
 and complement materialization, paired and side-specific null spaces,
 reconstruction for real and complex scalars, repeated-charge boundary
-fragments, implicit zero blocks, and empty selections.
+fragments, fixed-charge and dual fixed-charge factors without key coordinates,
+implicit zero blocks, and empty selections.
+Higher-order regressions in `tests/symmetry/test_block_tensor_high_order.cpp`
+cover order-six contractions with nontrivial U(1) sectors and unequal dense
+extents, fixed complete outputs, permutation and repartition views, and copies
+from strided views with separate and packed storage. Mixed-space grouped
+contractions distinguish tensor order, key-coordinate count, and dense rank;
+`4+2` and `2+4` SVDs reconstruct multiple charge fragments through order-five
+factors. Async matrix-block contraction is exercised at tensor order six, and
+order-nine construction guards against substituting a new small cap. The CUDA
+block-tensor tests cover six-axis strided materialization and per-charge SVD of
+order-six tensors with matrix blocks and an order-five CUDA-resident factor.
 The Krylov adapter tests freeze a two-sector U(1) vector structure, reject
 boundary or stored-pattern changes, and run that BlockTensor through the native
 symmetric Lanczos solver without dense projection. Its matrix-free operation

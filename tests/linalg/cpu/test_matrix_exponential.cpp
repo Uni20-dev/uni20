@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "../../numerics/matrix_exponential_cases.hpp"
+
 #include <uni20/core/scalar_concepts.hpp>
 #include <uni20/linalg/backends/cpu/matrix_exponential.hpp>
 #include <uni20/tensor/transform.hpp>
@@ -141,19 +143,6 @@ template <typename Scalar> Scalar MakeLargeNilpotent()
   return Scalar(Real{1.0e3});
 }
 
-template <typename Scalar> uni20::make_real_t<Scalar> MakeHugeSkewTheta()
-{
-  using Real = uni20::make_real_t<Scalar>;
-  if constexpr (std::is_same_v<Real, float>)
-  {
-    return Real{1.0e20F};
-  }
-  else
-  {
-    return Real{1.0e80};
-  }
-}
-
 } // namespace
 
 template <typename Scalar> class MatrixExponentialTypedTest : public ::testing::Test {};
@@ -266,23 +255,47 @@ TEST(MatrixExponentialTest, LongDoubleNilpotentUsesExtendedPrecisionScaling)
   EXPECT_LE(std::abs((result[0, 1] - large) / large), tolerance);
 }
 
-TYPED_TEST(MatrixExponentialTypedTest, HugeSkewSymmetricGeneratorStaysFinite)
+TYPED_TEST(MatrixExponentialTypedTest, HugeSkewSymmetricGeneratorMatchesAnalyticalRotation)
+{
+  using Scalar = TypeParam;
+  using Real = uni20::make_real_t<Scalar>;
+  using Case = uni20::test::PrecisionContext<Real, uni20::Complex<Scalar>>;
+  uni20::test::expect_large_planar_rotations<Case>();
+}
+
+TYPED_TEST(MatrixExponentialTypedTest, ShiftedRotationRetainsExponentialGrowth)
 {
   using Scalar = TypeParam;
   using Real = uni20::make_real_t<Scalar>;
   DenseMatrix<Scalar> matrix(2, 2);
-  Real const theta = MakeHugeSkewTheta<Scalar>();
-  matrix[0, 0] = MakeZero<Scalar>();
-  matrix[0, 1] = Scalar(-theta);
-  matrix[1, 0] = Scalar(theta);
-  matrix[1, 1] = MakeZero<Scalar>();
+  Real const shift = Real{0.25};
+  Real const angle = Real{0.75};
+  matrix[0, 0] = Scalar(shift);
+  matrix[0, 1] = Scalar(-angle);
+  matrix[1, 0] = Scalar(angle);
+  matrix[1, 1] = Scalar(shift);
 
-  DenseMatrix<Scalar> const result = cpu_linalg::matrix_exponential(matrix, Real{1});
+  auto const result = cpu_linalg::matrix_exponential(matrix, Real{1});
+  Real const growth = uni20::math::exp(shift);
+  DenseMatrix<Scalar> expected(2, 2);
+  expected[0, 0] = expected[1, 1] = Scalar(growth * uni20::math::cos(angle));
+  expected[1, 0] = Scalar(growth * uni20::math::sin(angle));
+  expected[0, 1] = -expected[1, 0];
+  ExpectMatrixNear(result, expected, DefaultTolerance<Scalar>());
+}
 
-  ExpectFiniteBounded(result[0, 0], 2.0);
-  ExpectFiniteBounded(result[0, 1], 2.0);
-  ExpectFiniteBounded(result[1, 0], 2.0);
-  ExpectFiniteBounded(result[1, 1], 2.0);
+TEST(MatrixExponentialTest, ImaginaryTimeRotationGeneratesHyperbolicFunctions)
+{
+  DenseMatrix<double> matrix(2, 2);
+  matrix[0, 1] = -1;
+  matrix[1, 0] = 1;
+  double const time = 0.75;
+  auto const result = cpu_linalg::matrix_exponential(matrix, uni20::complex<double>{0, time});
+  DenseMatrix<uni20::complex<double>> expected(2, 2);
+  expected[0, 0] = expected[1, 1] = std::cosh(time);
+  expected[0, 1] = {0, -std::sinh(time)};
+  expected[1, 0] = {0, std::sinh(time)};
+  ExpectMatrixNear(result, expected, DefaultTolerance<double>());
 }
 
 template <typename Scalar> void RunOverflowedOneNormSkewSymmetricGeneratorStaysFinite()

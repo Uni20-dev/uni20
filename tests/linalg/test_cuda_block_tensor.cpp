@@ -5,6 +5,8 @@
 #include <uni20/symmetry/block_tensor.hpp>
 #include <uni20/symmetry/block_tensor_concepts.hpp>
 #include <uni20/symmetry/block_tensor_linear.hpp>
+#include <uni20/symmetry/block_tensor_permute.hpp>
+#include <uni20/symmetry/block_tensor_svd.hpp>
 #include <uni20/tensor/copy_into.hpp>
 
 #include <cuda_runtime_api.h>
@@ -347,5 +349,126 @@ TEST_F(CudaBlockTensorTest, ParallelPackedLinearOperationsDispatchFromSchedulerB
         EXPECT_DOUBLE_EQ((result[row, column]), (1.5 * expected[row, column]));
   }
 }
+
+TEST_F(CudaBlockTensorTest, SixLegPermutationPreservesDenseAxesAndChargeSectors)
+{
+  using namespace uni20;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::cuda::ScopedDevice scoped_device(0);
+  Symmetry const sym{"N:U(1)"};
+  auto const q0 = QNum::identity(sym);
+  auto const q1 = make_qnum(sym, {{"N", 1}});
+  BlockSpace const charged(sym, {{q0, 2}, {q1, 2}}, "charged");
+  BlockSpace const neutral(sym, {{q0, 2}}, "neutral");
+  using DomainType = Domain<BlockSpace, BlockSpace, BlockSpace, BlockSpace>;
+  using CodomainType = Codomain<BlockSpace, BlockSpace>;
+  using Host = BlockTensor<double, DomainType, CodomainType, host_storage>;
+  using Device = BlockTensor<double, DomainType, CodomainType, cuda_storage>;
+  Host host(sym, DomainType{charged, neutral, neutral, neutral}, CodomainType{charged, neutral});
+  for (std::size_t sector = 0; sector < 2; ++sector)
+  {
+    auto block = host.block(Host::key_type{{sector, 0, 0, 0, sector, 0}});
+    for (index_type a = 0; a < 2; ++a)
+      for (index_type b = 0; b < 2; ++b)
+        for (index_type c = 0; c < 2; ++c)
+          for (index_type d = 0; d < 2; ++d)
+            for (index_type e = 0; e < 2; ++e)
+              for (index_type f = 0; f < 2; ++f)
+                block[a, b, c, d, e, f] = static_cast<double>(1 + a + 2 * b + 3 * c + 5 * d + 7 * e + 11 * f +
+                                                              (a + c) * (e + f) + 13 * sector);
+  }
+  Device device(sym, host.domain(), host.codomain(), runtime.device_resources(0));
+  for (std::size_t ordinal = 0; ordinal < host.stored_block_count(); ++ordinal)
+    uni20::copy(device.block_by_ordinal(ordinal), host.block_by_ordinal(ordinal));
+
+  // Materialize a noncontiguous six-axis view on the device before reading it back.
+  auto view = permute<0, 3, 2, 1, 4, 5>(device);
+  Device reordered(sym, view.domain(), view.codomain(), runtime.device_resources(0));
+  uni20::copy(reordered, view);
+  Host roundtrip(sym, view.domain(), view.codomain());
+  for (std::size_t ordinal = 0; ordinal < roundtrip.stored_block_count(); ++ordinal)
+    uni20::copy(roundtrip.block_by_ordinal(ordinal), reordered.block_by_ordinal(ordinal));
+  ASSERT_TRUE(std::ranges::equal(roundtrip.stored_keys(), host.stored_keys()));
+  for (std::size_t sector = 0; sector < 2; ++sector)
+  {
+    auto original = host.block(Host::key_type{{sector, 0, 0, 0, sector, 0}});
+    auto actual = roundtrip.block(Host::key_type{{sector, 0, 0, 0, sector, 0}});
+    for (index_type a = 0; a < 2; ++a)
+      for (index_type b = 0; b < 2; ++b)
+        for (index_type c = 0; c < 2; ++c)
+          for (index_type d = 0; d < 2; ++d)
+            for (index_type e = 0; e < 2; ++e)
+              for (index_type f = 0; f < 2; ++f)
+                EXPECT_DOUBLE_EQ((actual[a, d, c, b, e, f]), (original[a, b, c, d, e, f]));
+  }
+}
+
+#if UNI20_BACKEND_CUSOLVER
+TEST_F(CudaBlockTensorTest, SixLegMatrixBlockSvdMaterializesFiveLegCudaFactors)
+{
+  using namespace uni20;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::cuda::ScopedDevice scoped_device(0);
+  Symmetry const sym{"N:U(1)"};
+  auto const q0 = QNum::identity(sym);
+  auto const q1 = make_qnum(sym, {{"N", 1}});
+  BlockSpace const rows(sym, {{q0, 2}, {q1, 2}}, "rows");
+  BlockSpace const columns(sym, {{q0, 3}, {q1, 3}}, "columns");
+  LocalSpace const local(sym, {q0, q0}, "repeated-local-charge");
+  QNumSpace const fixed(q1, "fixed");
+  QNumSpace const identity(q0, "identity");
+  using DomainType = Domain<BlockSpace, QNumSpace, Dual<QNumSpace>, LocalSpace>;
+  using CodomainType = Codomain<BlockSpace, QNumSpace>;
+  using Host = BlockTensor<double, DomainType, CodomainType, host_storage>;
+  using Device = BlockTensor<double, DomainType, CodomainType, cuda_storage>;
+  Host host(sym, DomainType{rows, fixed, dual(fixed), local}, CodomainType{columns, identity});
+  ASSERT_EQ(host.stored_block_count(), 4);
+  for (std::size_t ordinal = 0; ordinal < host.stored_block_count(); ++ordinal)
+  {
+    auto block = host.block_by_ordinal(ordinal);
+    for (index_type i = 0; i < 2; ++i)
+      for (index_type j = 0; j < 3; ++j)
+        block[i, j] = static_cast<double>(1 + i + 2 * j + 3 * i * j + 7 * ordinal);
+  }
+  Device device(sym, host.domain(), host.codomain(), runtime.device_resources(0));
+  static_assert(Device::order() == 6 && Device::dense_block_order() == 2);
+  for (std::size_t ordinal = 0; ordinal < host.stored_block_count(); ++ordinal)
+    uni20::copy(device.block_by_ordinal(ordinal), host.block_by_ordinal(ordinal));
+  auto decomposition = block_svd(device);
+  ASSERT_EQ(decomposition.sectors().size(), 2);
+  auto factors = materialize_svd(decomposition, select_svd_states(decomposition.spectrum()));
+  using Left = decltype(factors.left_singular_vectors);
+  using Right = decltype(factors.right_singular_vectors_adjoint);
+  static_assert(Left::order() == 3 && Right::order() == 5);
+  static_assert(std::same_as<typename Right::storage_policy, PackedSparseBlockStorage<CudaStorage>>);
+  EXPECT_EQ(&factors.right_singular_vectors_adjoint.allocation_context(), &runtime.device_resources(0));
+  EXPECT_EQ(factors.right_singular_vectors_adjoint.storage().buffer().device().ordinal(), 0);
+  auto const& bond = factors.singular_values.domain().template space<0>();
+  ASSERT_EQ(bond.size(), 2);
+  for (std::size_t sector = 0; sector < 2; ++sector)
+  {
+    auto found = std::ranges::find_if(bond, [&](auto const& entry) { return entry.q == rows[sector].q; });
+    ASSERT_NE(found, bond.end());
+    auto const s = static_cast<std::size_t>(found - bond.begin());
+    auto values = factors.singular_values.diagonal_values(typename decltype(factors.singular_values)::key_type{{s, s}});
+    Tensor<double, 2> lhs(static_cast<index_type>(values.size()), 3);
+    uni20::copy(lhs, factors.left_singular_vectors.block(Left::key_type{{s, sector}}));
+    for (std::size_t state = 0; state < 2; ++state)
+    {
+      Tensor<double, 2> rhs(2, static_cast<index_type>(values.size()));
+      uni20::copy(rhs, factors.right_singular_vectors_adjoint.block(Right::key_type{{sector, state, s}}));
+      auto original = host.block(Host::key_type{{sector, state, sector}});
+      for (index_type i = 0; i < 2; ++i)
+        for (index_type j = 0; j < 3; ++j)
+        {
+          double reconstructed = 0.0;
+          for (index_type k = 0; k < lhs.extent(0); ++k)
+            reconstructed += lhs[k, j] * values[k] * rhs[i, k];
+          EXPECT_NEAR(reconstructed, (original[i, j]), 1.0e-11);
+        }
+    }
+  }
+}
+#endif
 
 } // namespace

@@ -98,17 +98,19 @@ subnormal *outputs* are preserved by the separate scale.
 
 ## Providers and observations
 
-CMake checks the exact C23 signature `R compoundn(R,long long)` and the linked
-symbol separately for float, double, long double and binary128, using the usual
-`f`, empty, `l` and `f128` suffixes. A matching provider is preferred. The old
-TS signature is not assumed. See the [libc function reference](https://sourceware.org/glibc/manual/latest/html_node/Exponents-and-Logarithms.html).
-The configured capability names are
-`UNI20_HAS_COMPOUNDN_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`.
+All native types use the guarded expansion described above, independently of
+whether libc exports `compoundn`. A matching signature and linked symbol do not
+establish the original-input accuracy or range-classification contract. Enabling
+MPFR does not alter the native path; MPFR supplies the independent test oracle.
 
-On GCC 13 with glibc 2.39, none of these providers is available. The public and
-direct-portable paths therefore exercise the same native algorithm. This is not
-numerical validation of a newer libc's provider. Enabling MPFR does not alter the
-native path; MPFR is used only by the test oracle.
+The glibc 2.43 routines fail the shared acceptance probes in all four formats:
+float32 can form `0 * infinity` while the result should underflow to zero;
+float64 can discard low integer-exponent bits when subtracting a floating
+approximation to the exponent; binary80 can round a positive power to a
+subnormal before applying its correction; and binary128 can inherit premature
+overflow and errors above the four-unit target from `pow`. The portable path
+keeps the integer exponent, increment and scale until final rounding. It is the
+native implementation policy, rather than a libc-version-dependent workaround.
 
 A deterministic prototype scan evaluated 73,334 candidate inputs per format,
 excluding out-of-domain cases: tiny increments, signed64 exponent limits,
@@ -139,9 +141,9 @@ bindings, passed in the following local Linux configurations:
 | Clang 19 Debug, MPFR/MPC, binary80, binary128 disabled, MPLAPACK | 2845 | 1 NUMA topology test |
 
 Unfiltered numerical suites and complete coverage reports passed in all three
-cells. Clang's configuration does not certify binary128. Actual C23 compound
-providers were unavailable on this host; synthetic provider-wiring checks do
-not certify their numerical behavior. macOS, CUDA and MPI execution were not
+cells. Clang's configuration does not certify binary128. C23 compound
+providers were unavailable during this original validation; these counts
+describe the portable implementation. macOS, CUDA and MPI execution were not
 exercised.
 
 ## Cost
@@ -149,8 +151,7 @@ exercised.
 The loop has at most 64 iterations and bounded work per multiplication. It is
 more expensive than ordinary native `pow` or `exp(n*log1p(x))`; those expressions
 do not satisfy the original-input accuracy contract in general. There is no
-claim of comparable throughput. A typed libc provider, where available, avoids
-this portable implementation.
+claim of comparable throughput.
 
 Illustrative timings on an Intel Alder Lake workstation, GCC 13 `-O2`, MPFR
 disabled, 4,000 varied inputs per case (microseconds per call):

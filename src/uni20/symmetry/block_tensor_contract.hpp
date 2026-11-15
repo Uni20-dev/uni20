@@ -447,8 +447,6 @@ void validate_pairwise_contraction(LeftTensor const& left, RightTensor const& ri
   static_assert(Scalar<pairwise_contraction_value_t<left_type, right_type>>,
                 "BlockTensor contraction requires a scalar multiplication result");
   static_assert(left_type::order() + right_type::order() >= 2 * Traits::contracted_count);
-  static_assert(left_type::order() + right_type::order() - 2 * Traits::contracted_count <= 4,
-                "the first BlockTensor contraction supports result order at most four");
 
   if (left.symmetry() != right.symmetry())
   {

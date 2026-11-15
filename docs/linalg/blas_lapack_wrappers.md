@@ -50,6 +50,11 @@ The existing backend wrappers remain provider and ABI facades:
 - `src/uni20/backend/lapack`: checked and unchecked LAPACK overloads over the
   configured provider.
 
+CMake consumers of the raw facades link `uni20_backend_blas` for BLAS and
+`uni20_backend_lapack` for LAPACK. A target that calls both declares both
+dependencies: providers such as AOCL install BLAS and LAPACK in separate
+libraries, even when another provider supplies both in one library.
+
 The new mdspan layer owns view interpretation:
 
 - rank, scalar, mutability, and host-addressability concepts;
