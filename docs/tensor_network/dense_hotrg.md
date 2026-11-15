@@ -1,6 +1,6 @@
 # Dense HOTRG example
 
-The example in [`examples/models/`](../examples/models/) implements real,
+The example in [`examples/models/`](../../examples/models/) implements real,
 square-lattice HOTRG with a one-site unit cell. One round contracts in the y
 direction and then the x direction, retaining at most `D` states on each fused
 leg. The Gram matrix, truncated SVD, contraction geometry, and transfer-matrix

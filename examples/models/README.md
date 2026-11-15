@@ -209,5 +209,5 @@ selected precision.
 `uni20_models_tests` covers all configured arithmetic types, including MPFR at
 128 and 256 bits. MPFR contractions and decompositions use MPLAPACK with explicit working
 precision. The Onsager quadrature sample count remains a
-separate accuracy control. See [the HOTRG numerical contract](../../docs/hotrg.md)
+separate accuracy control. See [the HOTRG numerical contract](../../docs/tensor_network/dense_hotrg.md)
 for supported providers, reference regeneration, and precision coverage.

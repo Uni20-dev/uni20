@@ -54,7 +54,7 @@ rather than silently choosing one source.
 
 ## Current Vertical Slices
 
-- [Dense HOTRG and Precision Validation](hotrg.md)
+- [Dense HOTRG and Precision Validation](tensor_network/dense_hotrg.md)
 - [Mdspec](tensor/mdspec.md),
   [Tensor Operations](tensor/operations.md), and
   [Generated Tensors and Reshape](tensor/creation_and_reshape.md)
