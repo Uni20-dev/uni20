@@ -93,14 +93,17 @@ auto phase = uni20::math::sinpi(0.5L); // exactly 1, without forming pi/2
 auto turns = uni20::math::atan2pi(1.0, -1.0); // exactly 0.75
 ```
 
-CMake checks the linked C23 forward family (`sinpi`, `cospi`, `tanpi`) and
+CMake checks the linked C23 sine/cosine family (`sinpi`, `cospi`) and
 inverse family (`asinpi`, `acospi`, `atanpi`, `atan2pi`) separately for each
 native type. It requires exact signatures, including `_Float128` signatures
 for binary128. The capability macros are `UNI20_HAS_PI_TRIG_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`
 and `UNI20_HAS_PI_INVERSE_{FLOAT,DOUBLE,LONG_DOUBLE,FLOAT128}`. A complete detected
 family uses its libc provider. A missing or incomplete family uses a portable
-implementation at the original precision. No newer libc is required, and
-MPFR is never used to evaluate native arguments.
+implementation at the original precision. Native `tanpi` always uses Uni20's
+portable implementation, including when libc exports the function: glibc can
+lose exact quarter-integer results and the input sign of integer zeros. Its
+symbol is not probed or selected. No newer libc is required, and MPFR is never
+used to evaluate native arguments.
 
 The portable forward implementation uses `remquo(x, 0.5)` to recover the
 quadrant and an exact binary remainder in [-1/4,1/4]. It multiplies only that
