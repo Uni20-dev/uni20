@@ -24,9 +24,8 @@ the mathematical problem and is treated as a correctness bug.
   storage, generalized-diagonal storage, and per-block async storage.
 - `block_tensor_concepts.hpp`: common readable, mutable, immediate, borrowed,
   and async BlockTensor view vocabulary.
-- `block_tensor.hpp`: the first order-zero through order-four `BlockTensor`
-  slice for `LocalSpace`, `QNumSpace`, `BlockSpace`, and explicit dual
-  boundaries.
+- `block_tensor.hpp`: fixed-order `BlockTensor` with no container-level order
+  cap, for `LocalSpace`, `QNumSpace`, `BlockSpace`, and explicit dual boundaries.
 - `block_tensor_mapped_view.hpp`: owned logical-to-physical key and dense-axis
   descriptor metadata for composable zero-copy borrowed views.
 - `block_tensor_permute.hpp`: zero-copy bosonic permutations within domain and
