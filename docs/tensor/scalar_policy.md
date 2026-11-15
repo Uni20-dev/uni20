@@ -75,7 +75,7 @@ following their parent's default. Host tensor constructors and
 `at_precision(tensor, p)` accept precision for fixed types too, validating the
 match before allocation or copying.
 
-The matrix-product, GEMM, square-solve, LU, log-determinant, QR/LQ, self-adjoint
+The matrix-product, GEMM, pairwise-contraction, square-solve, LU, log-determinant, QR/LQ, self-adjoint
 and general eigensystem, SVD and truncated-SVD interfaces accept
 the same explicit precision argument for native and runtime scalars. Omitting it
 selects precision from participating tensor defaults; exact defaults are neutral,

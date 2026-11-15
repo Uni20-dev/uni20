@@ -42,6 +42,25 @@ no axes produces an outer product.
 The initial scalar contract requires identical output, left, and right element
 types. Scalar promotion is not inferred.
 
+Both synchronous and async overloads accept an optional trailing `Precision`,
+with the same rules as `gemm`. Without an override, input construction defaults
+select the operation precision, including the output default when `beta != 0`.
+Exact defaults are neutral; different finite defaults require an explicit
+override. A fixed result type requires its native precision. Runtime inputs and
+coefficients are converted inside the selected provider, and successful owning
+outputs record the operation precision. Structural output views do not change
+their parent's default. Async calls infer defaults after awaiting input epochs.
+
+Direct and looped GEMM strategies forward runtime precision to every nested
+GEMM, including every loop slice's beta update. MPLAPACK MPFR therefore handles
+finite `mpreal` and `complex<mpreal>` contractions whenever the layout admits
+one of these plans. Exact runtime arithmetic can use CPU reference GEMM or the
+general CPU contraction. The CPU reference backend declines finite runtime
+precision before mutation: ordinary value arithmetic cannot enforce a requested
+precision on mixed stored values. Finite MPFR layouts that neither GEMM strategy
+can lower require a further precision-aware backend; they do not silently run
+the unconverted reference loop.
+
 ## Dispatch Boundary
 
 `contract_op<LhsRank, RhsRank, ContractedRank>` carries normalized
