@@ -47,14 +47,14 @@ providing a name does not synthesize a missing scalar operation.
 | `upper_gamma` | Native scaled series/fractions with guarded range evaluation, or MPFR |
 | `airy_ai` | Native guarded series/asymptotics with original-input phase reduction, or MPFR |
 | `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |
-| `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers or portable native evaluation |
+| `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers for exponentials where available, always compensated portable native logarithms |
 | `sinpi`, `cospi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
 | `tanpi` | MPFR, or Uni20's portable native argument reduction, including exact quarter-integers and signed integer zeros; libc `tanpi` is not used |
 | `digamma` | Native compensated recurrence/asymptotics/reflection or MPFR; negative nonintegers supported |
 | `factorial(n,p)` | MPFR convenience; `uni20::factorial<Real>(n[,p])` explicitly selects native or MPFR result type |
 | `agm` | Scaled native iteration or MPFR; native arguments retain the same real type |
 | `sec`, `csc`, `cot`, `sech`, `csch`, `coth` | Native or MPFR reciprocal functions; native hyperbolic tails avoid intermediate range loss |
-| `compound(x,n)` | Original-input integer power of 1+x; native typed provider or guarded expansion, and MPFR |
+| `compound(x,n)` | Original-input integer power of 1+x; native guarded expansion, and MPFR |
 
 `abs_squared(x)` is a composed function: compute `abs(x)` once and square it.
 It adds neither overflow scaling nor extra precision. The root-level

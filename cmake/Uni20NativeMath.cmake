@@ -80,11 +80,12 @@ else()
   set(UNI20_HAS_PI_INVERSE_FLOAT128 OFF)
 endif()
 
-# Unary extensions may be introduced independently by the platform libc.
+# Exponential extensions may be introduced independently by the platform libc.
+# compound, log2p1 and log10p1 always use Uni20's portable implementations.
 function(uni20_check_native_exponential_math suffix type function_suffix)
   block(SCOPE_FOR VARIABLES)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
-    foreach(function IN ITEMS exp10 exp2m1 exp10m1 log2p1 log10p1)
+    foreach(function IN ITEMS exp10 exp2m1 exp10m1)
       string(TOUPPER "${function}" upper)
       check_cxx_source_compiles("
         #include <cmath>
@@ -105,32 +106,7 @@ uni20_check_native_exponential_math(LONG_DOUBLE "long double" "l")
 if(UNI20_HAS_FLOAT128)
   uni20_check_native_exponential_math(FLOAT128 "_Float128" "f128")
 else()
-  foreach(function IN ITEMS EXP10 EXP2M1 EXP10M1 LOG2P1 LOG10P1)
+  foreach(function IN ITEMS EXP10 EXP2M1 EXP10M1)
     set(UNI20_HAS_${function}_FLOAT128 OFF)
   endforeach()
-endif()
-
-# C23 compoundn takes long long; an old TS intmax_t signature is not assumed.
-function(uni20_check_native_compound suffix type function_suffix)
-  block(SCOPE_FOR VARIABLES)
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
-    check_cxx_source_compiles("
-      #include <cmath>
-      #include <type_traits>
-      int main() {
-        using R = ${type};
-        static_assert(std::is_same_v<decltype(::compoundn${function_suffix}(R(0), 1LL)), R>);
-        R (*volatile function)(R, long long) = &::compoundn${function_suffix};
-        return function(R(0), 1LL) != R(1);
-      }" UNI20_HAS_COMPOUNDN_${suffix})
-  endblock()
-endfunction()
-
-uni20_check_native_compound(FLOAT "float" "f")
-uni20_check_native_compound(DOUBLE "double" "")
-uni20_check_native_compound(LONG_DOUBLE "long double" "l")
-if(UNI20_HAS_FLOAT128)
-  uni20_check_native_compound(FLOAT128 "_Float128" "f128")
-else()
-  set(UNI20_HAS_COMPOUNDN_FLOAT128 OFF)
 endif()

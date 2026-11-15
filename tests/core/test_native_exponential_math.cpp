@@ -1,9 +1,13 @@
+#include "../numerics/scalar_assertions.hpp"
+
 #include <gtest/gtest.h>
+#include <gtest/gtest-spi.h>
 #include <uni20/core/math.hpp>
 
 namespace
 {
 namespace m = uni20::math;
+using uni20::test::expect_equal;
 struct ConversionOnly
 {
     operator double() const;
@@ -45,23 +49,23 @@ template <class R, class F> void boundaries()
   R inf = limits::infinity(), nan = limits::quiet_NaN();
   for (R x : {R(0), -R(0)})
   {
-    EXPECT_EQ(F::exp10(x), R(1));
+    expect_equal(F::exp10(x), R(1));
     for (R y : {F::exp2m1(x), F::exp10m1(x), F::log2p1(x), F::log10p1(x)})
     {
-      EXPECT_EQ(y, R(0));
+      expect_equal(y, R(0));
       EXPECT_EQ(m::signbit(y), m::signbit(x));
     }
   }
   for (R y : {F::exp10(nan), F::exp2m1(nan), F::exp10m1(nan), F::log2p1(nan), F::log10p1(nan)})
     EXPECT_TRUE(m::isnan(y));
   for (R y : {F::exp10(inf), F::exp2m1(inf), F::exp10m1(inf), F::log2p1(inf), F::log10p1(inf)})
-    EXPECT_EQ(y, inf);
-  EXPECT_EQ(F::exp10(-inf), R(0));
+    expect_equal(y, inf);
+  expect_equal(F::exp10(-inf), R(0));
   EXPECT_FALSE(m::signbit(F::exp10(-inf)));
-  EXPECT_EQ(F::exp2m1(-inf), R(-1));
-  EXPECT_EQ(F::exp10m1(-inf), R(-1));
-  EXPECT_EQ(F::log2p1(R(-1)), -inf);
-  EXPECT_EQ(F::log10p1(R(-1)), -inf);
+  expect_equal(F::exp2m1(-inf), R(-1));
+  expect_equal(F::exp10m1(-inf), R(-1));
+  expect_equal(F::log2p1(R(-1)), -inf);
+  expect_equal(F::log10p1(R(-1)), -inf);
   for (R x : {m::next_down(R(-1)), R(-2), -inf})
   {
     EXPECT_TRUE(m::isnan(F::log2p1(x)));
@@ -69,13 +73,13 @@ template <class R, class F> void boundaries()
   }
   EXPECT_TRUE(m::isfinite(F::log2p1(m::next_up(R(-1)))));
   EXPECT_TRUE(m::isfinite(F::log10p1(m::next_up(R(-1)))));
-  EXPECT_EQ(F::log2p1(R(1)), R(1));
-  EXPECT_EQ(F::log10p1(R(9)), R(1));
+  expect_equal(F::log2p1(R(1)), R(1));
+  expect_equal(F::log10p1(R(9)), R(1));
   for (int n = -8; n <= 8; ++n)
-    EXPECT_EQ(F::exp2m1(R(n)), m::ldexp(R(1), n) - R(1));
+    expect_equal(F::exp2m1(R(n)), m::ldexp(R(1), n) - R(1));
 
   R tiny = m::ldexp(R(1), -limits::digits() - 8);
-  EXPECT_EQ(R(1) + tiny, R(1)); // A naive log(1+x) would lose the input.
+  expect_equal(R(1) + tiny, R(1)); // A naive log(1+x) would lose the input.
   for (R x : {tiny, -tiny})
     for (R y : {F::exp2m1(x), F::exp10m1(x), F::log2p1(x), F::log10p1(x)})
     {
@@ -83,11 +87,11 @@ template <class R, class F> void boundaries()
       EXPECT_EQ(m::signbit(y), m::signbit(x));
     }
   R subnormal = limits::denorm_min();
-  EXPECT_EQ(F::exp2m1(subnormal), subnormal);
-  EXPECT_EQ(F::exp10m1(subnormal), R(2) * subnormal);
-  EXPECT_EQ(F::log2p1(subnormal), subnormal);
-  EXPECT_EQ(F::log10p1(subnormal), R(0));
-  EXPECT_EQ(F::log10p1(-subnormal), R(0));
+  expect_equal(F::exp2m1(subnormal), subnormal);
+  expect_equal(F::exp10m1(subnormal), R(2) * subnormal);
+  expect_equal(F::log2p1(subnormal), subnormal);
+  expect_equal(F::log10p1(subnormal), R(0));
+  expect_equal(F::log10p1(-subnormal), R(0));
   EXPECT_TRUE(m::signbit(F::log10p1(-subnormal)));
 }
 TYPED_TEST(NativeExponentialMath, ValueContractsAndCancellation)
@@ -96,3 +100,12 @@ TYPED_TEST(NativeExponentialMath, ValueContractsAndCancellation)
   boundaries<TypeParam, uni20::detail::native_math::portable_exponential_math<TypeParam>>();
 }
 } // namespace
+
+#if UNI20_HAS_FLOAT128
+TEST(ScalarAssertions, ReportsBinary128FractionWithoutIntegerConversion)
+{
+  EXPECT_NONFATAL_FAILURE(
+      uni20::test::expect_equal(uni20::math::next_down(uni20::float128(1)), uni20::float128(1)),
+      "actual=0.9999999999999999999999999999999999");
+}
+#endif

@@ -158,37 +158,10 @@ template <NativeReal R> R portable_compound(R x, std::int64_t exponent)
   return std::ldexp(result.rounded(exponent < 0), exponent < 0 ? -result_exponent : result_exponent);
 }
 
-template <NativeReal R> struct compound_math_provider
-{
-    static R evaluate(R x, std::int64_t exponent) { return portable_compound(x, exponent); }
-};
-#if UNI20_HAS_COMPOUNDN_FLOAT
-template <> struct compound_math_provider<float>
-{
-    static float evaluate(float x, std::int64_t exponent) { return ::compoundnf(x, exponent); }
-};
-#endif
-#if UNI20_HAS_COMPOUNDN_DOUBLE
-template <> struct compound_math_provider<double>
-{
-    static double evaluate(double x, std::int64_t exponent) { return ::compoundn(x, exponent); }
-};
-#endif
-#if UNI20_HAS_COMPOUNDN_LONG_DOUBLE
-template <> struct compound_math_provider<long double>
-{
-    static long double evaluate(long double x, std::int64_t exponent) { return ::compoundnl(x, exponent); }
-};
-#endif
-#if UNI20_HAS_FLOAT128 && UNI20_HAS_COMPOUNDN_FLOAT128
-template <> struct compound_math_provider<float128>
-{
-    static float128 evaluate(float128 x, std::int64_t exponent) { return ::compoundnf128(x, exponent); }
-};
-#endif
-
 template <NativeReal R, MathInteger I> R compound(R x, I exponent)
 {
-  return compound_math_provider<R>::evaluate(x, math_integer(exponent));
+  // Use the guarded expansion for every native type: a linked compoundn
+  // symbol alone does not establish the original-input or range contract.
+  return portable_compound(x, math_integer(exponent));
 }
 } // namespace uni20::detail::native_math
