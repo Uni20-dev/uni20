@@ -80,12 +80,14 @@ template <class R, class F> void exact_grid()
     EXPECT_EQ(F::sinpi(x + R(0.5)), R(1));
     EXPECT_EQ(F::cospi(x + R(1)), R(-1));
     EXPECT_EQ(F::tanpi(x + R(0.25)), R(1));
+    EXPECT_EQ(F::tanpi(x - R(0.25)), R(-1));
   }
   for (R x : {uni20::numeric_limits<R>::max(), -uni20::numeric_limits<R>::max()})
   {
     EXPECT_EQ(F::sinpi(x), R(0));
     EXPECT_EQ(F::tanpi(x), R(0));
     EXPECT_EQ(m::signbit(F::sinpi(x)), m::signbit(x));
+    EXPECT_EQ(m::signbit(F::tanpi(x)), m::signbit(x));
     EXPECT_EQ(F::cospi(x), R(1));
   }
 }
