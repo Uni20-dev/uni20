@@ -40,7 +40,7 @@ kernels operate on resolved mdspans.
 - `output.hpp`: fixed-output validation and resizable-output shape preparation.
 - `reshape.hpp`: explicit no-copy, in-place, and owning reshape operations.
 - `permute.hpp`: borrowed strided axis permutations that return
-  `MdspecTensorView`; use `make_tensor` for an owning permutation.
+  `MdspecTensorView`; prefer `Tensor(view)` for an owning permutation.
 - `precision_source.hpp`: live precision bindings retained by copied descriptors.
 - `shape.hpp`: checked runtime-extents construction shared by tensor factories.
 - `layout.hpp`: layout construction helpers.

@@ -15,7 +15,7 @@ namespace uni20
 /// \details Output axis j is source axis Axis[j]. The returned descriptor
 ///          preserves the accessor, placement, backend selector, and live
 ///          default precision. Const sources produce read-only views. Use
-///          make_tensor(result) for an owning materialization.
+///          Tensor(result) for an owning materialization with deduced type.
 ///          The source storage must outlive the result; moving or structurally
 ///          modifying its owner invalidates the view. Owning temporaries are
 ///          rejected; temporary descriptor views may be composed safely.

@@ -151,7 +151,7 @@ separate `copy_tensor` factory is unnecessary.
 Tensor<double, 3> tensor(2, 3, 4);
 auto view = permute<2, 0, 1>(tensor);  // shape (4, 2, 3)
 view[3, 1, 2] = 7;                    // writes tensor[1, 2, 3]
-auto packed = make_tensor(view);      // independent contiguous owner
+auto packed = Tensor(view);           // independent contiguous owner
 ```
 
 This first implementation supports zero-origin strided mappings representable
@@ -179,9 +179,12 @@ metadata and precision are resolved when the parent epoch becomes readable.
 Mutable aliases support write-through assignment, const aliases are read-only,
 and parent failures propagate to readers of the alias.
 
-A permutation view does not rearrange physical memory. Use `make_tensor(view)`
-or `make_tensor<RowMajor>(view)` to pack it into the desired layout. A subsequent
-`reshape_view_left` or `reshape_view_right` still requires canonical contiguous
+A permutation view does not rearrange physical memory. Prefer `Tensor(view)`
+for ordinary owning materialization: the spelling makes the result's owning
+tensor type explicit while CTAD deduces its scalar type, rank, and storage
+domain. `make_tensor(view)` remains equivalent here; use
+`make_tensor<RowMajor>(view)` when selecting the physical layout explicitly.
+A subsequent `reshape_view_left` or `reshape_view_right` still requires canonical contiguous
 strides; permuting axes alone does not make arbitrary groups fusible for GEMM.
 Automatic contraction packing is separate from this view API.
 
