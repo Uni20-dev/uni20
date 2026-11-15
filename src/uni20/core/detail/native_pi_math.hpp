@@ -110,13 +110,14 @@ template <NativeReal R> struct portable_pi_math
 
 // Each native family is probed for its exact argument/result type and linked
 // symbol. A missing family inherits the portable implementation at that type.
+// tanpi always uses portable argument reduction: libc implementations can lose
+// exact quarter-integer values and the sign of integer zeros.
 template <NativeReal R> struct pi_math_provider : portable_pi_math<R>
 {};
 
 #define UNI20_NATIVE_PI_FORWARD(TYPE, SUFFIX)                                                                          \
   static TYPE sinpi(TYPE x) { return ::sinpi##SUFFIX(x); }                                                             \
-  static TYPE cospi(TYPE x) { return ::cospi##SUFFIX(x); }                                                             \
-  static TYPE tanpi(TYPE x) { return ::tanpi##SUFFIX(x); }
+  static TYPE cospi(TYPE x) { return ::cospi##SUFFIX(x); }
 #define UNI20_NATIVE_PI_INVERSE(TYPE, SUFFIX)                                                                          \
   static TYPE asinpi(TYPE x) { return ::asinpi##SUFFIX(x); }                                                           \
   static TYPE acospi(TYPE x) { return ::acospi##SUFFIX(x); }                                                           \

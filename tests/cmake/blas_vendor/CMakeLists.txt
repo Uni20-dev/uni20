@@ -7,9 +7,10 @@ if(vendor_policy)
   cmake_policy(SET CMP0200 ${vendor_policy})
 endif()
 
-foreach(vendor_case IN ITEMS plain exact mapped mapped_empty mapped_list_empty
+foreach(vendor_case IN ITEMS plain openblas_intel_name exact mapped mapped_empty mapped_list_empty
     default_location fallback no_config implib implib_mapped implib_only
     implib_default implib_default_mapped
-    implib_runtime_default implib_runtime_default_mapped opaque)
+    implib_runtime_default implib_runtime_default_mapped opaque
+    opaque_mkl opaque_openblas opaque_flexiblas opaque_blis opaque_atlas opaque_goto opaque_accelerate)
   add_subdirectory(case "${vendor_case}")
 endforeach()

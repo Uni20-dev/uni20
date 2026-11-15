@@ -13,6 +13,8 @@ set(other "${CMAKE_CURRENT_BINARY_DIR}/libmkl_rt.so")
 
 if(vendor_case STREQUAL "plain")
   set_target_properties(BLAS::BLAS PROPERTIES IMPORTED_LOCATION "${openblas}")
+elseif(vendor_case STREQUAL "openblas_intel_name")
+  set_target_properties(BLAS::BLAS PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/libopenblas_intel64.so")
 elseif(vendor_case STREQUAL "exact")
   set_target_properties(BLAS::BLAS PROPERTIES
     IMPORTED_LOCATION "${other}" IMPORTED_LOCATION_RELWITHDEBINFO "${openblas}")
@@ -81,7 +83,8 @@ elseif(vendor_case MATCHES "^implib_")
     set_property(TARGET BLAS::BLAS PROPERTY IMPORTED_LOCATION_RELEASE
       "${CMAKE_CURRENT_BINARY_DIR}/provider.dll")
   endif()
-elseif(vendor_case STREQUAL "opaque")
+elseif(vendor_case MATCHES "^opaque")
+  # Vendor-looking parent directories must not classify an opaque library.
   set_target_properties(BLAS::BLAS PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/provider.so")
   set(expected_vendor Generic)
 endif()
@@ -113,4 +116,11 @@ if(NOT vendor_case STREQUAL "implib_only")
   if(NOT selected IN_LIST UNI20_DETECTED_BLAS_LIBRARIES)
     message(FATAL_ERROR "${vendor_case}: detection omitted CMake-selected file ${selected}")
   endif()
+endif()
+
+# Non-file vendor hints still identify the requested provider.
+_uni20_map_blas_vendor_name("Intel10_64lp_seq" intel_hint)
+_uni20_map_blas_vendor_name("-lopenblas" openblas_hint)
+if(NOT intel_hint STREQUAL "MKL" OR NOT openblas_hint STREQUAL "OpenBLAS")
+  message(FATAL_ERROR "Non-file BLAS vendor hints were not recognized")
 endif()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "scalar_assertions.hpp"
+
 #include <gtest/gtest.h>
 #include <uni20/core/math.hpp>
 #include <uni20/core/scalar_io.hpp>
@@ -160,21 +162,6 @@ template <class C> class PrecisionTest : public testing::Test {
       if constexpr (C::available) this->RecordProperty("bits", C::digits());
     }
 };
-
-template <class S> void expect_equal(S const& actual, S const& expected)
-{
-  EXPECT_TRUE(actual == expected) << "actual=" << format_scalar(actual) << " expected=" << format_scalar(expected);
-}
-
-// GTest's EXPECT_NEAR takes double. Keep subtraction, magnitude, and tolerance
-// in the tested real type, and format only the diagnostic strings.
-template <class S, class R> void expect_error_at_most(S const& actual, S const& expected, R const& tolerance)
-{
-  using std::abs;
-  auto error = abs(actual - expected);
-  EXPECT_TRUE(error <= tolerance) << "actual=" << format_scalar(actual) << " expected=" << format_scalar(expected)
-                                  << " error=" << format_scalar(error) << " bound=" << format_scalar(tolerance);
-}
 
 #if UNI20_HAS_MPREAL
 // Transfer the native binary value exactly into a wider independent oracle.

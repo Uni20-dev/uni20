@@ -31,7 +31,12 @@ namespace uni20::linalg::backends::cpu
 /// \brief Compute the matrix exponential using the adaptive scaling-and-squaring algorithm.
 /// \details Follows the Pad\'e-based scaling and squaring strategy of Higham (2005) and
 ///          Al-Mohy & Higham (2011). The routine automatically selects between Pad\'e
-///          degrees {3, 5, 7, 9, 13} based on matrix norms.
+///          degrees {3, 5, 7, 9, 13} based on matrix norms. Exactly real skew-symmetric
+///          scaled matrices use direct trigonometric rotations in 2x2 and Rodrigues'
+///          formula in 3x3 when its rotation angle is representable. These paths avoid
+///          amplification of radial and phase errors by repeated squaring.
+/// \note The general Pad\'e path does not guarantee unitarity or accurate phases for
+///       arbitrarily large skew-Hermitian inputs. All arithmetic uses the scalar's precision.
 /// \tparam Scalar Dense matrix element type; may be real or complex in single, double, or extended precision.
 /// \param matrix Dense matrix whose exponential will be evaluated.
 /// \param t Scalar multiplier applied to \p matrix before exponentiation.

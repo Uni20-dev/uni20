@@ -21,13 +21,23 @@ The logarithmic functions accept x >= -1, return negative infinity at -1,
 and preserve signed zero. Inputs below -1 yield NaN; positive infinity maps
 to positive infinity. All five functions propagate NaN.
 
-CMake probes each function and scalar type independently, requiring its exact
-signature and linked symbol. The capability macros are
-`UNI20_HAS_<EXP10|EXP2M1|EXP10M1|LOG2P1|LOG10P1>_<FLOAT|DOUBLE|LONG_DOUBLE|FLOAT128>`.
+CMake probes `exp10`, `exp2m1` and `exp10m1` separately for each scalar type,
+requiring the exact signature and linked symbol. Their capability macros are
+`UNI20_HAS_<EXP10|EXP2M1|EXP10M1>_<FLOAT|DOUBLE|LONG_DOUBLE|FLOAT128>`.
 A missing routine uses the portable algorithm described below. A detected
-routine uses its libc provider, with the decimal range scaling below. Native trailing `Precision` arguments and
-conversion-only/integer arguments remain unsupported. There is no portable
-`errno` or floating-point exception-flag promise.
+exponential routine uses its libc provider, with the decimal range scaling below.
+
+`log2p1` and `log10p1` always use the compensated portable algorithms for all
+native types. Symbol availability does not establish their accuracy or exact
+identities. In glibc 2.43, binary128 `log2p1(1)` returns the predecessor of one,
+and binary80 `log10p1` exceeds the four-unit target at moderate positive inputs
+because the underlying `log1p` rounds `1+x` before taking its logarithm. The
+compensated algorithms preserve `log2p1(1) == 1` and `log10p1(9) == 1` and
+retain the low part of the addition in this region.
+
+Native trailing `Precision` arguments and conversion-only/integer arguments
+remain unsupported. There is no portable `errno` or floating-point exception-flag
+promise.
 
 ## Portable algorithms
 

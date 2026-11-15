@@ -1,4 +1,4 @@
-#include "../numerics/precision_cases.hpp"
+#include "../numerics/matrix_exponential_cases.hpp"
 #include <mplapack_config.h>
 #include <uni20/common/gtest.hpp>
 #include <uni20/core/math.hpp>
@@ -67,6 +67,12 @@ TEST(MplapackBinary128CpuOpsTest, MatrixExponentialPrescalesWithinBinary128)
   EXPECT_FLOATING_EQ((result[1, 0]), Binary128{});
   EXPECT_FLOATING_EQ((result[1, 1]), Binary128{1});
   EXPECT_TRUE(abs_error((result[0, 1] - large) / large, Binary128{}) <= tolerance());
+}
+
+TEST(MplapackBinary128CpuOpsTest, HugeSkewSymmetricGeneratorMatchesAnalyticalRotation)
+{
+  uni20::test::expect_large_planar_rotations<uni20::test::PrecisionContext<Binary128, false>>();
+  uni20::test::expect_large_planar_rotations<uni20::test::PrecisionContext<Binary128, true>>();
 }
 
 TEST(MplapackBinary128CpuOpsTest, ExactSvdPreservesRealAndComplexBinary128Values)

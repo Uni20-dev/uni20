@@ -402,6 +402,32 @@ template <typename Scalar> void validate_finite_entries(uni20::DenseMatrix<Scala
 }
 
 template <typename Scalar>
+bool try_real_skew_symmetric_2x2_matrix_exponential(uni20::DenseMatrix<Scalar> const& A,
+                                                    uni20::DenseMatrix<Scalar>& result)
+{
+  using Real = uni20::make_real_t<Scalar>;
+
+  if (A.rows() != 2 || A.cols() != 2 || !has_real_entries(A) || A[0, 0] != Scalar{} || A[1, 1] != Scalar{} ||
+      A[0, 1] != -A[1, 0])
+  {
+    return false;
+  }
+
+  // Evaluate the rotation at the original angle. Repeated squaring amplifies
+  // both radial and phase errors; projecting back to an orthogonal matrix
+  // after each squaring would only address the radial error.
+  Real const theta = real_value(A[1, 0]);
+  Real const cosine = uni20::math::cos(theta);
+  Real const sine = uni20::math::sin(theta);
+  result = uni20::DenseMatrix<Scalar>(2, 2);
+  result[0, 0] = Scalar(cosine);
+  result[0, 1] = Scalar(-sine);
+  result[1, 0] = Scalar(sine);
+  result[1, 1] = Scalar(cosine);
+  return true;
+}
+
+template <typename Scalar>
 bool try_real_skew_symmetric_3x3_matrix_exponential(uni20::DenseMatrix<Scalar> const& A,
                                                     uni20::DenseMatrix<Scalar>& result)
 {
@@ -481,10 +507,11 @@ uni20::DenseMatrix<Scalar> matrix_exponential_scaled(uni20::DenseMatrix<Scalar> 
   std::size_t const n = static_cast<std::size_t>(A.rows());
   detail::validate_finite_entries(A);
 
-  uni20::DenseMatrix<Scalar> skew_symmetric_3x3_result;
-  if (detail::try_real_skew_symmetric_3x3_matrix_exponential(A, skew_symmetric_3x3_result))
+  uni20::DenseMatrix<Scalar> skew_symmetric_result;
+  if (detail::try_real_skew_symmetric_2x2_matrix_exponential(A, skew_symmetric_result) ||
+      detail::try_real_skew_symmetric_3x3_matrix_exponential(A, skew_symmetric_result))
   {
-    return skew_symmetric_3x3_result;
+    return skew_symmetric_result;
   }
 
   Real const normA = matrix_one_norm(A);
