@@ -140,3 +140,55 @@ mp-dmrg-2site -w spinchain-u1-l20-neel.psi \
 
 The example remains entirely symmetry-aware. The reference energy is a terminal
 assertion and does not feed a dense state back into the DMRG path.
+
+## Dense HOTRG of the 2D Ising model
+
+`ising_hotrg_example.cpp` coarse-grains the square-lattice Ising model with HOTRG
+(Xie, Chen, Qin, Zhu, Yang and Xiang, Phys. Rev. B 86, 045139 (2012)) on dense
+`Tensor<double, 4>` site tensors `T[ym, xm, xp, yp]`. The algorithm lives in the
+example-local header `dense_hotrg.hpp`: one step along an axis joins two tensors
+on that axis and squeezes the pair of legs on each side of the other axis back
+to one leg with a single isometry, the leading eigenspace of the gram of one such
+pair taken through `truncated_svd`. A round is a y step then an x step, so after
+`k` rounds one coarse tensor spans `2^k x 2^k` sites.
+
+```bash
+./build/examples/ising_hotrg_example                 # T = Tc, bond 16, 8 rounds
+./build/examples/ising_hotrg_example --bond=24 --rounds=8 --temperature=1.2
+./build/examples/ising_hotrg_example --check
+```
+
+The default run prints, round by round, the free energy per site against
+Onsager's and the two lowest scaling dimensions against the exactly solved strip
+of the same width. The scaling dimensions are read from the coarse tensor's own
+transfer matrix: joining its two horizontal legs gives `M = V^(2^k)` for a
+periodic strip of `2^k` sites, so `X_i = ln(lambda_0 / lambda_i) / (2 pi)` with
+no normalization bookkeeping.
+
+`--check` verifies the implementation and exits non-zero on any failure:
+
+- the gram, the update network, and one step along both axes against the
+  definition, by brute-force loops on a random tensor with unequal leg dimensions;
+- untruncated flows against partition functions enumerated over spin
+  configurations (Ising to the 4 x 4 torus, the 3- and 4-state clock model, the
+  3-state Potts model);
+- Onsager's free energy;
+- every contraction of a round reaching GEMM, through the dispatch diagnostics;
+- the transfer-matrix scaling dimensions against the exactly solved strip.
+
+The exact strip values are tabulated in `ising_strip_reference.hpp` for widths
+2 to 256 at `T = Tc` and `T = 1.2 Tc`. They come from the Onsager/Kaufman closed
+form as implemented in <https://github.com/pcchen/Exact_Solution>; the header
+records how to regenerate them. The comparison tolerance is per level rather than
+a fixed epsilon: the transfer matrix holds `lambda_i / lambda_0 = exp(-2 pi X_i)`,
+so the rounding of the leading eigenvalue limits `X_i` to about
+`eps exp(2 pi X_i) / (2 pi)`.
+
+Two properties of the current dense API shape the header. `contract` does not
+pack an operand, so each contraction is written as a matrix product, with the
+surviving index group leading or trailing and the summed group adjacent on both
+operands, which is the form that dispatches to GEMM. The dense `Tensor` has no
+axis permutation, so each regrouping between contractions goes through an
+order-four `BlockTensor` over single-sector U(1) spaces, whose `permute<>` view
+is then materialized with `make_tensor`; tensors of rank five enter it with two
+adjacent axes fused by `reshape_view`.
