@@ -41,6 +41,17 @@ TEST(ContractionPrecision, FixedResultRejectsIncompatiblePrecisionBeforeMutation
   EXPECT_EQ((out[0, 0]), 6);
 }
 
+TEST(ContractionPrecision, MixedFixedInputsUseOutputArithmetic)
+{
+  DenseMatrix<float> a(1, 1);
+  DenseMatrix<double> b(1, 1), out(1, 1);
+  a[0, 0] = 1;
+  b[0, 0] = 1 + numeric_limits<double>::epsilon();
+  linalg::contract(out, 1., a, b, matrix_axes, 0.);
+  EXPECT_EQ((out[0, 0]), (b[0, 0]));
+  EXPECT_NE((out[0, 0]), 1.);
+}
+
 #if UNI20_HAS_MPREAL
 TEST(ContractionPrecision, ExactReferenceAndFiniteDeclinePreserveTheirContracts)
 {

@@ -99,8 +99,8 @@ void validate_contraction_aliasing(OutputTensor& output, LhsTensor const& lhs, R
 /// \details Computes `output = alpha * contract(lhs, rhs) + beta * output`.
 ///          Surviving left axes precede surviving right axes in their original
 ///          order. Backend selection occurs before operands are normalized to
-///          mdspec values. Precision is explicit or inferred from input defaults,
-///          including output when beta is nonzero. Fixed types require their native
+///          mdspec values. Runtime precision is explicit or inferred from input defaults,
+///          including output when beta is nonzero. Fixed results use their native
 ///          precision; runtime precision is forwarded to nested GEMM dispatch.
 /// \pre Output storage does not overlap either input, beyond the cheap
 ///      same-object aliases rejected by this front end.
@@ -123,8 +123,17 @@ void contract(BackendSelector&& selector, OutputTensor&& output, uni20::tensor_e
   auto rhs_descriptor = uni20::mdspec_of(rhs);
   auto operation = contract_op<LhsRank, RhsRank, ContractedRank>{.axes = std::move(axes)};
   using scalar_type = uni20::tensor_element_t<OutputTensor>;
-  auto p = requested ? *requested : common_default_precision(lhs, rhs);
-  if (!requested && beta != scalar_type{}) p = common_precision(p, precision_of(output));
+  auto const p = [&] {
+    if (requested) return *requested;
+    if constexpr (has_runtime_precision_v<scalar_type>)
+    {
+      auto inferred = common_default_precision(lhs, rhs);
+      if (beta != scalar_type{}) inferred = common_precision(inferred, precision_of(output));
+      return inferred;
+    }
+    else
+      return native_precision<scalar_type>();
+  }();
   detail::dispatch_at_precision<scalar_type>(std::forward<BackendSelector>(selector), operation, p, output_descriptor,
                                              alpha, lhs_descriptor, rhs_descriptor, beta);
   uni20::detail::record_output_precision(output, p);

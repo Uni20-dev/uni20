@@ -12,6 +12,7 @@
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/symmetry/block_tensor_concepts.hpp>
 #include <uni20/symmetry/block_tensor_mapped_view.hpp>
+#include <uni20/symmetry/block_tensor_precision.hpp>
 #include <uni20/tensor/transform.hpp>
 
 #include <algorithm>
@@ -482,7 +483,7 @@ void validate_fixed_pairwise_contraction_output(OutputTensor const& output, Left
 
 template <class Traits, class OutputTensor, class LeftTensor, class RightTensor>
 void execute_local_pairwise_contraction(OutputTensor& output, LeftTensor const& left, RightTensor const& right,
-                                        std::vector<LocalPairwiseContractionBinding<Traits>> bindings)
+                                        std::vector<LocalPairwiseContractionBinding<Traits>> bindings, Precision p)
 {
   using left_type = typename Traits::left_type;
   using value_type = typename std::remove_cvref_t<OutputTensor>::value_type;
@@ -514,15 +515,27 @@ void execute_local_pairwise_contraction(OutputTensor& output, LeftTensor const& 
           result[axis] = {left_type::dense_block_order() - Traits::contracted_dense_count + axis, axis};
         return result;
       }();
-      linalg::contract(output_block, value_type{1}, left_block, right_block, dimensions, beta);
+      linalg::contract(output_block, value_type{1}, left_block, right_block, dimensions, beta, p);
     }
   };
   execute_block_batch(typename std::remove_cvref_t<OutputTensor>::storage_policy::block_execution_policy{},
                       group_offsets.size() - 1, execute_group);
 }
 
+template <MutableTensorView Block>
+async::AsyncTask co_zero_pairwise_block(async::WriteBuffer<Block> output, Precision p)
+{
+  auto output_storage = output.storage();
+  auto awaited = co_await async::all(output_storage);
+  auto& storage = std::get<0>(awaited);
+  if (!storage.constructed()) throw async::buffer_write_uninitialized{};
+  uni20::fill(*storage, scalar_at_precision<tensor_element_t<Block>>(0, p));
+  record_output_precision(*storage, p);
+  co_return;
+}
+
 template <class OutputTensor, class Bindings>
-void zero_unbound_pairwise_output_blocks(OutputTensor& output, Bindings const& bindings)
+void zero_unbound_pairwise_output_blocks(OutputTensor& output, Bindings const& bindings, Precision p)
 {
   std::vector<bool> bound(output.stored_block_count(), false);
   for (auto const& binding : bindings)
@@ -542,7 +555,7 @@ void zero_unbound_pairwise_output_blocks(OutputTensor& output, Bindings const& b
                         unbound_ordinals.size(), [&](std::size_t index) {
                           auto block = output.block_by_ordinal(unbound_ordinals[index]);
                           using value_type = typename std::remove_cvref_t<OutputTensor>::value_type;
-                          uni20::fill(block, value_type{});
+                          uni20::fill(block, scalar_at_precision<value_type>(0, p));
                         });
   }
   else
@@ -550,7 +563,10 @@ void zero_unbound_pairwise_output_blocks(OutputTensor& output, Bindings const& b
     using value_type = typename std::remove_cvref_t<OutputTensor>::value_type;
     for (auto const ordinal : unbound_ordinals)
     {
-      uni20::fill(output.async_block_by_ordinal(ordinal), value_type{});
+      if constexpr (has_runtime_precision_v<value_type>)
+        async::schedule(co_zero_pairwise_block(output.async_block_by_ordinal(ordinal).write(), p));
+      else
+        uni20::fill(output.async_block_by_ordinal(ordinal), value_type{});
     }
   }
 }
@@ -571,6 +587,7 @@ void zero_unbound_pairwise_output_blocks(OutputTensor& output, Bindings const& b
 /// \tparam RightTensor Right BlockTensor-like operand.
 /// \param left Operand contributing the contracted codomain suffix.
 /// \param right Operand contributing the contracted domain prefix.
+/// \param requested Optional operation precision; otherwise use logical input defaults.
 /// \return Tensor over all uncontracted factors.
 /// \throws std::invalid_argument If symmetries or any paired space values differ.
 template <std::size_t ContractedCount, class OutputStorage = detail::DefaultPairwiseContractionStorage,
@@ -582,13 +599,15 @@ template <std::size_t ContractedCount, class OutputStorage = detail::DefaultPair
            detail::LocalContractionOutput<
                detail::selected_pairwise_storage_t<OutputStorage, detail::default_pairwise_storage_t<LeftTensor>>,
                LeftTensor, RightTensor, ContractedCount>
-auto contract_adjacent(LeftTensor const& left, RightTensor const& right)
+auto contract_adjacent(LeftTensor const& left, RightTensor const& right, std::optional<Precision> requested = {})
 {
   using selected_output_storage =
       detail::selected_pairwise_storage_t<OutputStorage, detail::default_pairwise_storage_t<LeftTensor>>;
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor, ContractedCount>;
   using value_type = detail::pairwise_contraction_value_t<LeftTensor, RightTensor>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
 
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
@@ -600,8 +619,9 @@ auto contract_adjacent(LeftTensor const& left, RightTensor const& right)
       left, left.symmetry(), std::move(result_domain), std::move(result_codomain), std::move(result_keys));
   auto bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, result, worklist);
   if constexpr (CompleteBlockStorage<selected_output_storage>)
-    detail::zero_unbound_pairwise_output_blocks(result, bindings);
-  detail::execute_local_pairwise_contraction<traits>(result, left, right, std::move(bindings));
+    detail::zero_unbound_pairwise_output_blocks(result, bindings, p);
+  detail::execute_local_pairwise_contraction<traits>(result, left, right, std::move(bindings), p);
+  detail::record_block_output_precision(result, p);
   return result;
 }
 
@@ -612,6 +632,7 @@ auto contract_adjacent(LeftTensor const& left, RightTensor const& right)
 /// \param output Existing fixed-structure result tensor.
 /// \param left Operand contributing the contracted codomain suffix.
 /// \param right Operand contributing the contracted domain prefix.
+/// \param requested Optional operation precision; otherwise use logical input defaults.
 /// \pre Output numerical storage does not overlap either input.
 /// \throws std::invalid_argument If inputs or fixed output are incompatible.
 template <std::size_t ContractedCount, class OutputTensor, class LeftTensor, class RightTensor>
@@ -620,17 +641,21 @@ template <std::size_t ContractedCount, class OutputTensor, class LeftTensor, cla
            (ContractedCount <= std::remove_cvref_t<RightTensor>::domain_type::size()) &&
            detail::LocalContractionSource<LeftTensor> && detail::LocalContractionSource<RightTensor> &&
            detail::LocalFixedPairwiseContractionOutput<OutputTensor, LeftTensor, RightTensor, ContractedCount>
-void contract_adjacent(OutputTensor& output, LeftTensor const& left, RightTensor const& right)
+void contract_adjacent(OutputTensor& output, LeftTensor const& left, RightTensor const& right,
+                       std::optional<Precision> requested = {})
 {
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor, ContractedCount>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto const result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
   detail::validate_fixed_pairwise_contraction_output<traits>(output, left, right, result_keys);
 
   auto bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, output, worklist);
-  detail::zero_unbound_pairwise_output_blocks(output, bindings);
-  detail::execute_local_pairwise_contraction<traits>(output, left, right, std::move(bindings));
+  detail::zero_unbound_pairwise_output_blocks(output, bindings, p);
+  detail::execute_local_pairwise_contraction<traits>(output, left, right, std::move(bindings), p);
+  detail::record_block_output_precision(output, p);
 }
 
 /// \brief Contract one adjacent BlockTensor factor pair into an owning result.
@@ -647,6 +672,7 @@ void contract_adjacent(OutputTensor& output, LeftTensor const& left, RightTensor
 /// \tparam RightTensor Right BlockTensor-like operand.
 /// \param left Left operand, whose contracted factor must be its rightmost codomain factor.
 /// \param right Right operand, whose contracted factor must be its leftmost domain factor.
+/// \param requested Optional operation precision, forwarded to every dense contribution.
 /// \return Tensor over the uncontracted boundary factors.
 /// \throws std::invalid_argument If symmetries or contracted space values differ.
 template <std::size_t LeftAxis, std::size_t RightAxis, class OutputStorage = detail::DefaultPairwiseContractionStorage,
@@ -657,13 +683,15 @@ template <std::size_t LeftAxis, std::size_t RightAxis, class OutputStorage = det
                detail::selected_pairwise_storage_t<OutputStorage, detail::default_pairwise_storage_t<LeftTensor>>,
                LeftTensor, RightTensor> &&
            (LeftAxis == std::remove_cvref_t<LeftTensor>::order() - 1) && (RightAxis == 0)
-auto contract(LeftTensor const& left, RightTensor const& right)
+auto contract(LeftTensor const& left, RightTensor const& right, std::optional<Precision> requested = {})
 {
   using selected_output_storage =
       detail::selected_pairwise_storage_t<OutputStorage, detail::default_pairwise_storage_t<LeftTensor>>;
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor>;
   using value_type = detail::pairwise_contraction_value_t<LeftTensor, RightTensor>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
 
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
@@ -676,8 +704,9 @@ auto contract(LeftTensor const& left, RightTensor const& right)
       left, left.symmetry(), std::move(result_domain), std::move(result_codomain), std::move(result_keys));
   auto bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, result, worklist);
   if constexpr (CompleteBlockStorage<selected_output_storage>)
-    detail::zero_unbound_pairwise_output_blocks(result, bindings);
-  detail::execute_local_pairwise_contraction<traits>(result, left, right, std::move(bindings));
+    detail::zero_unbound_pairwise_output_blocks(result, bindings, p);
+  detail::execute_local_pairwise_contraction<traits>(result, left, right, std::move(bindings), p);
+  detail::record_block_output_precision(result, p);
   return result;
 }
 
@@ -691,6 +720,7 @@ auto contract(LeftTensor const& left, RightTensor const& right)
 /// \param output Existing output whose numerical value is replaced.
 /// \param left Left operand, whose contracted factor must be its rightmost codomain factor.
 /// \param right Right operand, whose contracted factor must be its leftmost domain factor.
+/// \param requested Optional operation precision, forwarded to every dense contribution.
 /// \pre Output numerical storage does not overlap either input.
 /// \throws std::invalid_argument If input spaces are incompatible, the output
 ///         is an input object, or its fixed structure cannot represent the result.
@@ -699,24 +729,30 @@ template <std::size_t LeftAxis, std::size_t RightAxis, class OutputTensor, class
            detail::LocalContractionSource<RightTensor> &&
            detail::LocalFixedPairwiseContractionOutput<OutputTensor, LeftTensor, RightTensor> &&
            (LeftAxis == std::remove_cvref_t<LeftTensor>::order() - 1) && (RightAxis == 0)
-void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& right)
+void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& right,
+              std::optional<Precision> requested = {})
 {
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto const result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
   detail::validate_fixed_pairwise_contraction_output<traits>(output, left, right, result_keys);
 
   auto bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, output, worklist);
-  detail::zero_unbound_pairwise_output_blocks(output, bindings);
-  detail::execute_local_pairwise_contraction<traits>(output, left, right, std::move(bindings));
+  detail::zero_unbound_pairwise_output_blocks(output, bindings, p);
+  detail::execute_local_pairwise_contraction<traits>(output, left, right, std::move(bindings), p);
+  detail::record_block_output_precision(output, p);
 }
 
 /// \brief Schedule independent dense-block matrix products for an adjacent contraction.
 /// \details Structure and the sparse logical worklist are constructed
 ///          synchronously. Each result block has its own `Async<Tensor>`
 ///          timeline, so distinct blocks may execute concurrently while
-///          contributions to one output block are causally serialized. The
+///          contributions to one output block are causally serialized. Logical
+///          precision defaults are resolved at submission, independently of
+///          numerical leaf epochs. The
 ///          returned BlockTensor is immediate; only its numerical blocks may
 ///          still be pending. This first lowering supports rank-two dense
 ///          blocks with the natural matrix-product output axis order.
@@ -727,6 +763,7 @@ void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& r
 /// \tparam RightTensor Right async-block BlockTensor operand.
 /// \param left Left operand, whose contracted factor must be its rightmost codomain factor.
 /// \param right Right operand, whose contracted factor must be its leftmost domain factor.
+/// \param requested Optional operation precision, forwarded to every dense contribution.
 /// \return Sparse tensor with scheduled per-block numerical values.
 /// \pre An async scheduler is active on the submitting application thread.
 /// \throws std::invalid_argument If symmetries or contracted space values differ.
@@ -740,13 +777,15 @@ template <std::size_t LeftAxis, std::size_t RightAxis, class OutputStorage = det
                LeftTensor, RightTensor> &&
            (detail::is_async_matrix_product_geometry<detail::PairwiseContractionTraits<LeftTensor, RightTensor>>()) &&
            (LeftAxis == std::remove_cvref_t<LeftTensor>::order() - 1) && (RightAxis == 0)
-auto contract(LeftTensor const& left, RightTensor const& right)
+auto contract(LeftTensor const& left, RightTensor const& right, std::optional<Precision> requested = {})
 {
   using selected_output_storage =
       detail::selected_pairwise_storage_t<OutputStorage, typename std::remove_cvref_t<LeftTensor>::storage_policy>;
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor>;
   using value_type = detail::pairwise_contraction_value_t<LeftTensor, RightTensor>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
 
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
@@ -766,13 +805,14 @@ auto contract(LeftTensor const& left, RightTensor const& right)
     auto const& right_block = right.async_block_by_ordinal(binding.right_ordinal);
     if (binding.initializes_result)
     {
-      linalg::assign_product(selected_output_storage::backend_selector(), output_block, left_block, right_block);
+      linalg::assign_product(selected_output_storage::backend_selector(), output_block, left_block, right_block, p);
     }
     else
     {
-      linalg::add_product(selected_output_storage::backend_selector(), output_block, left_block, right_block);
+      linalg::add_product(selected_output_storage::backend_selector(), output_block, left_block, right_block, p);
     }
   }
+  detail::record_block_output_precision(result, p);
   return result;
 }
 
@@ -791,16 +831,19 @@ template <std::size_t LeftAxis, std::size_t RightAxis, class OutputTensor, class
            detail::AsyncMatrixFixedPairwiseContractionOutput<OutputTensor, LeftTensor, RightTensor> &&
            (detail::is_async_matrix_product_geometry<detail::PairwiseContractionTraits<LeftTensor, RightTensor>>()) &&
            (LeftAxis == std::remove_cvref_t<LeftTensor>::order() - 1) && (RightAxis == 0)
-void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& right)
+void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& right,
+              std::optional<Precision> requested = {})
 {
   using traits = detail::PairwiseContractionTraits<LeftTensor, RightTensor>;
   detail::validate_pairwise_contraction<traits>(left, right);
+  auto const p = detail::block_operation_precision<detail::pairwise_contraction_value_t<LeftTensor, RightTensor>>(
+      requested, left, right);
   auto const worklist = detail::make_pairwise_contraction_worklist<traits>(left, right);
   auto const result_keys = detail::pairwise_contraction_result_keys<traits>(worklist);
   detail::validate_fixed_pairwise_contraction_output<traits>(output, left, right, result_keys);
 
   auto const bindings = detail::bind_pairwise_contraction_worklist<traits>(left, right, output, worklist);
-  detail::zero_unbound_pairwise_output_blocks(output, bindings);
+  detail::zero_unbound_pairwise_output_blocks(output, bindings, p);
   using storage_policy = typename std::remove_cvref_t<OutputTensor>::storage_policy;
   for (auto const& binding : bindings)
   {
@@ -809,13 +852,14 @@ void contract(OutputTensor& output, LeftTensor const& left, RightTensor const& r
     auto const& right_block = right.async_block_by_ordinal(binding.right_ordinal);
     if (binding.initializes_result)
     {
-      linalg::assign_product(storage_policy::backend_selector(), output_block, left_block, right_block);
+      linalg::assign_product(storage_policy::backend_selector(), output_block, left_block, right_block, p);
     }
     else
     {
-      linalg::add_product(storage_policy::backend_selector(), output_block, left_block, right_block);
+      linalg::add_product(storage_policy::backend_selector(), output_block, left_block, right_block, p);
     }
   }
+  detail::record_block_output_precision(output, p);
 }
 
 } // namespace uni20

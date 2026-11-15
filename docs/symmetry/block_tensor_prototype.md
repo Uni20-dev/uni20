@@ -76,6 +76,55 @@ modifying a source invalidates every view transitively built from it. The slice
 does not yet provide the full numerical block-operation surface, packed async
 host hazards, or multi-device factorization.
 
+### Working precision
+
+Host block constructors accept a trailing `Precision`, including sparse,
+complete, diagonal, and per-block async storage:
+
+```cpp
+Matrix a(symmetry, domain, codomain, stored_keys, p);                // zeros at p
+Matrix scratch(uninitialized, symmetry, domain, codomain, stored_keys, p);
+a.default_precision(q);                                           // metadata only
+```
+
+For `mpreal` and `complex<mpreal>`, the logical tensor owns one optional default.
+Zeros are constructed at that precision; uninitialized elements are unset.
+Copying and moving owners preserve their default, including empty tensors.
+`allocate_like()` uses the owner's current default for new zeros. Fixed scalars
+accept their native precision and store no precision metadata.
+
+`precision_of(tensor)` reads this logical default without inspecting elements.
+Changing it does not convert stored values or the independent values in async
+leaf epochs. Block descriptors, permutations, and repartitions follow the
+ultimate owner's current default, including through temporary mapped views.
+These structural views expose no default setter, and numerical writes through
+a view do not change its parent's default. The ultimate owner must outlive its
+views; replacing or moving that owner invalidates them.
+
+Both pairwise forms accept an optional trailing operation precision:
+
+```cpp
+auto result = contract<left_axis, right_axis>(left, right, p);
+contract_adjacent<2>(output, left, right, p);
+```
+
+The operation resolves precision once before numerical mutation. Runtime input
+defaults must agree, with exact defaults neutral; missing or differing finite
+defaults require an override. Fixed result types use native precision, with the
+allocating result type deduced from scalar multiplication (`float` times `double`
+therefore yields `double`). Every dense contribution receives the same resolved
+precision, including accumulation and zeros for legal output-only blocks.
+Successful owning results record that precision; mapped outputs preserve their
+parent's default. Exact mode retains ordinary scalar arithmetic semantics and
+does not reclassify stored approximations as exact.
+
+With per-block async storage, the logical default is immediate metadata like the
+boundary and stored keys. Submission captures the operation precision; changing
+a logical default afterwards does not retune submitted work. Dense operands are
+still read within their scheduled epochs. Finite MPFR contractions require the
+configured MPLAPACK backend and a supported GEMM lowering; generic finite
+runtime CPU contraction and compressed diagonal contraction remain unsupported.
+
 ## 2. Initial Type Shape
 
 The initial owning type is:
@@ -687,8 +736,8 @@ the dense strided kernel. `LocalSpace` and `QNumSpace` add no artificial dense
 axis; their contributing scalar or external-axis blocks are multiplied and
 accumulated directly. With sparse output storage, the operation builds blocks
 only from stored contributing pairs. With complete output storage, it allocates
-every legal result block and sets legal blocks without contributions to exact
-zero. Neither path materializes a whole-tensor dense bridge.
+every legal result block and sets legal blocks without contributions to zero
+at the operation precision. Neither path materializes a whole-tensor dense bridge.
 `PackedSparseBlockStorage<>` is the default host output; callers may select a
 different immediate host output policy as the third template argument. The
 packed-complete policies use this path for transient complete centers. Parallel

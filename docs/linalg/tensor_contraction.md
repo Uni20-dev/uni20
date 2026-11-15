@@ -39,12 +39,19 @@ caller requests conjugated values through an accessor-bearing view such as
 distinct from the conjugate-linear-left `inner_product` operation. Contracting
 no axes produces an outer product.
 
-The initial scalar contract requires identical output, left, and right element
-types. Scalar promotion is not inferred.
+The fixed output determines the arithmetic scalar type. The reference backend
+accepts inputs convertible to that type and evaluates their elements through
+their accessors. Provider backends may require identical scalar types; a mixed
+`float`/`double` contraction into `double` uses reference arithmetic without
+implicitly allocating converted input tensors. This fixed-output API does not
+infer an output type. The allocating BlockTensor API selects its result scalar
+from the input scalar product type.
 
 Both synchronous and async overloads accept an optional trailing `Precision`,
-with the same rules as `gemm`. Without an override, input construction defaults
-select the operation precision, including the output default when `beta != 0`.
+with the same runtime rules as `gemm`. Fixed results use their type's native
+precision, independently of input types. For runtime results without an override,
+input construction defaults select the operation precision, including the output
+default when `beta != 0`.
 Exact defaults are neutral; different finite defaults require an explicit
 override. A fixed result type requires its native precision. Runtime inputs and
 coefficients are converted inside the selected provider, and successful owning

@@ -124,17 +124,17 @@ inline trivial_u1 const& group()
 
 // An order-4 BlockTensor of the given extents. Each element is supplied by copy or
 // a beta=0 contraction before it is read, including runtime-precision values.
-template <uni20::Real R> [[nodiscard]] inline Wrap<R> wrap(idx e0, idx e1, idx e2, idx e3)
+template <uni20::Real R> [[nodiscard]] inline Wrap<R> wrap(idx e0, idx e1, idx e2, idx e3, uni20::Precision p)
 {
   auto const& g = group();
   return Wrap<R>(uni20::uninitialized, g.sym, uni20::Domain{g.space(e0), g.space(e1), g.space(e2), g.space(e3)},
-                 uni20::Codomain<>{}, {trivial_u1::key()});
+                 uni20::Codomain<>{}, {trivial_u1::key()}, p);
 }
 
 template <uni20::Real R> [[nodiscard]] inline Wrap<R> wrap(tensor4<R> const& t)
 {
   lap const timer(spent().regroup);
-  Wrap<R> w = wrap<R>(t.extent(0), t.extent(1), t.extent(2), t.extent(3));
+  Wrap<R> w = wrap<R>(t.extent(0), t.extent(1), t.extent(2), t.extent(3), uni20::precision_of(t));
   auto block = w.block(trivial_u1::key());
   uni20::copy(block, t);
   return w;
@@ -334,7 +334,7 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const
   auto const t_ld_ur = detail::permuted<1, 3, 0, 2>(site, p); // [l, d, u, r]
   auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(site, p); // [l, u, r, d]
 
-  auto upper = detail::wrap<R>(n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
+  auto upper = detail::wrap<R>(n, m, n, m, p); // A[l1, s, l1', s'], s the d face of the upper copy
   {
     auto block = upper.block(key);
     auto out = uni20::reshape_view(block, n, m, n, m);
@@ -342,7 +342,7 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const
     uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), t_ld_ur, t_ld_ur,
                             array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
   }
-  auto lower = detail::wrap<R>(n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
+  auto lower = detail::wrap<R>(n, m, n, m, p); // B[l2, s, l2', s'], s the u face of the lower copy
   {
     auto block = lower.block(key);
     auto out = uni20::reshape_view(block, n, m, n, m);
@@ -353,7 +353,7 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const
   auto const a = detail::permuted<0, 2, 1, 3>(upper, p); // [l1, l1', s, s']
   auto const b = detail::permuted<1, 3, 0, 2>(lower, p); // [s, s', l2, l2']
 
-  auto paired = detail::wrap<R>(n, n, n, n); // [l1, l1', l2, l2']
+  auto paired = detail::wrap<R>(n, n, n, n, p); // [l1, l1', l2, l2']
   {
     auto block = paired.block(key);
     auto out = uni20::reshape_view(block, n, n, n, n);
@@ -403,7 +403,7 @@ template <uni20::Real R>
   auto second = [&] {
     // H1[u, r1, s, l2, k1] = sum_{l1} Tu U, held as [(u r1), s, l2, k1]
     auto const h1_owner = [&] {
-      auto first = detail::wrap<R>(mu * n, ms, n, k);
+      auto first = detail::wrap<R>(mu * n, ms, n, k, p);
       {
         auto block = first.block(key);
         auto out = uni20::reshape_view(block, mu, n, ms, n, k);
@@ -414,7 +414,7 @@ template <uni20::Real R>
       return detail::permuted<0, 3, 2, 1>(first, p); // [(u r1), k1, l2, s]
     }();
     auto const h1 = uni20::reshape_view(h1_owner, mu, n, k, n, ms);
-    auto held = detail::wrap<R>(mu * n, k, n, md);
+    auto held = detail::wrap<R>(mu * n, k, n, md, p);
     {
       auto block = held.block(key);
       auto out = uni20::reshape_view(block, mu, n, k, n, md);
@@ -428,7 +428,7 @@ template <uni20::Real R>
   auto const h2 = uni20::reshape_view(h2_owner, k, md, mu, n, n);
 
   // [k1, d, u, k2] = sum_{r1, r2} H2 U
-  auto third = detail::wrap<R>(k, md, mu, k);
+  auto third = detail::wrap<R>(k, md, mu, k, p);
   {
     auto block = third.block(key);
     auto out = uni20::reshape_view(block, k, md, mu, k);
