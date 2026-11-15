@@ -186,7 +186,8 @@ void enumerate_svd_boundary_fragments(Boundary const& boundary, QNum charge, Fra
     using space_type = std::remove_cvref_t<decltype(space)>;
     constexpr bool has_coordinate = BlockTensorSpaceTraits<space_type>::has_block_coordinate;
     constexpr bool has_dense_axis = BlockTensorSpaceTraits<space_type>::has_dense_axis;
-    std::size_t const coordinate_count = has_coordinate ? factor_size(space) : 1;
+    std::size_t coordinate_count = 1;
+    if constexpr (has_coordinate) coordinate_count = factor_size(space);
 
     for (std::size_t coordinate = 0; coordinate < coordinate_count; ++coordinate)
     {
@@ -439,9 +440,6 @@ class BlockSvdDecomposition {
     using matrix_type = MatrixTensor;
     using singular_value_tensor_type = SingularValueTensor;
     using allocation_context_type = AllocationContext;
-
-    static_assert(domain_type::size() + 1 <= 4, "block-SVD right factor exceeds the first BlockTensor order limit");
-    static_assert(codomain_type::size() + 1 <= 4, "block-SVD left factor exceeds the first BlockTensor order limit");
 
     /// \brief Provider result and logical fragment maps for one charge sector.
     struct Sector

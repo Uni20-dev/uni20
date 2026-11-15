@@ -147,9 +147,10 @@ auto is_legal_block_key(Symmetry const& symmetry, DomainType const& domain, Codo
 } // namespace detail
 
 /// \brief Fixed-order tensor whose blocks obey a bosonic abelian selection rule.
-/// \details This first slice supports orders zero through four and boundaries
-///          containing `BlockSpace`, `LocalSpace`, `QNumSpace`, and their
-///          explicit `Dual<S>` adaptors.
+/// \details Tensor order is determined by the domain and codomain with no
+///          container-level cap. Boundaries contain `BlockSpace`, `LocalSpace`,
+///          `QNumSpace`, and their explicit `Dual<S>` adaptors. Numerical
+///          operations retain their storage and backend capability requirements.
 /// \tparam T Numerical block element type.
 /// \tparam DomainType Ordered domain value type.
 /// \tparam CodomainType Ordered codomain value type.
@@ -172,7 +173,6 @@ class BlockTensor {
     static constexpr std::size_t static_dense_block_order =
         detail::BoundaryBlockShape<domain_type>::dense_block_order +
         detail::BoundaryBlockShape<codomain_type>::dense_block_order;
-    static_assert(static_order <= 4, "the first BlockTensor slice supports orders 0 through 4");
     static_assert(
         BlockTensorStorageFor<storage_policy, element_type, static_key_coordinate_count, static_dense_block_order>,
         "BlockTensor storage does not provide the required block bindings");

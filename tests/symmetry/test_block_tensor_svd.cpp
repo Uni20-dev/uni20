@@ -287,6 +287,53 @@ TEST(BlockTensorSvd, FullSelectionReconstructsEveryChargeSector)
   }
 }
 
+TEST(BlockTensorSvd, FixedChargeFactorsShiftSectorsWithoutAddingCoordinates)
+{
+  Symmetry const sym{"N:U(1)"};
+  auto const q0 = QNum::identity(sym);
+  auto const q1 = make_qnum(sym, {{"N", 1}});
+  auto const q2 = make_qnum(sym, {{"N", 2}});
+  QNumSpace const fixed(q2, "fixed");
+  QNumSpace const bent(q1, "bent");
+  BlockSpace const rows(sym, {{q0, 2}, {q1, 1}}, "rows");
+  BlockSpace const columns(sym, {{q1, 2}, {q2, 1}}, "columns");
+  using Tensor = BlockTensor<double, Domain<QNumSpace, Dual<QNumSpace>, BlockSpace>, Codomain<BlockSpace>,
+                             PackedCompleteBlockStorage<>>;
+  Tensor tensor(sym, Domain{fixed, dual(bent), rows}, Codomain{columns});
+  static_assert(Tensor::order() == 4 && Tensor::key_coordinate_count() == 2 && Tensor::dense_block_order() == 2);
+  ASSERT_EQ(tensor.stored_block_count(), 2);
+  tensor.block(Tensor::key_type{{0, 0}})[0, 0] = 2.0;
+  tensor.block(Tensor::key_type{{0, 0}})[1, 1] = 5.0;
+  tensor.block(Tensor::key_type{{1, 1}})[0, 0] = 7.0;
+  auto decomposition = block_svd(tensor);
+  ASSERT_EQ(decomposition.sectors().size(), 2);
+  EXPECT_EQ(decomposition.sectors()[0].charge, q1);
+  EXPECT_EQ(decomposition.sectors()[1].charge, q2);
+  ASSERT_EQ(decomposition.spectrum().size(), 3);
+  EXPECT_DOUBLE_EQ(decomposition.spectrum()[0].singular_value, 7.0);
+  EXPECT_DOUBLE_EQ(decomposition.spectrum()[1].singular_value, 5.0);
+  EXPECT_DOUBLE_EQ(decomposition.spectrum()[2].singular_value, 2.0);
+  auto factors = materialize_svd(decomposition, select_svd_states(decomposition.spectrum()));
+  EXPECT_EQ(factors.right_singular_vectors_adjoint.domain(), tensor.domain());
+  for (std::size_t sector = 0; sector < 2; ++sector)
+  {
+    auto const bond = sector_coordinate(singular_value_bond(factors.singular_values), columns[sector].q);
+    auto original = tensor.block(Tensor::key_type{{sector, sector}});
+    auto lhs = factors.left_singular_vectors.block(decltype(factors.left_singular_vectors)::key_type{{bond, sector}});
+    auto rhs = factors.right_singular_vectors_adjoint.block(
+        decltype(factors.right_singular_vectors_adjoint)::key_type{{sector, bond}});
+    auto values = singular_values_in_sector(factors.singular_values, bond);
+    for (index_type i = 0; i < original.extent(0); ++i)
+      for (index_type j = 0; j < original.extent(1); ++j)
+      {
+        double reconstructed = 0.0;
+        for (index_type k = 0; k < static_cast<index_type>(values.size()); ++k)
+          reconstructed += lhs[k, j] * values[k] * rhs[i, k];
+        EXPECT_NEAR(reconstructed, (original[i, j]), 1.0e-12);
+      }
+  }
+}
+
 TEST(BlockTensorSvd, AssemblesRepeatedBoundaryFragmentsAndImplicitZeros)
 {
   Symmetry const symmetry{"N:U(1)"};
