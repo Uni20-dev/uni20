@@ -194,7 +194,11 @@ matrix infrastructure.
 
 The projected exponential invokes `matrix_exponential_op` through the linalg
 dispatcher. Its current selected implementation is the CPU dense
-scaling-and-squaring Padé kernel. It accepts real multipliers and complex
+scaling-and-squaring Padé kernel, with direct trigonometric paths for exactly
+real 2x2 and 3x3 skew-symmetric scaled matrices (the 3x3 rotation angle must
+be representable). See the
+[dense exponential contract](../linalg/dense_operation_contracts.md#matrix-exponential)
+for the large-norm accuracy limits of the general path. It accepts real multipliers and complex
 multipliers; a real projected matrix with a complex multiplier promotes to a
 complex projected exponential. The Taylor action is an independent
 reference/emergency path, not an automatic fallback from Lanczos or Arnoldi. It
