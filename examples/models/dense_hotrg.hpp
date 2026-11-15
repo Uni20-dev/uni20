@@ -23,11 +23,14 @@
 // `detail::permuted`).  That API is capped at order 4: a rank-5 tensor enters it with two
 // adjacent axes fused by `reshape_view`.
 //
-// Real double precision, unit cell 1x1.  `ring_levels` reads the transfer-matrix spectrum of
-// the coarse tensor back out, which is what the example compares against exact Ising values
+// Scalar-generic real arithmetic with explicit working precision, unit cell 1x1.
+// `ring_levels` reads the transfer-matrix spectrum of the coarse tensor back out,
+// which the example compares against exact Ising values
 // (ising_strip_reference.hpp).
 #pragma once
 
+#include <uni20/core/math.hpp>
+#include <uni20/core/scalar_io.hpp>
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/truncated_svd.hpp>
@@ -53,8 +56,8 @@ namespace uni20::examples::dense_hotrg
 
 using idx = uni20::index_type;
 using axis_pair = std::pair<std::size_t, std::size_t>;
-using tensor3 = uni20::Tensor<double, 3>;
-using tensor4 = uni20::Tensor<double, 4>;
+template <uni20::Real R> using tensor3 = uni20::Tensor<R, 3>;
+template <uni20::Real R> using tensor4 = uni20::Tensor<R, 4>;
 
 enum class axis
 {
@@ -95,9 +98,9 @@ struct lap
 };
 
 // Four legs, all in the domain, so that every permutation of them is side-preserving.
+template <uni20::Real R>
 using Wrap =
-    uni20::BlockTensor<double,
-                       uni20::Domain<uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace>,
+    uni20::BlockTensor<R, uni20::Domain<uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace>,
                        uni20::Codomain<>, uni20::PackedSparseBlockStorage<>>;
 
 // U(1) with only its identity sector in use: a Wrap is one dense block.
@@ -110,7 +113,7 @@ struct trivial_u1
     {
       return uni20::BlockSpace(sym, {{q0, static_cast<std::size_t>(dim)}}, "group");
     }
-    [[nodiscard]] static Wrap::key_type key() { return Wrap::key_type{{0, 0, 0, 0}}; }
+    [[nodiscard]] static auto key() { return uni20::BlockKey<4>{{0, 0, 0, 0}}; }
 };
 
 inline trivial_u1 const& group()
@@ -119,28 +122,32 @@ inline trivial_u1 const& group()
   return instance;
 }
 
-// An order-4 BlockTensor of the given extents; its one block is where `contract` writes.
-[[nodiscard]] inline Wrap wrap(idx e0, idx e1, idx e2, idx e3)
+// An order-4 BlockTensor of the given extents. Each element is supplied by copy or
+// a beta=0 contraction before it is read, including runtime-precision values.
+template <uni20::Real R> [[nodiscard]] inline Wrap<R> wrap(idx e0, idx e1, idx e2, idx e3)
 {
   auto const& g = group();
-  return Wrap(g.sym, uni20::Domain{g.space(e0), g.space(e1), g.space(e2), g.space(e3)}, uni20::Codomain<>{},
-              {trivial_u1::key()});
+  return Wrap<R>(uni20::uninitialized, g.sym, uni20::Domain{g.space(e0), g.space(e1), g.space(e2), g.space(e3)},
+                 uni20::Codomain<>{}, {trivial_u1::key()});
 }
 
-[[nodiscard]] inline Wrap wrap(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline Wrap<R> wrap(tensor4<R> const& t)
 {
   lap const timer(spent().regroup);
-  Wrap w = wrap(t.extent(0), t.extent(1), t.extent(2), t.extent(3));
+  Wrap<R> w = wrap<R>(t.extent(0), t.extent(1), t.extent(2), t.extent(3));
   auto block = w.block(trivial_u1::key());
   uni20::copy(block, t);
   return w;
 }
 
 // The block with its axes regrouped, as an owning dense tensor: output axis j is source axis Axis[j].
-template <std::size_t... Axis> [[nodiscard]] auto permuted(Wrap& w)
+template <std::size_t... Axis, uni20::Real R> [[nodiscard]] auto permuted(Wrap<R>& w, uni20::Precision p)
 {
   lap const timer(spent().regroup);
-  return uni20::make_tensor<uni20::ColumnMajor>(uni20::permute<Axis...>(w).block(trivial_u1::key()));
+  auto view = uni20::permute<Axis...>(w).block(trivial_u1::key());
+  tensor4<R> result(uni20::uninitialized, view.extent(0), view.extent(1), view.extent(2), view.extent(3), p);
+  uni20::copy(result, view);
+  return result;
 }
 
 inline void require(bool ok, char const* what)
@@ -154,108 +161,145 @@ inline void require(bool ok, char const* what)
 // models
 // ---------------------------------------------------------------------------------------------
 
-// The bond weights lambda_m, m = 0 .. q-1, of a Z_q model at coupling K = J / T.  The 1/sqrt(q)
-// is carried here rather than on the vertex, so that the network of vertices is the partition
-// function with no further factor:
-//    clock  lambda_m = sum_s cos(2 pi m s / q) exp(K cos(2 pi s / q)) / sqrt(q),
-//    Potts  lambda_0 = (e^K + q - 1) / sqrt(q),  lambda_m = (e^K - 1) / sqrt(q).
-[[nodiscard]] inline std::vector<double> bond_weights(model which, int q, double K)
+/// \brief A tensor and the logarithm of the positive scalar multiplying it.
+/// \details The physical vertex is exp(log_scale) * tensor; the exponential is never formed.
+template <uni20::Real R> struct scaled_tensor
 {
-  detail::require(q >= 2, "q must be at least 2");
-  std::vector<double> lambda(static_cast<std::size_t>(q), 0.0);
-  double const root = std::sqrt(static_cast<double>(q));
+    tensor4<R> tensor;
+    R log_scale;
+};
+
+namespace detail
+{
+template <uni20::Real R> R pi_value(uni20::Precision p)
+{
+  if constexpr (requires { uni20::pi<R>.at(p); })
+    return uni20::pi<R>.at(p);
+  else
+    return uni20::pi<R>;
+}
+} // namespace detail
+
+/// \brief Bond Fourier weights with exp(K) factored out, for ferromagnetic K > 0.
+/// \details The 1/sqrt(q) factor makes the contracted vertex network the partition function.
+///          Clock: sum_s cos(2*pi*m*s/q) exp(K*(cos(2*pi*s/q)-1)) / sqrt(q).
+///          Potts: lambda_0 = (1+(q-1)exp(-K))/sqrt(q), lambda_m = (1-exp(-K))/sqrt(q).
+template <uni20::Real R> [[nodiscard]] std::vector<R> bond_weights(model which, int q, R const& K)
+{
+  detail::require(q >= 2 && uni20::isfinite(K) && K > 0, "finite ferromagnetic K > 0 and q >= 2 required");
+  auto const p = uni20::precision_of(K);
+  detail::require(!p.is_exact(), "finite working precision required");
+  R const one = uni20::scalar_at_precision<R>(1, p);
+  R const root = uni20::math::sqrt(uni20::scalar_at_precision<R>(q, p));
+  std::vector<R> lambda(static_cast<std::size_t>(q), uni20::scalar_at_precision<R>(0, p));
   for (int m = 0; m < q; ++m)
   {
-    if (which == model::potts)
-      lambda[static_cast<std::size_t>(m)] = (m == 0 ? std::exp(K) + q - 1 : std::exp(K) - 1.0) / root;
+    if (which == model::potts || q == 2 || q == 3)
+    {
+      R const exponent = which == model::potts ? K : (q == 2 ? 2 * K : K + K / 2);
+      lambda[static_cast<std::size_t>(m)] =
+          (m == 0 ? one + (q - 1) * uni20::math::exp(-exponent) : -uni20::math::expm1(-exponent)) / root;
+    }
+    else if (q == 4)
+    {
+      R const e = uni20::math::exp(-K), difference = -uni20::math::expm1(-K);
+      lambda[static_cast<std::size_t>(m)] =
+          (m == 0 ? (one + e) * (one + e) : (m == 2 ? difference * difference : -uni20::math::expm1(-2 * K))) / 2;
+    }
     else
-      for (int s = 0; s < q; ++s)
+      for (int spin = 0; spin < q; ++spin)
       {
-        double const theta = 2.0 * std::numbers::pi * s / q;
-        lambda[static_cast<std::size_t>(m)] += std::cos(m * theta) * std::exp(K * std::cos(theta)) / root;
+        R const angle = one * spin / q;
+        R const sine = uni20::math::sinpi(angle);
+        lambda[static_cast<std::size_t>(m)] +=
+            uni20::math::cospi(2 * m * angle) * uni20::math::exp(-2 * K * sine * sine) / root;
       }
   }
-  for (double value : lambda)
-    detail::require(value > 0.0, "a bond weight is not positive (ferromagnetic K > 0 only)");
+  for (R const& value : lambda)
+    detail::require(uni20::isfinite(value) && value >= 0, "bond Fourier weight unresolved at the working precision");
   return lambda;
 }
 
-// The charge-basis vertex tensor:
 //
 //                 u
-//                 │ sqrt(lambda_u)
-//            ┌────┴────┐
-//  sqrt   l ─┤  delta  ├─ r   sqrt        T[u, l, r, d] = delta(u + l - r - d = 0 mod q)
-//            └────┬────┘                                  sqrt(lambda_u lambda_l lambda_r lambda_d)
-//                 │ sqrt(lambda_d)
+//                 | sqrt(lambda_u)
+//            +----+----+
+//  sqrt   l -|  delta  |- r   sqrt
+//            +----+----+
+//                 | sqrt(lambda_d)
 //                 d
 //
-// With the 1/sqrt(q) in lambda the network of these tensors IS the partition function.
-[[nodiscard]] inline tensor4 vertex(model which, int q, double K)
+/// \brief Charge-basis clock/Potts vertex with the scale exp(2K) stored logarithmically.
+/// \details T[u,l,r,d] = delta(u+l-r-d mod q) sqrt(lambda_u lambda_l lambda_r lambda_d).
+///          Both the tensor elements and its log scale retain the precision of K.
+template <uni20::Real R> [[nodiscard]] scaled_tensor<R> vertex(model which, int q, R const& K)
 {
   auto const lambda = bond_weights(which, q, K);
-  tensor4 t(q, q, q, q);
+  auto const p = uni20::precision_of(K);
+  tensor4<R> t(q, q, q, q, p);
   for (idx up = 0; up < q; ++up)
     for (idx left = 0; left < q; ++left)
       for (idx right = 0; right < q; ++right)
         for (idx down = 0; down < q; ++down)
-        {
-          bool const allowed = ((up + left - right - down) % q + q) % q == 0;
-          t[up, left, right, down] =
-              allowed ? std::sqrt(lambda[static_cast<std::size_t>(up)] * lambda[static_cast<std::size_t>(left)] *
-                                  lambda[static_cast<std::size_t>(right)] * lambda[static_cast<std::size_t>(down)])
-                      : 0.0;
-        }
-  return t;
+          if (((up + left - right - down) % q + q) % q == 0)
+            t[up, left, right, down] = uni20::math::sqrt(lambda[up] * lambda[left] * lambda[right] * lambda[down]);
+  R log_scale = 2 * K;
+  detail::require(uni20::isfinite(log_scale),
+                  "the physical log scale is not representable at this scalar's exponent range");
+  return {std::move(t), std::move(log_scale)};
 }
 
-// The critical temperature T_c = J / K_c where it is known in closed form.
-[[nodiscard]] inline double critical_temperature(model which, int q)
+/// \brief Closed-form critical coupling J/Tc evaluated at the selected precision.
+template <uni20::Real R> [[nodiscard]] R critical_coupling(model which, int q, uni20::Precision p)
 {
-  if (which == model::potts) return 1.0 / std::log(1.0 + std::sqrt(static_cast<double>(q)));
-  if (q == 2) return 2.0 / std::log(1.0 + std::sqrt(2.0));
-  if (q == 3) return 3.0 / (2.0 * std::log(1.0 + std::sqrt(3.0)));
-  if (q == 4) return 1.0 / std::log(1.0 + std::sqrt(2.0));
-  throw std::invalid_argument("dense_hotrg: no closed-form T_c for the clock model at this q");
+  R const one = uni20::scalar_at_precision<R>(1, p);
+  if (which == model::potts) return uni20::math::log1p(uni20::math::sqrt(one * q));
+  if (q == 2) return uni20::math::log1p(uni20::math::sqrt(2 * one)) / 2;
+  if (q == 3) return 2 * uni20::math::log1p(uni20::math::sqrt(3 * one)) / 3;
+  if (q == 4) return uni20::math::log1p(uni20::math::sqrt(2 * one));
+  throw std::invalid_argument("dense_hotrg: no closed-form Tc for this clock model");
 }
 
 // ---------------------------------------------------------------------------------------------
 // small pieces
 // ---------------------------------------------------------------------------------------------
 
-// The normalization used throughout: the largest ENTRY (not the largest modulus, not a norm).
-// Only ratios are read from the flow, so the choice has to be consistent, not canonical.
-[[nodiscard]] inline double max_element(tensor4 const& t)
+// Coarse-step normalization: the largest positive entry. The initial normalization
+// in flow uses the largest modulus to bound every entry before the first Gram matrix.
+template <uni20::Real R> [[nodiscard]] inline R max_element(tensor4<R> const& t)
 {
-  double largest = -HUGE_VAL;
+  auto const p = uni20::precision_of(t);
+  R largest = uni20::scalar_at_precision<R>(0, p);
   for (auto const& value : t.storage())
-    largest = std::max(largest, static_cast<double>(value));
+    largest = std::max(largest, R(value));
   return largest;
 }
 
-inline void scale(tensor4& t, double factor)
+template <uni20::Real R> inline void scale(tensor4<R>& t, R factor)
 {
   for (auto& value : t.storage())
-    value = static_cast<double>(value) * factor;
+    value = R(value) * factor;
 }
 
 // sum_{i, j} T[i, j, j, i]: the tensor closed on itself in both directions (one block on a torus).
-[[nodiscard]] inline double torus_trace(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline R torus_trace(tensor4<R> const& t)
 {
+  auto const p = uni20::precision_of(t);
   detail::require(t.extent(0) == t.extent(3) && t.extent(1) == t.extent(2),
                   "torus_trace: opposite faces differ in dimension");
-  double sum = 0.0;
+  R sum = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < t.extent(0); ++i)
     for (idx j = 0; j < t.extent(1); ++j)
-      sum += static_cast<double>(t[i, j, j, i]);
+      sum += R(t[i, j, j, i]);
   return sum;
 }
 
 // The same tensor with the two axes' names exchanged, T[u, l, r, d] -> [l, u, d, r].
-[[nodiscard]] inline tensor4 exchange_axes(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline tensor4<R> exchange_axes(tensor4<R> const& t)
 {
+  auto const p = uni20::precision_of(t);
   auto w = detail::wrap(t);
-  return detail::permuted<1, 0, 3, 2>(w);
+  return detail::permuted<1, 0, 3, 2>(w, p);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -278,42 +322,46 @@ inline void scale(tensor4& t, double factor)
 //            └────────────── d ─────────────┘
 //
 //   theta[(l1, l2) ; (l1', l2')] = sum_{s, s'} A B         (three chi^6 products)
-[[nodiscard]] inline tensor4 gram_y(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const& t)
 {
+  auto const p = uni20::precision_of(t);
   idx const m = t.extent(0), n = t.extent(1);
   detail::require(t.extent(2) == n && t.extent(3) == m, "gram: opposite faces differ in dimension");
   auto const key = detail::trivial_u1::key();
   using std::array;
 
   auto site = detail::wrap(t);
-  auto const t_ld_ur = detail::permuted<1, 3, 0, 2>(site); // [l, d, u, r]
-  auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(site); // [l, u, r, d]
+  auto const t_ld_ur = detail::permuted<1, 3, 0, 2>(site, p); // [l, d, u, r]
+  auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(site, p); // [l, u, r, d]
 
-  auto upper = detail::wrap(n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
+  auto upper = detail::wrap<R>(n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
   {
     auto block = upper.block(key);
     auto out = uni20::reshape_view(block, n, m, n, m);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, t_ld_ur, t_ld_ur, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
+    uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), t_ld_ur, t_ld_ur,
+                            array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
   }
-  auto lower = detail::wrap(n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
+  auto lower = detail::wrap<R>(n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
   {
     auto block = lower.block(key);
     auto out = uni20::reshape_view(block, n, m, n, m);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, t_lu_rd, t_lu_rd, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
+    uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), t_lu_rd, t_lu_rd,
+                            array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
   }
-  auto const a = detail::permuted<0, 2, 1, 3>(upper); // [l1, l1', s, s']
-  auto const b = detail::permuted<1, 3, 0, 2>(lower); // [s, s', l2, l2']
+  auto const a = detail::permuted<0, 2, 1, 3>(upper, p); // [l1, l1', s, s']
+  auto const b = detail::permuted<1, 3, 0, 2>(lower, p); // [s, s', l2, l2']
 
-  auto paired = detail::wrap(n, n, n, n); // [l1, l1', l2, l2']
+  auto paired = detail::wrap<R>(n, n, n, n); // [l1, l1', l2, l2']
   {
     auto block = paired.block(key);
     auto out = uni20::reshape_view(block, n, n, n, n);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}}, 0.0);
+    uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}},
+                            uni20::scalar_at_precision<R>(0, p), p);
   }
-  return detail::permuted<0, 2, 1, 3>(paired); // [l1, l2, l1', l2']
+  return detail::permuted<0, 2, 1, 3>(paired, p); // [l1, l2, l1', l2']
 }
 
 // The update network with a given isometry U[a, b, k] (a from the upper copy, b from the lower):
@@ -334,8 +382,10 @@ inline void scale(tensor4& t, double factor)
 //
 // in the order ((Tu U) Td) U: chi^6, chi^7, chi^6 in time and chi^5 in memory.  U is real, so
 // the U^dagger of the left pair is U itself.
-[[nodiscard]] inline tensor4 apply_isometry(tensor4 const& upper, tensor4 const& lower, tensor3 const& iso)
+template <uni20::Real R>
+[[nodiscard]] inline tensor4<R> apply_isometry(tensor4<R> const& upper, tensor4<R> const& lower, tensor3<R> const& iso)
 {
+  auto const p = uni20::precision_of(upper);
   idx const mu = upper.extent(0), n = upper.extent(1), ms = upper.extent(3), md = lower.extent(3), k = iso.extent(2);
   detail::require(upper.extent(2) == n && lower.extent(1) == n && lower.extent(2) == n && lower.extent(0) == ms,
                   "apply_isometry: the two tensors do not stack");
@@ -344,110 +394,115 @@ inline void scale(tensor4& t, double factor)
   using std::array;
 
   auto up = detail::wrap(upper);
-  auto const tu = detail::permuted<0, 2, 3, 1>(up); // [u, r1, s, l1]
+  auto const tu = detail::permuted<0, 2, 3, 1>(up, p); // [u, r1, s, l1]
   auto low = detail::wrap(lower);
-  auto const td = detail::permuted<1, 0, 2, 3>(low); // [l2, s, r2, d]
+  auto const td = detail::permuted<1, 0, 2, 3>(low, p); // [l2, s, r2, d]
 
   // H2[u, r1, k1, r2, d] = sum_{l2, s} H1 Td, held as [(u r1), k1, r2, d].  The scopes keep at
   // most two chi^5 buffers alive at a time.
   auto second = [&] {
     // H1[u, r1, s, l2, k1] = sum_{l1} Tu U, held as [(u r1), s, l2, k1]
     auto const h1_owner = [&] {
-      auto first = detail::wrap(mu * n, ms, n, k);
+      auto first = detail::wrap<R>(mu * n, ms, n, k);
       {
         auto block = first.block(key);
         auto out = uni20::reshape_view(block, mu, n, ms, n, k);
         detail::lap const timer(spent().contract);
-        uni20::linalg::contract(out, 1.0, tu, iso, array<axis_pair, 1>{{{3, 0}}}, 0.0);
+        uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), tu, iso, array<axis_pair, 1>{{{3, 0}}},
+                                uni20::scalar_at_precision<R>(0, p), p);
       }
-      return detail::permuted<0, 3, 2, 1>(first); // [(u r1), k1, l2, s]
+      return detail::permuted<0, 3, 2, 1>(first, p); // [(u r1), k1, l2, s]
     }();
     auto const h1 = uni20::reshape_view(h1_owner, mu, n, k, n, ms);
-    auto held = detail::wrap(mu * n, k, n, md);
+    auto held = detail::wrap<R>(mu * n, k, n, md);
     {
       auto block = held.block(key);
       auto out = uni20::reshape_view(block, mu, n, k, n, md);
       detail::lap const timer(spent().contract);
-      uni20::linalg::contract(out, 1.0, h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
+      uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
+                              uni20::scalar_at_precision<R>(0, p), p);
     }
     return held;
   }();
-  auto const h2_owner = detail::permuted<1, 3, 0, 2>(second); // [k1, d, (u r1), r2]
+  auto const h2_owner = detail::permuted<1, 3, 0, 2>(second, p); // [k1, d, (u r1), r2]
   auto const h2 = uni20::reshape_view(h2_owner, k, md, mu, n, n);
 
   // [k1, d, u, k2] = sum_{r1, r2} H2 U
-  auto third = detail::wrap(k, md, mu, k);
+  auto third = detail::wrap<R>(k, md, mu, k);
   {
     auto block = third.block(key);
     auto out = uni20::reshape_view(block, k, md, mu, k);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
+    uni20::linalg::contract(out, uni20::scalar_at_precision<R>(1, p), h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
+                            uni20::scalar_at_precision<R>(0, p), p);
   }
-  return detail::permuted<2, 0, 3, 1>(third); // [u, k1, k2, d]
+  return detail::permuted<2, 0, 3, 1>(third, p); // [u, k1, k2, d]
 }
 
-struct step_result
+template <uni20::Real R> struct step_result
 {
-    tensor4 T;                  // the coarse tensor [ym, xm, xp, yp], divided by `norm`
-    tensor3 U;                  // the isometry [a, b, k]: a the upper (left) copy's leg, b the lower (right) one's
-    std::vector<double> S = {}; // the kept singular values of the gram, descending
-    double norm = 0.0;          // the largest entry the coarse tensor was divided by
-    double discarded = 0.0;     // 1 - sum(S) / tr(gram): the discarded fraction of the gram's trace
-    double gap = 0.0;           // (smallest kept - largest discarded) / smallest kept singular value; 1 if nothing was
-                                // discarded, 0 if the smallest kept value is zero.  Near 0 the cut falls inside a
-                                // degenerate cluster and the kept subspace is the solver's choice, not the model's.
+    tensor4<R> T;          // the coarse tensor [ym, xm, xp, yp], divided by `norm`
+    tensor3<R> U;          // the isometry [a, b, k]: a the upper (left) copy's leg, b the lower (right) one's
+    std::vector<R> S = {}; // the kept singular values of the gram, descending
+    R norm = R{0};         // the largest entry the coarse tensor was divided by
+    R discarded = R{0};    // 1 - sum(S) / tr(gram): the discarded fraction of the gram's trace
+    R gap = R{0};          // (smallest kept - largest discarded) / smallest kept singular value; 1 if nothing was
+                           // discarded, 0 if the smallest kept value is zero.  Near 0 the cut falls inside a
+                           // degenerate cluster and the kept subspace is the solver's choice, not the model's.
 };
 
 namespace detail
 {
 
-[[nodiscard]] inline step_result coarse_grain_y(tensor4 const& t, std::size_t D)
+template <uni20::Real R> [[nodiscard]] inline step_result<R> coarse_grain_y(tensor4<R> const& t, std::size_t D)
 {
+  auto const p = uni20::precision_of(t);
   idx const n = t.extent(1);
-  tensor4 theta = gram_y(t);
-  double trace = 0.0;
+  tensor4<R> theta = gram_y(t);
+  R trace = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < n; ++i)
     for (idx j = 0; j < n; ++j)
-      trace += static_cast<double>(theta[i, j, i, j]);
+      trace += R(theta[i, j, i, j]);
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
   auto decomposition = [&] {
     lap const timer(spent().svd);
     return uni20::linalg::truncated_svd(
         uni20::reshape_view(theta, n * n, n * n),
-        uni20::linalg::SvdTruncationPolicy<double>{.maximum_retained_extent = std::min(D, rows)});
+        uni20::linalg::SvdTruncationPolicy<R>{.maximum_retained_extent = std::min(D, rows)}, p);
   }();
   idx const k = static_cast<idx>(decomposition.singular_values.extent(0));
 
-  step_result result{.T = tensor4(1, 1, 1, 1), .U = tensor3(n, n, k)};
+  step_result<R> result{.T = tensor4<R>(1, 1, 1, 1, p), .U = tensor3<R>(n, n, k, p)};
   uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, k));
-  double kept = 0.0;
+  R kept = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < k; ++i)
   {
-    result.S.push_back(static_cast<double>(decomposition.singular_values[i]));
+    result.S.push_back(R(decomposition.singular_values[i]));
     kept += result.S.back();
   }
-  result.discarded = 1.0 - kept / trace;
+  result.discarded = 1 - kept / trace;
   auto const& cut = decomposition.truncation;
   if (!cut.smallest_retained_singular_value || !cut.largest_discarded_singular_value)
-    result.gap = 1.0; // nothing was discarded
-  else if (*cut.smallest_retained_singular_value > 0.0)
+    result.gap = uni20::scalar_at_precision<R>(1, p); // nothing was discarded
+  else if (*cut.smallest_retained_singular_value > 0)
     result.gap = (*cut.smallest_retained_singular_value - *cut.largest_discarded_singular_value) /
                  *cut.smallest_retained_singular_value;
   else
-    result.gap = 0.0; // the cut falls inside the null space: kept and discarded values are both zero
+    result.gap = uni20::scalar_at_precision<R>(
+        0, p); // the cut falls inside the null space: kept and discarded values are both zero
 
   result.T = apply_isometry(t, t, result.U);
   result.norm = max_element(result.T);
-  require(result.norm > 0.0, "coarse_grain: the largest entry of the coarse tensor is not positive");
-  scale(result.T, 1.0 / result.norm);
+  require(result.norm > 0, "coarse_grain: the largest entry of the coarse tensor is not positive");
+  scale(result.T, R(1 / result.norm));
   return result;
 }
 
 } // namespace detail
 
 // The gram of the fused low-face pair of the OTHER axis (xm for a y step, ym for an x step).
-[[nodiscard]] inline tensor4 gram(tensor4 const& t, axis along)
+template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram(tensor4<R> const& t, axis along)
 {
   return along == axis::y ? gram_y(t) : gram_y(exchange_axes(t));
 }
@@ -455,10 +510,11 @@ namespace detail
 // One HOTRG step along `along` with a global top-D cut: gram -> truncated SVD -> the update
 // network with U on both fused faces -> divide by the largest entry.  For the x step exchange
 // the names ym <-> xm, yp <-> xp in every picture.
-[[nodiscard]] inline step_result coarse_grain(tensor4 const& t, axis along, std::size_t D)
+template <uni20::Real R>
+[[nodiscard]] inline step_result<R> coarse_grain(tensor4<R> const& t, axis along, std::size_t D)
 {
   if (along == axis::y) return detail::coarse_grain_y(t, D);
-  step_result result = detail::coarse_grain_y(exchange_axes(t), D);
+  step_result<R> result = detail::coarse_grain_y(exchange_axes(t), D);
   result.T = exchange_axes(result.T);
   return result;
 }
@@ -467,84 +523,69 @@ namespace detail
 // the ladder
 // ---------------------------------------------------------------------------------------------
 
-// Everything a run yields, one entry per step L -> 2L (entry i builds L = 2^(i+1)).
-struct flow_record
+/// \brief One record per round; the represented square has width 2^log2_width.
+template <uni20::Real R> struct flow_record
 {
-    std::vector<long long> L;
-    std::vector<double> Ny, Nx, Norms; // the per-step norms; Norms = Ny^2 Nx
-    std::vector<double> discarded_y, discarded_x, gap_y, gap_x;
-    std::vector<double> trace_T;                                        // torus_trace of T0 at that L
-    std::vector<double> lnz;                                            // ln Z / L^2 of the L x L torus
-    std::vector<double> seconds;                                        // wall time of the step ...
-    std::vector<double> seconds_contract, seconds_regroup, seconds_svd; // ... and where it went
-    double trace_T_unit = 0.0;
-    tensor4 T0 = tensor4(1, 1, 1, 1); // the last coarse tensor
+    std::vector<int> log2_width = {};
+    std::vector<R> log_norm_y = {}, log_norm_x = {};
+    std::vector<R> discarded_y = {}, discarded_x = {}, gap_y = {}, gap_x = {};
+    std::vector<R> lnz = {}; // log Z per original lattice site
+    std::vector<double> seconds = {}, seconds_contract = {}, seconds_regroup = {}, seconds_svd = {};
+    R initial_log_scale;
+    R unit_lnz;
+    tensor4<R> T0;
 };
 
-// ln Z / L^2 after `count` steps: ln tr T_L / 4^count + sum_i ln(Norms_i) / 4^(i+1).  Each
-// round quadruples the sites, so a norm divided out at step i is worth 4^-(i+1) per site.
-[[nodiscard]] inline double lnz_per_site(std::vector<double> const& norms, std::size_t count, double trace)
+/// \brief Coarse-grain normalized tensors, retaining removed scales as logarithms.
+/// \details One round doubles each side. No lattice extent or normalization product is formed.
+///          The finite input tensor is normalized before its first Gram matrix; its
+///          periodic traces must be positive for the partition-function logarithm.
+///          The observer receives the current record and its normalized coarse tensor.
+template <uni20::Real R, class Observer = std::nullptr_t>
+[[nodiscard]] flow_record<R> flow(scaled_tensor<R> unit, std::size_t D, int steps, Observer observe = nullptr)
 {
-  double sum = 0.0, weight = 1.0;
-  for (std::size_t i = 0; i < count; ++i)
+  detail::require(steps >= 0 && D > 0, "nonnegative rounds and positive bond dimension required");
+  auto const p = uni20::precision_of(unit.tensor);
+  detail::require(!p.is_exact(), "finite working precision required");
+  R norm = uni20::scalar_at_precision<R>(0, p);
+  for (auto const& value : unit.tensor.storage())
   {
-    weight *= 0.25;
-    sum += weight * std::log(norms[i]);
+    detail::require(uni20::isfinite(value), "the input tensor must be finite");
+    norm = std::max(norm, uni20::math::abs(value));
   }
-  return sum + weight * std::log(trace);
-}
-
-// Called after every step with the record so far and the coarse tensor of that size.
-using flow_observer = std::function<void(flow_record const&, tensor4 const& T0)>;
-
-// The lattice width 2^steps is recorded as a long long, which holds 2^62 but not 2^63.  The
-// tensors stay small whatever the width, so a round count is the only thing that bounds it.
-inline constexpr int max_rounds = 62;
-
-// The ladder, from the unit tensor up to L = 2^steps:
-//
-//     L -> 2L:    T1, U_y, N_y = coarse_grain(T0, y)        the y step
-//                 T0, U_x, N_x = coarse_grain(T1, x)        the x step
-//                 Norms.append(N_y^2 N_x)
-[[nodiscard]] inline flow_record flow(tensor4 const& unit, std::size_t D, int steps, flow_observer const& observe = {})
-{
-  detail::require(steps >= 0 && steps <= max_rounds,
-                  "flow: the number of rounds is negative or above max_rounds, where the width 2^rounds overflows");
-  flow_record record;
-  record.trace_T_unit = torus_trace(unit);
-  record.T0 = unit;
-  long long size = 1;
+  detail::require(norm > 0 && uni20::isfinite(unit.log_scale), "nonzero tensor and finite log scale required");
+  // Divide directly: the reciprocal of a tiny finite norm could overflow.
+  for (auto& value : unit.tensor.storage())
+    value /= norm;
+  R const initial = unit.log_scale + uni20::math::log(norm);
+  R const unit_lnz = initial + uni20::math::log(torus_trace(unit.tensor));
+  flow_record<R> record{.initial_log_scale = initial, .unit_lnz = unit_lnz, .T0 = std::move(unit.tensor)};
+  R sum = initial, weight = uni20::scalar_at_precision<R>(1, p);
   for (int step = 0; step < steps; ++step)
   {
     auto const start = std::chrono::steady_clock::now();
     seconds_spent const before = spent();
-    step_result along_y = coarse_grain(record.T0, axis::y, D);
-    step_result along_x = coarse_grain(along_y.T, axis::x, D);
+    auto along_y = coarse_grain(record.T0, axis::y, D);
+    auto along_x = coarse_grain(along_y.T, axis::x, D);
     record.T0 = std::move(along_x.T);
-    size *= 2;
-
-    record.L.push_back(size);
-    record.Ny.push_back(along_y.norm);
-    record.Nx.push_back(along_x.norm);
-    record.Norms.push_back(along_y.norm * along_y.norm * along_x.norm);
+    record.log2_width.push_back(step + 1);
+    record.log_norm_y.push_back(uni20::math::log(along_y.norm));
+    record.log_norm_x.push_back(uni20::math::log(along_x.norm));
+    weight /= 4;
+    sum += weight * (2 * record.log_norm_y.back() + record.log_norm_x.back());
+    record.lnz.push_back(sum + weight * uni20::math::log(torus_trace(record.T0)));
     record.discarded_y.push_back(along_y.discarded);
     record.discarded_x.push_back(along_x.discarded);
     record.gap_y.push_back(along_y.gap);
     record.gap_x.push_back(along_x.gap);
-    record.trace_T.push_back(torus_trace(record.T0));
-    record.lnz.push_back(lnz_per_site(record.Norms, record.Norms.size(), record.trace_T.back()));
     record.seconds.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     record.seconds_contract.push_back(spent().contract - before.contract);
     record.seconds_regroup.push_back(spent().regroup - before.regroup);
     record.seconds_svd.push_back(spent().svd - before.svd);
-    if (observe) observe(record, record.T0);
+    if constexpr (!std::same_as<Observer, std::nullptr_t>) observe(record, record.T0);
   }
   return record;
 }
-
-// ---------------------------------------------------------------------------------------------
-// the transfer matrix of the coarse tensor
-// ---------------------------------------------------------------------------------------------
 
 // One coarse tensor with its two horizontal legs joined:
 //
@@ -568,86 +609,98 @@ inline constexpr int max_rounds = 62;
 //
 // This is a trace of one tensor against itself over a single index.  `contract` does not express
 // it -- it joins two operands -- so it is written out; it costs one pass and no extra storage.
-[[nodiscard]] inline uni20::Tensor<double, 2> ring_matrix(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline uni20::Tensor<R, 2> ring_matrix(tensor4<R> const& t)
 {
+  auto const p = uni20::precision_of(t);
   idx const mu = t.extent(0), nh = t.extent(1), md = t.extent(3);
   detail::require(t.extent(2) == nh, "ring_matrix: the two horizontal legs differ in dimension");
-  uni20::Tensor<double, 2> ring(mu, md); // zero-initialized
+  uni20::Tensor<R, 2> ring(mu, md, p); // zero-initialized
   for (idx bond = 0; bond < nh; ++bond)
     for (idx down = 0; down < md; ++down)
       for (idx up = 0; up < mu; ++up)
-        ring[up, down] += static_cast<double>(t[up, bond, bond, down]);
+        ring[up, down] += R(t[up, bond, bond, down]);
   return ring;
 }
 
-struct ring_result
+template <uni20::Real R> struct ring_result
 {
-    std::vector<double> eigenvalues; ///< descending
-    double asymmetry = 0.0;          ///< max |M - M^T| / max |M|; zero when the tensor is reflection-symmetric
+    std::vector<R> eigenvalues; ///< descending
+    R asymmetry = R{0};         ///< max |M - M^T| / max |M|; zero when the tensor is reflection-symmetric
 };
 
 // The spectrum of `ring_matrix`.  The transfer matrix of a reflection-symmetric tensor is a
 // symmetric matrix, which `asymmetry` reports and `eigh` then relies on: read it before the
 // eigenvalues.
-[[nodiscard]] inline ring_result ring_levels(tensor4 const& t)
+template <uni20::Real R> [[nodiscard]] inline ring_result<R> ring_levels(tensor4<R> const& t)
 {
-  uni20::Tensor<double, 2> ring = ring_matrix(t);
+  auto const p = uni20::precision_of(t);
+  uni20::Tensor<R, 2> ring = ring_matrix(t);
   idx const dim = ring.extent(0);
   detail::require(dim == ring.extent(1), "ring_levels: the ym and yp legs differ in dimension");
 
-  ring_result result;
-  double largest = 0.0, worst = 0.0;
+  ring_result<R> result;
+  R largest = uni20::scalar_at_precision<R>(0, p), worst = largest;
   for (idx i = 0; i < dim; ++i)
     for (idx j = 0; j < dim; ++j)
     {
-      largest = std::max(largest, std::abs(static_cast<double>(ring[i, j])));
-      worst = std::max(worst, std::abs(static_cast<double>(ring[i, j]) - static_cast<double>(ring[j, i])));
+      largest = std::max(largest, uni20::math::abs(R(ring[i, j])));
+      worst = std::max(worst, uni20::math::abs(R(ring[i, j]) - R(ring[j, i])));
     }
-  result.asymmetry = largest > 0.0 ? worst / largest : 0.0;
+  result.asymmetry = largest > 0 ? worst / largest : uni20::scalar_at_precision<R>(0, p);
 
-  auto const decomposition = uni20::linalg::eigh(ring); // ascending
+  auto const decomposition = uni20::linalg::eigh(ring, p); // ascending
   result.eigenvalues.reserve(static_cast<std::size_t>(dim));
   for (idx i = dim; i > 0; --i)
-    result.eigenvalues.push_back(static_cast<double>(decomposition.eigenvalues[i - 1]));
+    result.eigenvalues.push_back(R(decomposition.eigenvalues[i - 1]));
   return result;
 }
 
-// X_i = (n / 2 pi rows) ln(lambda_0 / lambda_i) for a transfer matrix that spans `n` sites and
-// `rows` rows: the scaling dimensions of the strip, as the ratios of `ring_levels` give them.
-// For the ring of one coarse tensor n == rows and the factor is simply 1 / 2 pi.  Levels at or
-// below `floor` times the largest are dropped, as are non-positive ones.
-[[nodiscard]] inline std::vector<double> scaling_dimensions(std::vector<double> const& eigenvalues, long long n,
-                                                            long long rows, double floor = 1e-13)
+/// \brief Scaling dimensions from a transfer matrix spanning powers of two in each direction.
+/// \details The geometric factor uses only the difference of the width and height exponents.
+///          Positive eigenvalues above 64 working-precision epsilons of the leading value are retained.
+template <uni20::Real R>
+[[nodiscard]] std::vector<R> scaling_dimensions(std::vector<R> const& eigenvalues, int log2_columns = 0,
+                                                int log2_rows = 0)
 {
-  detail::require(!eigenvalues.empty() && eigenvalues.front() > 0.0,
-                  "scaling_dimensions: no positive leading eigenvalue");
-  std::vector<double> out;
-  for (double value : eigenvalues)
+  detail::require(!eigenvalues.empty() && eigenvalues.front() > 0, "no positive leading eigenvalue");
+  detail::require(log2_columns >= 0 && log2_rows >= 0, "negative lattice extent exponent");
+  auto const p = uni20::precision_of(eigenvalues.front());
+  R const one = uni20::scalar_at_precision<R>(1, p);
+  R const floor = 64 * uni20::numeric_limits<R>::epsilon(p);
+  R const factor = uni20::math::scalbn(one, log2_columns - log2_rows) / (2 * detail::pi_value<R>(p));
+  std::vector<R> out;
+  for (R const& value : eigenvalues)
   {
     if (!(value > floor * eigenvalues.front())) break;
-    out.push_back(std::log(eigenvalues.front() / value) * static_cast<double>(n) /
-                  (2.0 * std::numbers::pi * static_cast<double>(rows)));
+    R const gap = value > eigenvalues.front() / 2
+                      ? -uni20::math::log1p((value - eigenvalues.front()) / eigenvalues.front())
+                      : uni20::math::log(eigenvalues.front()) - uni20::math::log(value);
+    out.push_back(gap * factor);
   }
   return out;
 }
 
-// ---------------------------------------------------------------------------------------------
-// exact references
-// ---------------------------------------------------------------------------------------------
-
-// Onsager's ln Z / N of the square-lattice Ising model at coupling K (midpoint rule).
-[[nodiscard]] inline double onsager_lnz(double K)
+/// \brief Onsager log Z per site, using bounded exponentials and midpoint quadrature.
+/// \details Arithmetic retains K's precision; quadrature discretization is independently controlled by points.
+template <uni20::Real R> [[nodiscard]] R onsager_lnz(R const& K, int points = 400000)
 {
-  double const kappa = 2.0 * std::sinh(2.0 * K) / (std::cosh(2.0 * K) * std::cosh(2.0 * K));
-  int const points = 400000;
-  double sum = 0.0;
+  detail::require(uni20::isfinite(K) && K > 0 && points > 0, "positive finite K and quadrature count required");
+  auto const p = uni20::precision_of(K);
+  R const one = uni20::scalar_at_precision<R>(1, p);
+  R const e = uni20::math::exp(-2 * K), e2 = e * e;
+  R const kappa = std::min(one, R(4 * e * (one - e2) / ((one + e2) * (one + e2))));
+  R const complement = (one - kappa) * (one + kappa);
+  R const denominator = 2 * (one * points);
+  R const spacing = detail::pi_value<R>(p) / denominator;
+  R sum = uni20::scalar_at_precision<R>(0, p);
   for (int i = 0; i < points; ++i)
   {
-    double const theta = (i + 0.5) * (std::numbers::pi / 2.0) / points;
-    double const sine = kappa * std::sin(theta);
-    sum += std::log((1.0 + std::sqrt(1.0 - sine * sine)) / 2.0);
+    R const theta = (one * i + one / 2) * spacing;
+    R const cosine = uni20::math::cos(theta);
+    R const root = uni20::math::sqrt(complement + kappa * kappa * cosine * cosine);
+    sum += uni20::math::log1p((root - one) / 2);
   }
-  return std::log(2.0 * std::cosh(2.0 * K)) + 0.5 * sum / points;
+  return 2 * K + uni20::math::log1p(e2) + sum / denominator;
 }
 
 } // namespace uni20::examples::dense_hotrg

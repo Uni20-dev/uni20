@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <limits>
 #include <string_view>
 
@@ -32,6 +33,10 @@ using namespace uni20::examples::dense_hotrg;
 
 namespace
 {
+using tensor3 = uni20::examples::dense_hotrg::tensor3<double>;
+using tensor4 = uni20::examples::dense_hotrg::tensor4<double>;
+using step_result = uni20::examples::dense_hotrg::step_result<double>;
+using flow_record = uni20::examples::dense_hotrg::flow_record<double>;
 
 int failures = 0;
 
@@ -50,7 +55,8 @@ constexpr std::size_t no_truncation = std::size_t{1} << 20;
 reference::strip const* exact_strip(long long sites, double over_tc)
 {
   for (auto const& candidate : reference::strips)
-    if (candidate.sites == sites && std::abs(candidate.temperature_over_tc - over_tc) < 1e-12) return &candidate;
+    if (candidate.sites == sites && static_cast<double>(candidate.numerator) / candidate.denominator == over_tc)
+      return &candidate;
   return nullptr;
 }
 
@@ -72,15 +78,15 @@ double resolution_of(double x)
 }
 
 // Compares `count` levels and returns the largest deviation as a fraction of what is resolvable.
-double worst_relative_to_resolution(std::vector<double> const& X, double const* expected, std::size_t count,
-                                    double* worst_absolute = nullptr)
+double worst_relative_to_resolution(std::vector<double> const& X, std::span<std::string_view const> expected,
+                                    std::size_t count, double* worst_absolute = nullptr)
 {
   double worst = 0.0, absolute = 0.0;
   for (std::size_t i = 0; i < count; ++i)
   {
-    double const gap = std::abs(X[i] - expected[i]);
+    double const gap = std::abs(X[i] - uni20::parse_real<double>(expected[i]));
     absolute = std::max(absolute, gap);
-    worst = std::max(worst, gap / resolution_of(expected[i]));
+    worst = std::max(worst, gap / resolution_of(uni20::parse_real<double>(expected[i])));
   }
   if (worst_absolute) *worst_absolute = absolute;
   return worst;
@@ -89,47 +95,6 @@ double worst_relative_to_resolution(std::vector<double> const& X, double const* 
 // ----------------------------------------------------------------------------------------------
 // the flow
 // ----------------------------------------------------------------------------------------------
-
-int run_flow(std::size_t D, int rounds, double over_tc)
-{
-  double const K = 1.0 / (over_tc * reference::critical_temperature);
-  double const onsager = onsager_lnz(K);
-  std::printf("dense HOTRG, 2D Ising   T = %.6g Tc   K = %.16g   bond %zu   rounds %d\n", over_tc, K, D, rounds);
-  std::printf("  the exact strip values are tabulated for T/Tc = 1 and 1.2 (ising_strip_reference.hpp)\n");
-  std::printf("%6s %5s %9s %18s %11s %10s %10s %10s %10s\n", "sites", "bond", "cut", "ln Z / N", "vs Onsager", "X_1",
-              "exact", "X_2", "exact");
-
-  flow_record const record = flow(vertex(model::clock, 2, K), D, rounds, [&](flow_record const& r, tensor4 const& T0) {
-    std::size_t const i = r.L.size() - 1;
-    long long const sites = r.L[i];
-    std::printf("%6lld %5d %9.2e %18.15f %11.2e", sites, static_cast<int>(T0.extent(0)),
-                std::max(r.discarded_y[i], r.discarded_x[i]), r.lnz[i], (r.lnz[i] - onsager) / onsager);
-    auto const X = scaling_dimensions(ring_levels(T0).eigenvalues, sites, sites);
-    auto const* expected = exact_strip(sites, over_tc);
-    if (X.size() >= 3)
-    {
-      if (expected)
-        std::printf(" %10.6f %10.6f %10.6f %10.6f", X[1], expected->scaling_dimensions[1], X[2],
-                    expected->scaling_dimensions[2]);
-      else
-        std::printf(" %10.6f %10s %10.6f %10s", X[1], "-", X[2], "-");
-    }
-    std::printf("\n");
-  });
-
-  double all = 0.0, contract = 0.0, regroup = 0.0, svd = 0.0;
-  for (std::size_t i = 0; i < record.seconds.size(); ++i)
-  {
-    all += record.seconds[i];
-    contract += record.seconds_contract[i];
-    regroup += record.seconds_regroup[i];
-    svd += record.seconds_svd[i];
-  }
-  std::printf("%.2f s: contractions (GEMM) %.2f, axis regroupings %.2f, SVD %.2f\n", all, contract, regroup, svd);
-  std::printf("'vs Onsager' compares the L x L torus with the infinite lattice; the critical Ising CFT has "
-              "X_1 = 1/8, X_2 = 1\n");
-  return 0;
-}
 
 // ----------------------------------------------------------------------------------------------
 // A  the kernel against the definition
@@ -408,7 +373,7 @@ void exact_tori()
         row{model::clock, "4-state clock", 4, 0.7, 1, 16}})
   {
     flow_record const record = flow(vertex(r.which, r.q, r.K), r.D, r.steps);
-    double worst = std::abs(std::log(record.trace_T_unit) - enumerated_lnz(r.which, r.q, r.K, 1));
+    double worst = std::abs(record.unit_lnz - enumerated_lnz(r.which, r.q, r.K, 1));
     std::printf("  %-14s K %.10f: L 1 %.1e", r.name, r.K, worst);
     for (int step = 0; step < r.steps; ++step)
     {
@@ -439,7 +404,9 @@ void onsager()
 {
   std::printf("\n== D  Onsager's free energy (bond 8, L = 4096) ==\n");
   // What is left is the truncation: about 3e-6 away from the critical point and 1.4e-5 at it.
-  for (auto const& [K, bound] : {std::pair{0.40, 1e-5}, std::pair{1.0 / reference::critical_temperature, 5e-5}})
+  for (auto const& [K, bound] :
+       {std::pair{0.40, 1e-5},
+        std::pair{critical_coupling<double>(model::clock, 2, uni20::native_precision<double>()), 5e-5}})
   {
     flow_record const record = flow(vertex(model::clock, 2, K), 8, 12);
     double const exact = onsager_lnz(K), error = std::abs(record.lnz.back() - exact) / exact;
@@ -456,7 +423,8 @@ void onsager()
 void every_contraction_in_gemm()
 {
   std::printf("\n== E  where the contractions of one round run ==\n");
-  flow_record const plateau = flow(vertex(model::clock, 2, 1.0 / reference::critical_temperature), 12, 6);
+  flow_record const plateau = flow(
+      vertex(model::clock, 2, critical_coupling<double>(model::clock, 2, uni20::native_precision<double>())), 12, 6);
   std::vector<std::pair<std::string, std::string>> walks;
   {
     uni20::linalg::dispatch_diagnostics::scoped_sink const watch(
@@ -507,13 +475,15 @@ void transfer_matrix_against_the_exact_strip()
         report(false, "a tabulated strip exists for this width and temperature");
         continue;
       }
-      tensor4 t = vertex(model::clock, 2, 1.0 / (over_tc * reference::critical_temperature));
+      tensor4 t = vertex(model::clock, 2,
+                         critical_coupling<double>(model::clock, 2, uni20::native_precision<double>()) / over_tc)
+                      .tensor;
       for (int step = 0; step < rounds; ++step)
         t = one_round(t, no_truncation);
 
       auto const spectrum = ring_levels(t);
-      auto const X = scaling_dimensions(spectrum.eigenvalues, sites, sites);
-      std::size_t const compared = std::min(X.size(), expected->count);
+      auto const X = scaling_dimensions(spectrum.eigenvalues);
+      std::size_t const compared = std::min(X.size(), expected->scaling_dimensions.size());
       double absolute = 0.0;
       double const relative = worst_relative_to_resolution(X, expected->scaling_dimensions, compared, &absolute);
       std::printf("  %d round%s -> %3lld sites at %.1f Tc: bond %3d, all %2zu levels compared, "
@@ -521,7 +491,8 @@ void transfer_matrix_against_the_exact_strip()
                   rounds, rounds == 1 ? " " : "s", sites, over_tc, static_cast<int>(t.extent(0)), compared, absolute,
                   relative);
       report(spectrum.asymmetry < 1e-12, "the transfer matrix of a reflection-symmetric tensor is symmetric");
-      report(compared == expected->count && relative < 1.0, "its scaling dimensions are the exactly solved strip's");
+      report(compared == expected->scaling_dimensions.size() && relative < 1.0,
+             "its scaling dimensions are the exactly solved strip's");
     }
 }
 
@@ -540,7 +511,9 @@ void truncated_flow_against_the_exact_strip()
   for (double over_tc : {1.0, 1.2})
   {
     std::printf("  %.1f Tc: %6s %10s %10s %10s %10s %12s\n", over_tc, "sites", "X_1", "exact", "X_2", "exact", "worst");
-    tensor4 t = vertex(model::clock, 2, 1.0 / (over_tc * reference::critical_temperature));
+    tensor4 t =
+        vertex(model::clock, 2, critical_coupling<double>(model::clock, 2, uni20::native_precision<double>()) / over_tc)
+            .tensor;
     double exact_while_wide = 0.0, last_first = 0.0, first_at_16 = 0.0, second_at_16 = 0.0;
     long long last_sites = 0;
     for (int rounds = 1; rounds <= 6; ++rounds)
@@ -548,13 +521,14 @@ void truncated_flow_against_the_exact_strip()
       bool const still_exact = static_cast<std::size_t>(t.extent(0)) * static_cast<std::size_t>(t.extent(0)) <= D;
       t = one_round(t, D);
       long long const sites = 1LL << rounds;
-      auto const X = scaling_dimensions(ring_levels(t).eigenvalues, sites, sites);
+      auto const X = scaling_dimensions(ring_levels(t).eigenvalues);
       auto const* expected = exact_strip(sites, over_tc);
       if (X.size() < lowest_levels || !expected) continue;
       double absolute = 0.0;
       worst_relative_to_resolution(X, expected->scaling_dimensions, lowest_levels, &absolute);
-      std::printf("  %7s %6lld %10.6f %10.6f %10.6f %10.6f %12.1e\n", "", sites, X[1], expected->scaling_dimensions[1],
-                  X[2], expected->scaling_dimensions[2], absolute);
+      std::printf("  %7s %6lld %10.6f %10.6f %10.6f %10.6f %12.1e\n", "", sites, X[1],
+                  uni20::parse_real<double>(expected->scaling_dimensions[1]), X[2],
+                  uni20::parse_real<double>(expected->scaling_dimensions[2]), absolute);
       if (still_exact) exact_while_wide = std::max(exact_while_wide, absolute);
       if (sites == 16)
       {
@@ -603,23 +577,10 @@ void inputs_at_the_edge()
            "a cut inside the null space of the gram reports a finite gap");
   }
 
-  // The width 2^rounds is a long long: 62 rounds fit, 63 do not.  A bond of 1 keeps this cheap.
-  {
-    tensor4 const unit = vertex(model::clock, 2, 0.4);
-    flow_record const widest = flow(unit, 1, max_rounds);
-    std::printf("  %d rounds: width %lld\n", max_rounds, widest.L.back());
-    report(widest.L.back() == (1LL << max_rounds), "the largest round count is carried without overflow");
-    bool refused = false;
-    try
-    {
-      static_cast<void>(flow(unit, 1, max_rounds + 1));
-    }
-    catch (std::invalid_argument const&)
-    {
-      refused = true;
-    }
-    report(refused, "one round more is refused, because its width would not fit");
-  }
+  auto const unit = vertex(model::clock, 2, 0.4);
+  auto const record = flow(unit, 1, 128);
+  report(record.log2_width.back() == 128 && std::isfinite(record.lnz.back()),
+         "128 rounds retain the lattice width as an exponent without overflow");
 }
 
 int run_checks()
@@ -641,31 +602,83 @@ int run_checks()
 // arguments
 // ----------------------------------------------------------------------------------------------
 
-static_assert(max_rounds == 62, "the usage text and the --rounds complaint state this limit");
+template <uni20::Real R> R read_real(std::string_view text, uni20::Precision p)
+{
+  if constexpr (requires { uni20::parse_real<R>(text, p); })
+    return uni20::parse_real<R>(text, p);
+  else
+    return uni20::parse_real<R>(text);
+}
+
+template <uni20::Real R>
+int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Precision p, int quadrature_points)
+{
+  R const ratio = read_real<R>(temperature, p);
+  if (!uni20::isfinite(ratio) || ratio <= 0) throw std::invalid_argument("temperature must be finite and positive");
+  R const K = critical_coupling<R>(model::clock, 2, p) / ratio;
+  R const exact = onsager_lnz(K, quadrature_points);
+  std::cout << "dense HOTRG, 2D Ising  T/Tc=" << uni20::format_scalar(ratio) << "  bits=" << p.bit_count()
+            << "  bond=" << D << "  rounds=" << rounds << '\n';
+  std::cout << "width  bond  cut  ln Z/N  vs Onsager  X_1  exact  X_2  exact  asymmetry\n";
+  auto const record = flow(vertex(model::clock, 2, K), D, rounds, [&](auto const& r, auto const& t) {
+    auto const i = r.log2_width.size() - 1;
+    int const exponent = r.log2_width[i];
+    auto const spectrum = ring_levels(t);
+    auto const X = scaling_dimensions(spectrum.eigenvalues);
+    std::cout << "2^" << exponent << "  " << t.extent(0) << "  "
+              << uni20::format_scalar(std::max(r.discarded_y[i], r.discarded_x[i])) << "  "
+              << uni20::format_scalar(r.lnz[i]) << "  " << uni20::format_scalar((r.lnz[i] - exact) / exact);
+    auto const* expected = reference::find(exponent, ratio);
+    for (std::size_t level = 1; level <= 2; ++level)
+    {
+      std::cout << "  " << (level < X.size() ? uni20::format_scalar(X[level]) : "-");
+      std::cout << "  ";
+      if (!expected)
+        std::cout << "-";
+      else if (p.bit_count() > 332)
+        std::cout << expected->scaling_dimensions[level];
+      else
+        std::cout << uni20::format_scalar(read_real<R>(expected->scaling_dimensions[level], p));
+    }
+    std::cout << "  " << uni20::format_scalar(spectrum.asymmetry) << '\n';
+  });
+  double all = 0, contractions = 0, regroup = 0, svd = 0;
+  for (std::size_t i = 0; i < record.seconds.size(); ++i)
+  {
+    all += record.seconds[i];
+    contractions += record.seconds_contract[i];
+    regroup += record.seconds_regroup[i];
+    svd += record.seconds_svd[i];
+  }
+  std::printf("%.2f s: contractions %.2f, axis regroupings %.2f, SVD %.2f\n", all, contractions, regroup, svd);
+  std::cout << "'vs Onsager' compares the finite torus with the infinite lattice.\n";
+  std::cout << "Onsager uses " << quadrature_points
+            << " midpoint samples; quadrature and bond truncation errors "
+               "are separate from arithmetic precision. Strip references contain 100 significant digits.\n";
+  return record.log2_width.size() == static_cast<std::size_t>(rounds) ? 0 : 1;
+}
 
 [[noreturn]] void usage(char const* complaint)
 {
   if (complaint) std::fprintf(stderr, "ising_hotrg_example: %s\n", complaint);
-  std::fprintf(stderr, "usage: ising_hotrg_example [--bond=D] [--rounds=N] [--temperature=T/Tc] [--check]\n"
-                       "  --bond=D          bond dimension kept by the cut (default 16)\n"
-                       "  --rounds=N        HOTRG rounds; the lattice is 2^N x 2^N (default 8, at most 62)\n"
-                       "  --temperature=X   temperature in units of the exact Tc (default 1)\n"
-                       "  --check           verify the implementation instead of running a flow\n");
+  std::fprintf(stderr, "usage: ising_hotrg_example [--bond=D] [--rounds=N] [--temperature=T/Tc]\n"
+                       "       [--precision=fp32|fp64|fp80|fp128|mpreal] [--bits=N] [--onsager-points=N] [--check]\n"
+                       "  --bond=D          bond dimension (default 16)\n"
+                       "  --rounds=N        rounds; represented width is 2^N (default 8)\n"
+                       "  --temperature=X   decimal T/Tc, rounded at the selected precision (default 1)\n"
+                       "  --precision=P     arithmetic type (default fp64); wide types require configured MPLAPACK\n"
+                       "  --bits=N          binary working precision for mpreal (default 128)\n"
+                       "  --onsager-points=N midpoint samples for the free-energy diagnostic (default 400000)\n"
+                       "  --check           original double-precision definition and flow checks\n");
   std::exit(complaint ? 2 : 0);
 }
 
-[[nodiscard]] std::string_view option_value(std::string_view argument, std::string_view prefix)
-{
-  if (!argument.starts_with(prefix)) return {};
-  return argument.substr(prefix.size());
-}
-
-template <class Integer> [[nodiscard]] Integer parse_integer(std::string_view text, char const* name)
+template <class Integer> Integer parse_integer(std::string_view text)
 {
   Integer value{};
   auto const [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
   if (error != std::errc{} || end != text.data() + text.size() || value < 1)
-    usage((std::string(name) + " takes a positive integer").c_str());
+    throw std::invalid_argument("expected a positive integer");
   return value;
 }
 
@@ -673,36 +686,68 @@ template <class Integer> [[nodiscard]] Integer parse_integer(std::string_view te
 
 int main(int argc, char** argv)
 {
-  std::setvbuf(stdout, nullptr, _IOLBF, 0);
-  std::size_t D = 16;
-  int rounds = 8;
-  double over_tc = 1.0;
-  bool check = false;
-  for (int i = 1; i < argc; ++i)
-  {
-    std::string_view const argument = argv[i];
-    if (argument == "--help" || argument == "-h")
-      usage(nullptr);
-    else if (argument == "--check")
-      check = true;
-    else if (auto const value = option_value(argument, "--bond="); !value.empty())
-      D = parse_integer<std::size_t>(value, "--bond");
-    else if (auto const value = option_value(argument, "--rounds="); !value.empty())
-    {
-      rounds = parse_integer<int>(value, "--rounds");
-      if (rounds > max_rounds) usage("--rounds is at most 62: the lattice width 2^rounds is kept in 64 bits");
-    }
-    else if (auto const value = option_value(argument, "--temperature="); !value.empty())
-    {
-      over_tc = std::strtod(std::string(value).c_str(), nullptr);
-      if (!(over_tc > 0.0)) usage("--temperature takes a positive number");
-    }
-    else
-      usage(("unknown argument " + std::string(argument)).c_str());
-  }
+  std::size_t bond = 16;
+  int rounds = 8, points = 400000;
+  [[maybe_unused]] std::int64_t bits = 128;
+  std::string_view temperature = "1", precision = "fp64";
+  bool check = false, explicit_bits = false;
   try
   {
-    return check ? run_checks() : run_flow(D, rounds, over_tc);
+    for (int i = 1; i < argc; ++i)
+    {
+      std::string_view const argument = argv[i];
+      if (argument == "--help" || argument == "-h") usage(nullptr);
+      if (argument == "--check")
+      {
+        check = true;
+        continue;
+      }
+      auto const split = argument.find('=');
+      auto const name = argument.substr(0, split);
+      if (split == std::string_view::npos) usage("expected --name=value");
+      auto const value = argument.substr(split + 1);
+      if (name == "--bond")
+        bond = parse_integer<std::size_t>(value);
+      else if (name == "--rounds")
+        rounds = parse_integer<int>(value);
+      else if (name == "--temperature")
+        temperature = value;
+      else if (name == "--precision")
+        precision = value;
+      else if (name == "--bits")
+      {
+        bits = parse_integer<std::int64_t>(value);
+        explicit_bits = true;
+      }
+      else if (name == "--onsager-points")
+        points = parse_integer<int>(value);
+      else
+        usage("unknown option");
+    }
+    if (explicit_bits && precision != "mpreal") usage("--bits requires --precision=mpreal");
+    if (check)
+    {
+      if (precision != "fp64")
+        usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
+      return run_checks();
+    }
+    if (precision == "fp32")
+      return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points);
+    if (precision == "fp64")
+      return run_flow<double>(bond, rounds, temperature, uni20::native_precision<double>(), points);
+#if UNI20_HAS_MPLAPACK_FLOAT80
+    if (precision == "fp80")
+      return run_flow<uni20::float80>(bond, rounds, temperature, uni20::native_precision<uni20::float80>(), points);
+#endif
+#if UNI20_HAS_MPLAPACK_FLOAT128
+    if (precision == "fp128")
+      return run_flow<uni20::float128>(bond, rounds, temperature, uni20::native_precision<uni20::float128>(), points);
+#endif
+#if UNI20_HAS_MPLAPACK_MPREAL
+    if (precision == "mpreal")
+      return run_flow<uni20::mpreal>(bond, rounds, temperature, uni20::Precision::bits(bits), points);
+#endif
+    usage("unknown precision or its LAPACK provider is not configured");
   }
   catch (std::exception const& error)
   {

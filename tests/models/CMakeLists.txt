@@ -1,6 +1,9 @@
 add_test_module(models
   SOURCES
     test_spin_half_heisenberg.cpp
+    test_dense_hotrg.cpp
   LIBS
     uni20_models
+    uni20_linalg
+    uni20_symmetry
 )
