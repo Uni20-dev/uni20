@@ -10,14 +10,88 @@
 #include <uni20/async/debug_scheduler.hpp>
 #include <uni20/tensor/conjugate.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/permute.hpp>
 #include <uni20/tensor/reshape.hpp>
 
+#include <new>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 namespace uni20::async
 {
+namespace detail
+{
+// An async parent may not yet be constructed. Resolve its permutation only
+// after the shared epoch is readable, as for structural reshape aliases.
+template <class Tensor, std::size_t... Axis> class PermutedTensorView {
+  public:
+    using storage_policy = tensor_storage_policy_t<Tensor>;
+    using async_alias_tag = void;
+    using mutable_mdspec_type = decltype(uni20::permute<Axis...>(mdspec_of(std::declval<Tensor&>())));
+    using const_mdspec_type = decltype(uni20::permute<Axis...>(mdspec_of(std::declval<Tensor const&>())));
+    using extents_type = typename const_mdspec_type::extents_type;
+    using value_type = typename const_mdspec_type::value_type;
+
+    explicit PermutedTensorView(Tensor* tensor) : tensor_(tensor) {}
+
+    [[nodiscard]] auto mdspec() & { return uni20::permute<Axis...>(mdspec_of(this->base())); }
+    [[nodiscard]] auto mdspec() const& { return uni20::permute<Axis...>(mdspec_of(this->base())); }
+
+    [[nodiscard]] auto mdspan() &
+      requires MdspanLike<mutable_mdspec_type>
+    {
+      return this->mdspec();
+    }
+    [[nodiscard]] auto mdspan() const&
+      requires MdspanLike<const_mdspec_type>
+    {
+      return this->mdspec();
+    }
+
+    [[nodiscard]] auto extents() const -> extents_type { return this->mdspec().extents(); }
+    [[nodiscard]] auto extent(std::size_t axis) const { return this->mdspec().extent(axis); }
+    [[nodiscard]] decltype(auto) backend_selector() const { return this->base().backend_selector(); }
+    [[nodiscard]] auto precision_source() const { return uni20::detail::descriptor_precision_source(this->base()); }
+
+#if UNI20_HAS_MPREAL
+    [[nodiscard]] auto default_precision_if_set() const
+      requires has_runtime_precision_v<value_type>
+    {
+      return this->precision_source().default_precision_if_set();
+    }
+    [[nodiscard]] auto default_precision() const
+      requires has_runtime_precision_v<value_type>
+    {
+      return this->precision_source().default_precision();
+    }
+#endif
+
+    [[nodiscard]] auto base() -> Tensor& { return *std::launder(tensor_); }
+    [[nodiscard]] auto base() const -> Tensor const& { return *std::launder(tensor_); }
+
+  private:
+    Tensor* tensor_;
+};
+} // namespace detail
+
+/// \brief Permute an async tensor through a mutable alias of its exact epoch queue.
+/// \details Retains the parent storage, including a pending parent. Metadata and
+///          default precision are resolved only after the parent epoch is readable.
+template <std::size_t... Axis, TensorView Tensor>
+  requires requires(Tensor& tensor) { uni20::permute<Axis...>(tensor); }
+[[nodiscard]] auto permute(Async<Tensor>& tensor)
+{
+  return make_async_alias_from_parent<detail::PermutedTensorView<Tensor, Axis...>>(tensor);
+}
+
+/// \brief Permute a const async tensor through an owner-retaining read-only alias.
+template <std::size_t... Axis, TensorView Tensor>
+  requires requires(Tensor const& tensor) { uni20::permute<Axis...>(tensor); }
+[[nodiscard]] auto permute(Async<Tensor> const& tensor)
+{
+  return make_async_alias_from_parent<detail::PermutedTensorView<Tensor const, Axis...>>(tensor);
+}
 
 /// \brief Return a lazy conjugating alias of an async complex tensor.
 /// \details The result retains the parent tensor storage and shares its exact

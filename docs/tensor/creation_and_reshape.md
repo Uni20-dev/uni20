@@ -142,6 +142,49 @@ The extents need not be equal. Rank-zero `eye<T>()` is scalar one; rank-one
 rectangular identity matrix. This is also the tensor-network copy tensor, so a
 separate `copy_tensor` factory is unnecessary.
 
+## Axis Permutations
+
+`permute<Axes...>(tensor)` returns a borrowed dense tensor view. Output axis
+`j` is source axis `Axes[j]`; the axis list must be a compile-time bijection.
+
+```cpp
+Tensor<double, 3> tensor(2, 3, 4);
+auto view = permute<2, 0, 1>(tensor);  // shape (4, 2, 3)
+view[3, 1, 2] = 7;                    // writes tensor[1, 2, 3]
+auto packed = make_tensor(view);      // independent contiguous owner
+```
+
+This first implementation supports zero-origin strided mappings representable
+by `layout_stride`, including canonical row/column-major and padded layouts.
+It permutes extents and strides without copying elements or acquiring storage
+access. Nonidentity permutations require a unique mapping and positive strides
+(empty sources receive valid positive strides); their result uses `layout_stride`. Identity
+permutations preserve the source layout type. Compile-time extents, accessor
+semantics, deferred storage descriptors, and backend selectors are retained.
+The mdspan/mdspec overload applies the same metadata operation below the tensor
+layer; BlockTensor uses that shared mapping helper for its dense blocks.
+Generated and other non-strided mappings are not supported yet.
+
+Const sources and const view interfaces remain read-only. Tensor lvalues and
+temporary borrowed descriptor views are accepted; temporary owners are
+rejected. Nested permutation descriptors do not retain intermediate views.
+The payload owner must remain alive and must not be moved or structurally
+modified while a synchronous view is used. Runtime-precision views retain a
+live binding to the source default; changing that default does not convert any
+stored elements. Views have no independent precision setter.
+
+`async::permute<Axes...>(parent)` retains the parent storage and shares its
+exact epoch queue. It can be created before the parent value is constructed;
+metadata and precision are resolved when the parent epoch becomes readable.
+Mutable aliases support write-through assignment, const aliases are read-only,
+and parent failures propagate to readers of the alias.
+
+A permutation view does not rearrange physical memory. Use `make_tensor(view)`
+or `make_tensor<RowMajor>(view)` to pack it into the desired layout. A subsequent
+`reshape_view_left` or `reshape_view_right` still requires canonical contiguous
+strides; permuting axes alone does not make arbitrary groups fusible for GEMM.
+Automatic contraction packing is separate from this view API.
+
 ## Reshape Operations
 
 Uni20 separates aliasing, object mutation, and owning value construction:
