@@ -579,6 +579,49 @@ void truncated_flow_against_the_exact_strip()
   }
 }
 
+// ----------------------------------------------------------------------------------------------
+// H  inputs at the edge
+// ----------------------------------------------------------------------------------------------
+
+void inputs_at_the_edge()
+{
+  std::printf("\n== H  inputs at the edge ==\n");
+
+  // A tensor that is zero unless both horizontal legs are in their first state: the gram of
+  // the fused pair has rank one, so a cut that keeps two states falls inside its null space.
+  {
+    idx const m = 2, n = 3;
+    tensor4 t(m, n, n, m);
+    generator g{2468};
+    for (idx up = 0; up < m; ++up)
+      for (idx down = 0; down < m; ++down)
+        t[up, 0, 0, down] = std::abs(g.next()) + 0.1;
+    step_result const step = coarse_grain(t, axis::y, 2);
+    std::printf("  rank-one gram, 2 states kept: singular values %.3e and %.3e, gap %g\n", step.S.front(),
+                step.S.back(), step.gap);
+    report(step.S.size() == 2 && std::isfinite(step.gap) && step.gap >= 0.0 && step.gap <= 1.0,
+           "a cut inside the null space of the gram reports a finite gap");
+  }
+
+  // The width 2^rounds is a long long: 62 rounds fit, 63 do not.  A bond of 1 keeps this cheap.
+  {
+    tensor4 const unit = vertex(model::clock, 2, 0.4);
+    flow_record const widest = flow(unit, 1, max_rounds);
+    std::printf("  %d rounds: width %lld\n", max_rounds, widest.L.back());
+    report(widest.L.back() == (1LL << max_rounds), "the largest round count is carried without overflow");
+    bool refused = false;
+    try
+    {
+      static_cast<void>(flow(unit, 1, max_rounds + 1));
+    }
+    catch (std::invalid_argument const&)
+    {
+      refused = true;
+    }
+    report(refused, "one round more is refused, because its width would not fit");
+  }
+}
+
 int run_checks()
 {
   std::printf("dense HOTRG checks\n");
@@ -589,6 +632,7 @@ int run_checks()
   every_contraction_in_gemm();
   transfer_matrix_against_the_exact_strip();
   truncated_flow_against_the_exact_strip();
+  inputs_at_the_edge();
   std::printf("\n%s  (%d failed)\n", failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED", failures);
   return failures == 0 ? 0 : 1;
 }
@@ -597,12 +641,14 @@ int run_checks()
 // arguments
 // ----------------------------------------------------------------------------------------------
 
+static_assert(max_rounds == 62, "the usage text and the --rounds complaint state this limit");
+
 [[noreturn]] void usage(char const* complaint)
 {
   if (complaint) std::fprintf(stderr, "ising_hotrg_example: %s\n", complaint);
   std::fprintf(stderr, "usage: ising_hotrg_example [--bond=D] [--rounds=N] [--temperature=T/Tc] [--check]\n"
                        "  --bond=D          bond dimension kept by the cut (default 16)\n"
-                       "  --rounds=N        HOTRG rounds; the lattice is 2^N x 2^N (default 8)\n"
+                       "  --rounds=N        HOTRG rounds; the lattice is 2^N x 2^N (default 8, at most 62)\n"
                        "  --temperature=X   temperature in units of the exact Tc (default 1)\n"
                        "  --check           verify the implementation instead of running a flow\n");
   std::exit(complaint ? 2 : 0);
@@ -642,7 +688,10 @@ int main(int argc, char** argv)
     else if (auto const value = option_value(argument, "--bond="); !value.empty())
       D = parse_integer<std::size_t>(value, "--bond");
     else if (auto const value = option_value(argument, "--rounds="); !value.empty())
+    {
       rounds = parse_integer<int>(value, "--rounds");
+      if (rounds > max_rounds) usage("--rounds is at most 62: the lattice width 2^rounds is kept in 64 bits");
+    }
     else if (auto const value = option_value(argument, "--temperature="); !value.empty())
     {
       over_tc = std::strtod(std::string(value).c_str(), nullptr);

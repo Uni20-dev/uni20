@@ -174,7 +174,9 @@ no normalization bookkeeping.
   3-state Potts model);
 - Onsager's free energy;
 - every contraction of a round reaching GEMM, through the dispatch diagnostics;
-- the transfer-matrix scaling dimensions against the exactly solved strip.
+- the transfer-matrix scaling dimensions against the exactly solved strip;
+- two inputs at the edge: a cut that falls inside the null space of the gram, and
+  a round count whose lattice width `2^rounds` would not fit in 64 bits.
 
 The exact strip values are tabulated in `ising_strip_reference.hpp` for widths
 2 to 256 at `T = Tc` and `T = 1.2 Tc`. They come from the Onsager/Kaufman closed

@@ -394,8 +394,8 @@ struct step_result
     double norm = 0.0;          // the largest entry the coarse tensor was divided by
     double discarded = 0.0;     // 1 - sum(S) / tr(gram): the discarded fraction of the gram's trace
     double gap = 0.0;           // (smallest kept - largest discarded) / smallest kept singular value; 1 if nothing was
-                                // discarded.  Near 0 the cut falls inside a degenerate cluster and the kept
-                                // subspace is the solver's choice, not the model's.
+                                // discarded, 0 if the smallest kept value is zero.  Near 0 the cut falls inside a
+                                // degenerate cluster and the kept subspace is the solver's choice, not the model's.
 };
 
 namespace detail
@@ -429,10 +429,13 @@ namespace detail
   }
   result.discarded = 1.0 - kept / trace;
   auto const& cut = decomposition.truncation;
-  result.gap = cut.smallest_retained_singular_value && cut.largest_discarded_singular_value
-                   ? (*cut.smallest_retained_singular_value - *cut.largest_discarded_singular_value) /
-                         *cut.smallest_retained_singular_value
-                   : 1.0;
+  if (!cut.smallest_retained_singular_value || !cut.largest_discarded_singular_value)
+    result.gap = 1.0; // nothing was discarded
+  else if (*cut.smallest_retained_singular_value > 0.0)
+    result.gap = (*cut.smallest_retained_singular_value - *cut.largest_discarded_singular_value) /
+                 *cut.smallest_retained_singular_value;
+  else
+    result.gap = 0.0; // the cut falls inside the null space: kept and discarded values are both zero
 
   result.T = apply_isometry(t, t, result.U);
   result.norm = max_element(result.T);
@@ -494,6 +497,10 @@ struct flow_record
 // Called after every step with the record so far and the coarse tensor of that size.
 using flow_observer = std::function<void(flow_record const&, tensor4 const& T0)>;
 
+// The lattice width 2^steps is recorded as a long long, which holds 2^62 but not 2^63.  The
+// tensors stay small whatever the width, so a round count is the only thing that bounds it.
+inline constexpr int max_rounds = 62;
+
 // The ladder, from the unit tensor up to L = 2^steps:
 //
 //     L -> 2L:    T1, U_y, N_y = coarse_grain(T0, y)        the y step
@@ -501,6 +508,8 @@ using flow_observer = std::function<void(flow_record const&, tensor4 const& T0)>
 //                 Norms.append(N_y^2 N_x)
 [[nodiscard]] inline flow_record flow(tensor4 const& unit, std::size_t D, int steps, flow_observer const& observe = {})
 {
+  detail::require(steps >= 0 && steps <= max_rounds,
+                  "flow: the number of rounds is negative or above max_rounds, where the width 2^rounds overflows");
   flow_record record;
   record.trace_T_unit = torus_trace(unit);
   record.T0 = unit;
@@ -598,8 +607,8 @@ struct ring_result
 
   auto const decomposition = uni20::linalg::eigh(ring); // ascending
   result.eigenvalues.reserve(static_cast<std::size_t>(dim));
-  for (idx i = dim - 1; i >= 0; --i)
-    result.eigenvalues.push_back(static_cast<double>(decomposition.eigenvalues[i]));
+  for (idx i = dim; i > 0; --i)
+    result.eigenvalues.push_back(static_cast<double>(decomposition.eigenvalues[i - 1]));
   return result;
 }
 
