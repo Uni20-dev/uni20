@@ -84,14 +84,29 @@ of arithmetic precision. Increasing `--bits` alone does not make the default
 400000-point quadrature a high-precision reference. HOTRG bond truncation,
 quadrature discretization, and arithmetic rounding are separate error sources.
 
+## Presentation
+
+The executable routes its setup, checks, timing summary, help and errors through
+the presentation/display layer. Flow rows use a typed data table and its live
+terminal sink. Numerical columns retain the selected scalar type and precision;
+unavailable levels and references are optional values. The `log2(width)` column
+stores the exponent, so a value of 1100 denotes a width of `2^1100`.
+
+Output follows `UNI20_GLYPHS`, `UNI20_CHARSET`, `UNI20_COLOR`, `NO_COLOR`, and
+terminal width (`COLUMNS`). Narrow terminals use the presentation layer's
+vertical layout when needed, keeping numerical tokens intact. The live table
+does not retain a second copy of the flow history.
+
 ## Exact strip reference and validation
 
 `ising_strip_reference.hpp` contains 100-significant-digit decimal strings for
 strip widths 2 through 256 at exact reduced temperatures 1 and 6/5. Values are
 parsed directly into the tested type. A table is selected only when its rational
 temperature rounds to the same value as the input; nearby temperatures are not
-snapped to criticality. Runs above the table's precision print its original
-digits rather than padding them with additional digits.
+snapped to criticality. Runs above the table's precision retain the reference
+decimals as exact values for presentation, displaying at most their original
+100 significant digits without additional binary-rounding digits. Computed
+HOTRG values continue to use the selected working precision.
 
 The data come from the canonical fixture in
 [Exact_Solution commit 1361a14](https://github.com/ianmccul/Exact_Solution/blob/1361a14aa978908bee8f82ac8f50d9ad9e2f466d/tests/data/ising_reference_high_precision.json),

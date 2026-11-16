@@ -1,6 +1,8 @@
 #include "../../examples/models/dense_hotrg.hpp"
+#include "../../examples/models/ising_hotrg_output.hpp"
 #include "../../examples/models/ising_strip_reference.hpp"
 #include "../numerics/precision_cases.hpp"
+#include <sstream>
 #include <uni20/linalg/dispatch_diagnostics.hpp>
 
 namespace
@@ -150,6 +152,70 @@ TYPED_TEST(DenseHotrg, LowTemperatureUsesBoundedWeights)
   EXPECT_TRUE(isfinite(record.discarded_y.front()));
   C::expect_precision(record.discarded_y.front());
 }
+
+TYPED_TEST(DenseHotrg, OutputPreservesPrecisionAndMissingLevels)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  namespace p = presentation;
+  R const value = C::real(1) + C::gap();
+  auto results = hotrg::make_flow_table<R>(C::precision());
+  std::ostringstream exported;
+  results.attach(p::tsv_sink(exported, {.projection = {.columns = {"log2_width", "lnz_per_site", "x1"}}}));
+  std::string displayed;
+  auto policy = p::plain_policy();
+  policy.glyphs = p::glyph_set::ascii;
+  policy.charset = p::text_charset::ascii_escape;
+  results.attach(p::terminal_sink({.wrap_width = 40,
+                                   .output =
+                                       [&](display::event const& event) {
+                                         displayed += p::render(std::get<p::styled_text>(event.content), policy);
+                                       },
+                                   .policy = policy}));
+  results.append(1100, index_type{4}, value, value, value, std::nullopt, std::nullopt, value, value, value);
+  results.finish();
+
+  std::istringstream rows(exported.str());
+  std::string heading, row;
+  std::getline(rows, heading);
+  std::getline(rows, row);
+  auto const first_tab = row.find('\t'), last_tab = row.rfind('\t');
+  ASSERT_NE(first_tab, std::string::npos);
+  ASSERT_GT(last_tab, first_tab);
+  EXPECT_EQ(row.substr(0, first_tab), "1100");
+  EXPECT_EQ(row.substr(last_tab + 1), ""); // A missing level remains an absent number.
+  R const recovered = hotrg::reference::value<R>(row.substr(first_tab + 1, last_tab - first_tab - 1), C::precision());
+  EXPECT_EQ(recovered, value);
+  C::expect_precision(recovered);
+  EXPECT_NE(displayed.find(format_scalar(value)), std::string::npos); // Narrow terminals keep numeric tokens intact.
+  EXPECT_EQ(results.retained_size(), 0u);
+}
+
+#if UNI20_HAS_MPLAPACK_MPREAL
+TEST(DenseHotrgOutput, ReferenceDigitsArePreservedAboveFixturePrecision)
+{
+  namespace p = presentation;
+  auto const source = hotrg::reference::strips[0].scaling_dimensions[1];
+  auto const expected = parse_real<mpreal>(source, Precision::exact());
+  for (int bits : {333, 512})
+  {
+    auto const precision = Precision::bits(bits);
+    auto const reference = hotrg::displayed_reference<mpreal>(source, precision);
+    auto results = hotrg::make_flow_table<mpreal>(precision);
+    std::ostringstream exported;
+    results.attach(p::csv_sink(exported, {.projection = {.columns = {"exact_x1"}}}));
+    auto const zero = parse_real<mpreal>("0", precision);
+    results.append(1, index_type{1}, zero, zero, zero, std::nullopt, reference, std::nullopt, std::nullopt, zero);
+    results.finish();
+    std::istringstream rows(exported.str());
+    std::string heading, row;
+    std::getline(rows, heading);
+    std::getline(rows, row);
+    EXPECT_TRUE(reference.is_exact());
+    EXPECT_EQ(parse_real<mpreal>(row, Precision::exact()), expected);
+  }
+}
+#endif
 
 TEST(DenseHotrgCoverage, ConfiguredScalars)
 {
