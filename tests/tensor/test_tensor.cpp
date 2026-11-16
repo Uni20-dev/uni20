@@ -134,6 +134,7 @@ struct PassthroughAccessorFactory
 
 class StorageFreeTensorView {
   public:
+    using storage_policy = HostStorage;
     using extents_type = extents_2d;
     using mutable_mdspan_type = stdex::mdspan<int, extents_type>;
     using const_mdspan_type = stdex::mdspan<int const, extents_type>;
@@ -159,8 +160,46 @@ class StorageFreeTensorView {
     extents_type extents_;
 };
 
+// Otherwise a complete immediate tensor view, but it declares no storage policy.
+struct PolicyFreeTensorView
+{
+    using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
+
+    [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
+    {
+      return backend_selector_type{linalg::CpuReferenceBackend{}};
+    }
+
+    [[nodiscard]] auto mdspan() const noexcept -> stdex::mdspan<int const, extents_2d>
+    {
+      return stdex::mdspan<int const, extents_2d>{data_, extents_};
+    }
+
+    [[nodiscard]] auto extents() const noexcept -> extents_2d const& { return extents_; }
+
+    [[nodiscard]] auto extent(std::size_t axis) const noexcept -> index_t { return extents_.extent(axis); }
+
+    int const* data_ = nullptr;
+    extents_2d extents_{};
+};
+
+// A policy that names no default backend selector does not qualify either.
+struct SelectorFreeStorage
+{};
+
+struct SelectorFreePolicyTensorView : PolicyFreeTensorView
+{
+    using storage_policy = SelectorFreeStorage;
+};
+
+struct HostPolicyTensorView : PolicyFreeTensorView
+{
+    using storage_policy = HostStorage;
+};
+
 struct MismatchedMutableRankTensorView
 {
+    using storage_policy = HostStorage;
     using const_mdspan_type = stdex::mdspan<int const, extents_2d>;
     using mutable_extents_type = stdex::dextents<index_t, 1>;
     using mutable_mdspan_type = stdex::mdspan<int, mutable_extents_type>;
@@ -194,6 +233,7 @@ struct MetadataDescriptor
 
 class DeferredStridedTensorView {
   public:
+    using storage_policy = HostStorage;
     using mdspan_type = uni20::mdspec<int const, extents_2d, stdex::layout_stride, stdex::default_accessor<int const>,
                                       MetadataDescriptor>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
@@ -406,6 +446,12 @@ static_assert(std::same_as<decltype(std::declval<read_access_type&>().await_resu
 static_assert(std::same_as<decltype(std::declval<write_access_type&>().await_resume()), write_lease_type>);
 static_assert(ImmediateTensorView<StorageFreeTensorView>);
 static_assert(TensorView<StorageFreeTensorView>);
+static_assert(!TensorView<PolicyFreeTensorView>);
+static_assert(!TensorView<SelectorFreePolicyTensorView>);
+static_assert(TensorView<HostPolicyTensorView>);
+static_assert(!TensorStoragePolicy<SelectorFreeStorage>);
+static_assert(TensorStoragePolicy<HostStorage>);
+static_assert(std::same_as<tensor_storage_policy_t<HostPolicyTensorView const&>, HostStorage>);
 static_assert(MutableImmediateTensorView<StorageFreeTensorView>);
 static_assert(MutableTensorView<StorageFreeTensorView>);
 static_assert(ImmediateTensorView<MismatchedMutableRankTensorView>);

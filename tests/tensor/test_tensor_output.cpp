@@ -17,6 +17,8 @@ using const_mdspan = stdex::mdspan<double const, extents_2d, stdex::layout_left>
 
 struct FixedTensorView
 {
+    using storage_policy = uni20::HostStorage;
+
     double* data = nullptr;
     extents_2d shape;
 
