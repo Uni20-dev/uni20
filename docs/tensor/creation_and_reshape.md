@@ -176,7 +176,8 @@ stored elements. Views have no independent precision setter.
 `async::permute<Axes...>(parent)` retains the parent storage and shares its
 exact epoch queue. It can be created before the parent value is constructed;
 metadata and precision are resolved when the parent epoch becomes readable.
-Mutable aliases support write-through assignment, const aliases are read-only,
+Mutable aliases support write-through assignment for owning tensors and custom
+TensorView models through the same ADL customization. Const aliases are read-only,
 and parent failures propagate to readers of the alias.
 
 A permutation view does not rearrange physical memory. Prefer `Tensor(view)`

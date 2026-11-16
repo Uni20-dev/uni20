@@ -18,12 +18,12 @@
 #include <type_traits>
 #include <utility>
 
-namespace uni20::async
+namespace uni20
 {
-namespace detail
-{
-// An async parent may not yet be constructed. Resolve its permutation only
-// after the shared epoch is readable, as for structural reshape aliases.
+/// \brief Indirect permutation descriptor for an owner-retaining async tensor alias.
+/// \details Resolves metadata only after the shared parent epoch is readable.
+///          Living in `uni20` makes the tensor `assign_through` customization
+///          discoverable by ADL even when the parent is a custom tensor model.
 template <class Tensor, std::size_t... Axis> class PermutedTensorView {
   public:
     using storage_policy = tensor_storage_policy_t<Tensor>;
@@ -73,7 +73,10 @@ template <class Tensor, std::size_t... Axis> class PermutedTensorView {
   private:
     Tensor* tensor_;
 };
-} // namespace detail
+} // namespace uni20
+
+namespace uni20::async
+{
 
 /// \brief Permute an async tensor through a mutable alias of its exact epoch queue.
 /// \details Retains the parent storage, including a pending parent. Metadata and
@@ -82,7 +85,7 @@ template <std::size_t... Axis, TensorView Tensor>
   requires requires(Tensor& tensor) { uni20::permute<Axis...>(tensor); }
 [[nodiscard]] auto permute(Async<Tensor>& tensor)
 {
-  return make_async_alias_from_parent<detail::PermutedTensorView<Tensor, Axis...>>(tensor);
+  return make_async_alias_from_parent<uni20::PermutedTensorView<Tensor, Axis...>>(tensor);
 }
 
 /// \brief Permute a const async tensor through an owner-retaining read-only alias.
@@ -90,7 +93,7 @@ template <std::size_t... Axis, TensorView Tensor>
   requires requires(Tensor const& tensor) { uni20::permute<Axis...>(tensor); }
 [[nodiscard]] auto permute(Async<Tensor> const& tensor)
 {
-  return make_async_alias_from_parent<detail::PermutedTensorView<Tensor const, Axis...>>(tensor);
+  return make_async_alias_from_parent<uni20::PermutedTensorView<Tensor const, Axis...>>(tensor);
 }
 
 /// \brief Return a lazy conjugating alias of an async complex tensor.

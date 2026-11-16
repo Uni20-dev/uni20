@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include "../linalg/deferred_host_tensor.hpp"
+
 namespace
 {
 using matrix = uni20::DenseMatrix<double>;
@@ -12,6 +14,13 @@ using const_alias_type = decltype(uni20::async::permute<1, 0>(std::declval<async
 static_assert(uni20::MutableTensorView<uni20::async::async_value_t<alias_type>>);
 static_assert(!uni20::MutableTensorView<uni20::async::async_value_t<const_alias_type>>);
 static_assert(uni20::async::is_async_alias_v<uni20::async::async_value_t<alias_type>>);
+
+using deferred_matrix = uni20::test::DeferredHostTensor<double, 2>;
+using async_deferred_matrix = uni20::async::Async<deferred_matrix>;
+using deferred_alias_type = decltype(uni20::async::permute<1, 0>(std::declval<async_deferred_matrix&>()));
+using const_deferred_alias_type = decltype(uni20::async::permute<1, 0>(std::declval<async_deferred_matrix const&>()));
+static_assert(std::is_assignable_v<deferred_alias_type&, async_deferred_matrix const&>);
+static_assert(!std::is_assignable_v<const_deferred_alias_type&, async_deferred_matrix const&>);
 
 matrix make_matrix()
 {
@@ -38,6 +47,27 @@ TEST(TensorPermuteAsyncTest, SharesQueueAndWritesThrough)
   alias = source;
   scheduler.run_all();
   EXPECT_EQ((parent.get_wait().mdspan()[1, 2]), 47);
+}
+
+TEST(TensorPermuteAsyncTest, CustomTensorAssignmentFindsWriteThroughCustomization)
+{
+  async_deferred_matrix parent(2, 3);
+  auto alias = uni20::async::permute<1, 0>(parent);
+  EXPECT_EQ(&alias.queue(), &parent.queue());
+  deferred_matrix replacement(3, 2);
+  replacement.storage() = {1, 2, 3, 4, 5, 6};
+  async_deferred_matrix source(std::move(replacement));
+  uni20::async::DebugScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+
+  // The parent and source are custom tensor models: neither contributes `uni20` to
+  // ADL on its own, so lookup must find the alias descriptor's customization.
+  alias = source;
+  scheduler.run_all();
+
+  EXPECT_EQ(parent.get_wait().storage(), (std::vector<double>{1, 4, 2, 5, 3, 6}));
+  EXPECT_EQ(source.get_wait().storage(), (std::vector<double>{1, 2, 3, 4, 5, 6}));
+  EXPECT_EQ(&alias.queue(), &parent.queue());
 }
 
 TEST(TensorPermuteAsyncTest, PendingParentIsNotResolvedDuringAliasCreation)
