@@ -194,3 +194,50 @@ axis permutation, so each regrouping between contractions goes through an
 order-four `BlockTensor` over single-sector U(1) spaces, whose `permute<>` view
 is then materialized with `make_tensor`; tensors of rank five enter it with two
 adjacent axes fused by `reshape_view`.
+
+## The same HOTRG step on host and CUDA tensors
+
+`ising_hotrg_shared_example.cpp` runs the step of `dense_hotrg.hpp` written once
+for both places. The header `dense_hotrg_shared.hpp` makes every function of the
+step a template over the place where its tensors live: `Tensor<double, N>` on the
+host, `CudaTensor<double, N>` on a device. The gram, the update network, one
+step and the flow are the same text for both.
+
+```bash
+./build/examples/ising_hotrg_shared_example --check
+./build/examples/ising_hotrg_shared_example --bond=32 --rounds=5
+./build/examples/ising_hotrg_shared_example --execution=cuda --bond=32 --rounds=5
+./build/examples/ising_hotrg_shared_example --execution=cuda --check
+```
+
+`--execution=cpu` is the default. `--execution=cuda` needs a build with the
+CUDA, cuBLAS and cuSOLVER backends; without them only the host place is
+compiled. `--check` compares the shared step with the step of `dense_hotrg.hpp`:
+the gram and the update network entry by entry, one step along each axis, and
+two flows. With `--execution=cuda` it checks the host place, the device place,
+and the device place with the gram cut on the host. `--reference` runs the step
+of `dense_hotrg.hpp` itself, for a timing comparison on the host.
+
+What cannot be the same text is collected in the namespace `shim` of the header,
+as pairs of overloads. The host overload is the idiom of `dense_hotrg.hpp`; the
+device overload stands in for a function that a device tensor does not have, and
+its comment states what is missing and what is done instead:
+
+| | Missing for a device tensor | What the host writes | Stand-in, and where it runs |
+|---|---|---|---|
+| M1 | `linalg::truncated_svd` (also `linalg::eigh`, `linalg::self_adjoint_eigh`) | `truncated_svd(reshape_view(theta, n * n, n * n), policy)` | split: the full `linalg::singular_value_decomposition` on the device through cuSOLVER; then the values and the left factor are downloaded, cut on the host, and the isometry is uploaded |
+| M2 | `reshape_view` | `reshape_view(theta, n * n, n * n)` | on the device, without a copy: `reshape(std::move(theta), n * n, n * n)` on the owning tensor |
+| M3 | a reduction for the largest entry | a loop over `t.storage()` | on the host: `to_host(t)` downloads the tensor, then the host loop |
+| M4 | a trace over paired axes | a loop over `t[i, j, j, i]` | on the host: `to_host(t)` downloads the tensor, then the host loop |
+| M5 | access to the entries (by design) | fills and reads tensors entry by entry | on the host: builds there and transfers |
+
+Everything else is one call for both places: `contract` with adjacent index
+groups (BLAS on the host, cuBLAS on the device), `permute<>` of a single-sector
+`BlockTensor` followed by `make_tensor`, `copy`, and
+`transform_inplace(t, linalg::scale{f})`. The step keeps its two rank-five
+intermediates as five-leg `BlockTensor`s, so it needs no `reshape_view` around
+its contractions.
+
+The flow prints, per round, the time in contractions, in regroupings, in the
+SVD, and in the two stand-ins that download a tensor (`via host`), followed by
+the backend that ran each kind of operation.
