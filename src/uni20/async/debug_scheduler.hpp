@@ -62,12 +62,22 @@ struct DebugSchedulerOptions
     std::uint64_t random_seed = 0;
 };
 
+/// \brief How `DebugScheduler::run_all()` treats tasks that wait on another thread.
+enum class ExternalWaitPolicy
+{
+  /// Abort if any task begins a wait on another thread during the call. The default.
+  reject,
+  /// Return normally; the caller accepts that such tasks may still be suspended.
+  allow
+};
+
 /// \brief Single-threaded scheduler with configurable runnable-batch ordering.
 /// \details Tasks run only on the thread that drives the scheduler. Other
 ///          threads, such as CUDA host callbacks, may reschedule tasks that
 ///          await an external wakeup registered through
 ///          `BasicTask::begin_external_wait`. Waits block for those wakeups
-///          rather than reporting a deadlock; `run_all()` does not.
+///          rather than reporting a deadlock; `run_all()` does not, and aborts
+///          when a task began such a wait during the call unless told otherwise.
 class DebugScheduler : public IAsyncScheduler {
   public:
     /// \brief Default-construct an empty scheduler.
@@ -108,7 +118,23 @@ class DebugScheduler : public IAsyncScheduler {
     ///          the scheduler, for example on a CUDA resource or I/O, so it
     ///          does not establish completion; wait on a result with
     ///          `get_wait()` or `wait_for()` for that.
-    void run_all();
+    ///
+    ///          Whether such a task has been woken by the time `run_all()`
+    ///          returns depends on when another thread delivers the wakeup, so
+    ///          a test that reads a result afterwards passes or fails by
+    ///          timing. Any task that begins an external wait during the call
+    ///          therefore makes it abort, whether or not the wakeup happened to
+    ///          arrive in time. A task that was already waiting when the call
+    ///          began is not counted. The check fires only on calls in which a
+    ///          task actually suspends, so it turns a flake into a failure but
+    ///          does not make a misused call fail every time.
+    /// \param external_waits `ExternalWaitPolicy::allow` for a caller that
+    ///        deliberately leaves such tasks suspended, for example to check
+    ///        that a result is still pending while a resource is held.
+    /// \note Failing with `PANIC` rather than an exception avoids unwinding a
+    ///       test whose tasks still hold CUDA leases, which would end in an
+    ///       unrelated resource-pool check that hides this message.
+    void run_all(ExternalWaitPolicy external_waits = ExternalWaitPolicy::reject);
 
     /// \brief Block the scheduler from running.
     /// \note This turns run() and run_all() into no-operation;
@@ -172,6 +198,7 @@ class DebugScheduler : public IAsyncScheduler {
     {
       std::lock_guard lock(mutex_);
       ++external_waits_;
+      ++external_waits_begun_;
     }
 
     void complete_external_wait(BasicTask&& task) override
@@ -238,6 +265,8 @@ class DebugScheduler : public IAsyncScheduler {
     mutable std::mutex mutex_;
     std::condition_variable wakeup_;
     std::size_t external_waits_ = 0;
+    // Every begin_external_wait() ever made, so run_all() can tell whether the call began any.
+    std::size_t external_waits_begun_ = 0;
     std::vector<BasicTask> Handles_;
     DebugSchedulerOptions options_;
     std::mt19937_64 random_engine_;
@@ -452,7 +481,7 @@ inline void DebugScheduler::run()
   detail::service_task_registry_debug_requests();
 }
 
-inline void DebugScheduler::run_all()
+inline void DebugScheduler::run_all(ExternalWaitPolicy external_waits)
 {
   DEBUG_TRACE_MODULE(ASYNC, "DebugScheduler::run_all");
   detail::service_task_registry_debug_requests();
@@ -461,11 +490,28 @@ inline void DebugScheduler::run_all()
     DEBUG_TRACE_MODULE(ASYNC, "run() on a blocked DebugQueue: doing nothing");
     return;
   }
+  std::size_t begun_before;
+  {
+    std::lock_guard lock(mutex_);
+    begun_before = external_waits_begun_;
+  }
   while (!done())
   {
     run();
   }
   detail::service_task_registry_debug_requests();
+  std::size_t begun_after;
+  {
+    std::lock_guard lock(mutex_);
+    begun_after = external_waits_begun_;
+  }
+  if (external_waits == ExternalWaitPolicy::reject && begun_after != begun_before)
+  {
+    PANIC("DebugScheduler::run_all() ran tasks that began waits on another thread, so whether they have resumed "
+          "when it returns depends on timing. Wait for the result with get_wait() or wait_for(), or pass "
+          "ExternalWaitPolicy::allow if the tasks are meant to stay suspended",
+          begun_after - begun_before);
+  }
 }
 
 } // namespace uni20::async
