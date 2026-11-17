@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <numeric>
 #include <semaphore>
 #include <stdexcept>
@@ -147,7 +148,8 @@ AsyncTask resume_after(ExternalWakeup wakeup, bool* resumed)
   co_return;
 }
 
-// run_all() only runs what is runnable; it is not a completion wait.
+// run_all() only runs what is runnable; it is not a completion wait. A caller that wants
+// the task left suspended says so.
 TEST(DebugSchedulerTest, RunAllReturnsWhileExternalWakeupIsPending)
 {
   DebugScheduler scheduler;
@@ -156,7 +158,7 @@ TEST(DebugSchedulerTest, RunAllReturnsWhileExternalWakeupIsPending)
   bool resumed = false;
 
   scheduler.schedule(resume_after(ExternalWakeup{&waker, &gate}, &resumed));
-  scheduler.run_all();
+  scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
   EXPECT_FALSE(resumed);
   EXPECT_TRUE(scheduler.done());
   EXPECT_EQ(scheduler.external_waits(), 1U);
@@ -166,6 +168,55 @@ TEST(DebugSchedulerTest, RunAllReturnsWhileExternalWakeupIsPending)
   waker.join();
   EXPECT_TRUE(resumed);
   EXPECT_EQ(scheduler.external_waits(), 0U);
+}
+
+// Whether the woken task has run when run_all() returns depends on the waking thread, so a
+// caller that did not opt in is stopped, even on a run where the wakeup happens to be in time.
+TEST(DebugSchedulerDeathTest, RunAllRejectsTasksThatBeginExternalWaits)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_DEATH(
+      [] {
+        DebugScheduler scheduler;
+        std::thread waker;
+        std::binary_semaphore gate{0};
+        bool resumed = false;
+        scheduler.schedule(resume_after(ExternalWakeup{&waker, &gate}, &resumed));
+        scheduler.run_all();
+      }(),
+      "run_all\\(\\) ran tasks that began waits on another thread");
+}
+
+TEST(DebugSchedulerTest, RunAllIgnoresExternalWaitsThatBeganBeforeTheCall)
+{
+  DebugScheduler scheduler;
+  std::thread waker;
+  std::binary_semaphore gate{0};
+  bool resumed = false;
+
+  scheduler.schedule(resume_after(ExternalWakeup{&waker, &gate}, &resumed));
+  scheduler.run();
+  ASSERT_EQ(scheduler.external_waits(), 1U);
+
+  EXPECT_NO_THROW(scheduler.run_all());
+
+  gate.release();
+  scheduler.wait_for([&resumed] { return resumed; });
+  waker.join();
+  EXPECT_TRUE(resumed);
+}
+
+TEST(DebugSchedulerTest, RunAllWithoutExternalWaitsNeverThrows)
+{
+  DebugScheduler scheduler;
+  bool ran = false;
+  scheduler.schedule([](bool* done) static -> AsyncTask {
+    *done = true;
+    co_return;
+  }(&ran));
+  EXPECT_NO_THROW(scheduler.run_all());
+  EXPECT_TRUE(ran);
+  EXPECT_NO_THROW(scheduler.run_all());
 }
 
 TEST(DebugSchedulerTest, WaitDoesNotReportDeadlockWhileExternalWakeupIsPending)
@@ -211,6 +262,27 @@ AsyncTask resume_immediately(ImmediateExternalWakeup wakeup, bool* resumed)
   co_await wakeup;
   *resumed = true;
   co_return;
+}
+
+// The wakeup may arrive before run_all() returns or after; the call must stop either way,
+// not only on the runs that lose the race. Each child exits cleanly if run_all() returns.
+TEST(DebugSchedulerDeathTest, RunAllRejectsAnExternalWaitWhetherOrNotItsWakeupArrivesInTime)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (int round = 0; round < 8; ++round)
+  {
+    EXPECT_DEATH(
+        [] {
+          DebugScheduler scheduler;
+          std::thread waker;
+          bool resumed = false;
+          scheduler.schedule(resume_immediately(ImmediateExternalWakeup{&waker}, &resumed));
+          scheduler.run_all();
+          std::_Exit(0);
+        }(),
+        "run_all\\(\\) ran tasks that began waits on another thread")
+        << "round " << round;
+  }
 }
 
 // Once the woken task has run, the waking thread must no longer use the scheduler: the program
