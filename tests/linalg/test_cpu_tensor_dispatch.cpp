@@ -61,6 +61,7 @@ struct NonConvertibleReadAccessor
 
 class NonConvertibleReadMatrixView {
   public:
+    using storage_policy = uni20::HostStorage;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;
     using mdspan_type = stdex::mdspan<double const, extents_type, stdex::layout_left, NonConvertibleReadAccessor>;
@@ -84,6 +85,7 @@ class NonConvertibleReadMatrixView {
 
 class NonConvertibleReadVectorView {
   public:
+    using storage_policy = uni20::HostStorage;
     using extents_type = stdex::dextents<uni20::index_type, 1>;
     using index_type = typename extents_type::index_type;
     using mdspan_type = stdex::mdspan<double const, extents_type, stdex::layout_left, NonConvertibleReadAccessor>;
