@@ -1111,9 +1111,19 @@ TEST_F(CublasExecutionTest, AssignProductConsumesNormalizedInputsAndLowersPrepar
   EXPECT_EQ(lhs_descriptor_count, 1);
   EXPECT_EQ(rhs_descriptor_count, 1);
 
+  bool completed = false;
+  auto task = [](auto kernel_task, bool& done) static -> uni20::async::CudaTask {
+    co_await std::move(kernel_task);
+    done = true;
+    co_return;
+  }(std::move(task_attempt).take_task(), completed);
+
   uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(device_));
-  scheduler.schedule(std::move(task_attempt).take_task(), device_);
-  scheduler.run_all();
+  scheduler.schedule(std::move(task), device_);
+  // The kernel task suspends on CUDA resources that resume it from a host
+  // callback, so wait for it to finish rather than run_all().
+  scheduler.wait_for([&completed] { return completed; });
+  EXPECT_TRUE(completed);
   EXPECT_EQ(download_tensor(output), (std::vector<double>{58, 139, 64, 154}));
 }
 
