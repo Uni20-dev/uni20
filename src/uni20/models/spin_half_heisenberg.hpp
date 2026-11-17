@@ -278,7 +278,7 @@ template <RealOrComplex Scalar = double>
   if (length == 0) throw std::invalid_argument("spin-half Heisenberg MPO requires at least one site");
 
   QNum const scalar = QNum::identity(local.symmetry);
-  std::string const& charge_name = local.symmetry.factors().front().name;
+  std::string const charge_name = local.symmetry.factors().front().name;
   QNum const minus_one = make_qnum(local.symmetry, {{charge_name, U1{-1}}});
   QNum const plus_one = make_qnum(local.symmetry, {{charge_name, U1{1}}});
   std::vector<LocalSpace> auxiliaries;
