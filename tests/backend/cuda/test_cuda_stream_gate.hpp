@@ -31,9 +31,11 @@ namespace uni20::test
 /// test thread can hold back the stream-pool return callbacks that the test
 /// thread itself is waiting for.
 ///
-/// The words live in a process-lifetime pinned allocation and a slot is never
+/// The words live in pinned slabs that are never freed, and a slot is never
 /// reused, so a stream still reading a gate after its object is destroyed reads
-/// valid memory. The destructor therefore only opens the gate.
+/// valid memory. The destructor therefore only opens the gate. A full slab is
+/// followed by a new one, so repeating tests in one process (`--gtest_repeat`)
+/// costs 8 KiB of pinned memory per 1024 gates and never runs out.
 ///
 /// The stream functions are obtained through the runtime's driver entry-point
 /// query, so test executables do not link the driver library.
@@ -86,7 +88,7 @@ class CudaStreamGate {
         stream_value_function write_value = nullptr;
     };
 
-    static constexpr std::size_t slot_count = 1024;
+    static constexpr std::size_t slab_slots = 1024;
 
     [[nodiscard]] std::uint32_t& open_word() const noexcept { return words_[0]; }
     [[nodiscard]] std::uint32_t& entered_word() const noexcept { return words_[1]; }
@@ -94,21 +96,22 @@ class CudaStreamGate {
     [[nodiscard]] static std::uint32_t* allocate_slot()
     {
       static std::mutex mutex;
-      static std::uint32_t* words = nullptr;
-      static std::size_t next = 0;
+      static std::uint32_t* slab = nullptr;
+      static std::size_t next = slab_slots;
 
       std::lock_guard lock(mutex);
-      if (words == nullptr)
+      if (next == slab_slots)
       {
+        // Earlier slabs stay allocated: a stream may still read one of their gates.
         void* raw = nullptr;
         uni20::cuda::check(
-            cudaHostAlloc(&raw, 2 * slot_count * sizeof(std::uint32_t), cudaHostAllocMapped | cudaHostAllocPortable),
+            cudaHostAlloc(&raw, 2 * slab_slots * sizeof(std::uint32_t), cudaHostAllocMapped | cudaHostAllocPortable),
             "cudaHostAlloc stream gate words");
-        words = static_cast<std::uint32_t*>(raw);
-        std::fill_n(words, 2 * slot_count, std::uint32_t{0});
+        slab = static_cast<std::uint32_t*>(raw);
+        std::fill_n(slab, 2 * slab_slots, std::uint32_t{0});
+        next = 0;
       }
-      if (next == slot_count) throw std::length_error("too many CUDA stream gates in one test process");
-      return words + 2 * next++;
+      return slab + 2 * next++;
     }
 
     [[nodiscard]] static CUdeviceptr device_address(std::uint32_t& word, int device)
