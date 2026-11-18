@@ -4,6 +4,8 @@
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/tensor/tensor.hpp>
 
+#include "test_cuda_stream_gate.hpp"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -530,13 +532,6 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionResolvesPolicyFreePointerMdspans)
   EXPECT_EQ(output, input);
 }
 
-void CUDART_CB wait_for_stream_gate(void* raw_gate)
-{
-  auto& gate = *static_cast<std::atomic<bool>*>(raw_gate);
-  while (!gate.load(std::memory_order_acquire))
-    std::this_thread::yield();
-}
-
 // The only stream returns to its pool from a CUDA host callback, so the task's
 // stream acquisition is woken from outside the scheduler. A wait must block for
 // that wakeup rather than report a deadlock.
@@ -544,12 +539,10 @@ TEST_F(CudaTensorTest, WaitBlocksForStreamReturnedByHostCallback)
 {
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
   uni20::async::DebugCudaScheduler scheduler(resources.device());
-  std::atomic<bool> gate_open = false;
+  uni20::test::CudaStreamGate gate;
   {
     auto blocker = resources.streams().acquire();
-    uni20::cuda::ScopedDevice guard(resources.device().ordinal());
-    uni20::cuda::check(cudaLaunchHostFunc(blocker.native_handle(), &wait_for_stream_gate, &gate_open),
-                       "cudaLaunchHostFunc stream gate", resources.device().ordinal());
+    gate.close(blocker.native_handle(), resources.device().ordinal());
   }
   ASSERT_EQ(resources.streams().pending_stream_count(), 1U);
 
@@ -564,7 +557,7 @@ TEST_F(CudaTensorTest, WaitBlocksForStreamReturnedByHostCallback)
   EXPECT_FALSE(acquired);
   EXPECT_EQ(scheduler.external_waits(), 1U);
 
-  gate_open.store(true, std::memory_order_release);
+  gate.open();
   scheduler.wait_for([&acquired] { return acquired; });
   EXPECT_TRUE(acquired);
   EXPECT_EQ(scheduler.external_waits(), 0U);
