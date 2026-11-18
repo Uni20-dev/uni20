@@ -98,6 +98,10 @@ uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_symme
 add_test(NAME IsingHotrgExample COMMAND ising_hotrg_example --check)
 add_test(NAME IsingHotrgFlowExample COMMAND ising_hotrg_example --bond=8 --rounds=6)
 
+uni20_add_example(ising_hotrg_shared_example models/ising_hotrg_shared_example.cpp uni20_symmetry uni20_linalg)
+add_test(NAME IsingHotrgSharedExample COMMAND ising_hotrg_shared_example --check)
+add_test(NAME IsingHotrgSharedFlowExample COMMAND ising_hotrg_shared_example --bond=8 --rounds=6)
+
 uni20_add_example(spin_half_heisenberg_dmrg_example models/spin_half_heisenberg_dmrg_example.cpp uni20_models
                   TBB::tbb)
 add_test(NAME SpinHalfHeisenbergDmrgExample COMMAND spin_half_heisenberg_dmrg_example --check)
