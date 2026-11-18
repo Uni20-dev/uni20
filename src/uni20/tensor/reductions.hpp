@@ -43,10 +43,6 @@ concept CompatibleInnerProductTensors = TensorView<LhsTensor> && TensorView<RhsT
                                         std::same_as<tensor_element_t<LhsTensor>, tensor_element_t<RhsTensor>> &&
                                         RealOrComplex<tensor_element_t<LhsTensor>>;
 
-template <class Tensor>
-concept ReductionStorageTypedTensor =
-    TensorView<Tensor> && requires { typename std::remove_cvref_t<Tensor>::storage_policy; };
-
 template <class... Inputs> struct reduction_result_storage
 {
     using selected_type = linalg::detail::first_backend_bound_storage_t<Inputs...>;
@@ -56,7 +52,7 @@ template <class... Inputs> struct reduction_result_storage
 template <class... Inputs> using reduction_result_storage_t = typename reduction_result_storage<Inputs...>::type;
 
 template <class Element, class... Inputs>
-concept ReductionResultAvailable = (ReductionStorageTypedTensor<Inputs> && ...) && requires {
+concept ReductionResultAvailable = (TensorView<Inputs> && ...) && requires {
   typename reduction_result_storage_t<Inputs...>::template storage_t<Element>;
 };
 

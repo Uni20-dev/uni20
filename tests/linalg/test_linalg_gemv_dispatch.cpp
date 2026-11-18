@@ -52,6 +52,7 @@ template <class BackendSelector, uni20::MutableRankedTensorView<1> OutputTensor,
 
 template <class Scalar> class ValueTransformMatrixView {
   public:
+    using storage_policy = uni20::HostStorage;
     using value_type = std::remove_cv_t<Scalar>;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;

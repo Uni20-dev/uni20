@@ -182,7 +182,9 @@ This applies the same user-override and library-default precedence as ordinary
 tensor-based selection.
 
 Selector resolution is based on static tensor and storage-policy information. It does
-not inspect tensor values. Backend-neutral storage policies may participate with a
+not inspect tensor values. Every tensor operand declares a storage policy; a type
+without one does not model `TensorView`, and a bare mdspan is passed with an explicit
+selector instead. Backend-neutral storage policies may participate with a
 backend-bound storage policy, but incompatible backend-bound storage policies require
 an explicit selector or an explicit transfer.
 

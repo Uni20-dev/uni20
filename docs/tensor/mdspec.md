@@ -221,8 +221,19 @@ must retain an immediately usable handle.
 `TensorView<T>` is the tensor-level counterpart. A model exposes:
 
 - multidimensional metadata obtainable through `mdspec_of(tensor)`;
+- a `storage_policy` member type modeling `TensorStoragePolicy`;
 - `backend_selector()`;
 - tensor extents and extent observers.
+
+The storage policy is mandatory. It names the storage domain and supplies the
+static default backend selector, so default dispatch, transfer rules, and
+derived views such as reshapes can all be resolved from the tensor type. A
+non-owning adaptor over foreign memory declares the policy of the domain it
+views, for example `HostStorage` for ordinary host memory; the policy need not
+allocate or own the elements. An adaptor that needs different default backends
+declares its own policy type with a static `backend_selector()` rather than
+omitting the policy. A bare mdspan carries no policy and is passed with an
+explicit selector instead.
 
 `mdspec_of(tensor)` calls `tensor.mdspec()` when that member is
 available and otherwise calls `tensor.mdspan()`. It does not acquire, copy, or
@@ -248,8 +259,8 @@ descriptor without requiring every immediate tensor view to add a redundant
 
 The public type aliases `tensor_mdspec_t<T>` and
 `mutable_tensor_mdspec_t<T>` name the normalized readable and writable
-descriptor types. `tensor_storage_policy_t<T>` names a tensor's storage policy,
-or `void` when no policy is exposed. Backend and tensor modules use these
+descriptor types. `tensor_storage_policy_t<T>` names a tensor's storage policy;
+it is not defined for a type without one. Backend and tensor modules use these
 aliases rather than depending on the normalization traits in
 `uni20::detail`.
 

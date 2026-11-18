@@ -20,24 +20,23 @@ namespace detail
 {
 template <class T> using tensor_type_t = std::remove_reference_t<T>;
 
-template <class Tensor, class = void> struct TensorStoragePolicy
-{
-    using type = void;
-};
-
-template <class Tensor> struct TensorStoragePolicy<Tensor, std::void_t<typename Tensor::storage_policy>>
-{
-    using type = typename Tensor::storage_policy;
-};
-
 template <class T> using tensor_const_mdspan_t = decltype(std::declval<tensor_type_t<T> const&>().mdspan());
 
 template <class T> using tensor_mutable_mdspan_t = decltype(std::declval<tensor_type_t<T>&>().mdspan());
 } // namespace detail
 
-/// \brief Storage-policy type exposed by a tensor-level object, or `void`.
-template <class Tensor>
-using tensor_storage_policy_t = typename detail::TensorStoragePolicy<std::remove_cvref_t<Tensor>>::type;
+/// \brief Storage-policy type declared by a tensor-level object.
+/// \details Every `TensorView` declares one. The alias is ill-formed, in a
+///          substitution-friendly way, for a type without a `storage_policy` member.
+template <class Tensor> using tensor_storage_policy_t = typename std::remove_cvref_t<Tensor>::storage_policy;
+
+/// \brief Storage policy usable by a tensor-level object.
+/// \details The policy names the storage domain and supplies the default
+///          backend selector for operations on tensors of that domain. A
+///          non-owning adaptor declares the policy of the domain it views; the
+///          policy need not allocate or own the viewed elements.
+template <class Policy>
+concept TensorStoragePolicy = requires { Policy::backend_selector(); };
 
 /// \brief Return a tensor's immediate or descriptor-backed multidimensional metadata.
 /// \details This operation prefers `mdspec()` when the tensor exposes it
@@ -73,13 +72,18 @@ template <class T> using normalized_const_mdspec_t = decltype(mdspec_of(std::dec
 template <class T> using normalized_mutable_mdspec_t = decltype(mdspec_of(std::declval<tensor_type_t<T>&>()));
 } // namespace detail
 
-/// \brief Tensor-level object exposing readable multidimensional metadata and a backend selector.
+/// \brief Tensor-level object exposing readable multidimensional metadata, a storage policy, and a backend selector.
 /// \details A model exposes an immediate or descriptor-backed `MdspecLike`
 ///          through `mdspec_of()`. Explicit access acquisition resolves that
 ///          metadata into an `ImmediateTensorView` governed by an RAII lease.
 ///          The policy-bearing tensor object does not itself model `MdspecLike`.
+///          A `storage_policy` member type is required: default backend
+///          selection, transfer rules, and derived views are all keyed on it.
+///          Bare mdspans carry no policy and take an explicit selector instead.
 template <class T>
-concept TensorView = (!MdspecLike<T>) && requires(std::remove_reference_t<T> const& tensor) {
+concept TensorView = (!MdspecLike<T>) && requires {
+  typename tensor_storage_policy_t<T>;
+} && TensorStoragePolicy<tensor_storage_policy_t<T>> && requires(std::remove_reference_t<T> const& tensor) {
   typename std::remove_cvref_t<detail::normalized_const_mdspec_t<T>>::extents_type;
   tensor.backend_selector();
   mdspec_of(tensor);
