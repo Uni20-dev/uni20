@@ -92,7 +92,9 @@ Existing host-side waiting also needs an explicit integration plan.
 `help_while_waiting()` then blocks for the wakeup instead of reporting a
 deadlock. Waits have no time limit. The CUDA resource awaiters use this. Other
 schedulers treat the registration as a no-op, and no scheduler's `run_all()`
-waits for externally suspended tasks. A future adapter should register its waits the
+waits for externally suspended tasks; `DebugScheduler::run_all()` aborts if a
+task began such a wait during the call unless the caller passes
+`ExternalWaitPolicy::allow`. A future adapter should register its waits the
 same way and define how deterministic tests drive completion before it is
 exposed.
 

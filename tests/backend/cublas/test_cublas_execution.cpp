@@ -600,15 +600,16 @@ TEST_F(CublasExecutionTest, AsyncOutputRemainsPendingUntilCublasSubmissionComple
 
   uni20::linalg::gemm(output, 1.0, lhs, rhs, 0.0);
   auto output_reader = output.read();
-  scheduler.run_all();
+  // The test holds every execution handle, so the product task stays suspended whatever the
+  // timing; say so rather than have run_all() report the external wait.
+  scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
   EXPECT_FALSE(output_reader.await_ready());
 
   occupied.clear();
   resources.streams().synchronize();
-  scheduler.run_all();
-
-  EXPECT_TRUE(output_reader.await_ready());
+  // The released handle resumes the task from a CUDA host callback, so wait for the result.
   EXPECT_EQ(download_tensor(output_reader.get_wait(scheduler)), (std::vector<double>{42}));
+  EXPECT_TRUE(output_reader.await_ready());
 }
 
 TEST_F(CublasExecutionTest, AsyncEmptyOutputDoesNotWaitForCublasExecutionResources)
@@ -1111,9 +1112,19 @@ TEST_F(CublasExecutionTest, AssignProductConsumesNormalizedInputsAndLowersPrepar
   EXPECT_EQ(lhs_descriptor_count, 1);
   EXPECT_EQ(rhs_descriptor_count, 1);
 
+  bool completed = false;
+  auto task = [](auto kernel_task, bool& done) static -> uni20::async::CudaTask {
+    co_await std::move(kernel_task);
+    done = true;
+    co_return;
+  }(std::move(task_attempt).take_task(), completed);
+
   uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(device_));
-  scheduler.schedule(std::move(task_attempt).take_task(), device_);
-  scheduler.run_all();
+  scheduler.schedule(std::move(task), device_);
+  // The kernel task suspends on CUDA resources that resume it from a host
+  // callback, so wait for it to finish rather than run_all().
+  scheduler.wait_for([&completed] { return completed; });
+  EXPECT_TRUE(completed);
   EXPECT_EQ(download_tensor(output), (std::vector<double>{58, 139, 64, 154}));
 }
 

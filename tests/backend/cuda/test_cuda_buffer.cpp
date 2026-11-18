@@ -1,6 +1,8 @@
 #include <uni20/backend/cuda/buffer.hpp>
 #include <uni20/backend/cuda/cuda_error.hpp>
 
+#include "test_cuda_stream_gate.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -18,35 +20,9 @@ namespace
 
 using namespace std::chrono_literals;
 
-struct BufferGate
-{
-    std::atomic<bool> open = false;
-    std::atomic<bool> entered = false;
-};
-
-void CUDART_CB wait_for_buffer_gate(void* raw_gate)
-{
-  auto& gate = *static_cast<BufferGate*>(raw_gate);
-  gate.entered.store(true, std::memory_order_release);
-  while (!gate.open.load(std::memory_order_acquire))
-  {
-    std::this_thread::yield();
-  }
-}
-
 void CUDART_CB set_buffer_flag(void* raw_flag)
 {
   static_cast<std::atomic<bool>*>(raw_flag)->store(true, std::memory_order_release);
-}
-
-bool wait_until(std::atomic<bool> const& flag)
-{
-  auto const deadline = std::chrono::steady_clock::now() + 5s;
-  while (!flag.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
-  {
-    std::this_thread::yield();
-  }
-  return flag.load(std::memory_order_acquire);
 }
 
 bool wait_until_ready(uni20::cuda::Completion const& completion)
@@ -136,19 +112,18 @@ TEST_F(CudaBufferTest, DestructionQueuesStreamOrderedDeallocationWithoutWaiting)
     GTEST_SKIP() << "device does not support stream-ordered allocation";
   }
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   auto buffer = std::make_unique<uni20::cuda::CudaBuffer<int>>(resources, 1);
   auto stream = resources.streams().acquire();
   {
     auto write = buffer->write_synchronized_with(stream);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc asynchronous buffer destruction gate", 0);
+    gate.close(stream.native_handle(), 0);
   }
-  ASSERT_TRUE(wait_until(gate.entered));
+  ASSERT_TRUE(gate.wait_entered());
 
   auto destruction = std::async(std::launch::async, [&buffer] { buffer.reset(); });
   auto const status = destruction.wait_for(1s);
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
 
   EXPECT_EQ(status, std::future_status::ready);
   destruction.get();
@@ -232,12 +207,11 @@ TEST_F(CudaBufferTest, RepeatedWriteWaitsForPreviousWriter)
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 2});
   uni20::cuda::CudaBuffer<> buffer(resources, 4096);
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   {
     auto stream = resources.streams().acquire();
     auto producer = buffer.write_synchronized_with(stream);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc buffer producer gate", 0);
+    gate.close(stream.native_handle(), 0);
   }
 
   std::atomic<bool> consumer_completed = false;
@@ -250,15 +224,15 @@ TEST_F(CudaBufferTest, RepeatedWriteWaitsForPreviousWriter)
                        "cudaLaunchHostFunc dependent buffer flag", 0);
   }
 
-  bool const producer_entered = wait_until(gate.entered);
+  bool const producer_entered = gate.wait_entered();
   if (!producer_entered)
   {
-    gate.open.store(true, std::memory_order_release);
+    gate.open();
   }
   ASSERT_TRUE(producer_entered);
   EXPECT_FALSE(consumer_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   resources.streams().synchronize();
   EXPECT_TRUE(consumer_completed.load(std::memory_order_acquire));
 }
@@ -269,12 +243,11 @@ TEST_F(CudaBufferTest, SharedAccessCompletionOrdersEveryParticipatingBuffer)
   uni20::cuda::CudaBuffer<> first_buffer(resources, 4096);
   uni20::cuda::CudaBuffer<> second_buffer(resources, 4096);
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   auto producer_stream = resources.streams().acquire();
   auto first_producer = first_buffer.write_synchronized_with(producer_stream);
   auto second_producer = second_buffer.write_synchronized_with(producer_stream);
-  uni20::cuda::check(cudaLaunchHostFunc(producer_stream.native_handle(), wait_for_buffer_gate, &gate),
-                     "cudaLaunchHostFunc shared completion gate", 0);
+  gate.close(producer_stream.native_handle(), 0);
   uni20::cuda::AccessCompletion completion(producer_stream);
   completion.release(first_producer);
   completion.release(second_producer);
@@ -292,13 +265,13 @@ TEST_F(CudaBufferTest, SharedAccessCompletionOrdersEveryParticipatingBuffer)
                        "cudaLaunchHostFunc second shared-completion consumer", 0);
   }
 
-  bool const producer_entered = wait_until(gate.entered);
-  if (!producer_entered) gate.open.store(true, std::memory_order_release);
+  bool const producer_entered = gate.wait_entered();
+  if (!producer_entered) gate.open();
   ASSERT_TRUE(producer_entered);
   EXPECT_FALSE(first_completed.load(std::memory_order_acquire));
   EXPECT_FALSE(second_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   resources.streams().synchronize();
   EXPECT_TRUE(first_completed.load(std::memory_order_acquire));
   EXPECT_TRUE(second_completed.load(std::memory_order_acquire));
@@ -310,12 +283,11 @@ TEST_F(CudaBufferTest, IndependentBuffersDoNotAcquireAFalseDependency)
   uni20::cuda::CudaBuffer<> blocked_buffer(resources, 4096);
   uni20::cuda::CudaBuffer<> independent_buffer(resources, 4096);
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   {
     auto stream = resources.streams().acquire();
     auto blocked = blocked_buffer.write_synchronized_with(stream);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc independent-buffer gate", 0);
+    gate.close(stream.native_handle(), 0);
   }
 
   uni20::cuda::Completion independent_completion;
@@ -327,9 +299,9 @@ TEST_F(CudaBufferTest, IndependentBuffersDoNotAcquireAFalseDependency)
     independent_completion = stream.record_completion();
   }
 
-  bool const blocked_entered = wait_until(gate.entered);
+  bool const blocked_entered = gate.wait_entered();
   bool const independent_ready = blocked_entered && wait_until_ready(independent_completion);
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
 
   ASSERT_TRUE(blocked_entered);
   EXPECT_TRUE(independent_ready);
@@ -343,7 +315,7 @@ TEST_F(CudaBufferTest, ConcurrentReadersOverlapAndWriterWaitsForOutstandingReade
   uni20::cuda::CudaBuffer<> first_output(resources, 4096);
   uni20::cuda::CudaBuffer<> second_output(resources, 4096);
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   {
     auto stream = resources.streams().acquire();
     auto source_read = source.read_synchronized_with(stream);
@@ -351,8 +323,7 @@ TEST_F(CudaBufferTest, ConcurrentReadersOverlapAndWriterWaitsForOutstandingReade
     uni20::cuda::check(cudaMemcpyAsync(output_write.data(), source_read.data(), source_read.size_bytes(),
                                        cudaMemcpyDeviceToDevice, stream.native_handle()),
                        "cudaMemcpyAsync first concurrent reader", 0);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc concurrent-reader gate", 0);
+    gate.close(stream.native_handle(), 0);
   }
 
   uni20::cuda::Completion second_completion;
@@ -366,7 +337,7 @@ TEST_F(CudaBufferTest, ConcurrentReadersOverlapAndWriterWaitsForOutstandingReade
     second_completion = stream.record_completion();
   }
 
-  bool const first_entered = wait_until(gate.entered);
+  bool const first_entered = gate.wait_entered();
   bool const second_completed_independently = first_entered && wait_until_ready(second_completion);
 
   uni20::cuda::Completion writer_completion;
@@ -380,13 +351,13 @@ TEST_F(CudaBufferTest, ConcurrentReadersOverlapAndWriterWaitsForOutstandingReade
 
   if (!first_entered)
   {
-    gate.open.store(true, std::memory_order_release);
+    gate.open();
   }
   ASSERT_TRUE(first_entered);
   EXPECT_TRUE(second_completed_independently);
   EXPECT_FALSE(writer_completion.ready());
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   writer_completion.synchronize();
   EXPECT_TRUE(writer_completion.ready());
 }
@@ -474,13 +445,12 @@ TEST_F(CudaBufferTest, BlockingWritePublishesDefaultStreamCompletion)
 {
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
   uni20::cuda::CudaBuffer<int> buffer(resources, 1);
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
 
   {
     auto write = buffer.blocking_write_access();
     uni20::cuda::ScopedDevice device(0);
-    uni20::cuda::check(cudaLaunchHostFunc(nullptr, wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc default-stream completion gate", 0);
+    gate.close(nullptr, 0);
     write.release_with_completion(uni20::cuda::Completion::record(0, nullptr));
   }
 
@@ -492,15 +462,15 @@ TEST_F(CudaBufferTest, BlockingWritePublishesDefaultStreamCompletion)
                        "cudaLaunchHostFunc default-stream completion reader", 0);
   }
 
-  bool const producer_entered = wait_until(gate.entered);
+  bool const producer_entered = gate.wait_entered();
   if (!producer_entered)
   {
-    gate.open.store(true, std::memory_order_release);
+    gate.open();
   }
   ASSERT_TRUE(producer_entered);
   EXPECT_FALSE(reader_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   resources.streams().synchronize();
   EXPECT_TRUE(reader_completed.load(std::memory_order_acquire));
 }
@@ -517,19 +487,18 @@ TEST_F(CudaBufferTest, BlockingReadWaitsForPublishedWriterCompletion)
                        "cudaMemcpy initialize delayed writer test", 0);
   }
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   {
     auto stream = resources.streams().acquire();
     auto writer = buffer.write_synchronized_with(stream);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc delayed writer gate", 0);
+    gate.close(stream.native_handle(), 0);
     uni20::cuda::check(cudaMemsetAsync(writer.data(), 0x2a, writer.size_bytes(), stream.native_handle()),
                        "cudaMemsetAsync delayed writer", 0);
   }
 
   auto release_gate = std::async(std::launch::async, [&gate] {
-    bool const entered = wait_until(gate.entered);
-    gate.open.store(true, std::memory_order_release);
+    bool const entered = gate.wait_entered();
+    gate.open();
     return entered;
   });
 
@@ -558,7 +527,7 @@ TEST_F(CudaBufferTest, BlockingWriteWaitsForPublishedReaderCompletion)
                        "cudaMemcpy initialize delayed reader test", 0);
   }
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   std::atomic<bool> reader_completed = false;
   {
     auto stream = resources.streams().acquire();
@@ -567,15 +536,14 @@ TEST_F(CudaBufferTest, BlockingWriteWaitsForPublishedReaderCompletion)
     uni20::cuda::check(cudaMemcpyAsync(destination.data(), reader.data(), reader.size_bytes(), cudaMemcpyDeviceToDevice,
                                        stream.native_handle()),
                        "cudaMemcpyAsync delayed reader", 0);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc delayed reader gate", 0);
+    gate.close(stream.native_handle(), 0);
     uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), set_buffer_flag, &reader_completed),
                        "cudaLaunchHostFunc delayed reader completion", 0);
   }
 
   auto release_gate = std::async(std::launch::async, [&gate] {
-    bool const entered = wait_until(gate.entered);
-    gate.open.store(true, std::memory_order_release);
+    bool const entered = gate.wait_entered();
+    gate.open();
     return entered;
   });
 
@@ -770,15 +738,14 @@ TEST_F(CudaBufferTest, ForeignDeviceStreamCarriesBufferCompletionsInBothDirectio
   auto source_stream = source_context.streams().acquire();
   auto foreign_stream = foreign_context.streams().acquire();
 
-  BufferGate gate;
+  uni20::test::CudaStreamGate gate;
   std::atomic<bool> foreign_read_completed = false;
   std::atomic<bool> successor_completed = false;
 
   auto producer = buffer.write_synchronized_with(source_stream);
   {
     uni20::cuda::ScopedDevice device(0);
-    uni20::cuda::check(cudaLaunchHostFunc(source_stream.native_handle(), wait_for_buffer_gate, &gate),
-                       "cudaLaunchHostFunc cross-device producer gate", 0);
+    gate.close(source_stream.native_handle(), 0);
   }
   producer.release();
 
@@ -798,16 +765,16 @@ TEST_F(CudaBufferTest, ForeignDeviceStreamCarriesBufferCompletionsInBothDirectio
   }
   successor.release();
 
-  bool const producer_entered = wait_until(gate.entered);
+  bool const producer_entered = gate.wait_entered();
   if (!producer_entered)
   {
-    gate.open.store(true, std::memory_order_release);
+    gate.open();
   }
   ASSERT_TRUE(producer_entered);
   EXPECT_FALSE(foreign_read_completed.load(std::memory_order_acquire));
   EXPECT_FALSE(successor_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   source_stream.synchronize();
   foreign_stream.synchronize();
   EXPECT_TRUE(foreign_read_completed.load(std::memory_order_acquire));
