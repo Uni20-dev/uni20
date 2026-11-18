@@ -87,6 +87,7 @@ void dispatch_normalized_gemm(BackendSelector&& selector, OutputTensor& output, 
 
 template <class Scalar> class ValueTransformMatrixView {
   public:
+    using storage_policy = uni20::HostStorage;
     using value_type = std::remove_cv_t<Scalar>;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;
@@ -178,6 +179,7 @@ template <class Scalar> class NonStridedMdspan {
 
 template <class Scalar> class NonStridedMatrixView {
   public:
+    using storage_policy = uni20::HostStorage;
     using value_type = std::remove_cv_t<Scalar>;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;

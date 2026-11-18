@@ -894,9 +894,11 @@ template <TaskAwaitable A> struct TaskAwaiter //: public AsyncAwaiter
     /// \tparam Promise Concrete enclosing promise type.
     /// \param handle Current coroutine handle.
     /// \return Transfer handle selected by suspend logic.
-    template <TaskPromise Promise> auto await_suspend(std::coroutine_handle<Promise> handle)
+    template <TaskPromise Promise> auto await_suspend([[maybe_unused]] std::coroutine_handle<Promise> handle)
     {
-      return TaskPromiseBase::suspend_task_awaitable(TaskHandle::from(handle), awaitable);
+      // await_transform binds this wrapper to the current promise. Reuse its
+      // initialized identity instead of repeating the nullable handle conversion.
+      return TaskPromiseBase::suspend_task_awaitable(promise.self(), awaitable);
     }
 
     /// \brief Resume wrapped awaitable and register explicit exception sinks if provided.
@@ -961,9 +963,9 @@ template <TaskFactoryAwaitable A> struct TaskFactoryAwaiter //: public AsyncAwai
     /// \brief Suspend using shared-ownership await-suspend semantics.
     /// \tparam Promise Concrete enclosing promise type.
     /// \param handle Current coroutine handle.
-    template <TaskPromise Promise> void await_suspend(std::coroutine_handle<Promise> handle)
+    template <TaskPromise Promise> void await_suspend([[maybe_unused]] std::coroutine_handle<Promise> handle)
     {
-      TaskPromiseBase::suspend_factory_awaitable(TaskHandle::from(handle), awaitable);
+      TaskPromiseBase::suspend_factory_awaitable(promise.self(), awaitable);
     }
 
     /// \brief Resume wrapped awaitable and return its await result.
