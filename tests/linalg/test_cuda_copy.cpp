@@ -7,6 +7,8 @@
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/tensor.hpp>
 
+#include "../backend/cuda/test_cuda_stream_gate.hpp"
+
 #include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 
@@ -174,35 +176,9 @@ static_assert(uni20::CudaAccessibleMdspec<generated_cuda_descriptor>);
 static_assert(!uni20::linalg::detail::cuda_reference::SupportedCopyMdspans<resolved_cuda_output_mdspan,
                                                                            generated_cuda_descriptor>);
 
-struct CopyGate
-{
-    std::atomic<bool> open = false;
-    std::atomic<bool> entered = false;
-};
-
-void CUDART_CB wait_for_copy_gate(void* raw_gate)
-{
-  auto& gate = *static_cast<CopyGate*>(raw_gate);
-  gate.entered.store(true, std::memory_order_release);
-  while (!gate.open.load(std::memory_order_acquire))
-  {
-    std::this_thread::yield();
-  }
-}
-
 void CUDART_CB set_copy_flag(void* raw_flag)
 {
   static_cast<std::atomic<bool>*>(raw_flag)->store(true, std::memory_order_release);
-}
-
-bool wait_until(std::atomic<bool> const& flag)
-{
-  auto const deadline = std::chrono::steady_clock::now() + 5s;
-  while (!flag.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
-  {
-    std::this_thread::yield();
-  }
-  return flag.load(std::memory_order_acquire);
 }
 
 class ErrorModeGuard {
@@ -677,14 +653,13 @@ TEST_F(CudaCopyTest, SameDeviceCopyOrdersPendingSourceAndDestinationReuse)
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 3});
   auto source = uni20::to_device(make_matrix(), 0);
   cuda_matrix_type destination(runtime.device_resources(0), 2, 3);
-  CopyGate gate;
+  uni20::test::CudaStreamGate gate;
 
   {
     auto stream = runtime.device_resources(0).streams().acquire();
     auto source_predecessor = source.storage().write_synchronized_with(stream);
     uni20::cuda::ScopedDevice device(0);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_copy_gate, &gate),
-                       "cudaLaunchHostFunc same-device source predecessor", 0);
+    gate.close(stream.native_handle(), 0);
   }
 
   uni20::copy(destination, source);
@@ -698,12 +673,12 @@ TEST_F(CudaCopyTest, SameDeviceCopyOrdersPendingSourceAndDestinationReuse)
                        "cudaLaunchHostFunc same-device destination reader", 0);
   }
 
-  bool const predecessor_entered = wait_until(gate.entered);
-  if (!predecessor_entered) gate.open.store(true, std::memory_order_release);
+  bool const predecessor_entered = gate.wait_entered();
+  if (!predecessor_entered) gate.open();
   ASSERT_TRUE(predecessor_entered);
   EXPECT_FALSE(destination_reader_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   runtime.device_resources(0).streams().synchronize();
   EXPECT_TRUE(destination_reader_completed.load(std::memory_order_acquire));
   expect_matrix(uni20::to_host(destination));
@@ -763,14 +738,13 @@ TEST_F(CudaCopyTest, PeerCopyPreservesSourceAndDestinationLedgers)
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 3});
   auto source = uni20::to_device(make_matrix(), 0);
   cuda_matrix_type destination(runtime.device_resources(1), 2, 3);
-  CopyGate gate;
+  uni20::test::CudaStreamGate gate;
 
   {
     auto stream = runtime.device_resources(1).streams().acquire();
     auto destination_predecessor = destination.storage().write_synchronized_with(stream);
     uni20::cuda::ScopedDevice device(1);
-    uni20::cuda::check(cudaLaunchHostFunc(stream.native_handle(), wait_for_copy_gate, &gate),
-                       "cudaLaunchHostFunc peer destination predecessor", 1);
+    gate.close(stream.native_handle(), 1);
   }
 
   uni20::copy(destination, source);
@@ -793,13 +767,13 @@ TEST_F(CudaCopyTest, PeerCopyPreservesSourceAndDestinationLedgers)
                        "cudaLaunchHostFunc peer destination reader", 1);
   }
 
-  bool const predecessor_entered = wait_until(gate.entered);
-  if (!predecessor_entered) gate.open.store(true, std::memory_order_release);
+  bool const predecessor_entered = gate.wait_entered();
+  if (!predecessor_entered) gate.open();
   ASSERT_TRUE(predecessor_entered);
   EXPECT_FALSE(source_writer_completed.load(std::memory_order_acquire));
   EXPECT_FALSE(destination_reader_completed.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   runtime.device_resources(0).streams().synchronize();
   runtime.device_resources(1).streams().synchronize();
   EXPECT_TRUE(source_writer_completed.load(std::memory_order_acquire));
