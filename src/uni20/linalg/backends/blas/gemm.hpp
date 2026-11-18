@@ -77,16 +77,13 @@ auto prepared_output_mapping(typename output_mdspan_t<OutputTensor>::extents_typ
 {
   using output_span = output_mdspan_t<OutputTensor>;
   using storage_policy = uni20::tensor_storage_policy_t<OutputTensor>;
-  if constexpr (!std::is_void_v<storage_policy>)
+  if constexpr (requires { typename storage_policy::default_mapping_builder; })
   {
-    if constexpr (requires { typename storage_policy::default_mapping_builder; })
+    using builder_type = typename storage_policy::default_mapping_builder;
+    if constexpr (uni20::layout::mapping_builder_for<builder_type, typename output_span::layout_type,
+                                                     typename output_span::extents_type>)
     {
-      using builder_type = typename storage_policy::default_mapping_builder;
-      if constexpr (uni20::layout::mapping_builder_for<builder_type, typename output_span::layout_type,
-                                                       typename output_span::extents_type>)
-      {
-        return builder_type{}(extents);
-      }
+      return builder_type{}(extents);
     }
   }
   return uni20::layout::make_mapping<typename output_span::layout_type>(extents);

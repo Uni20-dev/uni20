@@ -120,6 +120,15 @@ Execution model:
   returns while tasks are suspended outside the scheduler (CUDA resources,
   I/O), so it does not establish completion. Production code and tests that
   need a result wait on it with `get_wait()` or `wait_for()`
+- because whether such a task has resumed by the time `run_all()` returns
+  depends on when another thread delivers the wakeup, `DebugScheduler::run_all()`
+  aborts with a message if any task began an external wait during the call,
+  even on a run where the wakeup happened to arrive in time. A test that
+  deliberately leaves such a task suspended, for example while it holds the
+  resource the task needs, passes `ExternalWaitPolicy::allow`. A task that was
+  already waiting when the call began is not counted. The check fires only on
+  calls in which a task suspends, so it converts a timing-dependent wrong result
+  into a failure, not into a failure on every run
 
 External wakeups:
 

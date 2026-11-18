@@ -362,18 +362,11 @@ template <class MatrixTensor> consteval bool cuda_resident_singular_values()
 {
 #if UNI20_BACKEND_CUSOLVER
   using matrix_type = std::remove_cvref_t<MatrixTensor>;
-  if constexpr (requires { typename uni20::tensor_storage_policy_t<matrix_type>; })
-  {
-    if constexpr (std::same_as<uni20::tensor_storage_policy_t<matrix_type>, uni20::CudaStorage>)
-      return uni20::cuda::BufferMdspec<uni20::tensor_mdspec_t<matrix_type>> &&
-             cusolver_backend::CusolverSingularValueScalar<svd_scalar_t<matrix_type>>;
-    else
-      return false;
-  }
+  if constexpr (std::same_as<uni20::tensor_storage_policy_t<matrix_type>, uni20::CudaStorage>)
+    return uni20::cuda::BufferMdspec<uni20::tensor_mdspec_t<matrix_type>> &&
+           cusolver_backend::CusolverSingularValueScalar<svd_scalar_t<matrix_type>>;
   else
-  {
     return false;
-  }
 #else
   return false;
 #endif
