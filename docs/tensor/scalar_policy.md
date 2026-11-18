@@ -75,14 +75,25 @@ following their parent's default. Host tensor constructors and
 `at_precision(tensor, p)` accept precision for fixed types too, validating the
 match before allocation or copying.
 
-The matrix-product, GEMM, square-solve, LU, log-determinant, QR/LQ, self-adjoint
+The matrix-product, GEMM, pairwise-contraction, square-solve, LU, log-determinant, QR/LQ, self-adjoint
 and general eigensystem, SVD and truncated-SVD interfaces accept
 the same explicit precision argument for native and runtime scalars. Omitting it
 selects precision from participating tensor defaults; exact defaults are neutral,
 and different finite defaults require an override. An explicit request fixes the
 result precision: native results must match their type, while runtime conversion
 happens inside the backend. Approximation-only operations require finite precision.
-Async operations infer defaults after awaiting their readable inputs.
+Dense async operations infer defaults after awaiting their readable inputs.
+
+BlockTensor pairwise contractions resolve one operation precision from the
+logical input defaults and pass it to every dense contribution. Async block
+contractions capture this logical metadata at submission; numerical leaf
+values still follow their scheduled epochs. Host block
+constructors accept a trailing `Precision`; block and mapped views retain the
+ultimate owner's live default without an independent setter. Fixed scalar
+promotion is separate from runtime default selection: a `float`/`double` block
+product produces `double` and uses its native precision. Differing finite
+runtime defaults still require an explicit override. See
+[BlockTensor precision](../symmetry/block_tensor_prototype.md#working-precision).
 
 [LU refinement](../linalg/lu_refinement.md) explicitly separates factor, working
 and residual scalar/precision roles. Each fixed role still requires its native

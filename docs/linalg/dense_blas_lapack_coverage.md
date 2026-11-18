@@ -92,12 +92,16 @@ workspace or wide row-major workspace read as its transpose, and
 [cuSOLVER architecture](../backends/cuda/cusolver.md#svd-boundary).
 
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
-lowerings for `s/d/c/z` scalars. They jointly merge the logical M, N, and K
+lowerings for native scalars and configured MPLAPACK GEMM providers, including
+finite MPFR/MPC scalars with explicit operation precision. They jointly merge the logical M, N, and K
 stride groups, project directly representable slices to rank-two mdspecs, and
 reuse ordinary GEMM dispatch. The looped path currently accepts one residual M
 or N descriptor and leaves K unlooped. Multiple residual dimensions,
 residual-K accumulation, unsupported accessors or matrix layouts, and packed
-plans remain on the accessor-respecting CPU reference path.
+plans remain on the accessor-respecting CPU reference path for fixed scalars
+and exact runtime arithmetic. Finite runtime operations require a backend that
+converts values at the selected precision; unsupported layouts decline rather
+than silently executing reference arithmetic at the stored element precisions.
 
 ## Scalar Tags
 

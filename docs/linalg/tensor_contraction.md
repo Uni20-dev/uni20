@@ -39,8 +39,34 @@ caller requests conjugated values through an accessor-bearing view such as
 distinct from the conjugate-linear-left `inner_product` operation. Contracting
 no axes produces an outer product.
 
-The initial scalar contract requires identical output, left, and right element
-types. Scalar promotion is not inferred.
+The fixed output determines the arithmetic scalar type. The reference backend
+accepts inputs convertible to that type and evaluates their elements through
+their accessors. Provider backends may require identical scalar types; a mixed
+`float`/`double` contraction into `double` uses reference arithmetic without
+implicitly allocating converted input tensors. This fixed-output API does not
+infer an output type. The allocating BlockTensor API selects its result scalar
+from the input scalar product type.
+
+Both synchronous and async overloads accept an optional trailing `Precision`,
+with the same runtime rules as `gemm`. Fixed results use their type's native
+precision, independently of input types. For runtime results without an override,
+input construction defaults select the operation precision, including the output
+default when `beta != 0`.
+Exact defaults are neutral; different finite defaults require an explicit
+override. A fixed result type requires its native precision. Runtime inputs and
+coefficients are converted inside the selected provider, and successful owning
+outputs record the operation precision. Structural output views do not change
+their parent's default. Async calls infer defaults after awaiting input epochs.
+
+Direct and looped GEMM strategies forward runtime precision to every nested
+GEMM, including every loop slice's beta update. MPLAPACK MPFR therefore handles
+finite `mpreal` and `complex<mpreal>` contractions whenever the layout admits
+one of these plans. Exact runtime arithmetic can use CPU reference GEMM or the
+general CPU contraction. The CPU reference backend declines finite runtime
+precision before mutation: ordinary value arithmetic cannot enforce a requested
+precision on mixed stored values. Finite MPFR layouts that neither GEMM strategy
+can lower require a further precision-aware backend; they do not silently run
+the unconverted reference loop.
 
 ## Dispatch Boundary
 

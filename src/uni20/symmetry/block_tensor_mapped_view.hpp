@@ -215,8 +215,8 @@ auto permute_block(Block block, std::array<std::size_t, DenseBlockOrder> const& 
   using mutable_mdspec_type = decltype(mutable_mdspec);
   using const_mdspec_type = decltype(const_mdspec);
   using storage_policy = tensor_storage_policy_t<Block>;
-  return MdspecTensorView<mutable_mdspec_type, const_mdspec_type, storage_policy>{std::move(mutable_mdspec),
-                                                                                  std::move(const_mdspec)};
+  return MdspecTensorView<mutable_mdspec_type, const_mdspec_type, storage_policy>{
+      std::move(mutable_mdspec), std::move(const_mdspec), descriptor_precision_source(block)};
 }
 
 template <TensorView Block> auto make_read_only_block_view(Block const& block)
@@ -224,7 +224,8 @@ template <TensorView Block> auto make_read_only_block_view(Block const& block)
   auto const_mdspec = mdspec_of(block);
   using mdspec_type = std::remove_cvref_t<decltype(const_mdspec)>;
   using storage_policy = tensor_storage_policy_t<Block>;
-  return MdspecTensorView<mdspec_type, mdspec_type, storage_policy>{const_mdspec, const_mdspec};
+  return MdspecTensorView<mdspec_type, mdspec_type, storage_policy>{const_mdspec, const_mdspec,
+                                                                    descriptor_precision_source(block)};
 }
 
 // An identity map preserves the original mapping/accessor, including compressed
@@ -267,13 +268,14 @@ class BlockTensorAllocationContextBinding<
 ///          modifying the ultimate payload owner invalidates every view over
 ///          that payload and context.
 template <class SourceTensor, class DomainType, class CodomainType, auto KeyPermutation, auto DensePermutation>
-class BlockTensorMappedView {
+class BlockTensorMappedView : public detail::precision_source<typename std::remove_cvref_t<SourceTensor>::value_type> {
   public:
     using source_type = SourceTensor;
     using source_tensor_type = std::remove_cvref_t<SourceTensor>;
     using borrowed_block_tensor_view_tag = void;
     using element_type = typename source_tensor_type::element_type;
     using value_type = typename source_tensor_type::value_type;
+    using precision_source_type = detail::precision_source<value_type>;
     using storage_policy = typename source_tensor_type::storage_policy;
     using storage_type = typename source_tensor_type::storage_type;
     using backend_selector_type = typename source_tensor_type::backend_selector_type;
@@ -314,8 +316,8 @@ class BlockTensorMappedView {
     /// \param domain Transformed ordered domain.
     /// \param codomain Transformed ordered codomain.
     explicit BlockTensorMappedView(SourceTensor& source, domain_type domain, codomain_type codomain)
-        : symmetry_(source.symmetry()), domain_(std::move(domain)), codomain_(std::move(codomain)),
-          allocation_context_(source)
+        : precision_source_type(descriptor_precision_source(source)), symmetry_(source.symmetry()),
+          domain_(std::move(domain)), codomain_(std::move(codomain)), allocation_context_(source)
     {
       this->build_key_index(source);
     }
@@ -331,6 +333,9 @@ class BlockTensorMappedView {
 
     /// \brief Prevent replacing metadata observed by a dependent view.
     auto operator=(BlockTensorMappedView&&) -> BlockTensorMappedView& = delete;
+
+    /// \brief Preserve the ultimate owner's precision binding through nested mapped views.
+    [[nodiscard]] auto precision_source() const noexcept -> precision_source_type { return *this; }
 
     /// \brief Return the explicit symmetry context.
     auto symmetry() const -> Symmetry { return symmetry_; }

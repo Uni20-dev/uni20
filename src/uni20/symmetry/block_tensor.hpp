@@ -7,6 +7,7 @@
 #pragma once
 
 #include <uni20/symmetry/block_space.hpp>
+#include <uni20/symmetry/block_tensor_precision.hpp>
 #include <uni20/symmetry/block_tensor_space_traits.hpp>
 #include <uni20/symmetry/block_tensor_storage.hpp>
 #include <uni20/symmetry/dual_space.hpp>
@@ -300,6 +301,96 @@ class BlockTensor {
           storage_(this->make_complete_storage(context, StorageInitialization::Uninitialized))
     {}
 
+    /// \brief Construct zero blocks at an explicit working precision.
+    /// \details Fixed scalars require native precision. Runtime defaults do not constrain later element assignments.
+    BlockTensor(Symmetry symmetry, domain_type domain, codomain_type codomain, std::vector<key_type> stored_keys,
+                Precision p)
+      requires SparseBlockStorage<storage_policy> &&
+                   std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_storage(std::move(stored_keys), StorageInitialization::Zero, p))
+    {
+      if constexpr (has_runtime_precision_v<value_type>) precision_.default_precision(p);
+    }
+
+    BlockTensor(Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::initializer_list<key_type> stored_keys, Precision p)
+      requires SparseBlockStorage<storage_policy> &&
+               std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : BlockTensor(symmetry, std::move(domain), std::move(codomain), std::vector<key_type>(stored_keys), p)
+    {}
+
+    /// \brief Construct zero blocks at an explicit working precision.
+    /// \details Fixed scalars require native precision. Runtime defaults do not constrain later element assignments.
+    BlockTensor(Symmetry symmetry, domain_type domain, codomain_type codomain, Precision p)
+      requires CompleteBlockStorage<storage_policy> &&
+                   std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_complete_storage(StorageInitialization::Zero, p))
+    {
+      if constexpr (has_runtime_precision_v<value_type>) precision_.default_precision(p);
+    }
+
+    /// \brief Allocate unset blocks at an explicit working precision.
+    /// \details Fixed scalars require native precision. Runtime defaults do not constrain later element assignments.
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::vector<key_type> stored_keys, Precision p)
+      requires SparseBlockStorage<storage_policy> &&
+                   std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_storage(std::move(stored_keys), StorageInitialization::Uninitialized, p))
+    {
+      if constexpr (has_runtime_precision_v<value_type>) precision_.default_precision(p);
+    }
+
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain,
+                std::initializer_list<key_type> stored_keys, Precision p)
+      requires SparseBlockStorage<storage_policy> &&
+               std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : BlockTensor(uninitialized, symmetry, std::move(domain), std::move(codomain),
+                      std::vector<key_type>(stored_keys), p)
+    {}
+
+    /// \brief Allocate unset blocks at an explicit working precision.
+    /// \details Fixed scalars require native precision. Runtime defaults do not constrain later element assignments.
+    BlockTensor(uninitialized_t, Symmetry symmetry, domain_type domain, codomain_type codomain, Precision p)
+      requires CompleteBlockStorage<storage_policy> &&
+                   std::same_as<typename storage_policy::leaf_storage_policy, HostStorage>
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)),
+          storage_(this->make_complete_storage(StorageInitialization::Uninitialized, p))
+    {
+      if constexpr (has_runtime_precision_v<value_type>) precision_.default_precision(p);
+    }
+
+    /// \brief Working precision used by block operations, independently of stored element precisions.
+    [[nodiscard]] Precision default_precision() const
+      requires has_runtime_precision_v<value_type>
+    {
+      return precision_.default_precision();
+    }
+
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const noexcept
+      requires has_runtime_precision_v<value_type>
+    {
+      return precision_.default_precision_if_set();
+    }
+
+    /// \brief Change the operation default without converting existing block elements.
+    void default_precision(Precision p)
+      requires has_runtime_precision_v<value_type>
+    {
+      precision_.default_precision(p);
+    }
+
+    /// \brief Bind descriptor views to this owner's live default.
+    [[nodiscard]] auto precision_source() const noexcept -> detail::precision_source<value_type>
+    {
+      if constexpr (has_runtime_precision_v<value_type>)
+        return detail::precision_source<value_type>{precision_};
+      else
+        return {};
+    }
+
     /// \brief Return the explicit symmetry context.
     auto symmetry() const -> Symmetry { return symmetry_; }
 
@@ -401,7 +492,7 @@ class BlockTensor {
     {
       if (ordinal >= storage_.size()) throw std::out_of_range("BlockTensor block ordinal is out of range");
       auto const& key = storage_.keys()[ordinal];
-      return storage_.block(ordinal, this->block_extents(key));
+      return this->bind_block_precision(storage_.block(ordinal, this->block_extents(key)));
     }
 
     /// \brief Return a read-only block TensorView by stable canonical ordinal.
@@ -412,7 +503,7 @@ class BlockTensor {
     {
       if (ordinal >= storage_.size()) throw std::out_of_range("BlockTensor block ordinal is out of range");
       auto const& key = storage_.keys()[ordinal];
-      return storage_.block(ordinal, this->block_extents(key));
+      return this->bind_block_precision(storage_.block(ordinal, this->block_extents(key)));
     }
 
     /// \brief Return the compressed writable diagonal values for one stored key.
@@ -541,8 +632,8 @@ class BlockTensor {
         { storage.allocate_like(StorageInitialization::Zero) } -> std::same_as<storage_type>;
       }
     {
-      return BlockTensor(symmetry_, domain_, codomain_, storage_.allocate_like(StorageInitialization::Zero),
-                         ValidatedStorageTag{});
+      return BlockTensor(symmetry_, domain_, codomain_, this->allocate_storage_like(StorageInitialization::Zero),
+                         precision_, ValidatedStorageTag{});
     }
 
     /// \brief Allocate uninitialized blocks with identical validated structure.
@@ -553,7 +644,8 @@ class BlockTensor {
         { storage.allocate_like(StorageInitialization::Uninitialized) } -> std::same_as<storage_type>;
       }
     {
-      return BlockTensor(symmetry_, domain_, codomain_, storage_.allocate_like(StorageInitialization::Uninitialized),
+      return BlockTensor(symmetry_, domain_, codomain_,
+                         this->allocate_storage_like(StorageInitialization::Uninitialized), precision_,
                          ValidatedStorageTag{});
     }
 
@@ -562,9 +654,44 @@ class BlockTensor {
     {};
 
     BlockTensor(Symmetry symmetry, domain_type domain, codomain_type codomain, storage_type storage,
-                ValidatedStorageTag)
-        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)), storage_(std::move(storage))
+                detail::precision_default<value_type> precision, ValidatedStorageTag)
+        : symmetry_(symmetry), domain_(std::move(domain)), codomain_(std::move(codomain)), precision_(precision),
+          storage_(std::move(storage))
     {}
+
+    template <class Block> auto bind_block_precision(Block block) const -> Block
+    {
+      if constexpr (has_runtime_precision_v<value_type>)
+        return Block{mdspec_of(block), mdspec_of(std::as_const(block)), this->precision_source()};
+      else
+        return block;
+    }
+
+    auto allocate_storage_like(StorageInitialization initialization) const -> storage_type
+    {
+      if constexpr (has_runtime_precision_v<value_type>)
+        if (auto p = this->default_precision_if_set()) return storage_.allocate_like(initialization, *p);
+      return storage_.allocate_like(initialization);
+    }
+
+    auto make_storage(std::vector<key_type> stored_keys, StorageInitialization initialization,
+                      Precision p) -> storage_type
+    {
+      require_precision<value_type>(p);
+      this->validate_boundaries();
+      return storage_type(this->make_block_specs(std::move(stored_keys)), initialization, p);
+    }
+
+    auto make_complete_storage(StorageInitialization initialization, Precision p) -> storage_type
+    {
+      require_precision<value_type>(p);
+      this->validate_boundaries();
+      std::vector<key_type> keys;
+      this->for_each_possible_key([&](key_type const& key) {
+        if (this->is_legal(key)) keys.push_back(key);
+      });
+      return storage_type(this->make_block_specs(std::move(keys)), initialization, p);
+    }
 
     auto make_storage(std::vector<key_type> stored_keys,
                       StorageInitialization initialization = StorageInitialization::Zero) -> storage_type
@@ -720,6 +847,7 @@ class BlockTensor {
     Symmetry symmetry_;
     domain_type domain_;
     codomain_type codomain_;
+    [[no_unique_address]] detail::precision_default<value_type> precision_;
     storage_type storage_;
 };
 

@@ -7,7 +7,7 @@
  */
 
 #include <uni20/tensor/concepts.hpp>
-#include <uni20/core/runtime_precision.hpp>
+#include <uni20/tensor/precision_source.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -21,7 +21,8 @@ namespace uni20
 /// \details The view owns multidimensional metadata but not the described
 ///          element storage. Its storage policy supplies tensor-level backend
 ///          selection; access acquisition remains governed by the stored
-///          mdspec data descriptor.
+///          mdspec data descriptor. An optional precision binding follows the
+///          ultimate owner; the view has no independent default setter.
 /// \tparam MutableMdspec Metadata exposed through the mutable interface.
 /// \tparam ConstMdspec Read-only metadata exposed through the const interface.
 /// \tparam StoragePolicy Dense storage policy associated with the metadata.
@@ -30,7 +31,7 @@ template <MdspecLike MutableMdspec, MdspecLike ConstMdspec, class StoragePolicy>
            std::same_as<std::remove_const_t<typename MutableMdspec::element_type>,
                         std::remove_const_t<typename ConstMdspec::element_type>> &&
            std::is_const_v<typename ConstMdspec::element_type> && requires { StoragePolicy::backend_selector(); })
-class MdspecTensorView : public detail::precision_default<typename MutableMdspec::value_type> {
+class MdspecTensorView : public detail::precision_source<typename MutableMdspec::value_type> {
   public:
     using mutable_mdspec_type = MutableMdspec;
     using const_mdspec_type = ConstMdspec;
@@ -40,11 +41,17 @@ class MdspecTensorView : public detail::precision_default<typename MutableMdspec
     using value_type = std::remove_cv_t<element_type>;
     using extents_type = typename mutable_mdspec_type::extents_type;
     using index_type = typename extents_type::index_type;
+    using precision_source_type = detail::precision_source<value_type>;
 
     /// \brief Construct a tensor view from writable and read-only metadata.
-    constexpr MdspecTensorView(mutable_mdspec_type mutable_mdspec, const_mdspec_type const_mdspec)
-        : mutable_mdspec_(std::move(mutable_mdspec)), const_mdspec_(std::move(const_mdspec))
+    constexpr MdspecTensorView(mutable_mdspec_type mutable_mdspec, const_mdspec_type const_mdspec,
+                               precision_source_type precision = {})
+        : precision_source_type(precision), mutable_mdspec_(std::move(mutable_mdspec)),
+          const_mdspec_(std::move(const_mdspec))
     {}
+
+    /// \brief Retain the ultimate owner's precision binding when transforming this descriptor.
+    [[nodiscard]] constexpr auto precision_source() const noexcept -> precision_source_type { return *this; }
 
     /// \brief Return the dense storage policy's default backend selector.
     [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type

@@ -627,6 +627,11 @@ parent's construction default, even if the operation requests another working
 precision. A future view that converts element precision would be a separate
 numerical transformation, not an ordinary structural view.
 
+Host BlockTensor owners and their block/mapped views follow the same logical
+default and borrowing rules. Pairwise block contraction resolves one precision
+for all contributions; per-block async submission captures that logical default
+before numerical epochs run. See [BlockTensor precision](../symmetry/block_tensor_prototype.md#working-precision).
+
 `common_default_precision(a, b)` selects matching input defaults and throws if
 either is missing or their finite defaults differ. Exact defaults are neutral;
 two exact defaults produce `Precision::exact()`, which a numerical backend may

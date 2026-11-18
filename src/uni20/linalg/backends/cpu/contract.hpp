@@ -44,7 +44,8 @@ template <std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
 consteval auto kernel_accepts_types(CpuReferenceBackend const&, contract_op<LhsRank, RhsRank, ContractedRank> const&,
                                     OutputMdspec&, Scalar const&, LhsMdspec&, RhsMdspec&, Scalar const&)
 {
-  if constexpr (detail::cpu_contract_backend::contraction_types_compatible<OutputMdspec, Scalar, LhsMdspec, RhsMdspec,
+  if constexpr (!has_runtime_precision_v<Scalar> &&
+                detail::cpu_contract_backend::contraction_types_compatible<OutputMdspec, Scalar, LhsMdspec, RhsMdspec,
                                                                            LhsRank, RhsRank, ContractedRank>())
     return kernel_types_yes;
   else
@@ -67,6 +68,36 @@ KernelAttempt try_kernel(CpuReferenceBackend, contract_op<LhsRank, RhsRank, Cont
   auto& rhs_span = rhs_access.mdspan();
   uni20::linalg::cpu::contract(output_span, alpha, lhs_span, rhs_span, beta, operation.axes);
   return KernelAttempt::success;
+}
+
+/// \brief Consider runtime scalars for exact reference contraction.
+template <std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
+          MutableRankedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+          Scalar S, RankedMdspecLike<LhsRank> LhsMdspec, RankedMdspecLike<RhsRank> RhsMdspec>
+  requires has_runtime_precision_v<S> &&
+           detail::cpu_contract_backend::HostContractionAccess<OutputMdspec, LhsMdspec, RhsMdspec>
+consteval auto kernel_accepts_types(CpuReferenceBackend, contract_op<LhsRank, RhsRank, ContractedRank> const&,
+                                    OutputMdspec&, S const&, LhsMdspec&, RhsMdspec&, S const&, Precision)
+{
+  if constexpr (detail::cpu_contract_backend::contraction_types_compatible<OutputMdspec, S, LhsMdspec, RhsMdspec,
+                                                                           LhsRank, RhsRank, ContractedRank>())
+    return kernel_types_maybe;
+  else
+    return kernel_types_no;
+}
+
+/// \brief Execute exact reference contraction; decline finite precision before mutation.
+/// \details Finite operations require a provider that converts operands at the requested precision.
+template <std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
+          MutableRankedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+          Scalar S, RankedMdspecLike<LhsRank> LhsMdspec, RankedMdspecLike<RhsRank> RhsMdspec>
+  requires has_runtime_precision_v<S> &&
+           detail::cpu_contract_backend::HostContractionAccess<OutputMdspec, LhsMdspec, RhsMdspec>
+KernelAttempt try_kernel(CpuReferenceBackend backend, contract_op<LhsRank, RhsRank, ContractedRank> const& operation,
+                         OutputMdspec& output, S alpha, LhsMdspec& lhs, RhsMdspec& rhs, S beta, Precision p)
+{
+  if (!p.is_exact()) return KernelAttempt::unsupported_instance;
+  return try_kernel(backend, operation, output, alpha, lhs, rhs, beta);
 }
 
 } // namespace uni20::linalg

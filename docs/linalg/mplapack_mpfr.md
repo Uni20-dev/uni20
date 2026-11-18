@@ -88,6 +88,12 @@ argument. `Precision` and the generic queries are available without MPFR; see
 override and nonzero `beta`, its default also participates in precision selection;
 exact defaults are neutral and differing finite defaults are rejected.
 In finite mode, participating values, including coefficients, convert at the backend boundary.
+
+`contract(output, alpha, a, b, axes, beta[, p])` follows these rules too. Direct
+and looped contraction plans forward the selected precision to each MPFR GEMM;
+the async overload resolves defaults within the readable input epochs. See
+[pairwise contraction](tensor_contraction.md) for layout support and the exact
+CPU reference path.
 Exact mode uses ordinary scalar arithmetic without scanning or reclassifying
 elements. Defaults remain best-effort metadata: inserting approximate elements
 in a tensor with an exact default can produce approximate results or scalar

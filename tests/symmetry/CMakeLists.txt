@@ -1,5 +1,10 @@
 # tests/symmetry/CMakeLists.txt
 
+add_test_module(block_tensor_precision
+  SOURCES test_block_tensor_precision.cpp
+  LIBS uni20_symmetry uni20_linalg uni20_async TBB::tbb
+)
+
 add_test_module(symmetry
   SOURCES test_qnum.cpp test_u1.cpp test_block_space.cpp test_space.cpp test_morphism_boundary.cpp
           test_block_tensor.cpp
