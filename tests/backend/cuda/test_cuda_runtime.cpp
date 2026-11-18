@@ -7,6 +7,7 @@
 #include <uni20/common/trace.hpp>
 
 #include "test_cuda_peer_kernel.hpp"
+#include "test_cuda_stream_gate.hpp"
 
 #include <gtest/gtest.h>
 
@@ -21,35 +22,9 @@ namespace
 
 using namespace std::chrono_literals;
 
-struct Gate
-{
-    std::atomic<bool> open = false;
-    std::atomic<bool> entered = false;
-};
-
-void CUDART_CB wait_for_gate(void* raw_gate)
-{
-  auto& gate = *static_cast<Gate*>(raw_gate);
-  gate.entered.store(true, std::memory_order_release);
-  while (!gate.open.load(std::memory_order_acquire))
-  {
-    std::this_thread::yield();
-  }
-}
-
 void CUDART_CB set_flag(void* raw_flag)
 {
   static_cast<std::atomic<bool>*>(raw_flag)->store(true, std::memory_order_release);
-}
-
-void wait_until(std::atomic<bool> const& flag)
-{
-  auto const deadline = std::chrono::steady_clock::now() + 5s;
-  while (!flag.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
-  {
-    std::this_thread::yield();
-  }
-  ASSERT_TRUE(flag.load(std::memory_order_acquire));
 }
 
 class ScopedThrowErrors {
@@ -434,18 +409,17 @@ TEST_F(CudaDeviceTest, SubmittedStreamReturnsOnlyAfterActualCompletion)
   auto stream = pool.try_acquire();
   ASSERT_TRUE(stream.has_value());
 
-  Gate gate;
-  uni20::cuda::check(cudaLaunchHostFunc(stream->native_handle(), wait_for_gate, &gate), "cudaLaunchHostFunc test gate",
-                     0);
+  uni20::test::CudaStreamGate gate;
+  gate.close(stream->native_handle(), 0);
   auto completion = stream->record_completion();
   stream.reset();
 
-  wait_until(gate.entered);
+  EXPECT_TRUE(gate.wait_entered());
   EXPECT_FALSE(pool.try_acquire().has_value());
   EXPECT_EQ(pool.pending_stream_count(), 1);
   EXPECT_FALSE(completion.ready());
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   pool.synchronize();
 
   EXPECT_TRUE(completion.ready());
@@ -462,9 +436,8 @@ TEST_F(CudaDeviceTest, BlockingAcquireWaitsForActuallyIdleStream)
   uni20::cuda::StreamPool pool({.device = 0, .stream_count = 1});
   auto producer = pool.acquire();
 
-  Gate gate;
-  uni20::cuda::check(cudaLaunchHostFunc(producer.native_handle(), wait_for_gate, &gate),
-                     "cudaLaunchHostFunc blocking acquire gate", 0);
+  uni20::test::CudaStreamGate gate;
+  gate.close(producer.native_handle(), 0);
   auto completion = producer.record_completion();
   producer = {};
 
@@ -474,10 +447,10 @@ TEST_F(CudaDeviceTest, BlockingAcquireWaitsForActuallyIdleStream)
     acquired.store(true, std::memory_order_release);
   });
 
-  wait_until(gate.entered);
+  EXPECT_TRUE(gate.wait_entered());
   EXPECT_FALSE(acquired.load(std::memory_order_acquire));
 
-  gate.open.store(true, std::memory_order_release);
+  gate.open();
   waiter.join();
   EXPECT_TRUE(acquired.load(std::memory_order_acquire));
   EXPECT_TRUE(completion.ready());
@@ -491,9 +464,8 @@ TEST_F(CudaDeviceTest, DependenciesUseCompletionsAcrossIndependentStreams)
   ASSERT_TRUE(producer.has_value());
   ASSERT_TRUE(consumer.has_value());
 
-  Gate producer_gate;
-  uni20::cuda::check(cudaLaunchHostFunc(producer->native_handle(), wait_for_gate, &producer_gate),
-                     "cudaLaunchHostFunc producer gate", 0);
+  uni20::test::CudaStreamGate producer_gate;
+  producer_gate.close(producer->native_handle(), 0);
   auto producer_completion = producer->record_completion();
   producer.reset();
 
@@ -504,11 +476,11 @@ TEST_F(CudaDeviceTest, DependenciesUseCompletionsAcrossIndependentStreams)
   auto consumer_completion = consumer->record_completion();
   consumer.reset();
 
-  wait_until(producer_gate.entered);
+  EXPECT_TRUE(producer_gate.wait_entered());
   EXPECT_FALSE(consumer_completed.load(std::memory_order_acquire));
   EXPECT_EQ(pool.pending_stream_count(), 2);
 
-  producer_gate.open.store(true, std::memory_order_release);
+  producer_gate.open();
   consumer_completion.synchronize();
   pool.synchronize();
 
@@ -524,9 +496,8 @@ TEST_F(CudaDeviceTest, CompletionMayBeDestroyedAfterWaitIsEnqueued)
   auto producer = pool.acquire();
   auto consumer = pool.acquire();
 
-  Gate producer_gate;
-  uni20::cuda::check(cudaLaunchHostFunc(producer.native_handle(), wait_for_gate, &producer_gate),
-                     "cudaLaunchHostFunc producer gate", 0);
+  uni20::test::CudaStreamGate producer_gate;
+  producer_gate.close(producer.native_handle(), 0);
 
   std::atomic<bool> consumer_completed = false;
   {
@@ -537,10 +508,10 @@ TEST_F(CudaDeviceTest, CompletionMayBeDestroyedAfterWaitIsEnqueued)
 
   uni20::cuda::check(cudaLaunchHostFunc(consumer.native_handle(), set_flag, &consumer_completed),
                      "cudaLaunchHostFunc consumer flag", 0);
-  wait_until(producer_gate.entered);
+  EXPECT_TRUE(producer_gate.wait_entered());
   EXPECT_FALSE(consumer_completed.load(std::memory_order_acquire));
 
-  producer_gate.open.store(true, std::memory_order_release);
+  producer_gate.open();
   consumer.synchronize();
   EXPECT_TRUE(consumer_completed.load(std::memory_order_acquire));
 }
