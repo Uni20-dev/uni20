@@ -5,6 +5,7 @@
 #include <uni20/mdspan/generated_layout.hpp>
 #include <uni20/tensor/async.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/mdspec_tensor_view.hpp>
 #include <uni20/tensor/tensor.hpp>
 
 #include "../backend/cuda/test_cuda_stream_gate.hpp"
@@ -17,9 +18,12 @@
 #include <chrono>
 #include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -194,6 +198,115 @@ class ErrorModeGuard {
     bool previous_;
 };
 
+// Transpose `host` on the device through a row-major copy and compare every
+// element's bytes, so payloads that are not ordinary values (signaling NaNs)
+// must survive as well.
+template <class Scalar> void expect_transposing_device_copy_preserves_bytes(uni20::Tensor<Scalar, 2> const& host)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto source = uni20::to_device(host, 0);
+  uni20::CudaMatrix<Scalar, uni20::RowMajor> transposed(runtime.device_resources(0), host.extent(0), host.extent(1));
+  uni20::copy(transposed, source);
+  auto const result = uni20::to_host(transposed);
+  for (uni20::index_type row = 0; row < host.extent(0); ++row)
+  {
+    for (uni20::index_type column = 0; column < host.extent(1); ++column)
+    {
+      Scalar const expected = host[row, column];
+      Scalar const actual = result[row, column];
+      EXPECT_EQ(std::memcmp(&actual, &expected, sizeof(Scalar)), 0) << "element " << row << ", " << column;
+    }
+  }
+}
+
+template <class Scalar> uni20::Tensor<Scalar, 2> make_counting_matrix()
+{
+  uni20::Tensor<Scalar, 2> matrix(3, 4);
+  for (uni20::index_type row = 0; row < 3; ++row)
+  {
+    for (uni20::index_type column = 0; column < 4; ++column)
+      matrix[row, column] = static_cast<Scalar>(1 + row + 3 * column);
+  }
+  return matrix;
+}
+
+// A strided view of a CUDA tensor's storage, usable wherever a tensor is.
+template <std::size_t Rank, class Tensor>
+auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const& extents,
+                       std::array<uni20::index_type, Rank> const& strides, std::size_t offset = 0)
+{
+  auto mutable_base = tensor.mdspec();
+  auto const_base = std::as_const(tensor).mdspec();
+  using mutable_base_type = decltype(mutable_base);
+  using const_base_type = decltype(const_base);
+  using extents_type = stdex::dextents<uni20::index_type, Rank>;
+  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mutable_type =
+      uni20::mdspec<typename mutable_base_type::element_type, extents_type, stdex::layout_stride,
+                    typename mutable_base_type::accessor_type, typename mutable_base_type::data_descriptor_type>;
+  using const_type =
+      uni20::mdspec<typename const_base_type::element_type, extents_type, stdex::layout_stride,
+                    typename const_base_type::accessor_type, typename const_base_type::data_descriptor_type>;
+  mapping_type const mapping(extents_type(extents), strides);
+  return uni20::MdspecTensorView<mutable_type, const_type, uni20::CudaStorage>{
+      mutable_type{mutable_base.data_descriptor().offset_by(offset), mapping, mutable_base.accessor()},
+      const_type{const_base.data_descriptor().offset_by(offset), mapping, const_base.accessor()}};
+}
+
+// A strided view of a host tensor's storage.
+template <std::size_t Rank, class Tensor>
+auto host_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const& extents,
+                       std::array<uni20::index_type, Rank> const& strides)
+{
+  using element_type = typename Tensor::value_type;
+  using extents_type = stdex::dextents<uni20::index_type, Rank>;
+  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mutable_type = stdex::mdspan<element_type, extents_type, stdex::layout_stride>;
+  using const_type = stdex::mdspan<element_type const, extents_type, stdex::layout_stride>;
+  mapping_type const mapping(extents_type(extents), strides);
+  element_type* data = tensor.mdspan().data_handle();
+  return uni20::MdspecTensorView<mutable_type, const_type, uni20::HostStorage>{mutable_type{data, mapping},
+                                                                               const_type{data, mapping}};
+}
+
+// A copy backend that declines every instance. Nested in a staging backend, it
+// checks that a step's decline leaves the output untouched.
+struct DecliningCopyBackend
+{
+    static constexpr std::string_view name = "declining_copy";
+};
+
+template <class Output, class Input>
+consteval auto kernel_accepts_types(DecliningCopyBackend const&, uni20::linalg::copy_op const&, Output&, Input&)
+{
+  return uni20::linalg::kernel_types_maybe;
+}
+
+template <class Output, class Input>
+uni20::linalg::KernelAttempt try_kernel(DecliningCopyBackend, uni20::linalg::copy_op const&, Output&, Input&)
+{
+  return uni20::linalg::KernelAttempt::unsupported_instance;
+}
+
+// The CUDA copy selector is the storage selector followed by peer staging,
+// which retains the storage selector for its own steps.
+using cuda_copy_selector =
+    decltype(uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(uni20::linalg::copy_op{}));
+using cuda_copy_entries = decltype(std::declval<cuda_copy_selector>().entries);
+static_assert(std::same_as<std::tuple_element_t<std::tuple_size_v<cuda_copy_entries> - 1, cuda_copy_entries>,
+                           uni20::linalg::CudaPeerStagingBackend<uni20::CudaStorage::backend_selector_type>>);
+static_assert(std::tuple_size_v<cuda_copy_entries> ==
+              std::tuple_size_v<decltype(uni20::CudaStorage::backend_selector().entries)> + 1);
+
+template <class Matrix> void fill_matrix(Matrix& matrix, double value)
+{
+  for (uni20::index_type row = 0; row < matrix.extent(0); ++row)
+  {
+    for (uni20::index_type column = 0; column < matrix.extent(1); ++column)
+      matrix[row, column] = value;
+  }
+}
+
 class CudaCopyTest : public ::testing::Test {
   protected:
     void SetUp() override
@@ -280,11 +393,16 @@ TEST(CudaCopyPlanningTest, LoweredPlanVisitsOnlyTheSelectedPayload)
   plan.plan_32.element_count = 7;
   plan.plan_64.element_count = 11;
 
+  std::size_t visited = 0;
+  auto record = [&](auto const& selected) { visited = static_cast<std::size_t>(selected.element_count); };
+
   plan.index_kind = uni20::linalg::detail::cuda_reference::ElementwiseIndexKind::index_32;
-  EXPECT_EQ(plan.visit([](auto const& selected) { return static_cast<std::size_t>(selected.element_count); }), 7);
+  plan.visit(record);
+  EXPECT_EQ(visited, 7);
 
   plan.index_kind = uni20::linalg::detail::cuda_reference::ElementwiseIndexKind::index_64;
-  EXPECT_EQ(plan.visit([](auto const& selected) { return static_cast<std::size_t>(selected.element_count); }), 11);
+  plan.visit(record);
+  EXPECT_EQ(visited, 11);
 }
 
 TEST(CudaCopyPlanningTest, EmptyIterationLowersToAZeroRank32BitPayload)
@@ -431,6 +549,87 @@ TEST_F(CudaCopyTest, DeviceToHostCopyObservesConjugatingAccessor)
   EXPECT_EQ((result[1, 0]), (complex_type{-3.0, -4.0}));
   EXPECT_EQ((result[0, 1]), (complex_type{5.0, 6.0}));
   EXPECT_EQ((result[1, 1]), (complex_type{-7.0, 8.0}));
+}
+
+TEST_F(CudaCopyTest, PageableCopyConvertsBetweenHostAndDeviceLayouts)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto const source = make_matrix();
+  row_major_host_matrix_type row_major_source(2, 3);
+  uni20::copy(row_major_source, source);
+
+  cuda_matrix_type device(runtime.device_resources(0), 2, 3);
+  uni20::copy(device, row_major_source);
+  expect_matrix(uni20::to_host(device));
+
+  row_major_host_matrix_type row_major_result(2, 3);
+  uni20::copy(row_major_result, device);
+  host_matrix_type result(2, 3);
+  uni20::copy(result, row_major_result);
+  expect_matrix(result);
+}
+
+TEST_F(CudaCopyTest, PageableCopyStagesNonContiguousHostAndDeviceViews)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto const source = make_matrix();
+
+  // Columns 0, 2 and 4 of a 2 x 6 allocation on each side.
+  host_matrix_type host_storage(2, 6);
+  auto host_columns = host_strided_view<2>(host_storage, {2, 3}, {1, 4});
+  uni20::copy(host_columns, source);
+  cuda_matrix_type device_storage(runtime.device_resources(0), 2, 6);
+  auto device_columns = cuda_strided_view<2>(device_storage, {2, 3}, {1, 4});
+
+  uni20::copy(device_columns, host_columns);
+  host_matrix_type contiguous(2, 3);
+  uni20::copy(contiguous, device_columns);
+  expect_matrix(contiguous);
+
+  cuda_matrix_type device(runtime.device_resources(0), 2, 3);
+  uni20::copy(device, host_columns);
+  expect_matrix(uni20::to_host(device));
+
+  host_matrix_type other_storage(2, 6);
+  auto other_columns = host_strided_view<2>(other_storage, {2, 3}, {1, 4});
+  uni20::copy(other_columns, device);
+  uni20::copy(contiguous, other_columns);
+  expect_matrix(contiguous);
+
+  // Neither side contiguous: device columns into a transposed host view.
+  host_matrix_type transposed_storage(3, 2);
+  auto transposed = host_strided_view<2>(transposed_storage, {2, 3}, {3, 1});
+  uni20::copy(transposed, device_columns);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 3; ++column)
+      EXPECT_DOUBLE_EQ((transposed_storage[column, row]), (source[row, column]));
+  }
+}
+
+TEST_F(CudaCopyTest, PageableStagedCopiesObserveConjugatingAccessors)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  complex_host_matrix_type source(2, 2);
+  source[0, 0] = complex_type{1.0, 2.0};
+  source[1, 0] = complex_type{-3.0, 4.0};
+  source[0, 1] = complex_type{5.0, -6.0};
+  source[1, 1] = complex_type{-7.0, -8.0};
+  auto device = uni20::to_device(source, 0);
+
+  uni20::RowMajorTensor<complex_type, 2> row_major(2, 2);
+  uni20::copy(row_major, uni20::conj(device));
+  uni20::CudaTensor<complex_type, 2, uni20::RowMajor> device_row_major(runtime.device_resources(0), 2, 2);
+  uni20::copy(device_row_major, uni20::conj(source));
+  auto const roundtrip = uni20::to_host(device_row_major);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 2; ++column)
+    {
+      EXPECT_EQ((row_major[row, column]), uni20::conj(source[row, column]));
+      EXPECT_EQ((roundtrip[row, column]), uni20::conj(source[row, column]));
+    }
+  }
 }
 
 TEST_F(CudaCopyTest, DeviceToDeviceCopyExecutesConjugatingAccessorKernel)
@@ -620,6 +819,21 @@ TEST_F(CudaCopyTest, SameDeviceCopyConvertsBetweenColumnMajorAndRowMajorMappings
             uni20::linalg::KernelAttempt::success);
 
   expect_matrix(uni20::to_host(roundtrip));
+}
+
+TEST_F(CudaCopyTest, StridedDeviceCopyMovesIntegerElementsOfEverySize)
+{
+  expect_transposing_device_copy_preserves_bytes(make_counting_matrix<std::int8_t>());
+  expect_transposing_device_copy_preserves_bytes(make_counting_matrix<std::int16_t>());
+  expect_transposing_device_copy_preserves_bytes(make_counting_matrix<std::int32_t>());
+  expect_transposing_device_copy_preserves_bytes(make_counting_matrix<std::int64_t>());
+}
+
+TEST_F(CudaCopyTest, StridedDeviceCopyPreservesSignalingNanPayloads)
+{
+  auto matrix = make_counting_matrix<float>();
+  matrix[1, 2] = std::numeric_limits<float>::signaling_NaN();
+  expect_transposing_device_copy_preserves_bytes(matrix);
 }
 
 TEST_F(CudaCopyTest, SameDeviceCopyHandlesPaddedStridesAndBufferOffsets)
@@ -845,6 +1059,187 @@ TEST_F(CudaCopyTest, AsyncPeerCopyRunsOnDestinationDevice)
   auto const& device_result = output.get_wait(scheduler);
   EXPECT_EQ(device_result.storage().device().ordinal(), 1);
   expect_matrix(uni20::to_host(device_result));
+}
+
+TEST_F(CudaCopyTest, PeerCopyStagesLayoutChangesAndConjugation)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  auto const source = make_matrix();
+  auto device0 = uni20::to_device(source, 0);
+
+  uni20::CudaTensor<double, 2, uni20::RowMajor> row_major(runtime.device_resources(1), 2, 3);
+  uni20::copy(row_major, device0);
+  host_matrix_type result(2, 3);
+  uni20::copy(result, row_major);
+  expect_matrix(result);
+
+  // A padded source: columns 0, 2 and 4 of a 2 x 6 allocation on device 0.
+  cuda_matrix_type padded_storage(runtime.device_resources(0), 2, 6);
+  auto padded = cuda_strided_view<2>(padded_storage, {2, 3}, {1, 4});
+  uni20::copy(padded, device0);
+  cuda_matrix_type device1(runtime.device_resources(1), 2, 3);
+  uni20::copy(device1, padded);
+  expect_matrix(uni20::to_host(device1));
+
+  complex_host_matrix_type complex_source(2, 2);
+  complex_source[0, 0] = complex_type{1.0, 2.0};
+  complex_source[1, 0] = complex_type{-3.0, 4.0};
+  complex_source[0, 1] = complex_type{5.0, -6.0};
+  complex_source[1, 1] = complex_type{-7.0, -8.0};
+  auto complex_device0 = uni20::to_device(complex_source, 0);
+  complex_cuda_matrix_type conjugated(runtime.device_resources(1), 2, 2);
+  uni20::copy(conjugated, uni20::conj(complex_device0));
+  auto const conjugated_result = uni20::to_host(conjugated);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 2; ++column)
+      EXPECT_EQ((conjugated_result[row, column]), uni20::conj(complex_source[row, column]));
+  }
+}
+
+TEST_F(CudaCopyTest, AsyncPeerCopyStagesLayoutChanges)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "async peer-copy test requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(0));
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  using row_major_cuda_matrix = uni20::CudaTensor<double, 2, uni20::RowMajor>;
+  uni20::async::Async<cuda_matrix_type> input = uni20::to_device(make_matrix(), 0);
+  uni20::async::Async<row_major_cuda_matrix> output = row_major_cuda_matrix(runtime.device_resources(1), 2, 3);
+
+  uni20::copy(output, input);
+
+  auto const& device_result = output.get_wait(scheduler);
+  EXPECT_EQ(device_result.storage().device().ordinal(), 1);
+  host_matrix_type result(2, 3);
+  uni20::copy(result, device_result);
+  expect_matrix(result);
+}
+
+TEST_F(CudaCopyTest, ReferenceKernelLeavesLayoutChangingTransfersToHostStaging)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  row_major_host_matrix_type row_major_source(2, 3);
+  uni20::copy(row_major_source, make_matrix());
+  host_matrix_type sentinel(2, 3);
+  fill_matrix(sentinel, -1.0);
+  auto device = uni20::to_device(sentinel, 0);
+  auto output = uni20::mdspec_of(device);
+  auto input = uni20::mdspec_of(std::as_const(row_major_source));
+
+  EXPECT_FALSE(uni20::linalg::try_dispatch_kernel(uni20::linalg::CudaReferenceBackend{}, uni20::linalg::copy_op{},
+                                                  output, input));
+  auto const untouched = uni20::to_host(device);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 3; ++column)
+      EXPECT_DOUBLE_EQ((untouched[row, column]), -1.0);
+  }
+
+  EXPECT_TRUE(uni20::linalg::try_dispatch_kernel(uni20::linalg::cuda_host_transfer_selector(), uni20::linalg::copy_op{},
+                                                 output, input));
+  expect_matrix(uni20::to_host(device));
+}
+
+TEST_F(CudaCopyTest, HostStagingBackendCopiesAloneAndDeclinesWithoutWritingTheOutput)
+{
+  using uni20::linalg::copy_op;
+  using uni20::linalg::try_dispatch_kernel;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto const source = make_matrix();
+  row_major_host_matrix_type row_major_source(2, 3);
+  uni20::copy(row_major_source, source);
+  auto const host_copies = uni20::linalg::select_backend_for_storage<uni20::HostStorage>(copy_op{});
+  uni20::linalg::CudaHostStagingBackend staging{
+      uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(copy_op{}), host_copies,
+      uni20::linalg::CudaReferenceBackend{}};
+
+  // Alone, it handles a layout change and a pair that needs no staging.
+  cuda_matrix_type device(runtime.device_resources(0), 2, 3);
+  auto device_output = uni20::mdspec_of(device);
+  auto row_major_input = uni20::mdspec_of(std::as_const(row_major_source));
+  EXPECT_TRUE(try_dispatch_kernel(staging, copy_op{}, device_output, row_major_input));
+  expect_matrix(uni20::to_host(device));
+
+  cuda_matrix_type same_order(runtime.device_resources(0), 2, 3);
+  auto same_order_output = uni20::mdspec_of(same_order);
+  auto column_major_input = uni20::mdspec_of(source);
+  EXPECT_TRUE(try_dispatch_kernel(staging, copy_op{}, same_order_output, column_major_input));
+  expect_matrix(uni20::to_host(same_order));
+
+  row_major_host_matrix_type row_major_result(2, 3);
+  auto host_output = uni20::mdspec_of(row_major_result);
+  auto device_input = uni20::mdspec_of(std::as_const(device));
+  EXPECT_TRUE(try_dispatch_kernel(staging, copy_op{}, host_output, device_input));
+  host_matrix_type result(2, 3);
+  uni20::copy(result, row_major_result);
+  expect_matrix(result);
+
+  // The device layout step declines after the upload has filled the staging
+  // buffer, and before the download has started; neither output changes.
+  uni20::linalg::CudaHostStagingBackend declining{DecliningCopyBackend{}, host_copies,
+                                                  uni20::linalg::CudaReferenceBackend{}};
+  host_matrix_type sentinel(2, 3);
+  fill_matrix(sentinel, -1.0);
+  auto sentinel_device = uni20::to_device(sentinel, 0);
+  auto sentinel_device_output = uni20::mdspec_of(sentinel_device);
+  EXPECT_FALSE(try_dispatch_kernel(declining, copy_op{}, sentinel_device_output, row_major_input));
+  row_major_host_matrix_type sentinel_host(2, 3);
+  fill_matrix(sentinel_host, -1.0);
+  auto sentinel_host_output = uni20::mdspec_of(sentinel_host);
+  EXPECT_FALSE(try_dispatch_kernel(declining, copy_op{}, sentinel_host_output, device_input));
+
+  auto const device_after = uni20::to_host(sentinel_device);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 3; ++column)
+    {
+      EXPECT_DOUBLE_EQ((device_after[row, column]), -1.0);
+      EXPECT_DOUBLE_EQ((sentinel_host[row, column]), -1.0);
+    }
+  }
+}
+
+TEST_F(CudaCopyTest, PeerStagingBackendCopiesAloneAndDeclinesWithoutWritingTheOutput)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";
+  using uni20::linalg::copy_op;
+  using uni20::linalg::try_dispatch_kernel;
+  using row_major_cuda_matrix = uni20::CudaTensor<double, 2, uni20::RowMajor>;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  auto const device0 = uni20::to_device(make_matrix(), 0);
+  auto input = uni20::mdspec_of(device0);
+
+  row_major_cuda_matrix row_major(runtime.device_resources(1), 2, 3);
+  auto output = uni20::mdspec_of(row_major);
+  EXPECT_FALSE(try_dispatch_kernel(uni20::linalg::CudaReferenceBackend{}, copy_op{}, output, input));
+
+  uni20::linalg::CudaPeerStagingBackend staging{uni20::linalg::CudaReferenceBackend{}};
+  EXPECT_TRUE(try_dispatch_kernel(staging, copy_op{}, output, input));
+  host_matrix_type result(2, 3);
+  uni20::copy(result, row_major);
+  expect_matrix(result);
+
+  // Operands on one device are not a peer-staging instance.
+  row_major_cuda_matrix same_device(runtime.device_resources(0), 2, 3);
+  auto same_device_output = uni20::mdspec_of(same_device);
+  EXPECT_FALSE(try_dispatch_kernel(staging, copy_op{}, same_device_output, input));
+
+  uni20::linalg::CudaPeerStagingBackend declining{DecliningCopyBackend{}};
+  host_matrix_type sentinel(2, 3);
+  fill_matrix(sentinel, -1.0);
+  row_major_cuda_matrix sentinel_device(runtime.device_resources(1), 2, 3);
+  uni20::copy(sentinel_device, sentinel);
+  auto sentinel_output = uni20::mdspec_of(sentinel_device);
+  EXPECT_FALSE(try_dispatch_kernel(declining, copy_op{}, sentinel_output, input));
+  host_matrix_type after(2, 3);
+  uni20::copy(after, sentinel_device);
+  for (uni20::index_type row = 0; row < 2; ++row)
+  {
+    for (uni20::index_type column = 0; column < 3; ++column)
+      EXPECT_DOUBLE_EQ((after[row, column]), -1.0);
+  }
 }
 
 TEST_F(CudaCopyTest, AsyncPeerMaterializationCarriesCompletionIntoOwnedResult)

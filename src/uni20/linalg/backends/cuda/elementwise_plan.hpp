@@ -16,6 +16,7 @@
 #include <limits>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace uni20::linalg::detail::cuda_reference
 {
@@ -78,28 +79,80 @@ using StridedElementwisePlan32 = StridedElementwisePlan<OperandCount, MaximumRan
 template <std::size_t OperandCount, std::size_t MaximumRank>
 using StridedElementwisePlan64 = StridedElementwisePlan<OperandCount, MaximumRank, std::uint64_t, std::int64_t>;
 
+/// \brief One compact dimension iterated on the host rather than in the kernel.
+template <std::size_t OperandCount> struct HostLoopDimension
+{
+    std::int64_t extent = 0;
+    std::array<std::int64_t, OperandCount> strides{};
+};
+
 /// \brief Host-owned pair of possible CUDA plan representations.
 /// \details Only the representation selected by `index_kind` is initialized.
+///          A compact rank above `MaximumRank` keeps its innermost
+///          `MaximumRank` dimensions in the kernel payload; the remaining
+///          outer dimensions, outermost first, become one launch per outer
+///          index.
 template <std::size_t OperandCount, std::size_t MaximumRank> struct LoweredStridedElementwisePlan
 {
     ElementwiseIndexKind index_kind = ElementwiseIndexKind::index_32;
     StridedElementwisePlan32<OperandCount, MaximumRank> plan_32;
     StridedElementwisePlan64<OperandCount, MaximumRank> plan_64;
+    std::vector<HostLoopDimension<OperandCount>> host_loop_dimensions;
 
     /// \brief Return the logical element count independent of representation.
     [[nodiscard]] std::size_t element_count() const noexcept
     {
-      if (index_kind == ElementwiseIndexKind::index_32) return plan_32.element_count;
-      return static_cast<std::size_t>(plan_64.element_count);
+      std::size_t count = index_kind == ElementwiseIndexKind::index_32
+                              ? std::size_t{plan_32.element_count}
+                              : static_cast<std::size_t>(plan_64.element_count);
+      for (auto const& dimension : host_loop_dimensions)
+        count *= static_cast<std::size_t>(dimension.extent);
+      return count;
     }
 
-    /// \brief Invoke a callable with the selected 32- or 64-bit payload.
+    /// \brief Invoke a callable with the selected 32- or 64-bit payload once per host-loop index.
+    /// \details Each call receives the payload with its base offsets advanced to
+    ///          one outer index; without host-loop dimensions it is called once.
     /// \param visitor Callable accepting either concrete plan type.
-    /// \return The callable result.
-    template <class Visitor> decltype(auto) visit(Visitor&& visitor) const
+    template <class Visitor> void visit(Visitor&& visitor) const
     {
-      if (index_kind == ElementwiseIndexKind::index_32) return std::forward<Visitor>(visitor)(plan_32);
-      return std::forward<Visitor>(visitor)(plan_64);
+      if (index_kind == ElementwiseIndexKind::index_32)
+        visit_slices(plan_32, visitor);
+      else
+        visit_slices(plan_64, visitor);
+    }
+
+  private:
+    template <class Plan, class Visitor> void visit_slices(Plan const& plan, Visitor& visitor) const
+    {
+      if (host_loop_dimensions.empty())
+      {
+        visitor(plan);
+        return;
+      }
+
+      using offset_type = typename Plan::offset_type;
+      std::vector<std::int64_t> index(host_loop_dimensions.size(), 0);
+      Plan slice = plan;
+      for (;;)
+      {
+        for (std::size_t operand = 0; operand < OperandCount; ++operand)
+        {
+          std::int64_t offset = plan.base_offsets[operand];
+          for (std::size_t dimension = 0; dimension < index.size(); ++dimension)
+            offset += index[dimension] * host_loop_dimensions[dimension].strides[operand];
+          slice.base_offsets[operand] = static_cast<offset_type>(offset);
+        }
+        visitor(slice);
+
+        std::size_t dimension = index.size();
+        while (dimension > 0 && ++index[dimension - 1] == host_loop_dimensions[dimension - 1].extent)
+        {
+          index[dimension - 1] = 0;
+          --dimension;
+        }
+        if (dimension == 0) return;
+      }
     }
 };
 
@@ -111,22 +164,30 @@ template <class Target, class Source> [[nodiscard]] constexpr bool in_range(Sour
   return std::in_range<Target>(value);
 }
 
+/// \brief Lower the innermost `source.rank() - host_loop_rank` dimensions into a kernel payload.
+/// \details Offsets are checked against every reachable offset, so each
+///          host-loop slice also fits the payload's offset type.
 template <class LogicalIndex, class Offset, std::size_t OperandCount, std::size_t MaximumRank, std::size_t SourceRank>
 [[nodiscard]] bool try_lower(multi_iteration_plan<OperandCount, SourceRank> const& source,
-                             StridedElementwisePlan<OperandCount, MaximumRank, LogicalIndex, Offset>& destination)
+                             StridedElementwisePlan<OperandCount, MaximumRank, LogicalIndex, Offset>& destination,
+                             std::size_t host_loop_rank)
 {
   constexpr auto maximum_logical_index = std::numeric_limits<std::make_signed_t<LogicalIndex>>::max();
-  if (!source.representable || source.rank() > MaximumRank ||
-      std::cmp_greater(source.element_count, maximum_logical_index))
+  std::size_t const kernel_rank = source.rank() - host_loop_rank;
+  std::size_t kernel_element_count = source.element_count;
+  for (std::size_t dimension = 0; dimension < host_loop_rank; ++dimension)
+    kernel_element_count /= static_cast<std::size_t>(source.dimensions[dimension].extent);
+  if (!source.representable || kernel_rank > MaximumRank ||
+      std::cmp_greater(kernel_element_count, maximum_logical_index))
     return false;
 
-  destination.element_count = static_cast<LogicalIndex>(source.element_count);
+  destination.element_count = static_cast<LogicalIndex>(kernel_element_count);
   if (source.empty())
   {
     destination.compact_rank = 0;
     return true;
   }
-  destination.compact_rank = static_cast<std::uint8_t>(source.rank());
+  destination.compact_rank = static_cast<std::uint8_t>(kernel_rank);
 
   for (std::size_t operand = 0; operand < OperandCount; ++operand)
   {
@@ -137,7 +198,7 @@ template <class LogicalIndex, class Offset, std::size_t OperandCount, std::size_
     destination.base_offsets[operand] = static_cast<Offset>(source.base_offsets[operand]);
   }
 
-  for (std::size_t device_dimension = 0; device_dimension < source.rank(); ++device_dimension)
+  for (std::size_t device_dimension = 0; device_dimension < kernel_rank; ++device_dimension)
   {
     auto const& source_dimension = source.dimensions[source.rank() - device_dimension - 1];
     if (source_dimension.extent <= 0 || !in_range<LogicalIndex>(source_dimension.extent)) return false;
@@ -159,7 +220,8 @@ template <class LogicalIndex, class Offset, std::size_t OperandCount, std::size_
 /// \brief Lower a backend-neutral affine plan to a CUDA 32- or 64-bit payload.
 /// \details Positive and zero strides are supported. Negative reachable offsets
 ///          or strides decline until signed CUDA descriptor rebasing is defined.
-/// \tparam MaximumRank Maximum compact rank accepted by the CUDA executor.
+///          Dimensions beyond `MaximumRank` become host-loop dimensions.
+/// \tparam MaximumRank Maximum compact rank of one kernel launch.
 /// \param source Backend-neutral compact iteration plan.
 /// \param destination Selected CUDA payload.
 /// \return True when the plan can be represented by the CUDA executor.
@@ -168,8 +230,22 @@ template <std::size_t MaximumRank, std::size_t OperandCount, std::size_t SourceR
 try_lower_strided_elementwise_plan(multi_iteration_plan<OperandCount, SourceRank> const& source,
                                    LoweredStridedElementwisePlan<OperandCount, MaximumRank>& destination)
 {
+  std::size_t const host_loop_rank = source.empty() || source.rank() <= MaximumRank ? 0 : source.rank() - MaximumRank;
+  destination.host_loop_dimensions.clear();
+  for (std::size_t dimension = 0; dimension < host_loop_rank; ++dimension)
+  {
+    auto const& source_dimension = source.dimensions[dimension];
+    HostLoopDimension<OperandCount> loop{.extent = static_cast<std::int64_t>(source_dimension.extent)};
+    for (std::size_t operand = 0; operand < OperandCount; ++operand)
+    {
+      if (source_dimension.strides[operand] < 0) return false;
+      loop.strides[operand] = static_cast<std::int64_t>(source_dimension.strides[operand]);
+    }
+    destination.host_loop_dimensions.push_back(loop);
+  }
+
   StridedElementwisePlan32<OperandCount, MaximumRank> plan_32;
-  if (elementwise_plan_detail::try_lower(source, plan_32))
+  if (elementwise_plan_detail::try_lower(source, plan_32, host_loop_rank))
   {
     destination.index_kind = ElementwiseIndexKind::index_32;
     destination.plan_32 = plan_32;
@@ -177,7 +253,7 @@ try_lower_strided_elementwise_plan(multi_iteration_plan<OperandCount, SourceRank
   }
 
   StridedElementwisePlan64<OperandCount, MaximumRank> plan_64;
-  if (!elementwise_plan_detail::try_lower(source, plan_64)) return false;
+  if (!elementwise_plan_detail::try_lower(source, plan_64, host_loop_rank)) return false;
   destination.index_kind = ElementwiseIndexKind::index_64;
   destination.plan_64 = plan_64;
   return true;

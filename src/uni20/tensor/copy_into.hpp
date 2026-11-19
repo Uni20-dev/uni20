@@ -14,7 +14,7 @@
 #include <uni20/tensor/output.hpp>
 
 #if UNI20_BACKEND_CUDA
-#include <uni20/linalg/backends/cuda/copy.hpp>
+#include <uni20/linalg/backends/cuda/copy_staging.hpp>
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/storage/host_storage.hpp>
 #endif
@@ -103,7 +103,7 @@ void copy(OutputTensor&& output, InputTensor const& input)
 #if UNI20_BACKEND_CUDA
   if constexpr (detail::is_pageable_cuda_transfer<OutputTensor, InputTensor>)
   {
-    copy(linalg::CudaReferenceBackend{}, output, input);
+    copy(linalg::cuda_host_transfer_selector(), output, input);
   }
   else
 #endif

@@ -235,7 +235,10 @@ template <class OutputMdspan, class InputMdspan>
 
   if (needs_elementwise_kernel)
   {
-    if constexpr (!supports_elementwise_copy<scalar_type>)
+    constexpr bool kernel_supports_transform = is_conjugated_cuda_mdspan<InputMdspan>
+                                                   ? supports_elementwise_conjugating_copy<scalar_type>
+                                                   : supports_elementwise_copy<scalar_type>;
+    if constexpr (!kernel_supports_transform)
     {
       plan.attempt = KernelAttempt::unsupported_transform;
       return plan;
@@ -332,6 +335,34 @@ template <class OutputMdspan, class InputMdspan>
   plan.attempt = KernelAttempt::success;
   plan.has_work = plan.element_count != 0;
   return plan;
+}
+
+/// \brief Enqueue an identity or conjugating strided copy on `stream`.
+/// \details Identity copies move each element as unsigned words, so every
+///          trivially copyable scalar shares a few kernels. Conjugation uses
+///          the typed complex kernels.
+template <class Scalar, class Plan>
+void enqueue_elementwise_copy(Scalar* output, Scalar const* input, Plan const& plan, ElementwiseCopyTransform transform,
+                              cudaStream_t stream, int device)
+{
+  if constexpr (std::same_as<Scalar, uni20::cfloat> || std::same_as<Scalar, uni20::cdouble>)
+  {
+    if (transform == ElementwiseCopyTransform::conjugate)
+    {
+      enqueue_elementwise_conjugating_copy(output, input, plan, stream, device);
+      return;
+    }
+  }
+  else
+  {
+    CHECK(transform == ElementwiseCopyTransform::identity || !uni20::is_complex_v<Scalar>);
+  }
+
+  using words = ElementwiseCopyWords<Scalar>;
+  static_assert(words::supported, "unsupported scalar reached CUDA reference elementwise copy");
+  using element_type = typename words::element_type;
+  enqueue_elementwise_word_copy(reinterpret_cast<element_type*>(output), reinterpret_cast<element_type const*>(input),
+                                plan, stream, device);
 }
 
 template <class Scalar> void enqueue_device_copy(CopyPlan<Scalar> const& plan, uni20::cuda::Stream const& stream)
@@ -437,10 +468,13 @@ template <class Scalar> void execute_blocking_copy(CopyPlan<Scalar> const& plan)
     uni20::cuda::check(cudaMemcpy(plan.output_host, input.data() + plan.input_offset, bytes, cudaMemcpyDeviceToHost),
                        "cudaMemcpy device-to-host", device);
   }
-  if (plan.conjugate_host_output)
+  if constexpr (uni20::is_complex_v<Scalar>)
   {
-    for (std::size_t index = 0; index < plan.element_count; ++index)
-      plan.output_host[index] = uni20::conj(plan.output_host[index]);
+    if (plan.conjugate_host_output)
+    {
+      for (std::size_t index = 0; index < plan.element_count; ++index)
+        plan.output_host[index] = uni20::conj(plan.output_host[index]);
+    }
   }
 }
 
@@ -453,7 +487,10 @@ template <uni20::MutableMdspecLike OutputMdspan, uni20::MdspecLike InputMdspan> 
     return kernel_types_no;
 }
 
-/// \brief Copy compatible mdspans after tensor-level CUDA backend selection.
+/// \brief Copy compatible mdspans as one planned runtime copy or elementwise kernel.
+/// \details Host-device copies whose operands do not share one contiguous
+///          element order, and strided copies between devices, decline here;
+///          the staging backends in `copy_staging.hpp` handle them.
 template <class OutputMdspan, class InputMdspan>
   requires SupportedCopyMdspans<OutputMdspan, InputMdspan>
 KernelAttempt copy(OutputMdspan&& output, InputMdspan&& input)

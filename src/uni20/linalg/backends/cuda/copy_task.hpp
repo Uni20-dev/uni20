@@ -8,8 +8,12 @@
 
 #include <uni20/async/cuda_task.hpp>
 #include <uni20/backend/cuda/task_awaiters.hpp>
+#include <uni20/linalg/async/dispatch.hpp>
 #include <uni20/linalg/async/kernel_task.hpp>
 #include <uni20/linalg/backends/cuda/copy.hpp>
+#include <uni20/linalg/backends/cuda/copy_staging.hpp>
+
+#include <cstddef>
 
 namespace uni20::linalg
 {
@@ -53,6 +57,38 @@ auto try_make_kernel_task(CudaReferenceBackend, copy_op const&, OutputMdspan& ou
                           InputMdspan& input) -> KernelTaskAttempt<async::CudaTask>
 {
   return detail::cuda_reference::try_make_copy_task(output, input);
+}
+
+namespace detail::cuda_staging
+{
+
+/// \brief Peer-copy the source range, then copy it into the destination, as nested coroutine dispatches.
+/// \details A nested decline raises: the outer dispatch has already committed to
+///          this backend.
+template <class DeviceCopySelector, class OutputMdspan, class InputMdspan>
+async::AsyncTask co_copy_through_peer_stage(DeviceCopySelector selector, OutputMdspan output, InputMdspan input,
+                                            std::size_t span_size)
+{
+  uni20::cuda::CudaBuffer<scalar_t<InputMdspan>> stage(cuda_buffer_view(output).buffer().resources(), span_size);
+  auto views = make_peer_stage_views(stage, input, span_size);
+  co_await co_dispatch_kernel(selector, copy_op{}, views.stage_range, views.source_range);
+  co_await co_dispatch_kernel(selector, copy_op{}, output, views.staged_input);
+}
+
+} // namespace detail::cuda_staging
+
+/// \brief Create a peer-staged copy task whose steps are submitted without blocking.
+template <class DeviceCopySelector, uni20::MutableMdspecLike OutputMdspan, uni20::MdspecLike InputMdspan>
+  requires(detail::cuda_staging::peer_staging_types_compatible<DeviceCopySelector, OutputMdspan, InputMdspan>())
+auto try_make_kernel_task(CudaPeerStagingBackend<DeviceCopySelector> const& backend, copy_op const&,
+                          OutputMdspan& output, InputMdspan& input) -> KernelTaskAttempt<async::AsyncTask>
+{
+  std::size_t span_size = 0;
+  auto const check = detail::cuda_staging::check_peer_staging(output, input, span_size);
+  if (!kernel_attempt_succeeded(check.attempt) || !check.has_work)
+    return KernelTaskAttempt<async::AsyncTask>{check.attempt};
+  return KernelTaskAttempt<async::AsyncTask>{
+      detail::cuda_staging::co_copy_through_peer_stage(backend.device_copy_selector, output, input, span_size)};
 }
 
 } // namespace uni20::linalg

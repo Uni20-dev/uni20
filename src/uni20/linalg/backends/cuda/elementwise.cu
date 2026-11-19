@@ -9,6 +9,8 @@
 #include <uni20/storage/cuda_accessor.hpp>
 
 #include <concepts>
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace uni20::linalg::detail::cuda_reference
@@ -34,22 +36,12 @@ void launch_elementwise_copy(Scalar* output, Scalar const* input, Plan const& pl
 }
 
 template <class Scalar, class Plan>
-void enqueue_elementwise_copy_impl(Scalar* output, Scalar const* input, Plan const& plan,
-                                   ElementwiseCopyTransform transform, cudaStream_t stream, int device)
+void enqueue_elementwise_conjugating_copy_impl(Scalar* output, Scalar const* input, Plan const& plan,
+                                               cudaStream_t stream, int device)
 {
-  using input_accessor = uni20::cuda::CudaPointerAccessor<Scalar const>;
-  if constexpr (uni20::Complex<Scalar>)
-  {
-    if (transform == ElementwiseCopyTransform::conjugate)
-    {
-      using real_type = uni20::make_real_t<Scalar>;
-      using conjugating_accessor = uni20::cuda::CudaConjugatingPointerAccessor<real_type>;
-      launch_elementwise_copy<Scalar, conjugating_accessor>(output, input, plan, stream, device);
-      return;
-    }
-  }
-
-  launch_elementwise_copy<Scalar, input_accessor>(output, input, plan, stream, device);
+  using real_type = uni20::make_real_t<Scalar>;
+  using conjugating_accessor = uni20::cuda::CudaConjugatingPointerAccessor<real_type>;
+  launch_elementwise_copy<Scalar, conjugating_accessor>(output, input, plan, stream, device);
 }
 
 template <class Scalar, class Plan>
@@ -231,25 +223,62 @@ void enqueue_elementwise_binary(Scalar* output, Scalar const* lhs, Scalar const*
   enqueue_elementwise_binary_impl(output, lhs, rhs, function, plan, stream, device);
 }
 
-#define UNI20_DEFINE_ELEMENTWISE_COPY(Scalar)                                                                          \
-  void enqueue_elementwise_copy(Scalar* output, Scalar const* input, ElementwiseCopyPlan32 const& plan,                \
-                                ElementwiseCopyTransform transform, cudaStream_t stream, int device)                   \
+template <class Word, std::size_t Count>
+void enqueue_elementwise_word_copy(ElementWords<Word, Count>* output, ElementWords<Word, Count> const* input,
+                                   ElementwiseCopyPlan32 const& plan, cudaStream_t stream, int device)
+{
+  using element_type = ElementWords<Word, Count>;
+  launch_elementwise_copy<element_type, uni20::cuda::CudaPointerAccessor<element_type const>>(output, input, plan,
+                                                                                              stream, device);
+}
+
+template <class Word, std::size_t Count>
+void enqueue_elementwise_word_copy(ElementWords<Word, Count>* output, ElementWords<Word, Count> const* input,
+                                   ElementwiseCopyPlan64 const& plan, cudaStream_t stream, int device)
+{
+  using element_type = ElementWords<Word, Count>;
+  launch_elementwise_copy<element_type, uni20::cuda::CudaPointerAccessor<element_type const>>(output, input, plan,
+                                                                                              stream, device);
+}
+
+#define UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, Count)                                                           \
+  template void enqueue_elementwise_word_copy(ElementWords<Word, Count>*, ElementWords<Word, Count> const*,            \
+                                              ElementwiseCopyPlan32 const&, cudaStream_t, int);                        \
+  template void enqueue_elementwise_word_copy(ElementWords<Word, Count>*, ElementWords<Word, Count> const*,            \
+                                              ElementwiseCopyPlan64 const&, cudaStream_t, int)
+
+#define UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES(Word)                                                                \
+  UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, 1);                                                                    \
+  UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, 2);                                                                    \
+  UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, 3);                                                                    \
+  UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, 4)
+
+static_assert(elementwise_copy_maximum_words == 4, "instantiate one word copy per supported word count");
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES(std::uint8_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES(std::uint16_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES(std::uint32_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES(std::uint64_t);
+
+#undef UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPIES
+#undef UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY
+
+#define UNI20_DEFINE_ELEMENTWISE_CONJUGATING_COPY(Scalar)                                                              \
+  void enqueue_elementwise_conjugating_copy(Scalar* output, Scalar const* input, ElementwiseCopyPlan32 const& plan,    \
+                                            cudaStream_t stream, int device)                                           \
   {                                                                                                                    \
-    enqueue_elementwise_copy_impl(output, input, plan, transform, stream, device);                                     \
+    enqueue_elementwise_conjugating_copy_impl(output, input, plan, stream, device);                                    \
   }                                                                                                                    \
                                                                                                                        \
-  void enqueue_elementwise_copy(Scalar* output, Scalar const* input, ElementwiseCopyPlan64 const& plan,                \
-                                ElementwiseCopyTransform transform, cudaStream_t stream, int device)                   \
+  void enqueue_elementwise_conjugating_copy(Scalar* output, Scalar const* input, ElementwiseCopyPlan64 const& plan,    \
+                                            cudaStream_t stream, int device)                                           \
   {                                                                                                                    \
-    enqueue_elementwise_copy_impl(output, input, plan, transform, stream, device);                                     \
+    enqueue_elementwise_conjugating_copy_impl(output, input, plan, stream, device);                                    \
   }
 
-UNI20_DEFINE_ELEMENTWISE_COPY(float)
-UNI20_DEFINE_ELEMENTWISE_COPY(double)
-UNI20_DEFINE_ELEMENTWISE_COPY(uni20::cfloat)
-UNI20_DEFINE_ELEMENTWISE_COPY(uni20::cdouble)
+UNI20_DEFINE_ELEMENTWISE_CONJUGATING_COPY(uni20::cfloat)
+UNI20_DEFINE_ELEMENTWISE_CONJUGATING_COPY(uni20::cdouble)
 
-#undef UNI20_DEFINE_ELEMENTWISE_COPY
+#undef UNI20_DEFINE_ELEMENTWISE_CONJUGATING_COPY
 
 #define UNI20_DEFINE_ELEMENTWISE_CONJUGATE(Scalar)                                                                     \
   void enqueue_elementwise_conjugate(Scalar* output, ElementwiseConjugatePlan32 const& plan, cudaStream_t stream,      \
