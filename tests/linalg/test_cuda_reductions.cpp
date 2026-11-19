@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <complex>
@@ -19,8 +20,10 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <thread>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -345,6 +348,46 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   auto const wide = reference::reference_inner_product_of_plan<uni20::cdouble>(product_64, lhs, rhs);
   EXPECT_EQ(bits(wide.real()), bits(narrow.real()));
   EXPECT_EQ(bits(wide.imag()), bits(narrow.imag()));
+}
+
+// The workspace is allocated before the execution stream is leased: allocation
+// leases a stream from the same pool, so the other order waits for itself.
+TEST_F(CudaReductionTest, ReductionsCompleteWithOneStreamPerDevice)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<double, 2> host(5, 6);
+  fill_test_values(host, 41);
+  auto device = uni20::to_device(host, 0);
+  auto slice = cuda_strided_view<2>(device, {5, 3}, {1, 10});
+  auto shifted = cuda_strided_view<2>(device, {5, 3}, {1, 10}, 5);
+  expect_close(uni20::norm_host(slice), uni20::norm_host(host_strided_view<2>(host, {5, 3}, {1, 10})));
+  expect_close(uni20::inner_product_host(slice, shifted),
+               uni20::inner_product_host(host_strided_view<2>(host, {5, 3}, {1, 10}),
+                                         host_strided_view<2>(host, {5, 3}, {1, 10}, 5)));
+}
+
+TEST_F(CudaReductionTest, ConcurrentReductionsShareTwoStreams)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::Tensor<double, 1> host(2 * 4096);
+  fill_test_values(host, 51);
+  auto device = uni20::to_device(host, 0);
+  auto view = cuda_strided_view<1>(device, {4096}, {2});
+  auto const expected = bits(uni20::norm_host(view));
+  std::atomic<int> mismatches{0};
+  std::vector<std::thread> threads;
+  for (int thread = 0; thread < 8; ++thread)
+  {
+    threads.emplace_back([&] {
+      for (int call = 0; call < 50; ++call)
+      {
+        if (bits(uni20::norm_host(view)) != expected) ++mismatches;
+      }
+    });
+  }
+  for (auto& thread : threads)
+    thread.join();
+  EXPECT_EQ(mismatches.load(), 0);
 }
 
 TEST_F(CudaReductionTest, EmptyOperandsReduceToZero)

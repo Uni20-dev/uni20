@@ -62,26 +62,54 @@ template <class Mdspec> void require_reduction_range(Mdspec const& span)
   CHECK(offset <= buffer_size && size <= buffer_size - offset, offset, size, buffer_size);
 }
 
-/// \brief Reduce a lowered plan to one partial on `stream` and return it on the host.
-/// \details Each host-loop slice writes the same number of block partials into
-///          its own range of a device workspace; one combine launch then
-///          reduces every partial in index order. The stream is synchronized
-///          before return.
-template <class Partial, std::size_t OperandCount, class EnqueueSlice, class EnqueueCombine>
-[[nodiscard]] Partial
-reduce_lowered_plan(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan,
-                    uni20::cuda::DeviceResources& resources, uni20::cuda::Stream const& stream,
-                    EnqueueSlice&& enqueue_slice, EnqueueCombine&& enqueue_combine)
+/// \brief Number of block partials one launch over a lowered plan's kernel payload writes.
+template <std::size_t OperandCount>
+[[nodiscard]] unsigned int
+reduction_blocks_per_slice(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan)
+{
+  return plan.index_kind == ElementwiseIndexKind::index_32 ? reduction_block_count(plan.plan_32.element_count)
+                                                           : reduction_block_count(plan.plan_64.element_count);
+}
+
+/// \brief Number of partials a lowered plan writes: one per block for every host-loop slice.
+template <std::size_t OperandCount>
+[[nodiscard]] std::size_t
+reduction_partial_count(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan)
 {
   std::size_t slice_count = 1;
   for (auto const& dimension : plan.host_loop_dimensions)
     slice_count *= static_cast<std::size_t>(dimension.extent);
-  unsigned int const blocks = plan.index_kind == ElementwiseIndexKind::index_32
-                                  ? reduction_block_count(plan.plan_32.element_count)
-                                  : reduction_block_count(plan.plan_64.element_count);
-  std::size_t const partial_count = slice_count * blocks;
+  return slice_count * reduction_blocks_per_slice(plan);
+}
 
-  uni20::cuda::CudaBuffer<Partial> workspace(resources, partial_count + 1);
+/// \brief Allocate the device workspace for reducing a lowered plan: its partials and the result.
+/// \details Call this before leasing the execution stream. A stream-ordered
+///          allocation leases a stream from the same pool, so allocating while
+///          holding a lease can wait for a stream that only this caller could
+///          return; with one stream per device it always would.
+template <class Partial, std::size_t OperandCount>
+[[nodiscard]] uni20::cuda::CudaBuffer<Partial>
+make_reduction_workspace(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan,
+                         uni20::cuda::DeviceResources& resources)
+{
+  return uni20::cuda::CudaBuffer<Partial>(resources, reduction_partial_count(plan) + 1);
+}
+
+/// \brief Reduce a lowered plan to one partial on `stream` and return it on the host.
+/// \details Each host-loop slice writes the same number of block partials into
+///          its own range of `workspace`; one combine launch then reduces every
+///          partial in index order. The stream is synchronized before return.
+/// \pre `workspace` came from `make_reduction_workspace` for `plan`.
+template <class Partial, std::size_t OperandCount, class EnqueueSlice, class EnqueueCombine>
+[[nodiscard]] Partial
+reduce_lowered_plan(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan,
+                    uni20::cuda::CudaBuffer<Partial>& workspace, uni20::cuda::Stream const& stream,
+                    EnqueueSlice&& enqueue_slice, EnqueueCombine&& enqueue_combine)
+{
+  unsigned int const blocks = reduction_blocks_per_slice(plan);
+  std::size_t const partial_count = reduction_partial_count(plan);
+  CHECK(workspace.size() == partial_count + 1, workspace.size(), partial_count);
+
   auto access = workspace.write_synchronized_with(stream);
   Partial* const partials = access.data();
   std::size_t slice = 0;
@@ -112,12 +140,13 @@ reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> 
   require_reduction_range(input);
   auto const& descriptor = input.data_descriptor();
   auto& resources = descriptor.buffer().resources();
+  auto workspace = make_reduction_workspace<NormPartial>(plan, resources);
   auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto access = descriptor.buffer().read_synchronized_with(stream);
   auto const* data = reinterpret_cast<real_type const*>(access.data() + descriptor.element_offset());
   auto const partial = reduce_lowered_plan<NormPartial>(
-      plan, resources, stream,
+      plan, workspace, stream,
       [&](auto const& kernel_plan, NormPartial* partials) {
         enqueue_norm_partials<real_type, reduction_components<Scalar>>(data, kernel_plan, partials,
                                                                        stream.native_handle(), stream.device());
@@ -158,6 +187,7 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   require_reduction_range(rhs);
 
   auto& resources = lhs_descriptor.buffer().resources();
+  auto workspace = make_reduction_workspace<InnerProductPartial>(plan, resources);
   auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto lhs_access = lhs_descriptor.buffer().read_synchronized_with(stream);
@@ -165,7 +195,7 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   auto const* lhs_data = reinterpret_cast<real_type const*>(lhs_access.data() + lhs_descriptor.element_offset());
   auto const* rhs_data = reinterpret_cast<real_type const*>(rhs_access.data() + rhs_descriptor.element_offset());
   auto const partial = reduce_lowered_plan<InnerProductPartial>(
-      plan, resources, stream,
+      plan, workspace, stream,
       [&](auto const& kernel_plan, InnerProductPartial* partials) {
         enqueue_inner_product_partials<real_type, reduction_components<Scalar>>(
             lhs_data, rhs_data, kernel_plan, partials, stream.native_handle(), stream.device());
