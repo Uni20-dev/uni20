@@ -159,6 +159,9 @@ TEST_F(CudaConjugateInplaceTest, HandlesRankZeroAndRowMajorMappings)
     auto access = device_scalar.storage().blocking_write_access();
     uni20::cuda::check(cudaMemcpy(access.data(), &scalar, sizeof(scalar), cudaMemcpyHostToDevice),
                        "initialize rank-zero conjugation test", 0);
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize rank-zero conjugation test", 0);
   }
   uni20::conjugate_inplace(device_scalar);
   complex_type scalar_result;
