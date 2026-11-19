@@ -336,18 +336,32 @@ static_assert(uni20::linalg::detail::cuda_reference::supports_elementwise_copy<P
 static_assert(uni20::linalg::detail::cuda_reference::supports_elementwise_copy<WideElement>);
 static_assert(!uni20::linalg::detail::cuda_reference::ElementwiseCopyWords<WideElement>::fixed_width);
 
-// A rank-zero copy is one element, which the reference backend always moves.
+// A rank-zero host-device copy is one element, which the reference backend always
+// moves; a conjugated rank-zero copy between devices still needs peer staging.
+// The rank-one controls show that each gate accepts these descriptor types.
 using rank_zero_host = uni20::Tensor<double, 0, uni20::HostStorage, stdex::layout_stride>;
 using rank_zero_cuda = uni20::CudaTensor<double, 0, stdex::layout_stride>;
-static_assert(uni20::linalg::detail::cuda_staging::rank_v<uni20::tensor_mdspec_t<rank_zero_cuda>> == 0);
-static_assert(!uni20::linalg::detail::cuda_staging::host_staging_types_compatible<
-              decltype(uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(uni20::linalg::copy_op{})),
-              decltype(uni20::linalg::select_backend_for_storage<uni20::HostStorage>(uni20::linalg::copy_op{})),
-              uni20::linalg::CudaReferenceBackend, uni20::tensor_mdspec_t<rank_zero_cuda>,
-              uni20::tensor_mdspec_t<rank_zero_host const>>());
-static_assert(!uni20::linalg::detail::cuda_staging::peer_staging_types_compatible<
-              uni20::linalg::CudaReferenceBackend, uni20::tensor_mdspec_t<rank_zero_cuda>,
-              uni20::tensor_mdspec_t<rank_zero_cuda const>>());
+template <class Tensor>
+using output_mdspec_t = std::remove_cvref_t<decltype(uni20::mdspec_of(std::declval<Tensor&>()))>;
+template <class Tensor>
+using input_mdspec_t = std::remove_cvref_t<decltype(uni20::mdspec_of(std::declval<Tensor const&>()))>;
+using cuda_copy_list =
+    decltype(uni20::linalg::select_backend_for_storage<uni20::CudaStorage>(uni20::linalg::copy_op{}));
+using host_copy_list =
+    decltype(uni20::linalg::select_backend_for_storage<uni20::HostStorage>(uni20::linalg::copy_op{}));
+template <class Output, class Input>
+inline constexpr bool host_staging_accepts = uni20::linalg::detail::cuda_staging::host_staging_types_compatible<
+    cuda_copy_list, host_copy_list, uni20::linalg::CudaReferenceBackend, Output, Input>();
+template <class Output, class Input>
+inline constexpr bool peer_staging_accepts =
+    uni20::linalg::detail::cuda_staging::peer_staging_types_compatible<uni20::linalg::CudaReferenceBackend, Output,
+                                                                       Input>();
+using rank_one_host = uni20::Tensor<double, 1, uni20::HostStorage, stdex::layout_stride>;
+using rank_one_cuda = uni20::CudaTensor<double, 1, stdex::layout_stride>;
+static_assert(host_staging_accepts<output_mdspec_t<rank_one_cuda>, input_mdspec_t<rank_one_host>>);
+static_assert(!host_staging_accepts<output_mdspec_t<rank_zero_cuda>, input_mdspec_t<rank_zero_host>>);
+static_assert(peer_staging_accepts<output_mdspec_t<rank_one_cuda>, input_mdspec_t<rank_one_cuda>>);
+static_assert(peer_staging_accepts<output_mdspec_t<rank_zero_cuda>, input_mdspec_t<rank_zero_cuda>>);
 
 template <class Matrix> void fill_matrix(Matrix& matrix, double value)
 {
@@ -1372,6 +1386,27 @@ TEST_F(CudaCopyTest, RankZeroStridedTransfersRoundTrip)
   rank_zero_host back;
   uni20::copy(back, device);
   EXPECT_EQ(back[], 7.0);
+}
+
+TEST_F(CudaCopyTest, ConjugatedRankZeroCopiesStageBetweenDevices)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";
+  using complex_rank_zero_host = uni20::Tensor<complex_type, 0, uni20::HostStorage, stdex::layout_stride>;
+  using complex_rank_zero_cuda = uni20::CudaTensor<complex_type, 0, stdex::layout_stride>;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  complex_rank_zero_host host;
+  host[] = complex_type{1.0, 2.0};
+  complex_rank_zero_cuda device0(uni20::uninitialized, runtime.device_resources(0),
+                                 complex_rank_zero_cuda::extents_type{});
+  complex_rank_zero_cuda device1(uni20::uninitialized, runtime.device_resources(1),
+                                 complex_rank_zero_cuda::extents_type{});
+  uni20::copy(device0, host);
+
+  uni20::copy(device1, uni20::conj(device0));
+
+  complex_rank_zero_host back;
+  uni20::copy(back, device1);
+  EXPECT_EQ(back[], (complex_type{1.0, -2.0}));
 }
 
 TEST_F(CudaCopyTest, AsyncToDeviceOfAConjugatedViewStagesFromAnotherDevice)

@@ -148,11 +148,11 @@ inline constexpr bool is_device_to_device_copy_operand =
 template <class DeviceCopySelector, class OutputMdspan, class InputMdspan>
 consteval bool peer_staging_types_compatible()
 {
-  // A rank-zero copy is one element, which the reference backend always moves.
+  // Rank zero stays eligible: the reference backend cannot conjugate one
+  // element across devices, so a conjugated rank-zero peer copy is staged.
   if constexpr (!(cuda_reference::SupportedCopyMdspans<OutputMdspan, InputMdspan> &&
                   cuda_reference::is_raw_cuda_mdspec<OutputMdspan> &&
-                  cuda_reference::is_supported_cuda_mdspan<InputMdspan>) ||
-                rank_v<OutputMdspan> == 0)
+                  cuda_reference::is_supported_cuda_mdspan<InputMdspan>))
   {
     return false;
   }
