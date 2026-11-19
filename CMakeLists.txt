@@ -235,7 +235,10 @@ if(NOT UNI20_BUILD_EXTERNAL_TESTS)
 endif()
 
 if(UNI20_ENABLE_WARNINGS)
-  set(UNI20_WARN_FLAGS "-Wall;-Wextra;-Wattributes;-pedantic;-pedantic-errors;-fstrict-aliasing;-Wstrict-aliasing;-Wno-unused-parameter;-Wno-array-bounds")
+  # -Wtype-limits is off: GCC reports `axis < rank` as always false when a generic
+  # lambda inside a template loops to a rank that is zero, so rank-generic code
+  # would otherwise need rank-zero guards that change nothing.
+  set(UNI20_WARN_FLAGS "-Wall;-Wextra;-Wattributes;-pedantic;-pedantic-errors;-fstrict-aliasing;-Wstrict-aliasing;-Wno-unused-parameter;-Wno-array-bounds;-Wno-type-limits")
 
   set(UNI20_WARN_FLAGS_INTERNAL "${UNI20_WARN_FLAGS};-Werror")
 

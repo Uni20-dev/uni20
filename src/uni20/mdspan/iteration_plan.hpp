@@ -8,6 +8,7 @@
 
 #include <uni20/common/static_vector.hpp>
 #include <uni20/mdspan/concepts.hpp>
+#include <uni20/mdspan/stride.hpp>
 #include <uni20/mdspan/strides.hpp>
 
 #include <algorithm>
@@ -224,7 +225,7 @@ template <typename Mapping> auto make_iteration_plan_with_offset(Mapping const& 
     // meaningless stride.
     if (extent == 1) continue;
 
-    index_type stride = mapping.stride(i);
+    index_type stride = uni20::stride(mapping, i);
     if (stride < 0)
     {
       offset += stride * static_cast<index_type>(extent - 1);

@@ -130,7 +130,7 @@ The available observers are:
 | Shape | `rank()`, `rank_dynamic()`, `static_extent(axis)`, `extents()`, `extent(axis)` |
 | Mapping properties | `is_always_unique()`, `is_always_exhaustive()`, `is_always_strided()` |
 | Runtime mapping properties | `is_unique()`, `is_exhaustive()`, `is_strided()` |
-| Strides | `stride(axis)` when the mapping provides it |
+| Strides | `stride(axis)` when the mapping provides it; at rank zero it always exists, though no axis meets its precondition |
 
 An unresolved `mdspec` intentionally does not expose:
 

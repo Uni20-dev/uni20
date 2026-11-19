@@ -7,6 +7,7 @@
  */
 
 #include <uni20/mdspan/concepts.hpp>
+#include <uni20/mdspan/stride.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -102,13 +103,14 @@ class mdspec {
     [[nodiscard]] constexpr bool is_strided() const noexcept { return mapping_.is_strided(); }
 
     /// \brief Return the stride for one axis when the mapping exposes strides.
+    /// \details Exists at every rank, as `uni20::stride` does, so rank-generic
+    ///          code compiles at rank zero; there no axis meets the precondition.
     /// \param axis Axis whose stride is requested.
+    /// \pre `axis < rank()`.
     [[nodiscard]] constexpr index_type stride(rank_type axis) const
-      requires requires(mapping_type const& mapping) {
-        { mapping.stride(axis) } -> std::convertible_to<index_type>;
-      }
+      requires StrideObservable<mapping_type>
     {
-      return mapping_.stride(axis);
+      return uni20::stride(mapping_, axis);
     }
 
   private:

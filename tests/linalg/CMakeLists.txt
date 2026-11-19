@@ -95,6 +95,7 @@ if(TARGET uni20_backend_cuda)
       test_cuda_block_tensor.cpp
       test_cuda_conjugate_inplace.cpp
       test_cuda_copy.cpp
+      test_cuda_rank_zero.cpp
       test_cuda_transform.cpp
     LIBS uni20_linalg uni20_async uni20_backend_cuda uni20_symmetry TBB::tbb
   )

@@ -17,6 +17,7 @@
 #include <uni20/common/trace.hpp>
 #include <uni20/core/types.hpp>
 #include <uni20/mdspan/mdspan.hpp>
+#include <uni20/mdspan/stride.hpp>
 
 namespace uni20
 {
@@ -305,7 +306,7 @@ auto extract_strides(AType const& A, BType const& B,
     ERROR_IF(A.extent(ai) != B.extent(bi), "Extent along tensor contraction dimension does not match", ai, bi);
     AContracted[ai] = true;
     BContracted[bi] = true;
-    Kgroup.emplace_back(A.extent(ai), A.stride(ai), B.stride(bi));
+    Kgroup.emplace_back(A.extent(ai), uni20::stride(A, ai), uni20::stride(B, bi));
   }
   // Now fill out the uncontracted dimensions and verify that they match with C
   std::size_t ci = 0;
@@ -314,7 +315,7 @@ auto extract_strides(AType const& A, BType const& B,
     if (!AContracted[ai])
     {
       ERROR_IF(A.extent(ai) != C.extent(ci), "Extent along uncontracted dimension does not match", ai, ci);
-      Mgroup.emplace_back(A.extent(ai), A.stride(ai), C.stride(ci));
+      Mgroup.emplace_back(A.extent(ai), uni20::stride(A, ai), uni20::stride(C, ci));
       ++ci;
     }
   }
@@ -323,7 +324,7 @@ auto extract_strides(AType const& A, BType const& B,
     if (!BContracted[bi])
     {
       ERROR_IF(B.extent(bi) != C.extent(ci), "Extent along uncontracted dimension does not match", bi, ci);
-      Ngroup.emplace_back(B.extent(bi), B.stride(bi), C.stride(ci));
+      Ngroup.emplace_back(B.extent(bi), uni20::stride(B, bi), uni20::stride(C, ci));
       ++ci;
     }
   }

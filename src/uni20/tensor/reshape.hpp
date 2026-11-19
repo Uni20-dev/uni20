@@ -10,6 +10,7 @@
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/mdspan/mdspan.hpp>
 #include <uni20/mdspan/mdspec.hpp>
+#include <uni20/mdspan/stride.hpp>
 #include <uni20/tensor/basic_tensor.hpp>
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/shape.hpp>
@@ -73,7 +74,7 @@ template <StridedMdspecLike Span> [[nodiscard]] bool has_row_major_contiguous_ma
   for (std::size_t axis = Span::rank(); axis > 0; --axis)
   {
     auto const extent = static_cast<std::size_t>(span.extent(axis - 1));
-    if (extent > 1 && !positive_stride_equals(span.stride(axis - 1), expected)) return false;
+    if (extent > 1 && !positive_stride_equals(uni20::stride(span, axis - 1), expected)) return false;
     if (extent > 0)
     {
       if (expected > std::numeric_limits<std::size_t>::max() / extent) return false;
@@ -89,7 +90,7 @@ template <StridedMdspecLike Span> [[nodiscard]] bool has_column_major_contiguous
   for (std::size_t axis = 0; axis < Span::rank(); ++axis)
   {
     auto const extent = static_cast<std::size_t>(span.extent(axis));
-    if (extent > 1 && !positive_stride_equals(span.stride(axis), expected)) return false;
+    if (extent > 1 && !positive_stride_equals(uni20::stride(span, axis), expected)) return false;
     if (extent > 0)
     {
       if (expected > std::numeric_limits<std::size_t>::max() / extent) return false;

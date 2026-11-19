@@ -7,6 +7,7 @@ add_test_module(mdspan
     test_diagonal_mdspec.cpp
     test_mdspec.cpp
     test_iteration_plan.cpp
+    test_stride.cpp
     test_strides.cpp
     test_transform_view.cpp
     test_zip_layout.cpp

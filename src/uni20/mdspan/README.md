@@ -19,6 +19,8 @@ small helpers used by dense kernels and layout-aware algorithms.
   explicit rank-one strided component view.
 - `generated_accessor.hpp` and `generated_layout.hpp`: read-only generated
   values with synthetic, non-strided logical offset mapping.
+- `stride.hpp`: `uni20::stride(value, axis)`, a stride observer for mappings,
+  mdspans and mdspecs that exists at every rank, including rank zero.
 - `strides.hpp`: stride inspection and stride utility helpers.
 - `iteration_plan.hpp`: backend-neutral compact affine iteration planning over
   one or more strided mappings, including element counts and reachable offset
@@ -52,8 +54,14 @@ small helpers used by dense kernels and layout-aware algorithms.
   `MutableRankedStridedMdspecLike` also accepts descriptor-backed
   metadata.
 - `StridedMdspanLike` refines `MdspanLike` by requiring an always-strided
-  mapping and both mdspan and mapping stride observers. It includes
-  `layout_left`, `layout_right`, and `layout_stride` mappings.
+  mapping and, at positive rank, both mdspan and mapping stride observers. It
+  includes `layout_left`, `layout_right`, and `layout_stride` mappings of every
+  rank. Standard `layout_left` and `layout_right` constrain `stride()` away at
+  rank zero, where there is no axis to observe, so rank-generic code reads
+  strides through `uni20::stride`. It exists at every rank with precondition
+  `axis < rank()`: a loop over the axes compiles at rank zero and never calls it,
+  and a direct call at rank zero is a precondition failure. `mdspec::stride`
+  follows the same rule.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for

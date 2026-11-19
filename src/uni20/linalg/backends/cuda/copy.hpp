@@ -16,6 +16,7 @@
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
 #include <uni20/mdspan/iteration_plan.hpp>
+#include <uni20/mdspan/stride.hpp>
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/tensor/concepts.hpp>
 
@@ -128,7 +129,7 @@ template <class Mdspan> [[nodiscard]] bool active_strides_are_positive(Mdspan co
   }
   for (std::size_t axis = 0; axis < std::remove_cvref_t<Mdspan>::rank(); ++axis)
   {
-    if (span.extent(axis) > 1 && span.stride(axis) <= 0) return false;
+    if (span.extent(axis) > 1 && uni20::stride(span, axis) <= 0) return false;
   }
   return true;
 }
@@ -138,7 +139,7 @@ template <class OutputMdspan, class InputMdspan>
 {
   for (std::size_t axis = 0; axis < std::remove_cvref_t<OutputMdspan>::rank(); ++axis)
   {
-    if (output.extent(axis) > 1 && output.stride(axis) != input.stride(axis)) return false;
+    if (output.extent(axis) > 1 && uni20::stride(output, axis) != uni20::stride(input, axis)) return false;
   }
   return true;
 }
