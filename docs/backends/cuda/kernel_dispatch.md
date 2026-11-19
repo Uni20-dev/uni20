@@ -434,7 +434,7 @@ The precompiled CUDA reference copy backend currently uses these lowering forms:
 |---|---|
 | Raw contiguous mappings with matching physical order | `cudaMemcpyAsync` or `cudaMemcpyPeerAsync` |
 | Same-device positive-strided mappings | Backend-neutral affine iteration plan lowered to a 32- or 64-bit CUDA payload; compact dimensions beyond eight become one launch per outer index |
-| Identity copy of a trivially copyable scalar | Elements moved as up to four unsigned words of the scalar's alignment |
+| Identity copy of a trivially copyable element | Elements moved as unsigned words of the element's alignment: fixed-width kernels up to four words, a word loop beyond |
 | Raw or conjugating CUDA input accessor | Explicitly compiled accessor lowering selected by the copy plan |
 | Named unary arithmetic transforms | Explicit registrations for `negate`, `square`, and `reciprocal` over one independently strided input |
 | Stateful unary `linalg::scale<Factor>` transform | Explicitly registered factor payload and one independently strided input |

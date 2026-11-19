@@ -32,7 +32,8 @@ using ElementwiseCopyPlan32 = StridedElementwisePlan32<2, elementwise_copy_maxim
 using ElementwiseCopyPlan64 = StridedElementwisePlan64<2, elementwise_copy_maximum_rank>;
 using LoweredElementwiseCopyPlan = LoweredStridedElementwisePlan<2, elementwise_copy_maximum_rank>;
 
-/// \brief Largest number of words an identity copy moves per element.
+/// \brief Largest element, in words, copied by a fixed-width kernel.
+/// \details Wider elements use a kernel that loops over their words.
 inline constexpr std::size_t elementwise_copy_maximum_words = 4;
 
 /// \brief One element's object representation as unsigned words.
@@ -47,7 +48,10 @@ template <class Word, std::size_t Count> struct ElementWords
 
 /// \brief Word layout that reproduces a `Scalar` element bit for bit.
 /// \details Words are as wide as the element alignment, at most eight bytes,
-///          so every word access is aligned.
+///          so every word access is aligned. An element size is a multiple of
+///          its alignment, so every trivially copyable element is supported:
+///          up to `elementwise_copy_maximum_words` words through a fixed-width
+///          kernel, wider elements through a loop over their words.
 template <class Scalar> struct ElementwiseCopyWords
 {
     static constexpr std::size_t word_size = alignof(Scalar) < 8 ? alignof(Scalar) : 8;
@@ -56,9 +60,10 @@ template <class Scalar> struct ElementwiseCopyWords
                            std::conditional_t<word_size == 2, std::uint16_t,
                                               std::conditional_t<word_size == 4, std::uint32_t, std::uint64_t>>>;
     static constexpr std::size_t count = sizeof(Scalar) / word_size;
-    static constexpr bool supported = std::is_trivially_copyable_v<Scalar> && sizeof(Scalar) % word_size == 0 &&
-                                      count <= elementwise_copy_maximum_words;
-    using element_type = ElementWords<word_type, count>;
+    static constexpr bool supported = std::is_trivially_copyable_v<Scalar> && sizeof(Scalar) % word_size == 0;
+    static constexpr bool fixed_width = count <= elementwise_copy_maximum_words;
+    /// \brief Fixed-width element representation; meaningful only when `fixed_width`.
+    using element_type = ElementWords<word_type, fixed_width ? count : 1>;
 };
 
 template <class Word, std::size_t Count>
@@ -67,6 +72,16 @@ void enqueue_elementwise_word_copy(ElementWords<Word, Count>* output, ElementWor
 template <class Word, std::size_t Count>
 void enqueue_elementwise_word_copy(ElementWords<Word, Count>* output, ElementWords<Word, Count> const* input,
                                    ElementwiseCopyPlan64 const& plan, cudaStream_t stream, int device);
+
+/// \brief Copy elements of `words_per_element` words each, for elements wider than the fixed-width kernels.
+/// \details Plan offsets count elements; each element starts `words_per_element`
+///          words after the previous one.
+template <class Word>
+void enqueue_elementwise_word_run_copy(Word* output, Word const* input, std::size_t words_per_element,
+                                       ElementwiseCopyPlan32 const& plan, cudaStream_t stream, int device);
+template <class Word>
+void enqueue_elementwise_word_run_copy(Word* output, Word const* input, std::size_t words_per_element,
+                                       ElementwiseCopyPlan64 const& plan, cudaStream_t stream, int device);
 
 void enqueue_elementwise_conjugating_copy(uni20::cfloat* output, uni20::cfloat const* input,
                                           ElementwiseCopyPlan32 const& plan, cudaStream_t stream, int device);

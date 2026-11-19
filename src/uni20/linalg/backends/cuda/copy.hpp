@@ -339,8 +339,9 @@ template <class OutputMdspan, class InputMdspan>
 
 /// \brief Enqueue an identity or conjugating strided copy on `stream`.
 /// \details Identity copies move each element as unsigned words, so every
-///          trivially copyable scalar shares a few kernels. Conjugation uses
-///          the typed complex kernels.
+///          trivially copyable element shares a few kernels: fixed-width ones
+///          up to four words, a word loop beyond. Conjugation uses the typed
+///          complex kernels.
 template <class Scalar, class Plan>
 void enqueue_elementwise_copy(Scalar* output, Scalar const* input, Plan const& plan, ElementwiseCopyTransform transform,
                               cudaStream_t stream, int device)
@@ -360,9 +361,18 @@ void enqueue_elementwise_copy(Scalar* output, Scalar const* input, Plan const& p
 
   using words = ElementwiseCopyWords<Scalar>;
   static_assert(words::supported, "unsupported scalar reached CUDA reference elementwise copy");
-  using element_type = typename words::element_type;
-  enqueue_elementwise_word_copy(reinterpret_cast<element_type*>(output), reinterpret_cast<element_type const*>(input),
-                                plan, stream, device);
+  if constexpr (words::fixed_width)
+  {
+    using element_type = typename words::element_type;
+    enqueue_elementwise_word_copy(reinterpret_cast<element_type*>(output), reinterpret_cast<element_type const*>(input),
+                                  plan, stream, device);
+  }
+  else
+  {
+    using word_type = typename words::word_type;
+    enqueue_elementwise_word_run_copy(reinterpret_cast<word_type*>(output), reinterpret_cast<word_type const*>(input),
+                                      words::count, plan, stream, device);
+  }
 }
 
 template <class Scalar> void enqueue_device_copy(CopyPlan<Scalar> const& plan, uni20::cuda::Stream const& stream)

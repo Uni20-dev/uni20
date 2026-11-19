@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -46,6 +47,24 @@ using device_stage_t = uni20::mdspec<Element, stdex::dextents<index_type, Rank>,
 /// \brief Host staging view in a transfer order.
 template <class Element, std::size_t Rank>
 using host_stage_t = stdex::mdspan<Element, stdex::dextents<index_type, Rank>, stdex::layout_stride>;
+
+/// \brief Host staging storage whose elements are never constructed or destroyed.
+/// \details Staged elements are trivially copyable, and each is written by a
+///          copy before it is read, so the staging buffer places no
+///          constructibility requirement on the element type.
+template <class Scalar> class HostStagingBuffer {
+  public:
+    explicit HostStagingBuffer(std::size_t count) : data_(std::allocator<Scalar>{}.allocate(count)), count_(count) {}
+    HostStagingBuffer(HostStagingBuffer const&) = delete;
+    HostStagingBuffer& operator=(HostStagingBuffer const&) = delete;
+    ~HostStagingBuffer() { std::allocator<Scalar>{}.deallocate(data_, count_); }
+
+    [[nodiscard]] Scalar* data() const noexcept { return data_; }
+
+  private:
+    Scalar* data_;
+    std::size_t count_;
+};
 
 /// \brief One-dimensional CUDA view of a storage range.
 template <class Element>
@@ -129,9 +148,11 @@ inline constexpr bool is_device_to_device_copy_operand =
 template <class DeviceCopySelector, class OutputMdspan, class InputMdspan>
 consteval bool peer_staging_types_compatible()
 {
+  // A rank-zero copy is one element, which the reference backend always moves.
   if constexpr (!(cuda_reference::SupportedCopyMdspans<OutputMdspan, InputMdspan> &&
                   cuda_reference::is_raw_cuda_mdspec<OutputMdspan> &&
-                  cuda_reference::is_supported_cuda_mdspan<InputMdspan>))
+                  cuda_reference::is_supported_cuda_mdspan<InputMdspan>) ||
+                rank_v<OutputMdspan> == 0)
   {
     return false;
   }
@@ -218,7 +239,8 @@ template <class DeviceCopySelector, class HostCopySelector, class TransferSelect
           class InputMdspan>
 consteval bool host_staging_types_compatible()
 {
-  if constexpr (!cuda_reference::SupportedCopyMdspans<OutputMdspan, InputMdspan>)
+  // A rank-zero copy is one element, which the reference backend always moves.
+  if constexpr (!cuda_reference::SupportedCopyMdspans<OutputMdspan, InputMdspan> || rank_v<OutputMdspan> == 0)
   {
     return false;
   }
@@ -273,22 +295,21 @@ KernelAttempt copy_host_to_device_staged(Backend const& backend, OutputMdspan& o
   auto const transfer = make_transfer_mapping(input, output);
   auto const count = static_cast<std::size_t>(transfer.required_span_size());
 
-  std::unique_ptr<scalar_type[]> host_storage;
-  host_stage_t<scalar_type const, rank> host_source;
-  bool source_has_transfer_order = false;
+  std::optional<HostStagingBuffer<scalar_type>> host_storage;
+  scalar_type const* host_data = nullptr;
   if constexpr (cuda_reference::is_raw_host_mdspan<InputMdspan>)
   {
-    source_has_transfer_order = matches_transfer_layout(input, transfer);
-    if (source_has_transfer_order) host_source = host_stage_t<scalar_type const, rank>(input.data_handle(), transfer);
+    if (matches_transfer_layout(input, transfer)) host_data = input.data_handle();
   }
-  if (!source_has_transfer_order)
+  if (host_data == nullptr)
   {
-    host_storage = std::make_unique_for_overwrite<scalar_type[]>(count);
-    host_stage_t<scalar_type, rank> host_stage(host_storage.get(), transfer);
+    host_storage.emplace(count);
+    host_stage_t<scalar_type, rank> host_stage(host_storage->data(), transfer);
     if (!try_dispatch_kernel(backend.host_copy_selector, copy_op{}, host_stage, input))
       return KernelAttempt::unsupported_instance;
-    host_source = host_stage_t<scalar_type const, rank>(host_storage.get(), transfer);
+    host_data = host_storage->data();
   }
+  host_stage_t<scalar_type const, rank> host_source(host_data, transfer);
 
   if (matches_transfer_layout(output, transfer))
   {
@@ -330,11 +351,11 @@ KernelAttempt copy_device_to_host_staged(Backend const& backend, OutputMdspan& o
         return KernelAttempt::unsupported_instance;
       return KernelAttempt::success;
     }
-    auto host_storage = std::make_unique_for_overwrite<scalar_type[]>(count);
-    host_stage_t<scalar_type, rank> host_stage(host_storage.get(), transfer);
+    HostStagingBuffer<scalar_type> host_storage(count);
+    host_stage_t<scalar_type, rank> host_stage(host_storage.data(), transfer);
     if (!try_dispatch_kernel(backend.transfer_selector, copy_op{}, host_stage, device_source))
       return KernelAttempt::unsupported_instance;
-    host_stage_t<scalar_type const, rank> host_source(host_storage.get(), transfer);
+    host_stage_t<scalar_type const, rank> host_source(host_storage.data(), transfer);
     if (!try_dispatch_kernel(backend.host_copy_selector, copy_op{}, output, host_source))
       return KernelAttempt::unsupported_instance;
     return KernelAttempt::success;
@@ -420,12 +441,20 @@ KernelAttempt try_kernel(CudaHostStagingBackend<DeviceCopySelector, HostCopySele
 /// \details `CudaReferenceBackend` moves operands that share one contiguous
 ///          element order; `CudaHostStagingBackend` handles every other
 ///          layout, changing layouts through the `CudaStorage` and
-///          `HostStorage` copy selectors.
-[[nodiscard]] inline auto cuda_host_transfer_selector()
+///          `HostStorage` copy selectors, including any user
+///          `backend_selector_override` for `copy_op`. The selector lookups
+///          depend on the template parameters, so including this header does
+///          not instantiate those overrides; library callers pass their operand
+///          types as `Dependent` so that a user specialization declared after
+///          the headers is still found.
+/// \tparam Operation Copy operation tag.
+/// \tparam Dependent Types that make a call inside a template dependent.
+template <class Operation = copy_op, class... Dependent> [[nodiscard]] auto cuda_host_transfer_selector()
 {
-  return backend_list{CudaReferenceBackend{}, CudaHostStagingBackend{select_backend_for_storage<CudaStorage>(copy_op{}),
-                                                                     select_backend_for_storage<HostStorage>(copy_op{}),
-                                                                     CudaReferenceBackend{}}};
+  return backend_list{CudaReferenceBackend{},
+                      CudaHostStagingBackend{select_backend_for_storage<CudaStorage>(Operation{}),
+                                             select_backend_for_storage<HostStorage>(Operation{}),
+                                             CudaReferenceBackend{}}};
 }
 
 } // namespace uni20::linalg

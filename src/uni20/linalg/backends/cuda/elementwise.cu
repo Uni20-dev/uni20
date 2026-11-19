@@ -241,6 +241,66 @@ void enqueue_elementwise_word_copy(ElementWords<Word, Count>* output, ElementWor
                                                                                               stream, device);
 }
 
+/// \brief Copy each element as a run of `words_per_element` words.
+template <class Word, class Plan>
+__global__ void elementwise_word_run_copy_kernel(Word* output, Word const* input, std::size_t words_per_element,
+                                                 Plan plan)
+{
+  using logical_index_type = typename Plan::logical_index_type;
+  auto index = static_cast<logical_index_type>(blockIdx.x * blockDim.x + threadIdx.x);
+  auto const grid_stride = static_cast<logical_index_type>(blockDim.x * gridDim.x);
+  auto const width = static_cast<std::ptrdiff_t>(words_per_element);
+  while (index < plan.element_count)
+  {
+    auto const offsets = plan.offsets(index);
+    Word* target = output + static_cast<std::ptrdiff_t>(offsets[0]) * width;
+    Word const* source = input + static_cast<std::ptrdiff_t>(offsets[1]) * width;
+    for (std::ptrdiff_t word = 0; word < width; ++word)
+      target[word] = source[word];
+    index += grid_stride;
+  }
+}
+
+template <class Word, class Plan>
+void launch_word_run_copy(Word* output, Word const* input, std::size_t words_per_element, Plan const& plan,
+                          cudaStream_t stream, int device)
+{
+  if (plan.element_count == 0) return;
+  constexpr unsigned int threads = 256;
+  auto const required_blocks = (plan.element_count + threads - 1) / threads;
+  constexpr std::size_t maximum_blocks = 65535;
+  auto const blocks = static_cast<unsigned int>(required_blocks < maximum_blocks ? required_blocks : maximum_blocks);
+  elementwise_word_run_copy_kernel<<<blocks, threads, 0, stream>>>(output, input, words_per_element, plan);
+  uni20::cuda::check(cudaGetLastError(), "launch CUDA reference wide-element copy", device);
+}
+
+template <class Word>
+void enqueue_elementwise_word_run_copy(Word* output, Word const* input, std::size_t words_per_element,
+                                       ElementwiseCopyPlan32 const& plan, cudaStream_t stream, int device)
+{
+  launch_word_run_copy(output, input, words_per_element, plan, stream, device);
+}
+
+template <class Word>
+void enqueue_elementwise_word_run_copy(Word* output, Word const* input, std::size_t words_per_element,
+                                       ElementwiseCopyPlan64 const& plan, cudaStream_t stream, int device)
+{
+  launch_word_run_copy(output, input, words_per_element, plan, stream, device);
+}
+
+#define UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY(Word)                                                              \
+  template void enqueue_elementwise_word_run_copy(Word*, Word const*, std::size_t, ElementwiseCopyPlan32 const&,       \
+                                                  cudaStream_t, int);                                                  \
+  template void enqueue_elementwise_word_run_copy(Word*, Word const*, std::size_t, ElementwiseCopyPlan64 const&,       \
+                                                  cudaStream_t, int)
+
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY(std::uint8_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY(std::uint16_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY(std::uint32_t);
+UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY(std::uint64_t);
+
+#undef UNI20_INSTANTIATE_ELEMENTWISE_WORD_RUN_COPY
+
 #define UNI20_INSTANTIATE_ELEMENTWISE_WORD_COPY(Word, Count)                                                           \
   template void enqueue_elementwise_word_copy(ElementWords<Word, Count>*, ElementWords<Word, Count> const*,            \
                                               ElementwiseCopyPlan32 const&, cudaStream_t, int);                        \

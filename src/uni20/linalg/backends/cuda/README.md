@@ -9,8 +9,11 @@ The `copy_op` implementation keeps runtime-copy fast paths for compatible raw
 contiguous mappings. Other same-device positive-strided mappings, including
 padding and differing physical order, use the reference backend's elementwise
 CUDA kernel. An identity copy moves each element as unsigned words of its
-alignment, so any trivially copyable scalar of up to four words is supported;
-conjugating copies use typed `uni20::cfloat` and `uni20::cdouble` kernels.
+alignment, so every trivially copyable element is supported: elements of up to
+four words through fixed-width kernels, wider ones through a loop over their
+words. Conjugating copies use typed `uni20::cfloat` and `uni20::cdouble`
+kernels. `CudaStorage` holds only trivially copyable elements, so any other
+element type is rejected when the tensor type is formed.
 
 The reference copy declines host-device copies whose operands do not share one
 contiguous element order, and strided copies between devices. Two staging

@@ -103,7 +103,7 @@ void copy(OutputTensor&& output, InputTensor const& input)
 #if UNI20_BACKEND_CUDA
   if constexpr (detail::is_pageable_cuda_transfer<OutputTensor, InputTensor>)
   {
-    copy(linalg::cuda_host_transfer_selector(), output, input);
+    copy(linalg::cuda_host_transfer_selector<linalg::copy_op, OutputTensor, InputTensor>(), output, input);
   }
   else
 #endif
