@@ -20,6 +20,9 @@
 #if UNI20_BACKEND_CUBLAS
 #include <uni20/linalg/backends/cublas/reductions.hpp>
 #endif
+#if UNI20_BACKEND_CUDA
+#include <uni20/linalg/backends/cuda/reductions.hpp>
+#endif
 
 #include <cstddef>
 #include <type_traits>
