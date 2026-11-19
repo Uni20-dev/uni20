@@ -709,6 +709,10 @@ TEST_F(CudaTensorTest, OwningRvalueStreamReadPublishesCompletion)
     uni20::cuda::ScopedDevice guard(resources.device().ordinal());
     uni20::cuda::check(cudaMemcpy(lease.mdspan().data_handle(), input.data(), sizeof(input), cudaMemcpyHostToDevice),
                        "cudaMemcpy owning stream read test upload", resources.device().ordinal());
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize owning stream read test upload",
+                       resources.device().ordinal());
   }
 
   auto stream = resources.streams().acquire();
