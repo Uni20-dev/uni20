@@ -50,6 +50,13 @@ struct AssignmentAware
     inline static int assignments = 0;
     inline static int destructions = 0;
 };
+
+/// An immediate payload whose `queue()` is not an epoch queue.
+struct QueueMember
+{
+    int items = 0;
+    int const& queue() const { return items; }
+};
 } // namespace async_test_types
 
 TEST(AsyncOpsTest, WriteProxyAssignmentConstructsThenUsesUnderlyingAssignment)
@@ -217,6 +224,25 @@ TEST(AsyncOpsTest, CompoundOperationRejectsRhsQueueAliasAtSubmission)
 
   EXPECT_THROW(value += value, std::runtime_error);
   EXPECT_EQ(value.get_wait(), 3);
+}
+
+TEST(AsyncOpsTest, ImmediatePayloadQueueMemberIsNotAnEpochQueue)
+{
+  DebugScheduler sched;
+  set_global_scheduler(&sched);
+
+  Async<async_test_types::QueueMember> value;
+  async_assign(value, async_test_types::QueueMember{3});
+  EXPECT_EQ(value.get_wait().items, 3);
+
+  async_move(value, async_test_types::QueueMember{5});
+  EXPECT_EQ(value.get_wait().items, 5);
+
+  async_compound_op(value, async_test_types::QueueMember{2},
+                    [](async_test_types::QueueMember& lhs, async_test_types::QueueMember const& rhs) {
+                      lhs.items += rhs.items;
+                    });
+  EXPECT_EQ(value.get_wait().items, 7);
 }
 
 TEST(AsyncOpsTest, CompoundOperationExecutionFailurePropagatesThroughOutput)

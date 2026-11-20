@@ -20,12 +20,15 @@ namespace uni20::async
 namespace detail
 {
 
+/// \brief Rejects an async input on the output's epoch queue.
+/// \details Only operands whose `queue()` returns an `EpochQueue` take part, so
+///          an immediate payload with an unrelated `queue()` member is ignored.
 template <class Output, class Input>
 void validate_distinct_async_operand_queues(Output const& output, Input const& input)
 {
   if constexpr (requires {
-                  output.queue();
-                  input.queue();
+                  { output.queue() } -> std::same_as<EpochQueue const&>;
+                  { input.queue() } -> std::same_as<EpochQueue const&>;
                 })
   {
     ERROR_IF(std::addressof(output.queue()) == std::addressof(input.queue()),
