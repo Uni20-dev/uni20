@@ -191,19 +191,28 @@ the absolute strides, which describe the same set of offsets shifted by
 `minimum`. `required_span_size()` is not provided; consumers use
 `reachable_range()`.
 
-The first operations to accept it are `reverse` views of one axis, host `copy`,
-host elementwise transforms and host reductions. The backend-neutral iteration
-plan already normalizes negative strides. CUDA plan lowering would rebase the
-descriptor to `minimum` later. BLAS and LAPACK do not accept it: BLAS's
-negative-increment convention is different, and LAPACK leading dimensions must be
-positive.
+Negative strides are useful in only a few cases, reversing the elements of an
+axis being the main one, and then only over operations where they are easy or
+cheap to support. Operations therefore accept `layout_signed_stride` as uses
+require, not in advance. The likely first are a one-axis `reverse` view and
+host `copy`. Host elementwise transforms and reductions cost little, because the
+backend-neutral iteration plan already normalizes negative strides. CUDA plan
+lowering would rebase the descriptor to `minimum` when a use needs it. BLAS and
+LAPACK do not accept it: BLAS's negative-increment convention is different, and
+LAPACK leading dimensions must be positive.
 
-### Rejected Alternative
+### Rejected Alternatives
 
 Allowing negative strides in `layout_stride` with runtime checks would keep one
 strided type, but every backend that cannot handle them would decline at run
 time. Item 0.1 of the CUDA coverage work exists to remove exactly that failure
 mode.
+
+A sign policy parameter on `layout_stride` would also distinguish the cases by
+type, but every existing use and comparison of `layout_stride` would then have
+to say which policy it means. A separate layout leaves them meaning the
+nonnegative one. Decided tentatively on 2026-11-20: the signed layout is
+`layout_signed_stride`.
 
 ## Conversions and Interop
 
@@ -300,8 +309,9 @@ Each phase is one pull request.
 3. **Tests and examples.** `stdex::` names become Uni20 names, about 620
    references, mostly mechanical. A few interop tests keep `stdex::mdspan`
    inputs.
-4. **Signed strides.** `layout_signed_stride`, a `reverse` view and the first
-   opt-in operations listed above. The diagonal component view moves to
+4. **Signed strides.** `layout_signed_stride`, a `reverse` view, and support in
+   the operations its first use needs, host `copy` for example; other
+   operations follow as uses require them. The diagonal component view moves to
    `layout_signed_stride`, ending its reliance on wrapped `size_t` offsets, and
    the remaining code that computes signed offsets through unsigned arithmetic
    is found and fixed here.
@@ -333,11 +343,9 @@ form reads best, and documents `FetchContent_Declare(... SYSTEM)` and
 
 ## Open Questions
 
-1. The name of the signed layout: `layout_signed_stride`, or a policy parameter
-   on `layout_stride`.
-2. What a precondition failure does in device code, where Uni20 diagnostics are
+1. What a precondition failure does in device code, where Uni20 diagnostics are
    unavailable: trap, or nothing in release builds.
-3. Whether `size()` and the span queries of `mdspan` and `mdspec` keep the
+2. Whether `size()` and the span queries of `mdspan` and `mdspec` keep the
    standard's `size_t` types.
-4. NumPy interop: whether arrays with negative strides map to
+3. NumPy interop: whether arrays with negative strides map to
    `layout_signed_stride` views, once Python bindings exist.
