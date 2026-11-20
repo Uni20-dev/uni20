@@ -54,8 +54,15 @@ and grow layouts the standard does not have.
 ### Non-goals
 
 - `submdspan`. Uni20 does not use it.
-- C++26 padded layouts.
 - New extents. `std::extents` is adequate.
+
+C++26's padded layouts, `layout_left_padded` and `layout_right_padded`, are not
+part of this migration, but nothing here excludes them. They are strided
+mappings, so rules 1 to 7 apply to them unchanged; LWG 4545 is their case of
+the overflow that rule 7 covers. They say in the type what `layout_stride`
+says only at run time, that the inner stride is one and only the leading
+dimension varies, as BLAS and LAPACK matrices need. Uni20 can add them if that
+proves useful over a general strided layout.
 
 ## Current Use
 
