@@ -1,4 +1,4 @@
-# Uni20 mdspan Design
+# Uni20 mdspan and mdspec Design
 
 Status: proposal, 2026-11-20. Nothing here is implemented yet.
 
@@ -7,7 +7,9 @@ Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 note proposes Uni20's own `mdspan` class and layout mappings, keeping the
 standard extents. The goals are a stride observer that exists at every rank,
 well-defined signed offsets, and a reachable-offset range on every mapping.
-Negative strides then become possible as an opt-in layout.
+Negative strides then become possible as an opt-in layout. `uni20::mdspec`,
+which Uni20 already owns, follows the same specification
+([below](#mdspec)).
 
 ## Why Not the Standard Types
 
@@ -24,13 +26,26 @@ tried that and is superseded by this design.
 
 **Offsets.** The standard accessor policy takes a `size_t` offset, and
 `layout_stride` requires positive strides. `required_span_size`,
-`is_exhaustive` and `is_unique` assume nonnegative strides. Uni20 accessors
-already declare a signed `offset_type` (`span_offset_t` in
-[`mdspan/concepts.hpp`](../../src/uni20/mdspan/concepts.hpp)), and Kokkos passes
-the mapping's signed result to `access` unchanged, so negative offsets reach
-those accessors today. That works by accident: it violates `layout_stride`'s
-precondition, `stdex::default_accessor` takes `size_t`, and the span queries
-give wrong answers.
+`is_exhaustive` and `is_unique` assume nonnegative strides. Uni20 has the
+mechanism for signed offsets: an accessor may declare its own `offset_type`
+(`span_offset_t` in [`mdspan/concepts.hpp`](../../src/uni20/mdspan/concepts.hpp)),
+and Kokkos passes the mapping's signed result to `access` unchanged. No in-tree
+accessor uses it for a signed type yet. The CUDA pointer accessors,
+`diagonal_accessor` and `generated_accessor` declare `std::size_t`, host
+tensors use `stdex::default_accessor`, and the const, conjugating and transform
+adaptors inherit their wrapped accessor's type; only test accessors declare
+`std::ptrdiff_t`.
+
+Negative strides already occur, without a consistent rule. The iteration plan
+computes in `std::ptrdiff_t` and normalizes negative strides, and the diagonal
+component view keeps a signed stride, so a diagonal borrowed from another
+tensor may run backwards. That component view stores its stride in a
+`stdex::layout_stride` mapping and reads through `stdex::default_accessor`, so a
+negative offset reaches `access` as a wrapped `size_t` and works only because
+the pointer arithmetic wraps back. That violates `layout_stride`'s precondition
+and is undefined behavior by the letter of the language, and the span queries
+give wrong answers for such a mapping. This design replaces the wrapping with
+declared signed offsets.
 
 **Control.** Owning the types lets every mapping and mdspan member be
 `UNI20_HOST_DEVICE`, report precondition failures through Uni20 diagnostics,
@@ -44,23 +59,24 @@ and grow layouts the standard does not have.
 
 ## Current Use
 
-Counts are over `src`, `tests` and `examples` on `main` (`33439da6`):
+Counts are occurrences over `src`, `tests` and `examples` on `main`
+(`33439da6`), from `git grep -ohP 'stdex::NAME\b(?!_)' main -- src tests examples | wc -l`:
 
 | Name | Uses |
 |---|---|
-| `stdex::mdspan` | 256 |
-| `stdex::layout_stride` | 139 |
-| `stdex::layout_left` | 121 |
-| `stdex::dextents` | 108 |
-| `stdex::extents` | 54 |
-| `stdex::layout_right` | 52 |
-| `stdex::default_accessor` | 35 |
+| `stdex::mdspan` | 254 |
+| `stdex::layout_stride` | 135 |
+| `stdex::layout_left` | 109 |
+| `stdex::dextents` | 106 |
+| `stdex::extents` | 53 |
+| `stdex::layout_right` | 44 |
+| `stdex::default_accessor` | 34 |
 | `stdex::dynamic_extent` | 18 |
 
-Fifteen source files name `stdex::mdspan`; those are where the type crosses
+Fifteen files in `src` name `stdex::mdspan`; those are where the type crosses
 public APIs. `RowMajor` and `ColumnMajor` in
 [`tensor/tensor.hpp`](../../src/uni20/tensor/tensor.hpp) alias the standard
-layouts, and twelve sites compare a layout type with `stdex::layout_left`,
+layouts, and 13 lines in `src` compare a layout type with `stdex::layout_left`,
 `layout_right` or `layout_stride`. Uni20 already defines its own layouts
 (`StridedZipLayout`, `GeneralZipLayout`, `GeneratedLayout`), accessors
 (`const_accessor_adaptor`, `conjugated_accessor`, `diagonal_accessor`,
@@ -79,7 +95,8 @@ All live in namespace `uni20`, in new headers under `src/uni20/mdspan/`.
 | `layout_signed_stride` | A strided mapping whose strides may have either sign. |
 | `default_accessor<T>` | `offset_type` is `std::ptrdiff_t`; `access(p, i)` is `p[i]`, `offset(p, i)` is `p + i`. |
 | `mdspan<T, Extents, Layout, Accessor>` | Same interface as `std::mdspan`, with the offset rule below. |
-| `offset_range` | Inclusive `[minimum, maximum]` of handle-relative offsets, empty when `minimum > maximum`; the existing `iteration_offset_range` moves here. |
+| `mdspec<T, Extents, Layout, Accessor, Descriptor>` | Existing; specified to match `mdspan` ([below](#mdspec)). |
+| `offset_range` | Inclusive `[minimum, maximum]` of handle-relative offsets, with `std::ptrdiff_t` bounds, empty when `minimum > maximum`; the existing `iteration_offset_range` moves here. |
 
 `mdspan` defaults to `layout_right` and `default_accessor<T>`, like the standard,
 so translated code keeps its meaning; Uni20 Tensors keep naming their layout
@@ -87,8 +104,8 @@ explicitly.
 
 ## Rules That Differ From the Standard
 
-1. **`stride(r)` exists at every rank** in every strided Uni20 mapping and in
-   `mdspan`, with precondition `r < rank()`. At rank zero no axis meets it, so a
+1. **`stride(r)` exists at every rank** in every strided Uni20 mapping, in
+   `mdspan` and in `mdspec`, with precondition `r < rank()`. At rank zero no axis meets it, so a
    call fails the precondition, while a loop over the axes compiles and never
    calls it.
 2. **Offsets have the accessor's type.** `mdspan` converts the mapping result to
@@ -110,7 +127,13 @@ explicitly.
    `layout_signed_stride` may have negative strides. An operation that cannot
    handle them rejects the layout by type at compile time, so a reversed view
    never reaches a backend that would decline it at run time and end the
-   program. Operations opt in one at a time.
+   program. Operations opt in one at a time. The same holds for composition:
+   an `mdspan` or `mdspec` with `layout_signed_stride` requires a signed
+   `index_type` and an accessor whose `span_offset_t` is signed, so a signed
+   layout paired with `stdex::default_accessor`, or any accessor that falls back
+   to `size_t`, does not compile. Uni20's `index_type` is already
+   `std::ptrdiff_t` ([`core/types.hpp`](../../src/uni20/core/types.hpp)), and
+   Tensor extents use it.
 6. **Empty mappings constrain their strides less.** The standard requires
    `layout_stride` strides to be positive and to admit an axis order in which
    no two axes overlap, even when the mapping has no elements. Uni20's
@@ -126,31 +149,27 @@ explicitly.
    only the number of elements to be representable, which says nothing about an
    empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
    Uni20's mappings require the product of the nonzero extents to be
-   representable in `index_type`. No tensor with those extents could hold its
-   elements otherwise, and canonical strides of every supported shape, empty or
-   not, are representable. Requiring only each stride to be representable would
-   make validity depend on the order of the extents: with 32-bit indices and
-   `n = 2^16`, `layout_right` with extents `(n, 0, n)` has strides `(0, n, 1)`,
-   but `(0, n, n)` needs `n * n`. Materializing a permuted view, as
-   `Tensor(permute(view))` does, builds a canonical layout with the permuted
-   extents, so a valid empty tensor could yield an invalid one. The product
-   condition is exactly what keeps every canonical stride representable under
-   every permutation of the extents: putting all the nonzero extents before a
-   zero one in `layout_left` makes the zero axis's stride their full product.
-   No LWG issue covers this for `layout_left` and `layout_right`; LWG 4545
-   fixes the same overflow for the padded layouts.
+   representable in `index_type`. That keeps every canonical stride
+   representable under every permutation of the extents, so materializing a
+   permuted view, as `Tensor(permute(view))` from #137 does, cannot turn a valid
+   empty tensor into an invalid one. A condition on each stride would not be
+   enough, because it depends on the order of the extents. Such shapes do not
+   arise in practice, and Uni20 does not check for them: the rule is a
+   precondition that Uni20 assumes of every mapping, including one converted
+   from the standard. No LWG issue covers this for `layout_left` and
+   `layout_right`; LWG 4545 fixes the same overflow for the padded layouts.
 
 ### Alignment With the Standard
 
 Uni20 adopts these library issue resolutions, so its layouts behave as the
 standard is expected to:
 
-| Issue | Status (2026-11) | Adopted rule |
+| Issue | Status (2026-11-18) | Adopted rule |
 |---|---|---|
-| LWG 4603, P3959R0 | Ready | Rule 6: an empty mapping accepts nonnegative strides. P3959R0 also relaxes the converting constructor; 4603's proposed resolution does not yet. |
-| LWG 4606 | Ready | For a nonempty `layout_stride`, every stride is nonnegative and representable, and axes of extent one impose no ordering constraint. Only the axes of extent greater than one need an order in which none overlaps. A strided slice such as every other column of a `(2, 5)` row-major matrix, extents `(2, 3)` with strides `(5, 2)`, is valid. |
+| LWG 4603, P3959R0 | Voting | Rule 6: an empty mapping accepts nonnegative strides. Both also drop the converting constructor's precondition that every stride of the source is positive. |
+| LWG 4606 | Voting | For a nonempty `layout_stride`, every stride is nonnegative and representable, and axes of extent one impose no ordering constraint. Only the axes of extent greater than one need an order in which none overlaps. A strided slice such as every other column of a `(2, 5)` row-major matrix, extents `(2, 3)` with strides `(5, 2)`, is valid. |
 | LWG 4266 | C++26 | An empty mapping is exhaustive; `is_always_exhaustive()` is true when the rank is zero or a static extent is zero. |
-| LWG 4562 | Ready | `is_exhaustive()` is `required_span_size()` equal to the product of the extents, so axes of extent one do not affect it. |
+| LWG 4562 | Voting | `is_exhaustive()` is `required_span_size()` equal to the product of the extents, so axes of extent one do not affect it. |
 | LWG 4272 | C++26 | Conversions between rank-zero mappings of different layouts are implicit whenever the extents convert implicitly. |
 | LWG 4217 | C++26 | Not adopted: rule 1 provides `stride()` at every rank instead of letting rank-zero mappings omit it. |
 
@@ -187,9 +206,20 @@ mode.
   The conversions are implicit where the standard's own conversions are, and
   `uni20::mdspan` constructs from a `stdex::mdspan` with a convertible layout and
   accessor. `stdex::default_accessor<T>` converts to `default_accessor<T>`.
+- **Interop is assumed to be sane.** A mapping that meets the standard's
+  preconditions also meets Uni20's, except for shapes that break rule 7, which
+  do not arise. Uni20 therefore takes a standard mapping as it is. A conversion
+  may check Uni20's rules in debug builds; release builds do not.
 - **To the standard.** An explicit conversion for `layout_left`, `layout_right`
-  and `layout_stride`, for external code. `layout_signed_stride` converts only
-  through a checked call that requires every stride to be positive.
+  and `layout_stride`, for external code. The strides pass through unchanged. A
+  zero stride that Uni20 allows, on an empty mapping or an axis of extent one,
+  breaks C++23's requirement that every `layout_stride` stride be positive
+  ([mdspan.layout.stride.cons]), just as the standard's own conversion of an
+  empty `layout_left` mapping to `layout_stride` does until LWG 4603. Kokkos does
+  not check that precondition, and Uni20 does not rewrite the strides to satisfy
+  it. `layout_signed_stride` converts only through a checked call that requires
+  every stride to be positive, since negative strides are that layout's
+  ordinary state.
 - **Concepts** stay structural. A `stdex::mdspan` still satisfies `MdspanLike`;
   it satisfies `StridedMdspanLike` at every rank except zero in the left and
   right layouts.
@@ -197,30 +227,77 @@ mode.
   `tests/linalg/test_cuda_descriptor_compile.cu` gains Uni20 mdspan and mapping
   compositions.
 
+## mdspec
+
+`uni20::mdspec` is an mdspan whose data handle has not been acquired yet. It
+stores a data descriptor in place of the handle, together with the mapping and
+accessor that the eventual mdspan will use ([Mdspec](mdspec.md)). Uni20 already
+owns it, so nothing needs replacing, but its specification should match
+`uni20::mdspan` as closely as the missing handle allows. Everything above
+applies to it:
+
+- **One vocabulary.** mdspec's template parameters, type aliases and observers
+  are `uni20::mdspan`'s. It lacks `data_handle()` and `operator[]`, and adds
+  `data_descriptor_type` and `data_descriptor()`. It gains `size()` and
+  `empty()`, the two mdspan observers it lacks today.
+- **Strides at every rank (rules 1 and 4).** `mdspec::stride(r)` today exists
+  only where the mapping's does, so a rank-zero `layout_left` mdspec has none.
+  With Uni20 layouts it exists at every rank with the precondition
+  `r < rank()`, and `StridedMdspecLike` and `StridedMdspanLike` keep one
+  definition.
+- **Offsets (rules 2 and 5).** The stored accessor fixes the offset type of the
+  mdspan an mdspec resolves to, so the composition rule applies before any
+  handle exists: an mdspec with `layout_signed_stride` and a `size_t`-offset
+  accessor does not compile.
+- **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
+  `mapping().reachable_range()` against the buffer. Today
+  `validate_cuda_descriptor_range` in
+  [`tensor/cuda_access.hpp`](../../src/uni20/tensor/cuda_access.hpp) checks
+  `element_offset()` plus `required_span_size()`.
+- **Empty mappings and representable products (rules 6 and 7)** come with the
+  mapping and need nothing separate.
+- **Resolution.** Acquisition combines the leased handle with `mapping()` and
+  `accessor()` into a `uni20::mdspan`, where `resolve_cuda_mdspan` now builds a
+  `stdex::mdspan`, and the leases' `.mdspan()` return that type.
+- **Concepts.** `MdspecLike` already accepts every `MdspanLike`. With one
+  specification, a generic algorithm constrained on `StridedMdspecLike` sees
+  the same strides, offsets and ranges for an immediate input and for a
+  descriptor-backed one.
+
+A conformance test checks, for each Uni20 layout, that `mdspec` and `mdspan`
+expose the same observers with the same types and values.
+
 ## Migration
 
 Each phase is one pull request.
 
 1. **Types.** The mappings, `default_accessor`, `mdspan`, `offset_range`,
-   conversions and `reachable_range()` on the Uni20 layouts, with conformance
-   tests for the standard behaviors Uni20 relies on, rank zero, signed accessor
-   offsets and device compilation. Nothing else changes.
+   conversions and `reachable_range()` on the Uni20 layouts; `mdspec` gains
+   `size()` and `empty()`. Conformance tests cover the standard behaviors Uni20
+   relies on, rank zero, signed accessor offsets, device compilation and the
+   agreement of `mdspec` with `mdspan`. Nothing else changes.
 2. **Producers.** `RowMajor` and `ColumnMajor` alias the Uni20 layouts; Tensor
    `mdspan()`, `mdspec` mapping types, storage policies and the CUDA accessors
-   produce Uni20 types. The strided concepts require `stride()` at every rank. The
-   twelve layout comparisons use the Uni20 layouts. Buffer range checks move to
-   `reachable_range()`. Generic code calls the member `stride()`, which exists at
-   every rank, so no free stride helper is needed. CUDA `ScalarTensor` transfers,
-   copies and reductions start to compile here, with the rank-zero CUDA tests
-   from #148. `permute` of an empty source permutes the source's strides
-   (rule 6), so the stride construction for empty sources in
-   `mdspan/permute.hpp` is removed. This phase touches every layer and carries
-   most of the risk.
-3. **Tests and examples.** `stdex::` names become Uni20 names, about 550
+   produce Uni20 types, and acquisition resolves an `mdspec` to a
+   `uni20::mdspan`. The CUDA pointer accessors declare `std::ptrdiff_t` offsets.
+   The strided concepts require `stride()` at every rank. The layout comparisons
+   use the Uni20 layouts. Buffer range checks, for Tensors and for
+   descriptor acquisition, move to `reachable_range()`. Generic code calls the
+   member `stride()`, which exists at every rank, so no free stride helper is
+   needed. CUDA `ScalarTensor` transfers, copies and reductions start to compile
+   here, with the rank-zero CUDA tests from #148. `permute` of an empty source
+   permutes the source's strides (rule 6), so the stride construction for empty
+   sources in `mdspan/permute.hpp` is removed; that header comes with dense
+   `permute` in #137, so this phase assumes #137 has merged. This phase touches
+   every layer and carries most of the risk.
+3. **Tests and examples.** `stdex::` names become Uni20 names, about 620
    references, mostly mechanical. A few interop tests keep `stdex::mdspan`
    inputs.
 4. **Signed strides.** `layout_signed_stride`, a `reverse` view and the first
-   opt-in operations listed above.
+   opt-in operations listed above. The diagonal component view moves to
+   `layout_signed_stride`, ending its reliance on wrapped `size_t` offsets, and
+   the remaining code that computes signed offsets through unsigned arithmetic
+   is found and fixed here.
 
 ## Relation to #148
 
@@ -236,14 +313,15 @@ recurs.
 
 ### Warnings in Public Headers
 
-Decided 2026-11-20: consumers embed uni20 as `SYSTEM`. uni20 exports its include
-directories without `SYSTEM`, so otherwise a consumer compiles these headers
-under its own warning flags, and a warning disabled only in uni20's targets can
-fail its `-Werror` build. GCC's `-Wtype-limits` reports `axis < rank` as always
-false when a generic lambda inside a template loops to a rank of zero, which
-rank-generic code meets often. uni20 builds with `-Wno-type-limits`, writes rank
-loops in whatever form reads best, and documents
-`FetchContent_Declare(... SYSTEM)` and `add_subdirectory(... SYSTEM)` in
+Decided 2026-11-20 and proposed in #149, which has not merged: consumers embed
+uni20 as `SYSTEM`. uni20 exports its include directories without `SYSTEM`, so
+otherwise a consumer compiles these headers under its own warning flags, and a
+warning disabled only in uni20's targets can fail its `-Werror` build. GCC's
+`-Wtype-limits` reports `axis < rank` as always false when a generic lambda
+inside a template loops to a rank of zero, which rank-generic code meets often.
+With #149, uni20 builds with `-Wno-type-limits`, writes rank loops in whatever
+form reads best, and documents `FetchContent_Declare(... SYSTEM)` and
+`add_subdirectory(... SYSTEM)` in
 [CMake Consumers](../development/cmake_consumers.md).
 
 ## Open Questions
@@ -252,7 +330,7 @@ loops in whatever form reads best, and documents
    on `layout_stride`.
 2. What a precondition failure does in device code, where Uni20 diagnostics are
    unavailable: trap, or nothing in release builds.
-3. Whether `mdspan::size()` and the span queries keep the standard's `size_t`
-   types.
+3. Whether `size()` and the span queries of `mdspan` and `mdspec` keep the
+   standard's `size_t` types.
 4. NumPy interop: whether arrays with negative strides map to
    `layout_signed_stride` views, once Python bindings exist.
