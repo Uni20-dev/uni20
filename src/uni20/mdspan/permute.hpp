@@ -44,6 +44,87 @@ template <std::size_t Size> consteval auto make_identity_axis_permutation()
   return permutation;
 }
 
+/// \brief Positive strides for an empty mapping that satisfy layout_stride's ordering precondition.
+/// \details layout_stride needs an order of the axes in which each stride is at
+///          least the previous stride times the previous extent. A zero extent
+///          ends that product, so the order consists of groups of nonzero axes
+///          separated by zero-extent axes: each zero-extent axis takes the
+///          product of the group before it, and the next stride restarts at one.
+///          The largest extent goes last in the final group, where it multiplies
+///          nothing, and every other nonzero axis joins the group whose product
+///          is currently smallest.
+/// \pre At least one extent is zero.
+/// \throws std::overflow_error If a stride in that order is not representable.
+template <class Extents>
+constexpr auto
+empty_mapping_strides(Extents const& extents) -> std::array<typename Extents::index_type, Extents::rank()>
+{
+  using index_type = typename Extents::index_type;
+  constexpr std::size_t rank = Extents::rank();
+  constexpr auto limit = static_cast<unsigned long long>(std::numeric_limits<index_type>::max());
+
+  std::array<std::size_t, rank> zero_axes{};
+  std::array<std::size_t, rank> nonzero_axes{};
+  std::size_t zero_count = 0;
+  std::size_t nonzero_count = 0;
+  for (std::size_t axis = 0; axis < rank; ++axis)
+  {
+    if (extents.extent(axis) == 0)
+      zero_axes[zero_count++] = axis;
+    else
+      nonzero_axes[nonzero_count++] = axis;
+  }
+  std::sort(nonzero_axes.begin(), nonzero_axes.begin() + nonzero_count, [&](std::size_t lhs, std::size_t rhs) {
+    if (extents.extent(lhs) != extents.extent(rhs)) return extents.extent(lhs) > extents.extent(rhs);
+    return lhs < rhs;
+  });
+
+  // Group g < zero_count precedes zero_axes[g]; group zero_count is final, and
+  // its largest extent, nonzero_axes[0], is placed last.
+  std::array<std::size_t, rank> group{};
+  std::array<unsigned long long, rank + 1> product{};
+  product.fill(1);
+  for (std::size_t position = 1; position < nonzero_count; ++position)
+  {
+    std::size_t chosen = 0;
+    for (std::size_t candidate = 1; candidate <= zero_count; ++candidate)
+      if (product[candidate] < product[chosen]) chosen = candidate;
+    auto const axis = nonzero_axes[position];
+    group[axis] = chosen;
+    auto const extent = static_cast<unsigned long long>(extents.extent(axis));
+    product[chosen] = product[chosen] > limit / extent ? limit + 1 : product[chosen] * extent;
+  }
+
+  std::array<std::size_t, rank> order{};
+  std::size_t length = 0;
+  for (std::size_t g = 0; g <= zero_count; ++g)
+  {
+    for (std::size_t position = 1; position < nonzero_count; ++position)
+      if (group[nonzero_axes[position]] == g) order[length++] = nonzero_axes[position];
+    if (g < zero_count) order[length++] = zero_axes[g];
+  }
+  if (nonzero_count > 0) order[length++] = nonzero_axes[0];
+
+  std::array<index_type, rank> strides{};
+  index_type stride = 1;
+  for (std::size_t position = 0; position < rank; ++position)
+  {
+    auto const axis = order[position];
+    strides[axis] = stride;
+    if (position + 1 == rank) break;
+    auto const extent = extents.extent(axis);
+    if (extent == 0)
+      stride = 1;
+    else
+    {
+      if (stride > std::numeric_limits<index_type>::max() / extent)
+        throw std::overflow_error("empty permutation strides are not representable");
+      stride *= extent;
+    }
+  }
+  return strides;
+}
+
 template <auto Permutation, PermutableMdspec Span, std::size_t... I>
 constexpr auto permute_mdspec_impl(Span source, std::index_sequence<I...>)
 {
@@ -60,45 +141,24 @@ constexpr auto permute_mdspec_impl(Span source, std::index_sequence<I...>)
     using element_type = typename Span::element_type;
     using accessor_type = typename Span::accessor_type;
     extents_type extents{source.extent(Permutation[I])...};
-    std::array<index_type, sizeof...(I)> strides{source.stride(Permutation[I])...};
     if (!source.mapping().is_unique()) throw std::invalid_argument("permute requires a unique strided mapping");
+    // An empty source's own strides can be unrepresentable products of extents
+    // (row-major after a zero extent), so they are read only when it is not empty.
     bool const empty = ((source.extent(I) == 0) || ...);
+    std::array<index_type, sizeof...(I)> strides{};
     if (empty)
     {
       // Canonical mappings may have zero strides after an empty dimension.
       // Build positive strides satisfying layout_stride's ordering precondition;
       // replacing every zero by one would fail that precondition at rank > 2.
-      // The ordering puts zero-extent axes first and the others by increasing
-      // extent. Each stride after a zero extent restarts at one, so the largest
-      // stride is the product of every nonzero extent except the largest.
-      std::array<std::size_t, sizeof...(I)> order{I...};
-      std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
-        auto const lhs_extent = extents.extent(lhs);
-        auto const rhs_extent = extents.extent(rhs);
-        if ((lhs_extent == 0) != (rhs_extent == 0)) return lhs_extent == 0;
-        if (lhs_extent != rhs_extent) return lhs_extent < rhs_extent;
-        return lhs < rhs;
-      });
-      index_type stride = 1;
-      for (std::size_t position = 0; position < order.size(); ++position)
-      {
-        auto const axis = order[position];
-        strides[axis] = stride;
-        if (position + 1 == order.size()) break;
-        auto const extent = extents.extent(axis);
-        if (extent == 0)
-          stride = 1;
-        else
-        {
-          if (stride > std::numeric_limits<index_type>::max() / extent)
-            throw std::overflow_error("empty permutation strides are not representable");
-          stride *= extent;
-        }
-      }
+      strides = empty_mapping_strides(extents);
     }
     else
+    {
+      strides = {source.stride(Permutation[I])...};
       for (auto const stride : strides)
         if (stride <= 0) throw std::invalid_argument("permute requires positive strides");
+    }
     mapping_type mapping{extents, strides};
     if constexpr (MdspanLike<Span>)
     {

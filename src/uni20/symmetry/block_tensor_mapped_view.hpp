@@ -148,7 +148,7 @@ auto permute_block(Block block)
     using selector_type = std::remove_cvref_t<decltype(block.backend_selector())>;
     return MdspecTensorView<decltype(mutable_mdspec), decltype(const_mdspec), tensor_storage_policy_t<Block>,
                             selector_type>{std::move(mutable_mdspec), std::move(const_mdspec),
-                                           descriptor_precision_source(block), block.backend_selector()};
+                                           durable_precision_source(block), block.backend_selector()};
   }
 }
 
@@ -159,7 +159,7 @@ template <TensorView Block> auto make_read_only_block_view(Block const& block)
   using storage_policy = tensor_storage_policy_t<Block>;
   using selector_type = std::remove_cvref_t<decltype(block.backend_selector())>;
   return MdspecTensorView<mdspec_type, mdspec_type, storage_policy, selector_type>{
-      const_mdspec, const_mdspec, descriptor_precision_source(block), block.backend_selector()};
+      const_mdspec, const_mdspec, durable_precision_source(block), block.backend_selector()};
 }
 
 // An identity map preserves the original mapping/accessor, including compressed

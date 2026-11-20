@@ -33,8 +33,15 @@ template <std::size_t... Axis, TensorView Tensor>
   auto mutable_mdspec = uni20::permute<Axis...>(mdspec_of(tensor));
   auto const_mdspec = uni20::permute<Axis...>(mdspec_of(std::as_const(tensor)));
   using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
+  // A borrowed temporary dies before the view, so its own address is not bound.
+  auto precision = [&] {
+    if constexpr (std::is_lvalue_reference_v<Tensor&&>)
+      return detail::descriptor_precision_source(tensor);
+    else
+      return detail::durable_precision_source(tensor);
+  }();
   return MdspecTensorView<decltype(mutable_mdspec), decltype(const_mdspec), tensor_storage_policy_t<Tensor>,
-                          selector_type>{std::move(mutable_mdspec), std::move(const_mdspec),
-                                         detail::descriptor_precision_source(tensor), tensor.backend_selector()};
+                          selector_type>{std::move(mutable_mdspec), std::move(const_mdspec), std::move(precision),
+                                         tensor.backend_selector()};
 }
 } // namespace uni20

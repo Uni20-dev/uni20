@@ -61,4 +61,29 @@ descriptor_precision_source(Tensor const& tensor) -> precision_source<tensor_ele
   else
     return {};
 }
+
+/// \brief Precision source for a descriptor that may outlive the object it was derived from.
+/// \details Binds only through `precision_source()`, or through an lvalue
+///          `base()` by the same rule, which name storage independent of
+///          `tensor` itself. An object that reports its default only through its
+///          own `default_precision_if_set()` is not bound, because binding would
+///          record the address of an object the descriptor can outlive, such as
+///          a by-value parameter or a temporary view. Such a descriptor reports no
+///          default.
+template <class Tensor>
+[[nodiscard]] constexpr auto
+durable_precision_source(Tensor const& tensor) -> precision_source<tensor_element_t<Tensor>>
+{
+  if constexpr (!has_runtime_precision_v<tensor_element_t<Tensor>>)
+    return {};
+  else if constexpr (requires { tensor.precision_source(); })
+    return tensor.precision_source();
+  else if constexpr (requires {
+                       requires TensorView<decltype(tensor.base())> &&
+                                    std::is_lvalue_reference_v<decltype(tensor.base())>;
+                     })
+    return durable_precision_source(tensor.base());
+  else
+    return {};
+}
 } // namespace uni20::detail

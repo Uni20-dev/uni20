@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 
 namespace
 {
@@ -155,28 +156,34 @@ TEST(TensorPermuteTest, ConstnessAndConjugatingAccessorArePreserved)
   EXPECT_EQ((packed[2, 1]), (uni20::complex<double>{4, -7}));
 }
 
-// layout_stride requires positive strides and an axis ordering in which each
-// stride is at least the previous stride times the previous extent. Sorting by
-// stride, then by extent, finds such an ordering whenever one exists.
+// layout_stride requires positive strides and an order of the axes in which
+// each stride is at least the previous stride times the previous extent. Zero
+// extents let that order revisit small strides, so this searches all orders.
 template <class Span> bool has_layout_stride_ordering(Span const& span)
 {
   constexpr std::size_t rank = Span::rank();
-  std::array<std::size_t, rank> order{};
+  static_assert(rank < 16);
   for (std::size_t axis = 0; axis < rank; ++axis)
-  {
     if (span.stride(axis) <= 0) return false;
-    order[axis] = axis;
-  }
-  std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
-    if (span.stride(lhs) != span.stride(rhs)) return span.stride(lhs) < span.stride(rhs);
-    return span.extent(lhs) < span.extent(rhs);
-  });
-  for (std::size_t position = 1; position < rank; ++position)
-  {
-    auto const previous = order[position - 1];
-    if (span.stride(order[position]) < span.stride(previous) * span.extent(previous)) return false;
-  }
-  return true;
+  if (rank <= 1) return true;
+  auto may_follow = [&](std::size_t previous, std::size_t next) {
+    auto const extent = span.extent(previous);
+    return extent == 0 || span.stride(previous) <= span.stride(next) / extent;
+  };
+  // reachable[mask * rank + last]: some order of the axes in mask ends at last.
+  std::vector<char> reachable((std::size_t{1} << rank) * rank, 0);
+  for (std::size_t axis = 0; axis < rank; ++axis)
+    reachable[(std::size_t{1} << axis) * rank + axis] = 1;
+  for (std::size_t mask = 1; mask < (std::size_t{1} << rank); ++mask)
+    for (std::size_t last = 0; last < rank; ++last)
+      if (reachable[mask * rank + last])
+        for (std::size_t next = 0; next < rank; ++next)
+          if (!(mask & (std::size_t{1} << next)) && may_follow(last, next))
+            reachable[(mask | (std::size_t{1} << next)) * rank + next] = 1;
+  std::size_t const full = (std::size_t{1} << rank) - 1;
+  for (std::size_t last = 0; last < rank; ++last)
+    if (reachable[full * rank + last]) return true;
+  return false;
 }
 
 TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
@@ -197,6 +204,24 @@ TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
   auto tensor_view = uni20::permute<1, 2, 0>(tensor);
   EXPECT_EQ(tensor_view.extent(2), 0);
   EXPECT_TRUE(has_layout_stride_ordering(tensor_view));
+
+  // From rank four, a zero-extent axis between two groups of nonzero axes is
+  // needed: (65536, 0, 65536, 65536) fits with strides (1, 65536, 1, 65536).
+  using rank_four_extents = stdex::dextents<unsigned int, 4>;
+  stdex::mdspan<double, rank_four_extents, stdex::layout_left> rank_four(nullptr,
+                                                                         rank_four_extents{0, 65536, 65536, 65536});
+  auto between = uni20::permute<1, 0, 2, 3>(rank_four);
+  EXPECT_EQ(between.mapping().required_span_size(), 0U);
+  EXPECT_TRUE(has_layout_stride_ordering(between));
+  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 0, 3>(rank_four)));
+  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 3, 0>(rank_four)));
+  uni20::Tensor<double, 4> rank_four_tensor(0, large, large, large);
+  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 0, 2, 3>(rank_four_tensor)));
+
+  // A row-major source's own strides after a zero extent overflow here; they
+  // are never read for an empty source.
+  uni20::RowMajorTensor<double, 3> row_major(0, large, large);
+  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 0>(row_major)));
 }
 
 TEST(TensorPermuteTest, IdentityScalarEmptyAndSingletonAxes)
