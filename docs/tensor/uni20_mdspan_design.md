@@ -236,6 +236,16 @@ lowering would rebase the descriptor to `minimum` when a use needs it. BLAS and
 LAPACK do not accept it: BLAS's negative-increment convention is different, and
 LAPACK leading dimensions must be positive.
 
+Uni20's C++ API keeps temporaries explicit, within reason: an operation that
+does not accept an operand's layout rejects it rather than copying it. Copies
+that make a call succeed belong to layers built on Uni20. Python bindings would
+copy a negatively strided NumPy array that an operation does not accept, as
+NumPy itself copies before calling BLAS. A convenience C++ library, in the
+style of MATLAB, could make the same trade for code where the answer matters
+more than the cost. Rule 5 makes such a layer simple: acceptance is a
+compile-time property, so the layer can test it with a concept and insert the
+copy only where it is needed, without catching run-time declines.
+
 ### Rejected Alternatives
 
 Allowing negative strides in `layout_stride` with runtime checks would keep one
@@ -393,5 +403,6 @@ form reads best, and documents `FetchContent_Declare(... SYSTEM)` and
 2. Whether `size()` of `mdspan` and `mdspec` keeps the standard's `size_type`,
    `make_unsigned_t<index_type>`, and the mappings' `required_span_size()` its
    `index_type`, or whether Uni20 chooses its own count and offset types.
-3. NumPy interop: whether arrays with negative strides map to
-   `layout_signed_stride` views, once Python bindings exist.
+3. NumPy interop: whether the Python bindings pass negatively strided arrays as
+   `layout_signed_stride` views to the operations that accept them, or always
+   copy them at the boundary.
