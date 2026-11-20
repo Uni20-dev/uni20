@@ -119,3 +119,18 @@ TEST(ZipLayoutSelector, MixedMdspanAlsoChoosesStridedZipLayout)
   using Z = zip_layout_t<decltype(A), decltype(R)>;
   static_assert(std::is_same_v<Z, StridedZipLayout<2>>);
 }
+
+template <typename Mapping>
+concept has_required_span_size = requires(Mapping const& m) { m.required_span_size(); };
+
+TEST(ZipLayoutMapping, HasNoRequiredSpanSize)
+{
+  using extents_t = stdex::dextents<index_t, 1>;
+  using strided = StridedZipLayout<2>::mapping<extents_t>;
+  using general = GeneralZipLayout<stdex::layout_stride, stdex::layout_stride>::mapping<extents_t>;
+
+  // One offset per span has no single span size, so neither layout claims one.
+  static_assert(!has_required_span_size<strided>);
+  static_assert(!has_required_span_size<general>);
+  static_assert(has_required_span_size<stdex::layout_stride::mapping<extents_t>>);
+}
