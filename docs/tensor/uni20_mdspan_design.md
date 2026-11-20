@@ -132,12 +132,19 @@ explicitly.
    layout-mapping requirements need it. The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
    buffer: the layouts in the Types table, with `default_accessor` or the CUDA
-   pointer accessors. Composite mappings and translating accessors are outside
-   it. `StridedZipLayout` returns one offset per span, and `diagonal_accessor`
+   pointer accessors. The zip layouts are outside it. `StridedZipLayout` and
+   `GeneralZipLayout` return one offset per span, so they are Uni20 mappings
+   rather than conforming layout mappings, and they should not claim to be:
+   they provide neither `required_span_size()` nor `reachable_range()`. They
+   work with the accessors and operations written for them, and anything that
+   needs those queries, such as buffer validation or conversion to the
+   standard, does not accept them. Today both say in their documentation that
+   they model the standard's layout-mapping requirements, and
+   `GeneralZipLayout` returns the largest component's `required_span_size()`;
+   both go. A translating accessor is outside the rule too: `diagonal_accessor`
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
-   diagonal is mapping offset 8 but component 2. Validating such views needs a
-   range per span, or one the accessor translates, and is left to the first
-   use that validates them.
+   diagonal is mapping offset 8 but component 2, and validating its buffer is
+   left to the accessor.
 4. **Strided means strided.** `StridedMdspanLike` and `StridedMdspecLike` require
    `is_always_strided()` and a declared `stride(axis)`, with no rank-zero escape.
    A standard `layout_left` or `layout_right` mdspan of rank zero does not
@@ -332,7 +339,8 @@ expose the same observers with the same types and values.
 
 ## Migration
 
-Each phase is one pull request.
+Each phase is one pull request. Removing the zip layouts' claim to conformance
+(rule 3) needs none of the new types and can land first.
 
 1. **Types.** The mappings, `default_accessor`, `mdspan`, `offset_range`,
    conversions and `reachable_range()` on the Uni20 layouts; `mdspec` gains
