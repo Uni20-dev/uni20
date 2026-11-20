@@ -39,7 +39,7 @@ Var<double> failing_identity(Var<double> x)
 TEST(Var, Sin)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double v = 0.1;
   Var<double> x = v;
@@ -58,7 +58,7 @@ TEST(Var, Sin)
 TEST(Var, Cos)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double v = 0.1;
   Var<double> x = v;
@@ -77,7 +77,7 @@ TEST(Var, Cos)
 TEST(Var, BackpropConvenienceForwardsToGradientChannel)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double const v = 0.3;
   Var<double> x = v;
@@ -94,7 +94,7 @@ TEST(Var, BackpropConvenienceForwardsToGradientChannel)
 TEST(Var, SinUnused)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double v = 0.1;
 
@@ -179,7 +179,7 @@ TEST(Var, FailedUnusedBranchIsDiscardedAndItsGradientIsPruned)
 TEST(Var, MultiplyAndScalarCombos)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<double> a = 2.0;
   Var<double> b = -0.5;
@@ -207,7 +207,7 @@ TEST(Var, MultiplyAndScalarCombos)
 TEST(Var, CopyAssignment)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<double> source = 0.75;
   Var<double> target;
@@ -226,7 +226,7 @@ TEST(Var, CopyAssignment)
 TEST(Var, SubtractionOps)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<double> x = 5.0;
   Var<double> y = -1.5;
@@ -254,7 +254,7 @@ TEST(Var, SubtractionOps)
 TEST(Var, RealImagGradients)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<uni20::complex<double>> z = uni20::complex<double>{1.5, -2.5};
 
@@ -279,7 +279,7 @@ TEST(Var, RealImagGradients)
 TEST(Var, RealImagGradientSum)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<uni20::complex<double>> z = uni20::complex<double>{1.5, -2.5};
 
@@ -301,7 +301,7 @@ TEST(Var, RealImagGradientSum)
 TEST(Var, RealImagGradientsImagSeedFirst)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Var<uni20::complex<double>> z = uni20::complex<double>{1.5, -2.5};
 
@@ -327,7 +327,7 @@ TEST(Var, RealImagGradientsImagSeedFirst)
 TEST(Var, StressBackpropMatchesAnalytic)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double const base_value = 0.375;
   Var<double> x = base_value;

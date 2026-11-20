@@ -12,7 +12,7 @@ using namespace uni20::async;
 TEST(ReverseValue, BasicWriteRead)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   ReverseValue<int> fv;
   Async<int> v;
@@ -24,7 +24,7 @@ TEST(ReverseValue, BasicWriteRead)
 TEST(ReverseValue, MoveOnlyType)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<std::string>;
   ReverseValue<Ptr> fv;
@@ -38,7 +38,7 @@ TEST(ReverseValue, MoveOnlyType)
 TEST(ReverseValue, AssignFromAsync)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a = 99;
   ReverseValue<int> fv;
@@ -52,7 +52,7 @@ TEST(ReverseValue, AssignFromAsync)
 TEST(ReverseValue, ChainAccumulationWithCancellation)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   // Exercise the cancellation-safe branch when no upstream gradient is supplied.
   ReverseValue<double> canceled;
@@ -101,7 +101,7 @@ TEST(ReverseValue, ChainAccumulationWithCancellation)
 TEST(ReverseValue, GetWaitAliasMatchesFinalWait)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   ReverseValue<int> rv;
   rv = 17;
