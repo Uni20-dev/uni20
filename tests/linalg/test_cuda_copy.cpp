@@ -720,6 +720,59 @@ TEST_F(CudaCopyTest, ZeroExtentRoundTripIsAnEmptySuccessfulTransfer)
   EXPECT_EQ(result.cols(), 0);
 }
 
+TEST_F(CudaCopyTest, PermutedViewsCopyBetweenHostAndDeviceWhenEmpty)
+{
+  // A permuted empty view has a layout_stride mapping that can report
+  // is_exhaustive() == false. Copying it moves nothing and must succeed.
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  ErrorModeGuard const error_mode;
+
+  auto source = uni20::to_device(make_matrix(), 0);
+  auto source_view = uni20::permute<1, 0>(source);
+  row_major_host_matrix_type transposed(3, 2);
+  uni20::copy(transposed, source_view);
+  for (uni20::index_type row = 0; row < 2; ++row)
+    for (uni20::index_type col = 0; col < 3; ++col)
+      EXPECT_EQ((transposed[col, row]), (make_matrix()[row, col]));
+
+  for (auto const [rows, cols] : std::array<std::array<uni20::index_type, 2>, 3>{{{0, 3}, {0, 0}, {2, 0}}})
+  {
+    auto device = uni20::to_device(host_matrix_type(rows, cols), 0);
+    auto view = uni20::permute<1, 0>(device);
+    row_major_host_matrix_type host(cols, rows);
+    EXPECT_NO_THROW(uni20::copy(host, view)) << rows << " x " << cols;
+    EXPECT_NO_THROW(uni20::copy(view, host)) << rows << " x " << cols;
+  }
+
+  using host_tensor_type = uni20::Tensor<double, 3>;
+  for (auto const [first, second, third] :
+       std::array<std::array<uni20::index_type, 3>, 3>{{{0, 3, 4}, {2, 0, 4}, {2, 3, 0}}})
+  {
+    host_tensor_type host(first, second, third);
+    auto device = uni20::to_device(host, 0);
+    auto host_view = uni20::permute<2, 0, 1>(host);
+    auto device_view = uni20::permute<2, 0, 1>(device);
+    EXPECT_NO_THROW(uni20::copy(host_view, device_view)) << first << " x " << second << " x " << third;
+    EXPECT_NO_THROW(uni20::copy(device_view, host_view)) << first << " x " << second << " x " << third;
+  }
+}
+
+TEST_F(CudaCopyTest, AsyncCopyFromAnEmptyPermutedDeviceViewSucceeds)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(0));
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  ErrorModeGuard const error_mode;
+  uni20::async::Async<cuda_matrix_type> input = uni20::to_device(host_matrix_type(0, 3), 0);
+  uni20::async::Async<row_major_host_matrix_type> output = row_major_host_matrix_type(3, 0);
+
+  uni20::copy(output, uni20::async::permute<1, 0>(input));
+
+  auto const& result = output.get_wait(scheduler);
+  EXPECT_EQ(result.rows(), 3);
+  EXPECT_EQ(result.cols(), 0);
+}
+
 TEST_F(CudaCopyTest, PeerCopyPreservesValues)
 {
   if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";

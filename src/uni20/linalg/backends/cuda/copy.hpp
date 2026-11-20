@@ -211,8 +211,13 @@ template <class OutputMdspan, class InputMdspan>
     plan.direction = CopyDirection::device_to_host;
   }
 
-  bool const runtime_copy_eligible = mapping_is_contiguous(output.mapping()) &&
-                                     mapping_is_contiguous(input.mapping()) && physical_orders_match(output, input);
+  // The required span is zero exactly when the index space is empty. An empty
+  // strided mapping can report is_exhaustive() == false (LWG 4266), so an
+  // empty copy, which moves nothing, bypasses the layout test.
+  bool const empty_index_space = plan.output_span_size == 0;
+  bool const runtime_copy_eligible =
+      empty_index_space || (mapping_is_contiguous(output.mapping()) && mapping_is_contiguous(input.mapping()) &&
+                            physical_orders_match(output, input));
   bool needs_elementwise_kernel = false;
   if (!runtime_copy_eligible)
   {
