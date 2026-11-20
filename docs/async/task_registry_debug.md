@@ -276,12 +276,12 @@ uni20::TaskRegistry::start_diagnostics_service(options);
 
 The service owns a background thread. It writes best-effort DOT files when a request
 file appears, when the configured signal is received, or when program code calls
-`request_graphviz_dump()`. A signal is consumed with `sigtimedwait` on Linux rather
-than by doing work inside a signal handler. Setting `UNI20_DEBUG_DAG_SIGNAL`
-automatically starts the service during program initialization, allowing the signal
-to be blocked before namespace-scope users and worker threads are created. Without
-that environment variable, callers must start the service explicitly before creating
-threads that should inherit the blocked signal mask.
+`request_graphviz_dump()`. On Linux the service installs a handler for the signal
+that only records it, and the service thread writes the DOT file at its next poll,
+so no diagnostics run inside the handler. The signal may arrive on any thread, so the
+service can start at any point, including after worker threads exist. Stopping the
+service restores the signal's previous action. Setting `UNI20_DEBUG_DAG_SIGNAL`
+starts the service during program initialization.
 
 Default output and service settings can be configured with environment variables:
 
