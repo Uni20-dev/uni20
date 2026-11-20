@@ -8,7 +8,6 @@
 
 #include <uni20/mdspan/mdspec.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -46,72 +45,35 @@ template <std::size_t Size> consteval auto make_identity_axis_permutation()
 
 /// \brief Positive strides for an empty mapping that satisfy layout_stride's ordering precondition.
 /// \details layout_stride needs an order of the axes in which each stride is at
-///          least the previous stride times the previous extent. A zero extent
-///          ends that product, so the order consists of groups of nonzero axes
-///          separated by zero-extent axes: each zero-extent axis takes the
-///          product of the group before it, and the next stride restarts at one.
-///          The largest extent goes last in the final group, where it multiplies
-///          nothing, and every other nonzero axis joins the group whose product
-///          is currently smallest.
+///          least the previous stride times the previous extent. The first
+///          zero-extent axis goes first with stride one; the next stride may
+///          restart at one, because it only has to exceed one times zero. The
+///          other axes follow in order, each taking the running product of the
+///          extents before it, which restarts at one after any further zero
+///          extent. Every stride is at most the product of the nonzero extents,
+///          so any shape whose nonzero extents could hold elements fits.
 /// \pre At least one extent is zero.
-/// \throws std::overflow_error If a stride in that order is not representable.
+/// \throws std::overflow_error If a stride in that order is not representable in
+///         `index_type`.
 template <class Extents>
 constexpr auto
 empty_mapping_strides(Extents const& extents) -> std::array<typename Extents::index_type, Extents::rank()>
 {
   using index_type = typename Extents::index_type;
   constexpr std::size_t rank = Extents::rank();
-  constexpr auto limit = static_cast<unsigned long long>(std::numeric_limits<index_type>::max());
-
-  std::array<std::size_t, rank> zero_axes{};
-  std::array<std::size_t, rank> nonzero_axes{};
-  std::size_t zero_count = 0;
-  std::size_t nonzero_count = 0;
-  for (std::size_t axis = 0; axis < rank; ++axis)
-  {
-    if (extents.extent(axis) == 0)
-      zero_axes[zero_count++] = axis;
-    else
-      nonzero_axes[nonzero_count++] = axis;
-  }
-  std::sort(nonzero_axes.begin(), nonzero_axes.begin() + nonzero_count, [&](std::size_t lhs, std::size_t rhs) {
-    if (extents.extent(lhs) != extents.extent(rhs)) return extents.extent(lhs) > extents.extent(rhs);
-    return lhs < rhs;
-  });
-
-  // Group g < zero_count precedes zero_axes[g]; group zero_count is final, and
-  // its largest extent, nonzero_axes[0], is placed last.
-  std::array<std::size_t, rank> group{};
-  std::array<unsigned long long, rank + 1> product{};
-  product.fill(1);
-  for (std::size_t position = 1; position < nonzero_count; ++position)
-  {
-    std::size_t chosen = 0;
-    for (std::size_t candidate = 1; candidate <= zero_count; ++candidate)
-      if (product[candidate] < product[chosen]) chosen = candidate;
-    auto const axis = nonzero_axes[position];
-    group[axis] = chosen;
-    auto const extent = static_cast<unsigned long long>(extents.extent(axis));
-    product[chosen] = product[chosen] > limit / extent ? limit + 1 : product[chosen] * extent;
-  }
-
-  std::array<std::size_t, rank> order{};
-  std::size_t length = 0;
-  for (std::size_t g = 0; g <= zero_count; ++g)
-  {
-    for (std::size_t position = 1; position < nonzero_count; ++position)
-      if (group[nonzero_axes[position]] == g) order[length++] = nonzero_axes[position];
-    if (g < zero_count) order[length++] = zero_axes[g];
-  }
-  if (nonzero_count > 0) order[length++] = nonzero_axes[0];
+  std::size_t zero_axis = 0;
+  while (extents.extent(zero_axis) != 0)
+    ++zero_axis;
 
   std::array<index_type, rank> strides{};
+  strides[zero_axis] = 1;
   index_type stride = 1;
-  for (std::size_t position = 0; position < rank; ++position)
+  std::size_t remaining = rank - 1;
+  for (std::size_t axis = 0; axis < rank; ++axis)
   {
-    auto const axis = order[position];
+    if (axis == zero_axis) continue;
     strides[axis] = stride;
-    if (position + 1 == rank) break;
+    if (--remaining == 0) break;
     auto const extent = extents.extent(axis);
     if (extent == 0)
       stride = 1;
@@ -187,9 +149,15 @@ constexpr auto permute_mdspec(Span source)
 ///          and handles or deferred descriptors are preserved. Identity
 ///          permutations also preserve the original layout type. Other
 ///          permutations use layout_stride and require a unique mapping with
-///          positive strides, except for zero strides in empty sources.
+///          positive strides, except for zero strides in empty sources. An empty
+///          source gets new positive strides (see `empty_mapping_strides`); its
+///          own strides are not read.
 /// \pre Nonempty source mappings are representable by layout_stride using
 ///      their observed extents and strides, with zero offset at the origin.
+/// \throws std::overflow_error For an empty source when a stride chosen by
+///         `empty_mapping_strides` is not representable in the index type. That
+///         happens only when the nonzero extents multiply beyond it, so no
+///         tensor with those extents could hold its elements.
 /// \tparam Axis A bijection of the source axes.
 /// \param source Borrowed metadata; the underlying storage must outlive the result.
 template <std::size_t... Axis, detail::PermutableMdspec Span>

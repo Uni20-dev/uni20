@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <stdexcept>
 #include <vector>
 
 namespace
@@ -189,7 +190,7 @@ template <class Span> bool has_layout_stride_ordering(Span const& span)
 TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
 {
   // Strides in output-axis order would need 65536 * 65536 here, which does not
-  // fit in unsigned int, although a representable ordering exists.
+  // fit in unsigned int. Starting from the zero-extent axis restarts the product.
   using extents_type = stdex::dextents<unsigned int, 3>;
   stdex::mdspan<double, extents_type, stdex::layout_left> source(nullptr, extents_type{0, 65536, 65536});
   auto view = uni20::permute<1, 2, 0>(source);
@@ -205,18 +206,12 @@ TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
   EXPECT_EQ(tensor_view.extent(2), 0);
   EXPECT_TRUE(has_layout_stride_ordering(tensor_view));
 
-  // From rank four, a zero-extent axis between two groups of nonzero axes is
-  // needed: (65536, 0, 65536, 65536) fits with strides (1, 65536, 1, 65536).
+  // When the nonzero extents multiply beyond the index type the permutation
+  // fails cleanly. No tensor with these nonzero extents could hold its elements.
   using rank_four_extents = stdex::dextents<unsigned int, 4>;
   stdex::mdspan<double, rank_four_extents, stdex::layout_left> rank_four(nullptr,
                                                                          rank_four_extents{0, 65536, 65536, 65536});
-  auto between = uni20::permute<1, 0, 2, 3>(rank_four);
-  EXPECT_EQ(between.mapping().required_span_size(), 0U);
-  EXPECT_TRUE(has_layout_stride_ordering(between));
-  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 0, 3>(rank_four)));
-  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 3, 0>(rank_four)));
-  uni20::Tensor<double, 4> rank_four_tensor(0, large, large, large);
-  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 0, 2, 3>(rank_four_tensor)));
+  EXPECT_THROW(static_cast<void>(uni20::permute<1, 0, 2, 3>(rank_four)), std::overflow_error);
 
   // A row-major source's own strides after a zero extent overflow here; they
   // are never read for an empty source.
