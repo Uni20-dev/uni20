@@ -229,7 +229,7 @@ TEST(AsyncOpsTest, CompoundOperationRejectsRhsQueueAliasAtSubmission)
 TEST(AsyncOpsTest, ImmediatePayloadQueueMemberIsNotAnEpochQueue)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<async_test_types::QueueMember> value;
   async_assign(value, async_test_types::QueueMember{3});
