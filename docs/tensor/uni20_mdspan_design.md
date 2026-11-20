@@ -120,14 +120,30 @@ explicitly.
    `(0, 3, 4)` has strides `(1, 0, 0)`), so code that reads strides already
    decides emptiness from the extents, and negative values stay excluded. A
    permutation of an empty source then permutes the source's strides like any
-   other, with no new strides to invent.
+   other, with no new strides to invent. This follows LWG 4603 and P3959R0,
+   applied to every constructor, including conversion from a canonical layout.
 7. **The nonzero extents have a representable product.** The standard requires
    only the number of elements to be representable, which says nothing about an
    empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
    Uni20's mappings require the product of the nonzero extents to be
    representable in `index_type`. No tensor with those extents could hold its
    elements otherwise, and canonical strides of every supported shape, empty or
-   not, are representable.
+   not, are representable. No LWG issue covers this for `layout_left` and
+   `layout_right`; LWG 4545 fixes the same overflow for the padded layouts.
+
+### Alignment With the Standard
+
+Uni20 adopts these library issue resolutions, so its layouts behave as the
+standard is expected to:
+
+| Issue | Status (2026-11) | Adopted rule |
+|---|---|---|
+| LWG 4603, P3959R0 | Ready | Rule 6: an empty mapping accepts nonnegative strides. P3959R0 also relaxes the converting constructor; 4603's proposed resolution does not yet. |
+| LWG 4606 | Ready | For a nonempty `layout_stride`, every stride is nonnegative and representable, and axes of extent one impose no ordering constraint. Only the axes of extent greater than one need an order in which none overlaps. A strided slice such as every other column of a `(2, 5)` row-major matrix, extents `(2, 3)` with strides `(5, 2)`, is valid. |
+| LWG 4266 | C++26 | An empty mapping is exhaustive; `is_always_exhaustive()` is true when the rank is zero or a static extent is zero. |
+| LWG 4562 | Ready | `is_exhaustive()` is `required_span_size()` equal to the product of the extents, so axes of extent one do not affect it. |
+| LWG 4272 | C++26 | Conversions between rank-zero mappings of different layouts are implicit whenever the extents convert implicitly. |
+| LWG 4217 | C++26 | Not adopted: rule 1 provides `stride()` at every rank instead of letting rank-zero mappings omit it. |
 
 ### Signed-stride Semantics
 
