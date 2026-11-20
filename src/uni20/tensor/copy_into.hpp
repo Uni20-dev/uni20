@@ -53,12 +53,9 @@ template <MdspecLike Output, MdspecLike Input>
   else
   {
     constexpr std::size_t rank = std::remove_cvref_t<Output>::rank();
-    if constexpr (rank > 0)
+    for (std::size_t axis = 0; axis < rank; ++axis)
     {
-      for (std::size_t axis = 0; axis < rank; ++axis)
-      {
-        if (output.extent(axis) != input.extent(axis)) return false;
-      }
+      if (output.extent(axis) != input.extent(axis)) return false;
     }
     return true;
   }

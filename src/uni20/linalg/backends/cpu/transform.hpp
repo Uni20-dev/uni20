@@ -81,14 +81,11 @@ void check_transform_extents(OutputMdspan const& output, InputMdspans const&... 
   if constexpr (sizeof...(InputMdspans) > 0)
   {
     constexpr std::size_t rank = std::remove_cvref_t<OutputMdspan>::rank();
-    if constexpr (rank > 0)
-    {
-      auto check_input = [&](auto const& input) {
-        for (std::size_t axis = 0; axis < rank; ++axis)
-          CHECK_EQUAL(output.extent(axis), input.extent(axis));
-      };
-      (check_input(inputs), ...);
-    }
+    auto check_input = [&](auto const& input) {
+      for (std::size_t axis = 0; axis < rank; ++axis)
+        CHECK_EQUAL(output.extent(axis), input.extent(axis));
+    };
+    (check_input(inputs), ...);
   }
 }
 
