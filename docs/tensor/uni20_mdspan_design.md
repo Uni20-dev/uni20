@@ -111,6 +111,23 @@ explicitly.
    handle them rejects the layout by type at compile time, so a reversed view
    never reaches a backend that would decline it at run time and end the
    program. Operations opt in one at a time.
+6. **Empty mappings constrain their strides less.** The standard requires
+   `layout_stride` strides to be positive and to admit an axis order in which
+   no two axes overlap, even when the mapping has no elements. Uni20's
+   `layout_stride` requires that only of nonempty mappings; an empty mapping
+   accepts any nonnegative strides, including zero. That is the range canonical
+   layouts already produce for empty tensors (`layout_left` with extents
+   `(0, 3, 4)` has strides `(1, 0, 0)`), so code that reads strides already
+   decides emptiness from the extents, and negative values stay excluded. A
+   permutation of an empty source then permutes the source's strides like any
+   other, with no new strides to invent.
+7. **The nonzero extents have a representable product.** The standard requires
+   only the number of elements to be representable, which says nothing about an
+   empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
+   Uni20's mappings require the product of the nonzero extents to be
+   representable in `index_type`. No tensor with those extents could hold its
+   elements otherwise, and canonical strides of every supported shape, empty or
+   not, are representable.
 
 ### Signed-stride Semantics
 
@@ -170,7 +187,10 @@ Each phase is one pull request.
    `reachable_range()`. Generic code calls the member `stride()`, which exists at
    every rank, so no free stride helper is needed. CUDA `ScalarTensor` transfers,
    copies and reductions start to compile here, with the rank-zero CUDA tests
-   from #148. This phase touches every layer and carries most of the risk.
+   from #148. `permute` of an empty source permutes the source's strides
+   (rule 6), so the stride construction for empty sources in
+   `mdspan/permute.hpp` is removed. This phase touches every layer and carries
+   most of the risk.
 3. **Tests and examples.** `stdex::` names become Uni20 names, about 550
    references, mostly mechanical. A few interop tests keep `stdex::mdspan`
    inputs.
