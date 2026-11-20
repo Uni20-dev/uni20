@@ -87,9 +87,9 @@ Rules:
 | Expression | Meaning |
 |---|---|
 | `owning = value` | Rebind: detach and create fresh storage plus a fresh `EpochQueue`. |
-| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. |
+| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. A source on the alias's own queue (its parent or another alias of that parent) is rejected. |
 | `read_only_alias = anything` | Ill-formed: assignment to const or transforming read-only proxies is forbidden. |
-| `async_assign(destination, source)` | Enroll assignment in the destination's current queue. |
+| `async_assign(destination, source)` | Enroll assignment in the destination's current queue. An async source on that queue is rejected. |
 
 `is_async_alias_v<T>` distinguishes aliases from independent values. Mutable
 aliases provide an ADL-visible `assign_through(target, source)` operation;

@@ -1,9 +1,11 @@
 #include <array>
 #include <concepts>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <type_traits>
 #include <uni20/async/async_task.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <uni20/common/trace.hpp>
 #include <uni20/core/types.hpp>
 #include <uni20/tensor/async.hpp>
 #include <uni20/tensor/reshape.hpp>
@@ -97,6 +99,19 @@ matrix_type make_matrix()
   span[1, 1] = {7.0, 8.0};
   return matrix;
 }
+
+class ErrorModeGuard {
+  public:
+    ErrorModeGuard() : previous_(trace::get_formatting_options().errors_abort())
+    {
+      trace::get_formatting_options().set_errors_abort(false);
+    }
+
+    ~ErrorModeGuard() { trace::get_formatting_options().set_errors_abort(previous_); }
+
+  private:
+    bool previous_;
+};
 
 } // namespace
 
@@ -210,6 +225,27 @@ TEST(TensorAsyncTest, MutableReshapeAliasAssignmentCopiesValuesWithoutRetargetin
   EXPECT_EQ((values[0, 3]), uni20::complex<double>(40.0, 4.0));
   EXPECT_EQ(alias.storage().control_address(), alias_storage);
   EXPECT_EQ(&alias.queue(), alias_queue);
+}
+
+TEST(TensorAsyncTest, ReshapeAliasRejectsSourcesOnItsParentQueue)
+{
+  uni20::async::DebugScheduler sched;
+  uni20::async::ScopedScheduler scoped(&sched);
+  uni20::async::Async<matrix_type> parent(make_matrix());
+  auto alias = uni20::async::reshape_view(parent, 1, 4);
+  auto sibling = uni20::async::reshape_view(parent, 1, 4);
+  ErrorModeGuard const error_mode;
+
+  // Writing the parent through its own alias would be an in-place relayout,
+  // and the shared epoch queue could deadlock; both are rejected at submission.
+  EXPECT_THROW(alias = parent, std::runtime_error);
+  EXPECT_THROW(alias = sibling, std::runtime_error);
+
+  auto const values = parent.get_wait().mdspan();
+  EXPECT_EQ((values[0, 0]), uni20::complex<double>(1.0, 2.0));
+  EXPECT_EQ((values[1, 0]), uni20::complex<double>(-5.0, 6.0));
+  EXPECT_EQ((values[0, 1]), uni20::complex<double>(3.0, -4.0));
+  EXPECT_EQ((values[1, 1]), uni20::complex<double>(7.0, 8.0));
 }
 
 TEST(TensorAsyncTest, ReshapeAliasOutlivesParentHandle)

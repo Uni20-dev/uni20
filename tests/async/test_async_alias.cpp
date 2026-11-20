@@ -4,6 +4,9 @@
 #include <uni20/async/async.hpp>
 #include <uni20/async/async_task.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <uni20/common/trace.hpp>
+
+#include <stdexcept>
 #include <utility>
 
 using namespace uni20::async;
@@ -46,6 +49,19 @@ struct ConstParentAlias
 void assign_through(MutableIntAlias& target, MutableIntAlias const& source) { *target.value = *source.value; }
 
 void assign_through(MutableIntAlias& target, int const& source) { *target.value = source; }
+
+class ErrorModeGuard {
+  public:
+    ErrorModeGuard() : previous_(trace::get_formatting_options().errors_abort())
+    {
+      trace::get_formatting_options().set_errors_abort(false);
+    }
+
+    ~ErrorModeGuard() { trace::get_formatting_options().set_errors_abort(previous_); }
+
+  private:
+    bool previous_;
+};
 
 struct CopyConstructOnly
 {
@@ -231,6 +247,31 @@ TEST(AsyncAliasTest, MutableAliasAssignmentWritesThroughExistingTimeline)
   sched.run_all();
   EXPECT_EQ(parent.get_wait(), 17);
   EXPECT_EQ(alias.get_wait().get(), 17);
+}
+
+TEST(AsyncAliasTest, AssignmentFromTheAliasQueueIsRejectedAtSubmission)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+
+  Async<int> parent = 5;
+  auto alias = make_async_alias<MutableIntAlias>(parent, parent.storage_address());
+  auto sibling = make_async_alias<MutableIntAlias>(parent, parent.storage_address());
+  ErrorModeGuard const error_mode;
+
+  // Each source shares the destination's epoch queue, so the assignment could
+  // deadlock. Rejection happens before any epoch is enqueued.
+  EXPECT_THROW(alias = parent, std::runtime_error);
+  EXPECT_THROW(alias = sibling, std::runtime_error);
+  EXPECT_THROW(async_assign(alias, parent), std::runtime_error);
+  EXPECT_THROW(async_assign(parent, parent), std::runtime_error);
+  EXPECT_THROW(async_move(parent, parent), std::runtime_error);
+
+  // A source on another queue still writes through, and the timeline is intact.
+  Async<int> source = 11;
+  alias = source;
+  EXPECT_EQ(parent.get_wait(), 11);
+  EXPECT_EQ(sibling.get_wait().get(), 11);
 }
 
 TEST(AsyncAliasTest, CapabilityAwareWriteProxyAssignsThroughWithoutExposingDescriptorMutation)

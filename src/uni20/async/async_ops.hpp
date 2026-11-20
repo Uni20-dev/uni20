@@ -333,6 +333,14 @@ void async_assign(WriteBuffer<T> destination, U&& source)
 }
 
 /// \brief Assigns an Async or scalar value into an Async destination.
+/// \details An async source that shares the destination's epoch queue is
+///          rejected when the assignment is submitted: the destination itself,
+///          an alias and its parent, or two aliases of one parent. The read and
+///          the write would be ordered on that one queue while the assignment
+///          holds one of them and waits for the other, so it can deadlock.
+///          Assigning an alias from its parent would also be an in-place
+///          relayout, which a write through the alias cannot perform.
+/// \pre An async `rhs` does not share the epoch queue of `lhs`.
 /// \tparam T Destination value type.
 /// \tparam U Source type (scalar or Async-like).
 /// \param lhs Destination async value.
@@ -342,6 +350,7 @@ void async_assign(Async<T>& lhs, U&& rhs)
   requires(detail::current_value_assignment_source<T, U> ||
            (is_async_alias_v<T> && detail::async_alias_assignable_from<T, async_value_t<U> const&>))
 {
+  detail::validate_distinct_async_operand_queues(lhs, rhs);
   async_assign(lhs.write(), read(std::forward<U>(rhs)));
 }
 
@@ -388,6 +397,8 @@ void async_move(WriteBuffer<T> lhs, U&& rhs)
 }
 
 /// \brief Move-assign from a source expression into an Async destination.
+/// \pre An async `rhs` does not share the epoch queue of `lhs`; such a move
+///      is rejected when it is submitted, as for async_assign().
 /// \tparam T Destination value type.
 /// \tparam U Source type.
 /// \param lhs Destination async value.
@@ -396,6 +407,7 @@ template <typename T, typename U>
   requires(!is_async_alias_v<T>)
 void async_move(Async<T>& lhs, U&& rhs)
 {
+  detail::validate_distinct_async_operand_queues(lhs, rhs);
   async_move(lhs.write(), std::forward<U>(rhs));
 }
 

@@ -115,6 +115,14 @@ classification and the operations that the payload actually supports:
 | mutable reshape or slice descriptor | retain alias identity and invoke an ADL-visible `assign_through(target, source)` |
 | const or conjugating descriptor | ill-formed because no matching `assign_through` exists |
 
+A source that shares the alias's epoch queue is rejected when the assignment
+is submitted: the alias's parent (`y = x` above) or another alias of the same
+parent. The source's read and the write through the alias would be ordered on
+that one queue while the assignment holds one of them and waits for the other,
+so it could deadlock. Writing a parent through its own reshaped or permuted
+alias would also be an in-place relayout, which a write-through copy cannot
+perform. Assign from an independent copy of the parent instead.
+
 Tensor aliases obtain write-through capability from `MutableTensorView`.
 `uni20::assign_through` delegates to the ordinary backend-dispatched tensor
 `copy` operation. A read-only tensor descriptor exposes a const-element mdspec,
