@@ -1,12 +1,16 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -972,6 +976,57 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
   EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
   TaskRegistry::stop_diagnostics_service();
   std::filesystem::remove_all(dir);
+}
+
+TEST(TaskRegistryDebugTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
+{
+  TaskRegistry::stop_diagnostics_service();
+  auto dir = make_temp_dir("uni20-dag-signal-thread-test");
+
+  // A thread that exists before the service starts and does not block the
+  // signal, as a TBB worker left by an earlier test does. The kernel may
+  // deliver the process-directed signal to it.
+  std::jthread bystander([](std::stop_token stop) {
+    std::mutex mutex;
+    std::condition_variable_any idle;
+    std::unique_lock lock(mutex);
+    idle.wait(lock, stop, [] { return false; });
+  });
+
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.dump_options.output_dir = dir.string();
+  options.dump_options.file_prefix = "signal";
+  options.signal_number = SIGUSR1;
+  options.poll_interval_ms = 50;
+
+  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
+  ASSERT_EQ(::kill(::getpid(), SIGUSR1), 0);
+  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
+  TaskRegistry::stop_diagnostics_service();
+  std::filesystem::remove_all(dir);
+}
+
+TEST(TaskRegistryDebugTest, DiagnosticsServiceRestoresThePreviousSignalAction)
+{
+  TaskRegistry::stop_diagnostics_service();
+  static std::atomic<int> previous_handler_calls{0};
+  previous_handler_calls = 0;
+
+  struct sigaction previous_action = {};
+  previous_action.sa_handler = [](int) { previous_handler_calls.fetch_add(1, std::memory_order_relaxed); };
+  sigemptyset(&previous_action.sa_mask);
+  struct sigaction saved_action = {};
+  ASSERT_EQ(::sigaction(SIGUSR1, &previous_action, &saved_action), 0);
+
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  options.poll_interval_ms = 50;
+  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
+  TaskRegistry::stop_diagnostics_service();
+
+  ASSERT_EQ(::raise(SIGUSR1), 0);
+  EXPECT_EQ(previous_handler_calls.load(), 1);
+  ::sigaction(SIGUSR1, &saved_action, nullptr);
 }
 #endif
 #endif
