@@ -8,6 +8,7 @@
 
 #include <uni20/mdspan/mdspec.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -67,11 +68,23 @@ constexpr auto permute_mdspec_impl(Span source, std::index_sequence<I...>)
       // Canonical mappings may have zero strides after an empty dimension.
       // Build positive strides satisfying layout_stride's ordering precondition;
       // replacing every zero by one would fail that precondition at rank > 2.
+      // The ordering puts zero-extent axes first and the others by increasing
+      // extent. Each stride after a zero extent restarts at one, so the largest
+      // stride is the product of every nonzero extent except the largest.
+      std::array<std::size_t, sizeof...(I)> order{I...};
+      std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
+        auto const lhs_extent = extents.extent(lhs);
+        auto const rhs_extent = extents.extent(rhs);
+        if ((lhs_extent == 0) != (rhs_extent == 0)) return lhs_extent == 0;
+        if (lhs_extent != rhs_extent) return lhs_extent < rhs_extent;
+        return lhs < rhs;
+      });
       index_type stride = 1;
-      for (std::size_t axis = 0; axis < sizeof...(I); ++axis)
+      for (std::size_t position = 0; position < order.size(); ++position)
       {
+        auto const axis = order[position];
         strides[axis] = stride;
-        if (axis + 1 == sizeof...(I)) break;
+        if (position + 1 == order.size()) break;
         auto const extent = extents.extent(axis);
         if (extent == 0)
           stride = 1;

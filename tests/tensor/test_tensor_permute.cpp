@@ -7,6 +7,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
+
 namespace
 {
 using matrix = uni20::DenseMatrix<double>;
@@ -152,6 +155,50 @@ TEST(TensorPermuteTest, ConstnessAndConjugatingAccessorArePreserved)
   EXPECT_EQ((packed[2, 1]), (uni20::complex<double>{4, -7}));
 }
 
+// layout_stride requires positive strides and an axis ordering in which each
+// stride is at least the previous stride times the previous extent. Sorting by
+// stride, then by extent, finds such an ordering whenever one exists.
+template <class Span> bool has_layout_stride_ordering(Span const& span)
+{
+  constexpr std::size_t rank = Span::rank();
+  std::array<std::size_t, rank> order{};
+  for (std::size_t axis = 0; axis < rank; ++axis)
+  {
+    if (span.stride(axis) <= 0) return false;
+    order[axis] = axis;
+  }
+  std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
+    if (span.stride(lhs) != span.stride(rhs)) return span.stride(lhs) < span.stride(rhs);
+    return span.extent(lhs) < span.extent(rhs);
+  });
+  for (std::size_t position = 1; position < rank; ++position)
+  {
+    auto const previous = order[position - 1];
+    if (span.stride(order[position]) < span.stride(previous) * span.extent(previous)) return false;
+  }
+  return true;
+}
+
+TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
+{
+  // Strides in output-axis order would need 65536 * 65536 here, which does not
+  // fit in unsigned int, although a representable ordering exists.
+  using extents_type = stdex::dextents<unsigned int, 3>;
+  stdex::mdspan<double, extents_type, stdex::layout_left> source(nullptr, extents_type{0, 65536, 65536});
+  auto view = uni20::permute<1, 2, 0>(source);
+  EXPECT_EQ(view.extent(0), 65536U);
+  EXPECT_EQ(view.extent(1), 65536U);
+  EXPECT_EQ(view.extent(2), 0U);
+  EXPECT_EQ(view.mapping().required_span_size(), 0U);
+  EXPECT_TRUE(has_layout_stride_ordering(view));
+
+  auto const large = uni20::index_type{1} << 32;
+  uni20::Tensor<double, 3> tensor(0, large, large);
+  auto tensor_view = uni20::permute<1, 2, 0>(tensor);
+  EXPECT_EQ(tensor_view.extent(2), 0);
+  EXPECT_TRUE(has_layout_stride_ordering(tensor_view));
+}
+
 TEST(TensorPermuteTest, IdentityScalarEmptyAndSingletonAxes)
 {
   uni20::ScalarTensor<double> scalar;
@@ -174,8 +221,7 @@ TEST(TensorPermuteTest, IdentityScalarEmptyAndSingletonAxes)
   EXPECT_EQ(empty_cube_view.extent(2), 3);
   // Positive strides alone are insufficient: layout_stride also requires
   // a dimension ordering whose neighboring storage intervals do not overlap.
-  EXPECT_GE(empty_cube_view.stride(1), empty_cube_view.stride(0) * empty_cube_view.extent(0));
-  EXPECT_GE(empty_cube_view.stride(2), empty_cube_view.stride(1) * empty_cube_view.extent(1));
+  EXPECT_TRUE(has_layout_stride_ordering(empty_cube_view));
   uni20::Tensor<double, 3> tensor(2, 1, 3);
   tensor[1, 0, 2] = 8;
   auto singleton_view = uni20::permute<1, 2, 0>(tensor);
