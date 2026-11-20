@@ -170,7 +170,8 @@ temporary borrowed descriptor views are accepted; temporary owners are
 rejected. Nested permutation descriptors do not retain intermediate views.
 The payload owner must remain alive and must not be moved or structurally
 modified while a synchronous view is used. Runtime-precision views retain a
-live binding to the source default; changing that default does not convert any
+live binding to the source default, so a tensor lvalue source must itself stay
+alive while the view is used; changing that default does not convert any
 stored elements. Views have no independent precision setter.
 
 `async::permute<Axes...>(parent)` retains the parent storage and shares its
@@ -186,7 +187,7 @@ tensor type explicit while CTAD deduces its scalar type, rank, and storage
 domain. `make_tensor(view)` remains equivalent here; use
 `make_tensor<RowMajor>(view)` when selecting the physical layout explicitly.
 A subsequent `reshape_view_left` or `reshape_view_right` still requires canonical contiguous
-strides; permuting axes alone does not make arbitrary groups fusible for GEMM.
+strides, except for an empty view; permuting axes alone does not make arbitrary groups fusible for GEMM.
 Automatic contraction packing is separate from this view API.
 
 ## Reshape Operations

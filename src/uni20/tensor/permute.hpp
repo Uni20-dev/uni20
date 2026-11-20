@@ -17,8 +17,13 @@ namespace uni20
 ///          default precision. Const sources produce read-only views. Use
 ///          Tensor(result) for an owning materialization with deduced type.
 ///          The source storage must outlive the result; moving or structurally
-///          modifying its owner invalidates the view. Owning temporaries are
-///          rejected; temporary descriptor views may be composed safely.
+///          modifying its owner invalidates the view. An lvalue source must
+///          itself outlive the result, because the result may read the default
+///          precision through it. Owning temporaries are rejected. Temporary
+///          views that declare borrowed_tensor_view_tag, such as permute
+///          results, may be composed safely; the result reports a default only
+///          when the temporary supplies it through precision_source() or an
+///          lvalue base().
 /// \tparam Axis A bijection of the source axes.
 /// \param tensor Strided tensor lvalue or borrowed descriptor temporary.
 template <std::size_t... Axis, TensorView Tensor>

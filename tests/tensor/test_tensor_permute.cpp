@@ -1,6 +1,7 @@
 #include <uni20/linalg/dispatch_diagnostics.hpp>
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/reshape.hpp>
 #include <uni20/tensor/tensor.hpp>
 
 #include "../linalg/deferred_host_tensor.hpp"
@@ -217,6 +218,27 @@ TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
   // are never read for an empty source.
   uni20::RowMajorTensor<double, 3> row_major(0, large, large);
   EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 0>(row_major)));
+}
+
+TEST(TensorPermuteTest, EmptyPermutedViewsReshape)
+{
+  // The positive strides chosen for an empty permutation need not form a
+  // canonical layout, and layout_stride then reports is_exhaustive() == false.
+  // An empty index space has nothing to order, so reshape accepts it.
+  uni20::Tensor<double, 3> tensor(0, 3, 4);
+  auto view = uni20::permute<0, 2, 1>(tensor);
+  ASSERT_FALSE(view.mdspan().mapping().is_exhaustive());
+  EXPECT_EQ(uni20::reshape_view_right(view.mdspan(), 0).extent(0), 0);
+  EXPECT_EQ(uni20::reshape_view_left(view.mdspan(), 4, 0).extent(1), 0);
+
+  auto reshaped = uni20::reshape_view_right(view, 2, 0, 6);
+  EXPECT_EQ(reshaped.extent(0), 2);
+  EXPECT_EQ(reshaped.extent(1), 0);
+  EXPECT_EQ(reshaped.extent(2), 6);
+
+  uni20::Tensor<double, 3> two_empty_axes(0, 3, 0);
+  auto two_empty_view = uni20::permute<2, 1, 0>(two_empty_axes);
+  EXPECT_EQ(uni20::reshape_view_left(two_empty_view, 0).extent(0), 0);
 }
 
 TEST(TensorPermuteTest, IdentityScalarEmptyAndSingletonAxes)
