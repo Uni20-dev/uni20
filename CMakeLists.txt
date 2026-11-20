@@ -242,6 +242,14 @@ if(UNI20_ENABLE_WARNINGS)
 
   set(UNI20_WARN_FLAGS_INTERNAL "${UNI20_WARN_FLAGS};-Werror")
 
+  # Clang's narrower warning keeps the unsigned-compared-with-zero check that
+  # -Wno-type-limits gives up, without GCC's rank-zero false positive. It applies
+  # to C++ sources only: nvcc's host compiler may be GCC, which rejects it.
+  set(UNI20_CXX_ONLY_WARN_FLAGS "")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(UNI20_CXX_ONLY_WARN_FLAGS "-Wtautological-unsigned-zero-compare")
+  endif()
+
   if(UNI20_EXTERNAL_NO_WARN)
     set(UNI20_WARN_FLAGS_EXTERNAL "")
   else()
@@ -250,6 +258,7 @@ if(UNI20_ENABLE_WARNINGS)
 else()
   set(UNI20_WARN_FLAGS_INTERNAL "")
   set(UNI20_WARN_FLAGS_EXTERNAL "")
+  set(UNI20_CXX_ONLY_WARN_FLAGS "")
 endif()
 
 function(relax_warnings target)
@@ -303,6 +312,9 @@ foreach(_uni20_warning_flag IN LISTS UNI20_WARN_FLAGS_INTERNAL)
   if(NOT _uni20_warning_flag MATCHES "^-pedantic")
     add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_uni20_warning_flag}>)
   endif()
+endforeach()
+foreach(_uni20_warning_flag IN LISTS UNI20_CXX_ONLY_WARN_FLAGS)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_uni20_warning_flag}>)
 endforeach()
 
 if(UNI20_SANITIZE)
