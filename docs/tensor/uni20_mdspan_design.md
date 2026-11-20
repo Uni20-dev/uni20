@@ -128,8 +128,17 @@ explicitly.
    Uni20's mappings require the product of the nonzero extents to be
    representable in `index_type`. No tensor with those extents could hold its
    elements otherwise, and canonical strides of every supported shape, empty or
-   not, are representable. No LWG issue covers this for `layout_left` and
-   `layout_right`; LWG 4545 fixes the same overflow for the padded layouts.
+   not, are representable. Requiring only each stride to be representable would
+   make validity depend on the order of the extents: with 32-bit indices and
+   `n = 2^16`, `layout_right` with extents `(n, 0, n)` has strides `(0, n, 1)`,
+   but `(0, n, n)` needs `n * n`. Materializing a permuted view, as
+   `Tensor(permute(view))` does, builds a canonical layout with the permuted
+   extents, so a valid empty tensor could yield an invalid one. The product
+   condition is exactly what keeps every canonical stride representable under
+   every permutation of the extents: putting all the nonzero extents before a
+   zero one in `layout_left` makes the zero axis's stride their full product.
+   No LWG issue covers this for `layout_left` and `layout_right`; LWG 4545
+   fixes the same overflow for the padded layouts.
 
 ### Alignment With the Standard
 
