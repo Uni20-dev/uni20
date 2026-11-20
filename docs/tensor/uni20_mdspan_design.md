@@ -8,8 +8,8 @@ note proposes Uni20's own `mdspan` class and layout mappings, keeping the
 standard extents. The goals are a stride observer that exists at every rank,
 well-defined signed offsets, and a reachable-offset range on every mapping.
 Negative strides then become possible as an opt-in layout. `uni20::mdspec`,
-which Uni20 already owns, follows the same specification
-([below](#mdspec)).
+which Uni20 already owns, follows the same specification, as the mdspec
+section below describes.
 
 ## Why Not the Standard Types
 
@@ -58,8 +58,9 @@ and grow layouts the standard does not have.
 
 C++26's padded layouts, `layout_left_padded` and `layout_right_padded`, are not
 part of this migration, but nothing here excludes them. They are strided
-mappings, so rules 1 to 7 apply to them unchanged; LWG 4545 is their case of
-the overflow that rule 7 covers. They say in the type what `layout_stride`
+mappings, so rules 1 to 7 apply to them unchanged, and converting one to a
+narrower `index_type` needs the stride condition under rule 7, which LWG 4545
+proposes for the standard's. They say in the type what `layout_stride`
 says only at run time, that the inner stride is one and only the leading
 dimension varies, as BLAS and LAPACK matrices need. Uni20 can add them if that
 proves useful over a general strided layout.
@@ -67,7 +68,11 @@ proves useful over a general strided layout.
 ## Current Use
 
 Counts are occurrences over `src`, `tests` and `examples` on `main`
-(`33439da6`), from `git grep -ohP 'stdex::NAME\b(?!_)' main -- src tests examples | wc -l`:
+(`33439da6`), from this command for each name:
+
+```sh
+git grep -ohP 'stdex::NAME\b(?!_)' main -- src tests examples | wc -l
+```
 
 | Name | Uses |
 |---|---|
@@ -102,7 +107,7 @@ All live in namespace `uni20`, in new headers under `src/uni20/mdspan/`.
 | `layout_signed_stride` | A strided mapping whose strides may have either sign. |
 | `default_accessor<T>` | `offset_type` is `std::ptrdiff_t`; `access(p, i)` is `p[i]`, `offset(p, i)` is `p + i`. |
 | `mdspan<T, Extents, Layout, Accessor>` | Same interface as `std::mdspan`, with the offset rule below. |
-| `mdspec<T, Extents, Layout, Accessor, Descriptor>` | Existing; specified to match `mdspan` ([below](#mdspec)). |
+| `mdspec<T, Extents, Layout, Accessor, Descriptor>` | Existing; specified to match `mdspan`; see mdspec below. |
 | `offset_range` | Inclusive `[minimum, maximum]` of handle-relative offsets, with `std::ptrdiff_t` bounds, empty when `minimum > maximum`; the existing `iteration_offset_range` moves here. |
 
 `mdspan` defaults to `layout_right` and `default_accessor<T>`, like the standard,
@@ -124,7 +129,15 @@ explicitly.
    or empty when an extent is zero. Buffer validation compares the descriptor
    offset plus this range with the buffer, instead of `required_span_size()`.
    `required_span_size()` remains for nonnegative layouts, as the standard's
-   layout-mapping requirements need it.
+   layout-mapping requirements need it. The rule covers a mapping that returns
+   one offset, read by an accessor that uses it as an element offset into one
+   buffer: the layouts in the Types table, with `default_accessor` or the CUDA
+   pointer accessors. Composite mappings and translating accessors are outside
+   it. `StridedZipLayout` returns one offset per span, and `diagonal_accessor`
+   maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
+   diagonal is mapping offset 8 but component 2. Validating such views needs a
+   range per span, or one the accessor translates, and is left to the first
+   use that validates them.
 4. **Strided means strided.** `StridedMdspanLike` and `StridedMdspecLike` require
    `is_always_strided()` and a declared `stride(axis)`, with no rank-zero escape.
    A standard `layout_left` or `layout_right` mdspan of rank zero does not
@@ -134,7 +147,12 @@ explicitly.
    `layout_signed_stride` may have negative strides. An operation that cannot
    handle them rejects the layout by type at compile time, so a reversed view
    never reaches a backend that would decline it at run time and end the
-   program. Operations opt in one at a time. The same holds for composition:
+   program. Operations opt in one at a time. The strided concepts carry the
+   distinction: `layout_signed_stride` declares that its strides may be
+   negative, `StridedMdspanLike` and `StridedMdspecLike` reject a layout that
+   does, and an operation that opts in is constrained on a separate concept
+   that admits both. Without that declaration a structural strided concept
+   would accept the signed layout, since it is always strided. The same holds for composition:
    an `mdspan` or `mdspec` with `layout_signed_stride` requires a signed
    `index_type` and an accessor whose `span_offset_t` is signed, so a signed
    layout paired with `stdex::default_accessor`, or any accessor that falls back
@@ -150,8 +168,11 @@ explicitly.
    `(0, 3, 4)` has strides `(1, 0, 0)`), so code that reads strides already
    decides emptiness from the extents, and negative values stay excluded. A
    permutation of an empty source then permutes the source's strides like any
-   other, with no new strides to invent. This follows LWG 4603 and P3959R0,
-   applied to every constructor, including conversion from a canonical layout.
+   other, with no new strides to invent. This follows LWG 4603, applied to
+   every constructor, including conversion from a canonical layout. P3959R0, a
+   related proposal, is narrower: it relaxes positivity but keeps the axis-order
+   condition at every nonzero rank, so it rejects strides `(1, 1, 1)` for
+   extents `(0, 3, 4)`, which rule 6 accepts.
 7. **The nonzero extents have a representable product.** The standard requires
    only the number of elements to be representable, which says nothing about an
    empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
@@ -164,7 +185,13 @@ explicitly.
    arise in practice, and Uni20 does not check for them: the rule is a
    precondition that Uni20 assumes of every mapping, including one converted
    from the standard. No LWG issue covers this for `layout_left` and
-   `layout_right`; LWG 4545 fixes the same overflow for the padded layouts.
+   `layout_right`. Rule 7 bounds every canonical stride, but not a stride that
+   a mapping stores: on an axis of extent zero or one, a `layout_stride` or
+   padded stride adds nothing to the product or to `required_span_size()`.
+   Converting such a mapping to a narrower `index_type` therefore also requires
+   each stride to be representable in the destination, as LWG 4545 proposes for
+   the padded layouts, where a padding of 256 with extents `(1, 0)` would
+   otherwise narrow to zero in `uint8_t`.
 
 ### Alignment With the Standard
 
@@ -173,7 +200,7 @@ standard is expected to:
 
 | Issue | Status (2026-11-18) | Adopted rule |
 |---|---|---|
-| LWG 4603, P3959R0 | Voting | Rule 6: an empty mapping accepts nonnegative strides. Both also drop the converting constructor's precondition that every stride of the source is positive. |
+| LWG 4603 | Voting | Rule 6: an empty mapping accepts nonnegative strides. It also drops the converting constructor's precondition that every stride of the source is positive. |
 | LWG 4606 | Voting | For a nonempty `layout_stride`, every stride is nonnegative and representable, and axes of extent one impose no ordering constraint. Only the axes of extent greater than one need an order in which none overlaps. A strided slice such as every other column of a `(2, 5)` row-major matrix, extents `(2, 3)` with strides `(5, 2)`, is valid. |
 | LWG 4266 | C++26 | An empty mapping is exhaustive; `is_always_exhaustive()` is true when the rank is zero or a static extent is zero. |
 | LWG 4562 | Voting | `is_exhaustive()` is `required_span_size()` equal to the product of the extents, so axes of extent one do not affect it. |
@@ -184,12 +211,20 @@ standard is expected to:
 
 `layout_signed_stride` keeps the handle at the element with all indices zero,
 as NumPy does, so offsets below the handle are negative. `operator()` is
-`sum(index[k] * stride[k])`. `reachable_range()` adds
-`(extent[k] - 1) * stride[k]` to the maximum for positive strides and to the
-minimum for negative ones. `is_unique()` and `is_exhaustive()` are evaluated on
+`sum(index[k] * stride[k])`. `reachable_range()` is empty when an extent is
+zero. Otherwise it starts at `[0, 0]` and adds `(extent[k] - 1) * stride[k]` to
+the maximum for positive strides and to the minimum for negative ones. `is_unique()` and `is_exhaustive()` are evaluated on
 the absolute strides, which describe the same set of offsets shifted by
 `minimum`. `required_span_size()` is not provided; consumers use
 `reachable_range()`.
+
+At first `layout_signed_stride` is view-only. A Tensor that owns storage keeps
+a nonnegative layout, and a signed layout appears only in a view of storage it
+does not own, so no allocation has to hold its logical origin away from its
+start. `reverse` of an axis moves the handle to that axis's last element and
+negates its stride, but only when the mapping is nonempty. An empty view keeps
+its handle, which may not point into any storage, so moving it would be
+undefined.
 
 Negative strides are useful in only a few cases, reversing the elements of an
 axis being the main one, and then only over operations where they are easy or
@@ -205,13 +240,14 @@ LAPACK leading dimensions must be positive.
 
 Allowing negative strides in `layout_stride` with runtime checks would keep one
 strided type, but every backend that cannot handle them would decline at run
-time. Item 0.1 of the CUDA coverage work exists to remove exactly that failure
-mode.
+time, which rule 5 exists to prevent.
 
 A sign policy parameter on `layout_stride` would also distinguish the cases by
 type, but every existing use and comparison of `layout_stride` would then have
 to say which policy it means. A separate layout leaves them meaning the
-nonnegative one. Decided tentatively on 2026-11-20: the signed layout is
+nonnegative one. The two layouts may still share one implementation templated
+on the sign; what is rejected is a policy parameter in the public type. Decided
+tentatively on 2026-11-20: the signed layout is
 `layout_signed_stride`.
 
 ## Conversions and Interop
@@ -266,7 +302,8 @@ applies to it:
   handle exists: an mdspec with `layout_signed_stride` and a `size_t`-offset
   accessor does not compile.
 - **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
-  `mapping().reachable_range()` against the buffer. Today
+  `mapping().reachable_range()` against the buffer, for the mappings and
+  accessors rule 3 covers. Today
   `validate_cuda_descriptor_range` in
   [`tensor/cuda_access.hpp`](../../src/uni20/tensor/cuda_access.hpp) checks
   `element_offset()` plus `required_span_size()`.
@@ -300,7 +337,9 @@ Each phase is one pull request.
    use the Uni20 layouts. Buffer range checks, for Tensors and for
    descriptor acquisition, move to `reachable_range()`. Generic code calls the
    member `stride()`, which exists at every rank, so no free stride helper is
-   needed. CUDA `ScalarTensor` transfers, copies and reductions start to compile
+   needed. Tests that assert a producer's exact layout type, in
+   `test_cuda_copy.cpp` and `test_self_adjoint_eigh.cpp`, change with the
+   producer. CUDA `ScalarTensor` transfers, copies and reductions start to compile
    here, with the rank-zero CUDA tests from #148. `permute` of an empty source
    permutes the source's strides (rule 6), so the stride construction for empty
    sources in `mdspan/permute.hpp` is removed; that header comes with dense
@@ -308,13 +347,19 @@ Each phase is one pull request.
    every layer and carries most of the risk.
 3. **Tests and examples.** `stdex::` names become Uni20 names, about 620
    references, mostly mechanical. A few interop tests keep `stdex::mdspan`
-   inputs.
+   inputs. Test helpers that build negative strides in `stdex::layout_stride`,
+   such as `make_reversed_1d` in `tests/helpers.hpp`, keep the standard type,
+   since Uni20's `layout_stride` does not allow negative strides.
 4. **Signed strides.** `layout_signed_stride`, a `reverse` view, and support in
    the operations its first use needs, host `copy` for example; other
    operations follow as uses require them. The diagonal component view moves to
    `layout_signed_stride`, ending its reliance on wrapped `size_t` offsets, and
-   the remaining code that computes signed offsets through unsigned arithmetic
-   is found and fixed here.
+   the negative-stride test helpers move with it. The remaining code that
+   computes signed offsets through unsigned arithmetic is found and fixed here,
+   and composite producers, such as zip and transform views over a signed
+   span, and accessor lowering are checked to keep the signed declaration
+   visible to the concepts. Conformance tests include an empty mapping with
+   mixed signs.
 
 ## Relation to #148
 
@@ -345,7 +390,8 @@ form reads best, and documents `FetchContent_Declare(... SYSTEM)` and
 
 1. What a precondition failure does in device code, where Uni20 diagnostics are
    unavailable: trap, or nothing in release builds.
-2. Whether `size()` and the span queries of `mdspan` and `mdspec` keep the
-   standard's `size_t` types.
+2. Whether `size()` of `mdspan` and `mdspec` keeps the standard's `size_type`,
+   `make_unsigned_t<index_type>`, and the mappings' `required_span_size()` its
+   `index_type`, or whether Uni20 chooses its own count and offset types.
 3. NumPy interop: whether arrays with negative strides map to
    `layout_signed_stride` views, once Python bindings exist.
