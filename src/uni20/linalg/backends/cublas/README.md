@@ -19,6 +19,8 @@ task creation and resource awaiters out of synchronous-only targets.
 `reductions.hpp` accepts exhaustive raw CUDA descriptors and returns a host
 scalar through the checked cuBLAS level-one wrappers. Transformed or
 non-exhaustive descriptors decline rather than bypassing accessor semantics.
+`CudaReferenceBackend` follows it in the selector and reduces non-contiguous
+and differently ordered operands, and element counts above the `int` range.
 
 CUDA-mdspan recognition, buffer bounds and device validation, completion-ledger
 access, and the shared blocking/coroutine preparation path are private
