@@ -72,7 +72,6 @@ class TaskRegistry {
         int signal_number{0};
         std::string request_file{};
         int poll_interval_ms{250};
-        bool block_signal_in_calling_thread{true};
     };
 
     /// \brief Runtime controls for stacktrace formatting mirrored from the debug registry.
