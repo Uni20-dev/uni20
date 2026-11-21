@@ -210,7 +210,12 @@ The storage selector is passed by value, so the default may retain it inside
 stateful operation-specific backends. This supports orthogonal policy layers.
 For example, a tensor-contraction default can return Direct-GEMM, Looped-GEMM,
 and Packed-GEMM contraction backends that each retain the BLAS/CPU or
-cuBLAS/CUDA selector supplied by storage.
+cuBLAS/CUDA selector supplied by storage. A default can also append a staging
+backend that retains the selector for the same operation: the `CudaStorage`
+`copy_op` default ends with `CudaPeerStagingBackend`, which completes a copy
+between devices through two copies dispatched to the unmodified storage
+selector. Because the retained selector is the one supplied by storage, the
+staging backend never appears in its own nested list.
 
 `backend_selector_default` is a Uni20 library customization. A user who needs
 to replace the selected list specializes `backend_selector_override` instead:

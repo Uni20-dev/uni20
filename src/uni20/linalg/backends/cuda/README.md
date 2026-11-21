@@ -6,14 +6,42 @@ in `CudaStorage`'s ordered selector and handles operations that do not require a
 provider library.
 
 The `copy_op` implementation keeps runtime-copy fast paths for compatible raw
-contiguous mappings. Same-device positive-strided mappings whose compact rank is
-at most eight, including padding and differing physical order, use the reference
-backend's typed elementwise CUDA kernel. `elementwise_plan.hpp` lowers the same
-backend-neutral affine plan used by the CPU executor to a device POD, preferring
-32-bit logical indices and offsets when every reachable offset fits and using a
-64-bit payload otherwise. The compiled executor is arity-generic and separates
-overwrite operations, which do not read the output, from update operations,
-which do.
+contiguous mappings. Other same-device positive-strided mappings, including
+padding and differing physical order, use the reference backend's elementwise
+CUDA kernel. An identity copy moves each element as unsigned words of its
+alignment, so every trivially copyable element is supported: elements of up to
+four words through fixed-width kernels, wider ones through a loop over their
+words. Conjugating copies use typed `uni20::cfloat` and `uni20::cdouble`
+kernels. `CudaStorage` holds only trivially copyable elements, so any other
+element type is rejected when the tensor type is formed.
+
+The reference copy declines host-device copies whose operands do not share one
+contiguous element order, and strided copies between devices. Two staging
+backends in `copy_staging.hpp` follow it and complete those copies by
+dispatching each step through a selector they hold:
+
+- `CudaHostStagingBackend` moves one contiguous range: the host operand's order
+  when it is contiguous, otherwise the device operand's, otherwise column-major.
+  The `HostStorage` copy selector packs or unpacks the host side and the
+  `CudaStorage` copy selector changes the device side's layout.
+  `cuda_host_transfer_selector()` places it after `CudaReferenceBackend` for
+  every copy between host and CUDA storage.
+- `CudaPeerStagingBackend` peer-copies the source's storage range into a
+  staging buffer on the destination device, then copies from that buffer there.
+  `backend_selector_default<copy_op, CudaStorage>` appends it to the storage
+  selector, which it retains for its steps.
+
+`staging_backends.hpp` declares both backend values without the copy
+implementation, so `cuda_storage.hpp` can name the peer stager in its copy
+default.
+
+`elementwise_plan.hpp` lowers the same backend-neutral affine plan used by the
+CPU executor to a device POD, preferring 32-bit logical indices and offsets when
+every reachable offset fits and using a 64-bit payload otherwise. One launch
+covers at most eight compact dimensions; outer dimensions beyond eight become
+one launch per outer index. The compiled executor is arity-generic and
+separates overwrite operations, which do not read the output, from update
+operations, which do.
 
 Copy is the first one-input overwrite instantiation. `conjugate_inplace_op` is
 the first zero-input update instantiation: it reads and writes each output
