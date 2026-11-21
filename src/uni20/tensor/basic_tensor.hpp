@@ -821,9 +821,14 @@ class Tensor {
         return this->accessor();
     }
 
-    /// \brief Return the number of elements in the mapped storage span.
-    /// \return Required span size of the tensor mapping.
-    [[nodiscard]] auto size() const noexcept -> size_type { return mapping_.required_span_size(); }
+    /// \brief Return the logical element count, the product of the tensor extents.
+    [[nodiscard]] auto size() const noexcept -> size_type
+    {
+      std::size_t count = 1;
+      for (std::size_t axis = 0; axis != extents_type::rank(); ++axis)
+        count *= static_cast<std::size_t>(this->extents().extent(axis));
+      return static_cast<size_type>(count);
+    }
 
     /// \brief Return the tensor rank.
     /// \return Static rank of the extents type.
