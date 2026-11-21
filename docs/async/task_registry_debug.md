@@ -304,8 +304,12 @@ the signal back, and stopping the service then leaves that handler in place.
 
 A process gives a signal to the service once: stopping the service restores the
 signal's previous action, and a later start with a signal returns false. A service
-without a signal can still be started again. Setting `UNI20_DEBUG_DAG_SIGNAL` starts
-the service during program initialization.
+without a signal can still be started again.
+
+Setting `UNI20_DEBUG_DAG_SIGNAL` or `UNI20_DEBUG_DAG_REQUEST_FILE` starts the service
+during program initialization, with no code in the program, and the service stops at
+exit. If it cannot start, for example because the signal is not `SIGUSR1` or
+`SIGUSR2`, the reason is reported on stderr and the program runs without it.
 
 Default output and service settings can be configured with environment variables:
 
@@ -314,7 +318,7 @@ Default output and service settings can be configured with environment variables
 | `UNI20_DEBUG_DAG_OUTPUT_DIR` | Default DOT output directory; defaults to `/tmp` |
 | `UNI20_DEBUG_DAG_FILE_PREFIX` | Default DOT filename prefix; defaults to `uni20-dag` |
 | `UNI20_DEBUG_DAG_DUMP_ON_EXCEPTION` | Enable a live registry report and DOT snapshot when an exception originates in an async coroutine; defaults to off |
-| `UNI20_DEBUG_DAG_REQUEST_FILE` | Request file for `start_diagnostics_service()`: each change of its modification time asks for a dump, and `%p` in the path becomes the process id |
+| `UNI20_DEBUG_DAG_REQUEST_FILE` | Request file for the service: each change of its modification time asks for a dump, and `%p` in the path becomes the process id; setting it starts the service during program initialization |
 | `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service: `SIGUSR1` or `SIGUSR2`, also written `USR1`, `USR2` or as the signal's number; setting it starts the service during program initialization, and any other signal is reported on stderr |
 | `UNI20_DEBUG_DAG_POLL_MS` | Diagnostics-service poll interval in milliseconds |
 | `UNI20_DEBUG_DAG_STACKTRACE_FRAMES` | Maximum stack frames retained in snapshots and DOT tooltips; `0` hides trace text, `all`/`full`/`unlimited`/`max` disables the cap |

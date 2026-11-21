@@ -32,6 +32,16 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
       UNI20_DEBUG_DAG_FILE_PREFIX=startup
       $<TARGET_FILE:uni20_task_registry_signal_startup_test>
   )
+  add_test(
+    NAME TaskRegistryDebugTest.RequestFileEnvironmentStartsDiagnosticsServiceAtStartup
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+      UNI20_DEBUG_DAG_REQUEST_FILE=${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup/request
+      UNI20_DEBUG_DAG_POLL_MS=10
+      UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup
+      UNI20_DEBUG_DAG_FILE_PREFIX=startup
+      $<TARGET_FILE:uni20_task_registry_signal_startup_test>
+  )
 endif()
 
 # Accounting uses real TBB workers; keep it separate from ordinary death tests.

@@ -282,8 +282,9 @@ Each `touch /tmp/uni20-dag/request` asks every process watching that file for a
 dump; `%p` in the path becomes the process id, to ask one process alone. The signal
 must be `SIGUSR1` or `SIGUSR2`, and not one the program already handles.
 
-Alternatively, setting `UNI20_DEBUG_DAG_SIGNAL=SIGUSR1` before launching the
-program starts the service during program initialization. Uni20's signal handler
+Alternatively, setting `UNI20_DEBUG_DAG_SIGNAL=SIGUSR1`, or
+`UNI20_DEBUG_DAG_REQUEST_FILE`, before launching the program starts the service
+during program initialization. Uni20's signal handler
 only records the request, and the service thread writes the dump at its next poll;
 no diagnostics run in the handler. See [the task registry guide](task_registry_debug.md)
 for the details.

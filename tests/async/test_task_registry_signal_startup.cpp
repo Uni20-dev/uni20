@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 
@@ -46,7 +48,17 @@ int main()
   std::filesystem::create_directories(output_dir, ec);
   remove_graphviz_files(output_dir, options.file_prefix);
 
-  if (::kill(::getpid(), SIGUSR1) != 0)
+  // With a request file in the environment the program asks through it, and otherwise with SIGUSR1.
+  if (auto const* request_file = std::getenv("UNI20_DEBUG_DAG_REQUEST_FILE"))
+  {
+    std::ofstream request(request_file);
+    if (!(request << "dump\n"))
+    {
+      std::perror(request_file);
+      return 1;
+    }
+  }
+  else if (::kill(::getpid(), SIGUSR1) != 0)
   {
     std::perror("kill(SIGUSR1)");
     return 1;
@@ -66,6 +78,6 @@ int main()
 
   uni20::TaskRegistry::stop_diagnostics_service();
   remove_graphviz_files(output_dir, options.file_prefix);
-  std::fprintf(stderr, "UNI20_DEBUG_DAG_SIGNAL did not start the diagnostics service before main\n");
+  std::fprintf(stderr, "the environment did not start the diagnostics service before main\n");
   return 1;
 }
