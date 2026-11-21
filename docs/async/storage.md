@@ -121,7 +121,15 @@ parent. The source's read and the write through the alias would be ordered on
 that one queue while the assignment holds one of them and waits for the other,
 so it could deadlock. Writing a parent through its own reshaped or permuted
 alias would also be an in-place relayout, which a write-through copy cannot
-perform. Assign from an independent copy of the parent instead.
+perform. Assign from an independent source with the alias's own extents
+instead: the same view of an independent copy of the parent. The copy itself
+has the parent's shape, which a fixed-shape alias rejects when the result is
+read.
+
+```cpp
+Async<Tensor> copy(x);
+y = async::reshape_view(copy, rows, columns); // not y = copy
+```
 
 Tensor aliases obtain write-through capability from `MutableTensorView`.
 `uni20::assign_through` delegates to the ordinary backend-dispatched tensor

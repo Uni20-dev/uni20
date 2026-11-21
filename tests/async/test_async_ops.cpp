@@ -57,6 +57,25 @@ struct QueueMember
     int items = 0;
     int const& queue() const { return items; }
 };
+
+/// A borrowed async provider whose `queue()` returns a non-const EpochQueue&.
+struct Slot
+{
+    EpochQueue& q;
+    shared_storage<int> s;
+    WriteBuffer<int> reserved;
+    EpochQueue& queue() const { return q; }
+    auto read() const { return ReadBuffer<int>{q.create_read_context(s)}; }
+    auto write() { return std::move(reserved); }
+};
+
+/// An immediate payload that records an epoch queue as metadata.
+struct Stamp
+{
+    EpochQueue const* origin;
+    int sequence;
+    EpochQueue const& queue() const { return *origin; }
+};
 } // namespace async_test_types
 
 TEST(AsyncOpsTest, WriteProxyAssignmentConstructsThenUsesUnderlyingAssignment)
@@ -238,11 +257,42 @@ TEST(AsyncOpsTest, ImmediatePayloadQueueMemberIsNotAnEpochQueue)
   async_move(value, async_test_types::QueueMember{5});
   EXPECT_EQ(value.get_wait().items, 5);
 
-  async_compound_op(value, async_test_types::QueueMember{2},
-                    [](async_test_types::QueueMember& lhs, async_test_types::QueueMember const& rhs) {
-                      lhs.items += rhs.items;
-                    });
+  async_compound_op(
+      value, async_test_types::QueueMember{2},
+      [](async_test_types::QueueMember& lhs, async_test_types::QueueMember const& rhs) { lhs.items += rhs.items; });
   EXPECT_EQ(value.get_wait().items, 7);
+}
+
+TEST(AsyncOpsTest, ProviderQueueIsComparedWhateverItsQualification)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  ErrorModeGuard const error_mode;
+
+  // A borrowed provider that returns a non-const EpochQueue& and reserves its writer, as FutureValue does.
+  EpochQueue queue;
+  queue.latest()->start();
+  auto storage = make_shared_storage<int>(4);
+  async_test_types::Slot slot{queue, storage, WriteBuffer<int>{queue.create_write_context(storage)}};
+  auto first = [](auto const&, int n) { return n; };
+  auto second = [](int n, auto const&) { return n; };
+
+  EXPECT_THROW(async_binary_op(slot, slot, 1, first), std::runtime_error);
+  EXPECT_THROW(async_binary_op(slot, 1, slot, second), std::runtime_error);
+}
+
+TEST(AsyncOpsTest, ImmediateValueRecordingTheDestinationQueueIsAssigned)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+
+  Async<async_test_types::Stamp> destination;
+  async_test_types::Stamp stamp{&destination.queue(), 9};
+  async_assign(destination, stamp);
+  EXPECT_EQ(destination.get_wait().sequence, 9);
+
+  async_move(destination, async_test_types::Stamp{&destination.queue(), 10});
+  EXPECT_EQ(destination.get_wait().sequence, 10);
 }
 
 TEST(AsyncOpsTest, CompoundOperationExecutionFailurePropagatesThroughOutput)

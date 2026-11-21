@@ -20,16 +20,20 @@ namespace uni20::async
 namespace detail
 {
 
+/// \brief True if `T`'s `queue()` returns an `EpochQueue` lvalue, of any cv-qualification.
+template <class T>
+concept exposes_epoch_queue = requires(T const& value) { value.queue(); } &&
+                              std::is_lvalue_reference_v<decltype(std::declval<T const&>().queue())> &&
+                              std::same_as<std::remove_cvref_t<decltype(std::declval<T const&>().queue())>, EpochQueue>;
+
 /// \brief Rejects an async input on the output's epoch queue.
-/// \details Only operands whose `queue()` returns an `EpochQueue` take part, so
-///          an immediate payload with an unrelated `queue()` member is ignored.
+/// \details Only an input the operation acquires a buffer from, an async read
+///          provider, takes part. An immediate value is never compared, even
+///          when it records a queue, and its `queue()` is not instantiated.
 template <class Output, class Input>
 void validate_distinct_async_operand_queues(Output const& output, Input const& input)
 {
-  if constexpr (requires {
-                  { output.queue() } -> std::same_as<EpochQueue const&>;
-                  { input.queue() } -> std::same_as<EpochQueue const&>;
-                })
+  if constexpr (AsyncReadProvider<Input const&> && exposes_epoch_queue<Input> && exposes_epoch_queue<Output>)
   {
     ERROR_IF(std::addressof(output.queue()) == std::addressof(input.queue()),
              "async output must not share an epoch queue with an input");
