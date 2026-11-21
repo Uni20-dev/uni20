@@ -236,7 +236,9 @@ template <typename T> class Async {
     /// \details Independent values detach onto fresh storage and a fresh epoch
     ///          queue. Async aliases retain their descriptor, owner, and queue,
     ///          and participate only when ADL finds a matching `assign_through`
-    ///          operation. Read-only aliases therefore have no assignment.
+    ///          operation. Read-only aliases therefore have no assignment. An
+    ///          alias rejects an async source on its own epoch queue, such as
+    ///          its parent; see async_assign().
     /// \tparam U Immediate value or heterogeneous async source type.
     /// \param rhs Source expression.
     /// \return Reference to this async handle.
@@ -283,6 +285,8 @@ template <typename T> class Async {
 
     /// \brief Assign through a mutable async alias from another exact-type alias.
     /// \details The destination descriptor, owner, and queue remain unchanged.
+    ///          Assignment from the same descriptor does nothing. Distinct alias
+    ///          descriptors on the same epoch queue are rejected by async_assign().
     /// \param rhs Alias whose referenced value is the assignment source.
     /// \return Reference to this alias.
     Async& operator=(Async const& rhs)

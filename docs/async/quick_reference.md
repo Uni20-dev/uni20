@@ -87,9 +87,9 @@ Rules:
 | Expression | Meaning |
 |---|---|
 | `owning = value` | Rebind: detach and create fresh storage plus a fresh `EpochQueue`. |
-| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. |
+| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. An identical descriptor is a no-op. For distinct aliases on the same queue, supply an explicit owning snapshot. |
 | `read_only_alias = anything` | Ill-formed: assignment to const or transforming read-only proxies is forbidden. |
-| `async_assign(destination, source)` | Enroll assignment in the destination's current queue. |
+| `async_assign(destination, source)` | Keep the destination timeline. Owning assignment enrolls its source read first. A write-through alias needs an independent source or the identical descriptor. |
 
 `is_async_alias_v<T>` distinguishes aliases from independent values. Mutable
 aliases provide an ADL-visible `assign_through(target, source)` operation;
@@ -141,8 +141,9 @@ Critical write rule:
 - value-proxy `get()`, `operator->`, or conversion to `T&` throws `buffer_write_uninitialized` before initialization
 - alias-proxy `get()` and `operator->` expose only the const descriptor
 - use one writer, without a separate reader, to inspect and mutate an existing value
-- reject any distinct input whose queue is the output queue; an update output
-  is one read/write operand, not an aliased input plus output
+- operations that need a simultaneous reader and writer require distinct queues
+  for those leases. Sequential accesses can reuse a queue. See the
+  [deadlock diagnostics policy](runtime_model.md#deadlock-diagnostics).
 
 Explicit alternatives:
 
@@ -156,8 +157,8 @@ Explicit alternatives:
 |---|---|
 | `async_assign(dst, src)` | copy-like value propagation |
 | `async_move(dst, src)` | move-like value transfer |
-| `async_binary_op(out, a, b, op)` | schedule `out = op(a, b)` |
-| `async_compound_op(lhs, rhs, op)` | schedule in-place-style update to async lhs |
+| `async_binary_op(out, a, b, op)` | Read both operands before writing the result. An ordinary owning output may also be an input. |
+| `async_compound_op(lhs, rhs, op)` | Update in place using a writer for `lhs` and a distinct reader or immediate value for `rhs`. |
 
 Helper awaiters:
 
