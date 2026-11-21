@@ -1437,6 +1437,13 @@ class TaskRegistryImpl {
       return write_text_file(path, this->graphviz_dot_best_effort());
     }
 
+    /// \brief Write one DOT file now with `options`, for a dump the diagnostics service itself was asked for.
+    bool dump_graphviz_now(GraphvizDumpOptions const& options)
+    {
+      ensure_output_dir(options.output_dir);
+      return this->dump_graphviz_file_best_effort(default_dump_path(options));
+    }
+
     bool service_debug_requests(GraphvizDumpOptions const& options)
     {
       auto requests = pending_graphviz_dump_requests.exchange(0, std::memory_order_acq_rel);
@@ -1607,9 +1614,11 @@ class DiagnosticServiceState {
   public:
     bool start(DiagnosticsServiceOptions options)
     {
-      std::lock_guard lock(mutex_);
+      std::lock_guard lifecycle(lifecycle_);
       if (thread_.joinable()) return true;
 
+      // Before the handler exists, so that a delivery while it is installed is kept.
+      pending_signal_requests.store(0, std::memory_order_relaxed);
 #if defined(__linux__)
       // A handler rather than a blocked signal: the kernel may deliver a
       // process-directed signal to any thread, including ones that existed
@@ -1626,9 +1635,11 @@ class DiagnosticServiceState {
       if (options.signal_number > 0) return false;
 #endif
 
-      stop_ = false;
       signal_number_ = options.signal_number;
-      pending_signal_requests.store(0, std::memory_order_relaxed);
+      {
+        std::lock_guard lock(mutex_);
+        stop_ = false;
+      }
       try
       {
         thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
@@ -1643,24 +1654,23 @@ class DiagnosticServiceState {
 
     void stop() noexcept
     {
-      std::thread thread;
+      // Held through the join and the restoration, so a concurrent start() can
+      // neither reset the stopping thread's flag nor replace the action restored here.
+      std::lock_guard lifecycle(lifecycle_);
+      if (!thread_.joinable()) return;
       {
         std::lock_guard lock(mutex_);
         stop_ = true;
-        thread = std::move(thread_);
       }
       wake_.notify_all();
-      if (!thread.joinable()) return;
-      thread.join();
-
-      std::lock_guard lock(mutex_);
+      thread_.join();
       this->restore_signal_action();
     }
 
     ~DiagnosticServiceState() { this->stop(); }
 
   private:
-    // Called with mutex_ held.
+    // Called with lifecycle_ held.
     void restore_signal_action() noexcept
     {
 #if defined(__linux__)
@@ -1671,6 +1681,18 @@ class DiagnosticServiceState {
 
     void run(DiagnosticsServiceOptions options)
     {
+#if defined(__linux__)
+      // This thread inherits its starter's signal mask. Unblocking the signal here
+      // leaves it a receiver even when every other thread blocks it, as in a
+      // program started with the signal blocked.
+      if (options.signal_number > 0)
+      {
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, options.signal_number);
+        pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+      }
+#endif
       auto const poll_interval =
           std::chrono::milliseconds(options.poll_interval_ms > 0 ? options.poll_interval_ms : 250);
       ensure_output_dir(options.dump_options.output_dir);
@@ -1679,15 +1701,20 @@ class DiagnosticServiceState {
       while (!wake_.wait_for(lock, poll_interval, [this] { return stop_; }))
       {
         lock.unlock();
+        auto& registry = TaskRegistryImpl::instance();
         bool triggered = pending_signal_requests.exchange(0, std::memory_order_relaxed) > 0;
         if (consume_request_file(options.request_file)) triggered = true;
-        if (triggered) pending_graphviz_dump_requests.fetch_add(1, std::memory_order_release);
-        TaskRegistryImpl::instance().service_debug_requests(options.dump_options);
+        // Written here with the service's own options: through the shared
+        // request counter, a scheduler progress point could take it first and
+        // write it under the scheduler's directory instead.
+        if (triggered) registry.dump_graphviz_now(options.dump_options);
+        registry.service_debug_requests(options.dump_options);
         lock.lock();
       }
     }
 
-    std::mutex mutex_;
+    std::mutex lifecycle_; // start and stop: thread_, signal_number_, previous_action_
+    std::mutex mutex_;     // stop_, with wake_
     std::condition_variable wake_;
     std::thread thread_{};
     bool stop_{false};
