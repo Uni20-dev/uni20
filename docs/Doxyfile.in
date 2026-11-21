@@ -4,6 +4,7 @@ PROJECT_BRIEF          = "Asynchronous tensor and runtime library."
 OUTPUT_DIRECTORY       = "@DOXYGEN_OUTPUT_DIRECTORY@"
 
 INPUT                  = @DOXYGEN_INPUT@
+IMAGE_PATH             = "@PROJECT_SOURCE_DIR@/docs/branding"
 FILE_PATTERNS          = *.hpp *.h *.cpp *.md
 RECURSIVE              = YES
 
@@ -13,6 +14,8 @@ EXCLUDE_SYMBOLS        = detail
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
 HTML_COLORSTYLE        = AUTO_LIGHT
+HTML_EXTRA_FILES       = "@PROJECT_SOURCE_DIR@/docs/branding/uni20-yushan-ridge.png" \
+                         "@PROJECT_SOURCE_DIR@/docs/branding/uni20-dev-yushan-avatar.png"
 HTML_EXTRA_STYLESHEET  = @DOXYGEN_HTML_EXTRA_STYLESHEET@
 USE_MATHJAX            = YES
 MATHJAX_VERSION        = MathJax_3
