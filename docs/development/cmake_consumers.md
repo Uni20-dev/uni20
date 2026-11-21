@@ -12,7 +12,7 @@ cmake_minimum_required(VERSION 3.28)
 project(my_solver LANGUAGES CXX)
 
 set(UNI20_SOURCE_DIR "" CACHE PATH "Path to a Uni20 source checkout")
-add_subdirectory("${UNI20_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/uni20")
+add_subdirectory("${UNI20_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/uni20" SYSTEM)
 
 add_executable(my_solver main.cpp)
 target_link_libraries(my_solver PRIVATE uni20_core uni20_common)
@@ -31,6 +31,7 @@ include(FetchContent)
 FetchContent_Declare(uni20
   GIT_REPOSITORY https://github.com/Uni20-dev/uni20.git
   GIT_TAG <tested-full-commit-hash>
+  SYSTEM
 )
 FetchContent_MakeAvailable(uni20)
 target_link_libraries(my_solver PRIVATE uni20_core uni20_common)
@@ -43,6 +44,15 @@ sources without downloading or updating them, and compiles them inside the
 consumer's build tree. This does not reuse an existing Uni20 binary build.
 If a parent already supplies Uni20, reuse its targets rather than adding a
 second copy with a different configuration.
+
+## Warnings
+
+Add Uni20 as `SYSTEM`, as both examples above do. Uni20 exports its include
+directories without `SYSTEM`, so otherwise the consumer compiles Uni20 headers
+under its own warning flags, and a warning Uni20 does not enable can fail the
+consumer's `-Werror` build. Uni20 builds and tests its own targets with its own
+warning set, which turns off GCC's `-Wtype-limits`: that warning reports
+`axis < rank` as always false in rank-generic code instantiated at rank zero.
 
 ## Targets and settings
 
