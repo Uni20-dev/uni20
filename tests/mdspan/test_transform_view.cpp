@@ -1,10 +1,12 @@
 #include "../helpers.hpp"
 #include "gtest/gtest.h"
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <uni20/mdspan/transform_view.hpp>
 #include <uni20/mdspan/zip_layout.hpp>
+#include <utility>
 
 using namespace uni20;
 
@@ -267,7 +269,10 @@ TEST(TransformView1D, PromotesIndicesOnlyWhenNeeded)
   auto mixed = transform_view(plus_n{}, a, b);
   auto reversed = transform_view(plus_n{}, b, a);
   static_assert(std::same_as<decltype(same)::mapping_type::offset_type, std::tuple<std::int32_t, std::int32_t>>);
-  static_assert(std::same_as<decltype(mixed)::mapping_type::offset_type, std::tuple<std::int64_t, std::int64_t>>);
+  using promoted_index = decltype(mixed)::index_type;
+  static_assert(std::in_range<promoted_index>(std::numeric_limits<std::int32_t>::min()));
+  static_assert(std::in_range<promoted_index>(std::numeric_limits<std::uint32_t>::max()));
+  static_assert(std::same_as<decltype(mixed)::mapping_type::offset_type, std::tuple<promoted_index, promoted_index>>);
   static_assert(std::same_as<decltype(mixed)::mapping_type, decltype(reversed)::mapping_type>);
   EXPECT_EQ(same[1], 14);
   EXPECT_EQ(mixed[1], 14);
