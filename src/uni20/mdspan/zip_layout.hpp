@@ -10,11 +10,9 @@
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/mdspan/mdspan.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <initializer_list>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -229,6 +227,10 @@ template <typename T, std::size_t N>
 using tuple_n = decltype(detail::make_tuple_n_impl<T>(std::make_index_sequence<N>{}));
 
 /// \brief Zip layout for \p NumSpans strided spans (all using layout_stride).
+/// \details A Uni20 layout, not a standard layout mapping policy: the mapping
+///          returns one offset per span, so it has no `required_span_size()`
+///          and works only with accessors and operations written for zipped
+///          views.
 /// \tparam NumSpans  Number of child spans to zip.
 /// \ingroup mdspan_ext
 template <std::size_t NumSpans> struct StridedZipLayout
@@ -238,7 +240,7 @@ template <std::size_t NumSpans> struct StridedZipLayout
     /// \brief Number of spans in this zip layout.
     static constexpr std::size_t num_spans = NumSpans;
 
-    /// \brief Nested mapping policy for extents \p Ext, modeling LayoutMappingPolicy.
+    /// \brief Nested mapping for extents \p Ext, returning a tuple of offsets.
     /// \tparam Ext Extents type managed by the mapping.
     /// \ingroup mdspan_ext
     template <typename Ext> struct mapping
@@ -272,8 +274,6 @@ template <std::size_t NumSpans> struct StridedZipLayout
         /// \brief Never exhaustive at runtime.
         /// \ingroup mdspan_ext
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept { return false; }
-
-        // std::size_t required_span_size() const does not make sense for a StridedZipLayout
 
         /// \brief True if every dimension uses the same stride across all spans.
         /// \return True when each span shares identical strides per dimension.
@@ -413,7 +413,9 @@ template <std::size_t NumSpans> struct StridedZipLayout
 };
 
 /// \brief Fallback zip layout for arbitrary mapping policies.
-/// \details Models the C++23 LayoutMappingPolicy requirements.
+/// \details Like StridedZipLayout, a Uni20 layout rather than a standard
+///          layout mapping policy: the mapping returns one offset per child
+///          mapping and has no `required_span_size()`.
 /// \tparam Layouts Child layout mapping policies to combine.
 /// \ingroup mdspan_ext
 template <typename... Layouts> struct GeneralZipLayout
@@ -452,21 +454,6 @@ template <typename... Layouts> struct GeneralZipLayout
         /// \return Shared extents across all child mappings.
         /// \ingroup mdspan_ext
         [[nodiscard]] UNI20_HOST_DEVICE constexpr extents_type const& extents() const noexcept { return extents_; }
-
-        /// \brief Return the maximum required span size among the child mappings.
-        /// \return Maximum number of elements any child mapping may touch.
-        /// \ingroup mdspan_ext
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t required_span_size() const noexcept
-        {
-          std::size_t max_sz = 0;
-          std::apply(
-              [&](auto const&... m) {
-                (void)std::initializer_list<int>{
-                    (max_sz = std::max<std::size_t>(max_sz, m.required_span_size()), 0)...};
-              },
-              impls_);
-          return max_sz;
-        }
 
         /// \brief Compute the per-layout offsets for a given multi-index.
         /// \tparam Idx Types of each index argument.

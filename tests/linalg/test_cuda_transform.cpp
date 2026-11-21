@@ -1,17 +1,24 @@
 #include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/linalg/backends/cuda/conjugate_inplace.hpp>
+#include <uni20/linalg/backends/cuda/copy.hpp>
 #include <uni20/linalg/backends/cuda/transform.hpp>
 #include <uni20/linalg/elementwise_functions.hpp>
+#include <uni20/tensor/conjugate_inplace.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/mdspec_tensor_view.hpp>
 #include <uni20/tensor/tensor.hpp>
 #include <uni20/tensor/transform.hpp>
 
 #include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -39,6 +46,73 @@ auto make_strided_mdspec(Tensor& tensor, std::size_t offset, extents_type extent
   using result_type = uni20::mdspec<typename base_type::element_type, extents_type, layout_type,
                                     typename base_type::accessor_type, typename base_type::data_descriptor_type>;
   return result_type{base.data_descriptor().offset_by(offset), mapping_type{extents, strides}, base.accessor()};
+}
+
+template <std::size_t Rank, class Tensor>
+auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const& extents,
+                       std::array<uni20::index_type, Rank> const& strides)
+{
+  auto mutable_base = tensor.mdspec();
+  auto const_base = std::as_const(tensor).mdspec();
+  using mutable_base_type = decltype(mutable_base);
+  using const_base_type = decltype(const_base);
+  using view_extents = stdex::dextents<uni20::index_type, Rank>;
+  using mapping_type = stdex::layout_stride::mapping<view_extents>;
+  using mutable_type =
+      uni20::mdspec<typename mutable_base_type::element_type, view_extents, stdex::layout_stride,
+                    typename mutable_base_type::accessor_type, typename mutable_base_type::data_descriptor_type>;
+  using const_type =
+      uni20::mdspec<typename const_base_type::element_type, view_extents, stdex::layout_stride,
+                    typename const_base_type::accessor_type, typename const_base_type::data_descriptor_type>;
+  mapping_type const mapping(view_extents(extents), strides);
+  return uni20::MdspecTensorView<mutable_type, const_type, uni20::CudaStorage>{
+      mutable_type{mutable_base.data_descriptor(), mapping, mutable_base.accessor()},
+      const_type{const_base.data_descriptor(), mapping, const_base.accessor()}};
+}
+
+// Rank-9 view with extent 2 and stride 3^k on axis k: no two axes merge, so the
+// compact rank exceeds the kernel's eight dimensions.
+constexpr std::size_t unmergeable_rank = 9;
+constexpr std::size_t unmergeable_span = 19683; // 3^9
+
+constexpr std::array<uni20::index_type, unmergeable_rank> unmergeable_extents()
+{
+  std::array<uni20::index_type, unmergeable_rank> extents{};
+  extents.fill(2);
+  return extents;
+}
+
+constexpr std::array<uni20::index_type, unmergeable_rank> unmergeable_strides()
+{
+  std::array<uni20::index_type, unmergeable_rank> strides{};
+  uni20::index_type stride = 1;
+  for (auto& value : strides)
+  {
+    value = stride;
+    stride *= 3;
+  }
+  return strides;
+}
+
+// Offsets the view addresses: base-3 numbers whose digits are all 0 or 1.
+bool is_unmergeable_view_offset(std::size_t offset)
+{
+  for (; offset != 0; offset /= 3)
+  {
+    if (offset % 3 == 2) return false;
+  }
+  return true;
+}
+
+template <class Tensor> auto element_at(Tensor const& tensor, std::size_t linear)
+{
+  std::array<uni20::index_type, unmergeable_rank> index{};
+  for (auto& coordinate : index)
+  {
+    coordinate = static_cast<uni20::index_type>(linear % 2);
+    linear /= 2;
+  }
+  return std::apply([&](auto... coordinate) { return tensor[coordinate...]; }, index);
 }
 
 class CudaTransformTest : public ::testing::Test {
@@ -95,6 +169,42 @@ TEST(CudaTransformPlanningTest, RankZeroUnaryPlanVisitsOneElement)
   EXPECT_EQ(plan.plan_32.compact_rank, 0);
   EXPECT_EQ(plan.plan_32.element_count, 1);
   EXPECT_EQ(plan.plan_32.offsets(0), (std::array<std::int32_t, 2>{0, 0}));
+}
+
+TEST(CudaTransformPlanningTest, DimensionsBeyondTheKernelRankBecomeHostLoops)
+{
+  using extents_type = stdex::dextents<uni20::index_type, 10>;
+  extents_type const extents{2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
+  double value = 0.0;
+  // Column-major output from a row-major input: no two axes merge.
+  stdex::mdspan<double, extents_type, stdex::layout_left> output{&value, extents};
+  stdex::mdspan<double const, extents_type, stdex::layout_right> input{&value, extents};
+  uni20::linalg::detail::cuda_reference::LoweredElementwiseUnaryPlan plan;
+
+  ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_transform_plan<
+              uni20::linalg::detail::cuda_reference::elementwise_arithmetic_maximum_rank>(output, plan, input));
+  EXPECT_EQ(plan.plan_32.compact_rank, 8);
+  EXPECT_EQ(plan.plan_32.element_count, 256);
+  ASSERT_EQ(plan.host_loop_dimensions.size(), 2);
+  EXPECT_EQ(plan.element_count(), 1024);
+
+  // Every element is visited exactly once across the host-loop slices.
+  std::vector<int> output_hits(1024, 0);
+  std::vector<int> input_hits(1024, 0);
+  int slices = 0;
+  plan.visit([&](auto const& slice) {
+    ++slices;
+    for (std::uint64_t index = 0; index < slice.element_count; ++index)
+    {
+      auto const offsets =
+          slice.offsets(static_cast<typename std::remove_cvref_t<decltype(slice)>::logical_index_type>(index));
+      ++output_hits[static_cast<std::size_t>(offsets[0])];
+      ++input_hits[static_cast<std::size_t>(offsets[1])];
+    }
+  });
+  EXPECT_EQ(slices, 4);
+  EXPECT_EQ(std::count(output_hits.begin(), output_hits.end(), 1), 1024);
+  EXPECT_EQ(std::count(input_hits.begin(), input_hits.end(), 1), 1024);
 }
 
 TEST(CudaTransformPlanningTest, BinaryPlanDecodesThreeIndependentMappings)
@@ -172,6 +282,51 @@ TEST(CudaTransformPlanningTest, RegisteredCallablesHaveExactCudaTypeAcceptance)
       uni20::linalg::detail::backend_type_acceptance<uni20::linalg::CudaReferenceBackend, unregistered_operation,
                                                      mutable_real_cuda_mdspec, const_real_cuda_mdspec>();
   EXPECT_EQ(unregistered, uni20::linalg::KernelTypeAcceptance::no);
+}
+
+TEST_F(CudaTransformTest, ElementwiseOperationsCoverRanksBeyondTheKernelRank)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto& resources = runtime.device_resources(0);
+  uni20::Tensor<double, unmergeable_rank> host(2, 2, 2, 2, 2, 2, 2, 2, 2);
+  for (std::size_t linear = 0; linear < 512; ++linear)
+    host.mdspan().data_handle()[linear] = 1.0 + static_cast<double>(linear);
+  auto const input = uni20::to_device(host, 0);
+
+  using row_major_tensor = uni20::CudaTensor<double, unmergeable_rank, uni20::RowMajor>;
+  row_major_tensor copied(resources, 2, 2, 2, 2, 2, 2, 2, 2, 2);
+  uni20::copy(copied, input);
+  row_major_tensor negated(resources, 2, 2, 2, 2, 2, 2, 2, 2, 2);
+  uni20::assign_transform(negated, uni20::linalg::negate{}, input);
+  auto const copied_result = uni20::to_host(copied);
+  auto const negated_result = uni20::to_host(negated);
+  for (std::size_t linear = 0; linear < 512; ++linear)
+  {
+    EXPECT_DOUBLE_EQ(element_at(copied_result, linear), element_at(host, linear));
+    EXPECT_DOUBLE_EQ(element_at(negated_result, linear), -element_at(host, linear));
+  }
+
+  uni20::CudaTensor<double, 1> storage(resources, unmergeable_span);
+  auto view = cuda_strided_view<unmergeable_rank>(storage, unmergeable_extents(), unmergeable_strides());
+  uni20::fill(view.backend_selector(), view, 2.0);
+  uni20::transform_inplace(view, uni20::linalg::scale{3.0});
+  auto const filled = uni20::to_host(storage);
+  for (std::size_t offset = 0; offset < unmergeable_span; ++offset)
+    ASSERT_DOUBLE_EQ(filled[offset], is_unmergeable_view_offset(offset) ? 6.0 : 0.0) << "offset " << offset;
+
+  uni20::Tensor<uni20::complex<double>, 1> complex_host(unmergeable_span);
+  for (std::size_t offset = 0; offset < unmergeable_span; ++offset)
+    complex_host[offset] = uni20::complex<double>{1.0, static_cast<double>(offset)};
+  auto complex_storage = uni20::to_device(complex_host, 0);
+  auto complex_view =
+      cuda_strided_view<unmergeable_rank>(complex_storage, unmergeable_extents(), unmergeable_strides());
+  uni20::conjugate_inplace(complex_view.backend_selector(), complex_view);
+  auto const conjugated = uni20::to_host(complex_storage);
+  for (std::size_t offset = 0; offset < unmergeable_span; ++offset)
+  {
+    auto const expected = is_unmergeable_view_offset(offset) ? uni20::conj(complex_host[offset]) : complex_host[offset];
+    ASSERT_EQ(conjugated[offset], expected) << "offset " << offset;
+  }
 }
 
 TEST_F(CudaTransformTest, ScalesByRetainedFactor)

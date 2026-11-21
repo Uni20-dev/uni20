@@ -47,7 +47,7 @@ TEST(AsyncMoveTest, MoveAssignPreservesQueue)
 TEST(AsyncMoveTest, AsyncMoveTransfersValue)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Async<Ptr> src = std::make_unique<int>(42);
@@ -62,14 +62,12 @@ TEST(AsyncMoveTest, AsyncMoveTransfersValue)
   EXPECT_EQ(*received, 42);
 
   EXPECT_THROW((void)src.move_from_wait(), buffer_write_uninitialized);
-
-  reset_global_scheduler();
 }
 
 TEST(AsyncMoveTest, AsyncMoveFromRvalueAsync)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Async<Ptr> dst;
@@ -81,14 +79,12 @@ TEST(AsyncMoveTest, AsyncMoveFromRvalueAsync)
   Ptr received = dst.move_from_wait();
   ASSERT_TRUE(received);
   EXPECT_EQ(*received, 11);
-
-  reset_global_scheduler();
 }
 
 TEST(AsyncMoveTest, AsyncMoveFromValueBuffersOnStack)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Ptr payload = std::make_unique<int>(7);
@@ -102,8 +98,6 @@ TEST(AsyncMoveTest, AsyncMoveFromValueBuffersOnStack)
   ASSERT_TRUE(received);
   EXPECT_EQ(*received, 7);
   EXPECT_FALSE(payload);
-
-  reset_global_scheduler();
 }
 
 TEST(AsyncMoveTest, SourceWriterOnDestinationQueueReleasesBeforeDestinationWrite)
