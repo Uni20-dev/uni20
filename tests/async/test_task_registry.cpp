@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <limits>
@@ -898,20 +899,84 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
   std::filesystem::remove_all(dir);
 }
 
+namespace
+{
+// Restores SIGUSR1's action and this thread's signal mask, unmasking first so
+// that a signal still pending reaches the test's own action.
+struct SignalStateGuard
+{
+    struct sigaction action = {};
+    sigset_t mask = {};
+    SignalStateGuard()
+    {
+      ::sigaction(SIGUSR1, nullptr, &action);
+      ::pthread_sigmask(SIG_SETMASK, nullptr, &mask);
+    }
+    ~SignalStateGuard()
+    {
+      ::pthread_sigmask(SIG_SETMASK, &mask, nullptr);
+      ::sigaction(SIGUSR1, &action, nullptr);
+    }
+};
+
+void ignore_signal(int) {}
+
+void ignore_sigusr1()
+{
+  struct sigaction ignore = {};
+  ignore.sa_handler = ignore_signal;
+  sigemptyset(&ignore.sa_mask);
+  ::sigaction(SIGUSR1, &ignore, nullptr);
+}
+} // namespace
+
 TEST(TaskRegistryDebugTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
 {
   TaskRegistry::stop_diagnostics_service();
   auto dir = make_temp_dir("uni20-dag-signal-thread-test");
 
   // A thread that exists before the service starts and does not block the
-  // signal, as a TBB worker left by an earlier test does. The kernel may
-  // deliver the process-directed signal to it.
-  std::jthread bystander([](std::stop_token stop) {
+  // signal, whatever earlier tests left, as a TBB worker would be. The signal
+  // is sent to it directly, so its default action would end the process.
+  std::promise<void> ready;
+  std::jthread bystander([&ready](std::stop_token stop) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    ::pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+    ready.set_value();
     std::mutex mutex;
     std::condition_variable_any idle;
     std::unique_lock lock(mutex);
     idle.wait(lock, stop, [] { return false; });
   });
+  ready.get_future().wait();
+
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.dump_options.output_dir = dir.string();
+  options.dump_options.file_prefix = "signal";
+  options.signal_number = SIGUSR1;
+  options.poll_interval_ms = 50;
+
+  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
+  ASSERT_EQ(::pthread_kill(bystander.native_handle(), SIGUSR1), 0);
+  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
+  TaskRegistry::stop_diagnostics_service();
+  std::filesystem::remove_all(dir);
+}
+
+TEST(TaskRegistryDebugTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
+{
+  TaskRegistry::stop_diagnostics_service();
+  auto dir = make_temp_dir("uni20-dag-signal-blocked-test");
+  SignalStateGuard const guard;
+  ignore_sigusr1(); // so that a signal still pending after the test does no harm
+
+  // The service thread inherits this mask, as in a program started with the signal blocked.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  ASSERT_EQ(::pthread_sigmask(SIG_BLOCK, &set, nullptr), 0);
 
   TaskRegistry::DiagnosticsServiceOptions options;
   options.dump_options.output_dir = dir.string();
@@ -929,14 +994,8 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceSignalReachesItFromThreadsStartedE
 TEST(TaskRegistryDebugTest, DiagnosticsServiceRestoresThePreviousSignalAction)
 {
   TaskRegistry::stop_diagnostics_service();
-  static std::atomic<int> previous_handler_calls{0};
-  previous_handler_calls = 0;
-
-  struct sigaction previous_action = {};
-  previous_action.sa_handler = [](int) { previous_handler_calls.fetch_add(1, std::memory_order_relaxed); };
-  sigemptyset(&previous_action.sa_mask);
-  struct sigaction saved_action = {};
-  ASSERT_EQ(::sigaction(SIGUSR1, &previous_action, &saved_action), 0);
+  SignalStateGuard const guard;
+  ignore_sigusr1();
 
   TaskRegistry::DiagnosticsServiceOptions options;
   options.signal_number = SIGUSR1;
@@ -944,9 +1003,38 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceRestoresThePreviousSignalAction)
   ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
   TaskRegistry::stop_diagnostics_service();
 
-  ASSERT_EQ(::raise(SIGUSR1), 0);
-  EXPECT_EQ(previous_handler_calls.load(), 1);
-  ::sigaction(SIGUSR1, &saved_action, nullptr);
+  struct sigaction current = {};
+  ASSERT_EQ(::sigaction(SIGUSR1, nullptr, &current), 0);
+  EXPECT_EQ(current.sa_handler, &ignore_signal);
+}
+
+TEST(TaskRegistryDebugTest, ConcurrentStartAndStopRestoreThePreviousSignalAction)
+{
+  TaskRegistry::stop_diagnostics_service();
+  SignalStateGuard const guard;
+  ignore_sigusr1();
+
+  // A restart during a stop must neither keep the stopping thread running nor
+  // replace the action that stop restores.
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  options.poll_interval_ms = 1;
+  auto cycle = [&options] {
+    for (int i = 0; i < 100; ++i)
+    {
+      TaskRegistry::start_diagnostics_service(options);
+      TaskRegistry::stop_diagnostics_service();
+    }
+  };
+  std::thread first(cycle);
+  std::thread second(cycle);
+  first.join();
+  second.join();
+  TaskRegistry::stop_diagnostics_service();
+
+  struct sigaction current = {};
+  ASSERT_EQ(::sigaction(SIGUSR1, nullptr, &current), 0);
+  EXPECT_EQ(current.sa_handler, &ignore_signal);
 }
 #endif
 #endif

@@ -279,8 +279,12 @@ file appears, when the configured signal is received, or when program code calls
 `request_graphviz_dump()`. On Linux the service installs a handler for the signal
 that only records it, and the service thread writes the DOT file at its next poll,
 so no diagnostics run inside the handler. The signal may arrive on any thread, so the
-service can start at any point, including after worker threads exist. Stopping the
-service restores the signal's previous action. Setting `UNI20_DEBUG_DAG_SIGNAL`
+service can start at any point, including after worker threads exist. The service
+thread unblocks the signal for itself, so a program started with the signal blocked
+still receives it, and it writes a dump that its signal or request file asked for with
+its own output options, rather than leaving it to a scheduler progress point. Stopping
+the service restores the signal's previous action; starting and stopping it are
+serialized. Setting `UNI20_DEBUG_DAG_SIGNAL`
 starts the service during program initialization.
 
 Default output and service settings can be configured with environment variables:
