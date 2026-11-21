@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
+#include <limits>
 #include <type_traits>
 
 namespace
@@ -63,6 +65,52 @@ TEST(DiagonalMdspecTest, RejectsTheWrongNumberOfComponents)
 
   EXPECT_THROW(static_cast<void>(make_diagonal_mdspan(logical_extents_type{2, 3, 4}, components)),
                std::invalid_argument);
+}
+
+TEST(DiagonalMdspecTest, PreservesPhysicalStridesWithNarrowLogicalIndices)
+{
+  using logical_shape = stdex::extents<std::uint8_t, 2, 2>;
+  using component_shape = stdex::extents<int, 2>;
+  std::array<int, 257> storage{};
+  storage[0] = 11;
+  storage[256] = 23;
+  stdex::layout_stride::mapping<component_shape> mapping{component_shape{}, std::array{256}};
+  stdex::mdspan<int, component_shape, stdex::layout_stride> components{storage.data(), mapping};
+
+  auto diagonal = make_diagonal_mdspan(logical_shape{}, components);
+  EXPECT_EQ((diagonal[1, 1]), 23);
+  auto recovered = diagonal_components(diagonal);
+  EXPECT_EQ(recovered.stride(0), 256);
+  recovered[1] = 37;
+  EXPECT_EQ(storage[256], 37);
+  EXPECT_EQ(storage[0], 11);
+}
+
+TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)
+{
+  std::array<int, 17> storage{};
+  storage.back() = 53;
+  stdex::mdspan<int, stdex::extents<int, 17>> components{storage.data()};
+  auto diagonal = make_diagonal_mdspan(stdex::extents<std::uint8_t, 17, 17>{}, components);
+  EXPECT_EQ((diagonal[16, 16]), 53);
+  EXPECT_EQ((diagonal[16, 15]), 0);
+}
+
+TEST(DiagonalMdspecTest, ComparesComponentCountsBeforeNarrowing)
+{
+  std::array<int, 258> storage{};
+  stdex::mdspan<int, stdex::extents<int, 258>> components{storage.data()};
+  using logical_shape = stdex::extents<std::uint8_t, 2, 2>;
+  EXPECT_THROW((void)make_diagonal_mdspan(logical_shape{}, components), std::invalid_argument);
+}
+
+TEST(DiagonalMdspecTest, RejectsUnrepresentableSingletonComponentStride)
+{
+  using shape = stdex::extents<std::size_t, 1>;
+  int storage = 42;
+  stdex::layout_stride::mapping<shape> mapping{shape{}, std::array{std::numeric_limits<std::size_t>::max()}};
+  stdex::mdspan<int, shape, stdex::layout_stride> components{&storage, mapping};
+  EXPECT_THROW((void)make_diagonal_mdspan(shape{}, components), std::overflow_error);
 }
 
 TEST(DiagonalMdspecTest, ExposesAlignedOffsetAndSteppedComponents)

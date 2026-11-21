@@ -24,7 +24,7 @@ using right_mapping = stdex::layout_right::mapping<extents_type>;
 using stride_mapping = stdex::layout_stride::mapping<extents_type>;
 using generated_mapping = uni20::GeneratedLayout::mapping<extents_type>;
 using strided_zip_mapping = uni20::StridedZipLayout<2>::mapping<extents_type>;
-using general_zip_mapping = uni20::GeneralZipLayout<uni20::GeneratedLayout, stdex::layout_left>::mapping<extents_type>;
+using general_zip_mapping = uni20::GeneralZipLayout<generated_mapping, left_mapping>::mapping<extents_type>;
 
 struct DeviceScale
 {

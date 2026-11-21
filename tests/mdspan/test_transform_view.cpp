@@ -1,5 +1,6 @@
 #include "../helpers.hpp"
 #include "gtest/gtest.h"
+#include <cstdint>
 #include <numeric>
 #include <stdexcept>
 #include <uni20/mdspan/transform_view.hpp>
@@ -228,4 +229,42 @@ TEST(TransformView2D, RowMajorSum)
   EXPECT_TRUE(m.is_strided());
   EXPECT_EQ(m.stride(0), C);
   EXPECT_EQ(m.stride(1), 1);
+}
+
+TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
+{
+  using small_shape = stdex::extents<std::uint8_t, 2, 2>;
+  using wide_shape = stdex::extents<int, 2, 2>;
+  std::array<int, 4> dense{1, 2, 3, 4};
+  std::array<int, 301> padded{};
+  std::iota(padded.begin(), padded.end(), 0);
+  stdex::mdspan<int, small_shape> a{dense.data(), small_shape{}};
+  stdex::layout_stride::mapping<wide_shape> mapping{wide_shape{}, std::array{200, 100}};
+  stdex::mdspan<int, wide_shape, stdex::layout_stride> b{padded.data(), mapping};
+
+  auto ab = transform_view(plus_n{}, a, b);
+  auto ba = transform_view(plus_n{}, b, a);
+  for (int i = 0; i < 2; ++i)
+    for (int j = 0; j < 2; ++j)
+    {
+      auto const expected = a[i, j] + b[i, j];
+      EXPECT_EQ((ab[i, j]), expected);
+      EXPECT_EQ((ba[i, j]), expected);
+    }
+}
+
+TEST(TransformView2D, PreservesChildMappingsWhenComposingMixedIndexTypes)
+{
+  using narrow = stdex::extents<int, 2, 2>;
+  using wide = stdex::extents<std::size_t, 2, 2>;
+  std::array<int, 4> dense{1, 2, 3, 4};
+  std::array<int, 8> padded{10, 0, 20, 0, 30, 0, 40, 0};
+  stdex::mdspan<int, narrow> a{dense.data(), narrow{}};
+  stdex::layout_stride::mapping<wide> mapping{wide{}, std::array{4, 2}};
+  stdex::mdspan<int, wide, stdex::layout_stride> b{padded.data(), mapping};
+
+  auto sum = transform_view(plus_n{}, a, b);
+  auto nested = transform_view(plus_n{}, sum, b);
+  EXPECT_EQ((nested[1, 0]), 63);
+  EXPECT_EQ((nested[1, 1]), 84);
 }

@@ -154,6 +154,13 @@ Semantic transform views change values observed through an accessor. Complex
 identity view. Applying `conj` twice returns a read-only view of the original
 values rather than a writable left-hand side.
 
+When `transform_view` combines mdspans with the same shape, each operand
+retains its physical offsets even if their index types differ. A diagonal view
+created by `make_diagonal_mdspan` similarly keeps its component stride in
+`std::ptrdiff_t`. Construction checks that the component view has the requested
+length and that the stride and last component offset fit.
+`diagonal_components(view)` recovers that physical stride.
+
 Materialization is explicit:
 
 ```cpp
