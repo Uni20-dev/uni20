@@ -3,6 +3,12 @@
 For the wider operation taxonomy and current Async support, see
 [Tensor Operations, Semantics, and Async Support](operations.md).
 
+`Tensor::size()` returns the product of the extents as `uni20::size_type`.
+A rank-zero tensor has one element, and a tensor with any zero extent has none.
+For a `2 × 2` tensor with strides `(1, 3)`, `size()` is 4 and
+`mapping().required_span_size()` is 5 because the mapping skips one element.
+An adopted buffer can be larger still. Use `storage().size()` for its element count.
+
 ## Owning Tensor Initialization
 
 Shape construction initializes owned numerical elements to zero on both host and
