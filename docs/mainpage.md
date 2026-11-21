@@ -1,5 +1,7 @@
 # Uni20
 
+![Yushan as a tensor network](branding/uni20-logo.png)
+
 Uni20 is a C++23 tensor-network research library combining dense Tensor
 operations, ordered CPU/BLAS/LAPACK backend dispatch, matrix-free Krylov
 algorithms, and an epoch-based asynchronous runtime. The API is still in active
@@ -74,3 +76,5 @@ scheduling through backend kernels and structured presentation.
 - [AI guidance](ai_guidance/)
 - [Trace macros](diagnostics/trace_macros.md)
 - [Doxygen policy](development/doxygen.md)
+
+[Logo files and attribution](branding/)

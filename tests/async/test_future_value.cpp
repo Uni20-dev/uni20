@@ -28,7 +28,7 @@ TEST(FutureValue, MoveOnlyType)
 TEST(FutureValue, AssignFromAsync)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a = 99;
   FutureValue<int> fv;
@@ -42,7 +42,7 @@ TEST(FutureValue, AssignFromAsync)
 TEST(FutureValue, DeferWrite)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a;
   Defer d(a);

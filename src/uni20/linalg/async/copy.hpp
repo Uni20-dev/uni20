@@ -161,8 +161,14 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
                       convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
   auto output_descriptor = mdspec_of(result);
   auto input_descriptor = mdspec_of(input_value);
-  co_await linalg::co_dispatch_kernel(linalg::CudaReferenceBackend{}, linalg::copy_op{}, output_descriptor,
-                                      input_descriptor);
+  // A CUDA input may be on another device; the CUDA copy list includes peer staging.
+  if constexpr (std::same_as<tensor_storage_policy_t<InputTensor>, CudaStorage>)
+    co_await linalg::co_dispatch_kernel(linalg::select_backend_for<ResultTensor, InputTensor>(linalg::copy_op{}),
+                                        linalg::copy_op{}, output_descriptor, input_descriptor);
+  else
+    co_await linalg::co_dispatch_kernel(
+        linalg::cuda_host_transfer_selector<linalg::copy_op, ResultTensor, InputTensor>(), linalg::copy_op{},
+        output_descriptor, input_descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -193,7 +199,8 @@ void copy(async::Async<OutputTensor>& output, async::Async<InputTensor> const& i
 #if UNI20_BACKEND_CUDA
   if constexpr (detail::is_pageable_cuda_transfer<OutputTensor, InputTensor>)
   {
-    detail::schedule_async_copy(linalg::CudaReferenceBackend{}, output, input);
+    detail::schedule_async_copy(linalg::cuda_host_transfer_selector<linalg::copy_op, OutputTensor, InputTensor>(),
+                                output, input);
   }
   else
 #endif
@@ -229,7 +236,8 @@ template <TensorView InputTensor>
   using result_type = std::remove_cvref_t<decltype(uni20::to_host(std::declval<InputTensor const&>()))>;
   async::Async<result_type> output;
   output.debug_name("to_host.result");
-  auto task = detail::co_make_tensor(linalg::CudaReferenceBackend{}, output.write(), input.read());
+  auto task = detail::co_make_tensor(linalg::cuda_host_transfer_selector<linalg::copy_op, InputTensor>(),
+                                     output.write(), input.read());
   task.debug_name("to_host");
   async::schedule(std::move(task));
   return output;

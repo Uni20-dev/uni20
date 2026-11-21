@@ -428,17 +428,35 @@ receives the acquired pointer and the relevant execution metadata. Future file,
 MPI, or staged descriptors likewise remain in the control plane unless a
 specific kernel ABI requires lowered descriptor state.
 
-The precompiled CUDA reference copy backend currently uses two lowering forms:
+The precompiled CUDA reference copy backend currently uses these lowering forms:
 
 | Case | Lowering |
 |---|---|
 | Raw contiguous mappings with matching physical order | `cudaMemcpyAsync` or `cudaMemcpyPeerAsync` |
-| Same-device positive-strided mappings with compact rank through eight | Backend-neutral affine iteration plan lowered to a 32- or 64-bit CUDA payload |
+| Same-device positive-strided mappings | Backend-neutral affine iteration plan lowered to a 32- or 64-bit CUDA payload; compact dimensions beyond eight become one launch per outer index |
+| Identity copy of a trivially copyable element | Elements moved as unsigned words of the element's alignment: fixed-width kernels up to four words, a word loop beyond |
 | Raw or conjugating CUDA input accessor | Explicitly compiled accessor lowering selected by the copy plan |
 | Named unary arithmetic transforms | Explicit registrations for `negate`, `square`, and `reciprocal` over one independently strided input |
 | Stateful unary `linalg::scale<Factor>` transform | Explicitly registered factor payload and one independently strided input |
 | Named binary arithmetic transforms | Explicit registrations for `add`, `subtract`, `multiply`, and `divide` with three operand mappings |
+| Host and device mappings without one shared contiguous order; strided mappings on different devices | Clean decline, handled by the staging backends below |
 | Non-strided mapping or other stateful accessor composition | Clean decline |
+
+Two staging backends in `copy_staging.hpp` follow the reference backend and
+complete the copies it declines. Each holds the selector it dispatches its steps
+through, so a direct kernel added later goes ahead of it in the same list, and
+either can be dispatched alone:
+
+| Backend | Selector | Steps |
+|---|---|---|
+| `CudaPeerStagingBackend` | Appended to the `CudaStorage` copy selector by `backend_selector_default<copy_op, CudaStorage>`, retaining the storage selector | Peer copy of the source's storage range to a staging buffer on the destination device, then a same-device copy from it; both steps dispatch through the retained selector, and the coroutine form awaits them as nested dispatches |
+| `CudaHostStagingBackend` | `cuda_host_transfer_selector()`, after `CudaReferenceBackend`; used by `copy`, `to_host`, `to_device` and `make_tensor` between host and CUDA storage | A host copy into the transfer order through the `HostStorage` copy selector, one contiguous transfer, and a device copy through the `CudaStorage` copy selector; an operand already in the transfer order takes part in the transfer directly |
+
+Each step synchronizes through the staging buffer's ledger like any other
+access, and only the last step writes the output, so a decline at any step
+leaves it unchanged. Coroutine dispatch runs `CudaHostStagingBackend` in its
+blocking form on the scheduler thread, as it does the reference backend's
+pageable transfers.
 
 The host planner removes size-one dimensions, orders dimensions by the output
 mapping, and coalesces adjacent dimensions only when the affine adjacency

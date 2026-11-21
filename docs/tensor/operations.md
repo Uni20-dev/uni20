@@ -154,6 +154,18 @@ Semantic transform views change values observed through an accessor. Complex
 identity view. Applying `conj` twice returns a read-only view of the original
 values rather than a writable left-hand side.
 
+When `transform_view` combines mdspans with the same shape, each operand
+retains its physical offsets. Two `int32_t` inputs use 32-bit offsets.
+Combining `int32_t` and `uint32_t` uses signed 64-bit offsets. If no
+standard integer type covers both ranges, the zip keeps each child mapping.
+
+`make_diagonal_mdspan` preserves the physical component mapping's index type
+and stride, including when `diagonal_components(view)` recovers the component
+view. The diagonal's logical mapping flattens coordinates into a separate wide
+index. Construction checks the component count and the representability of the
+logical size. For example, a 50,000 × 50,000 diagonal stores 50,000 components
+but its last logical offset is 2,499,999,999.
+
 Materialization is explicit:
 
 ```cpp
@@ -342,7 +354,7 @@ contracts described later in this guide.
 | `reshape_view_left`, `reshape_view_right` | Explicitly ordered no-copy reshape of a general strided source. | Requires a unique, exhaustive canonical mapping in the selected order. | Matching async overloads retain the parent and queue. |
 | `reshape_inplace(x, ...)` | Replace a canonical owning tensor mapping at the same compile-time rank. | Keeps the allocation; existing copied descriptors keep their old mapping. | Implemented; publishes the mapping change through one writer epoch. |
 | `reshape(x, ...)` | Return an owning reshaped value. | Canonical lvalue copies; canonical owning rvalue may transfer; deferred non-owning and generated inputs materialize before owning reshape. | Preserving and consuming forms return an independent Async owner; the consuming form may transfer the input allocation. |
-| `copy(out, in)` | Overwrite while observing input accessor semantics. Matching contiguous host/CUDA transfers use the CUDA runtime; same-device positive-strided CUDA mappings with compact rank through eight use 32- or 64-bit logical-index elementwise execution. | Resizes a resizable output or validates a fixed output. CUDA strided copy supports jointly compacted differing layouts, padding, and buffer-view offsets; non-strided or unregistered accessor lowerings decline. | Implemented for host and CUDA Tensor operands. CUDA-to-CUDA submission is nonblocking; pageable host transfers execute their blocking CUDA call in the scheduled task. An empty context-bound output still needs input placement or prior construction. |
+| `copy(out, in)` | Overwrite while observing input accessor semantics. Matching contiguous host/CUDA transfers use the CUDA runtime; other host/CUDA layouts stage through one contiguous transfer. Same-device positive-strided CUDA mappings of any rank use 32- or 64-bit logical-index elementwise execution, and strided copies between devices stage through the destination device. | Resizes a resizable output or validates a fixed output. CUDA strided copy supports jointly compacted differing layouts, padding, and buffer-view offsets; non-strided or unregistered accessor lowerings decline. | Implemented for host and CUDA Tensor operands. CUDA-to-CUDA submission is nonblocking; pageable host transfers execute their blocking CUDA call in the scheduled task. An empty context-bound output still needs input placement or prior construction. |
 | `assign_transform(out, function, inputs...)` | Nullary or variadic elementwise overwrite through backend dispatch. With no input, the callable generates every output value. The CUDA reference backend registers same-element-type unary and binary arithmetic function objects plus stateful `linalg::scale<Factor>` for positive-strided raw CUDA operands. | A nullary overwrite requires fixed output shape. Other forms resize a resizable output to the first input or validate a fixed output. | Implemented for all-Async Tensor operands. The callable is immediate state owned by the coroutine. |
 | `fill(out, value)` | Constant nullary overwrite; the old output value is never read. | Requires fixed output shape and preserves storage. | Implemented for synchronous and Async host tensors. Async fill takes one write epoch. |
 | `transform_inplace(out, function, inputs...)` | Variadic elementwise update with the old output as the callable's first argument. | Output shape is fixed and the output appears once as a read/write operand. | Implemented for all-Async Tensor operands with one output writer and distinct input readers. |

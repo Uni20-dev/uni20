@@ -10,11 +10,11 @@
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/mdspan/mdspan.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <initializer_list>
+#include <cstdint>
+#include <limits>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -56,6 +56,11 @@ template <std::size_t A, std::size_t B, std::size_t... Rest> struct merge_pack<A
     static constexpr std::size_t value = merge_pack<merge_extent<A, B>(), Rest...>::value;
 };
 
+template <class From, class To>
+inline constexpr bool zip_index_fits =
+    std::is_integral_v<From> && std::numeric_limits<From>::digits <= std::numeric_limits<To>::digits &&
+    (!std::is_signed_v<From> || std::is_signed_v<To>);
+
 // Given a set of mdspans, determine the common extents using the merge_extent() function above
 template <typename FirstSpan, typename... OtherSpans> struct common_extents
 {
@@ -65,7 +70,15 @@ template <typename FirstSpan, typename... OtherSpans> struct common_extents
     static constexpr std::size_t R = FirstSpan::rank();
     static_assert((... && (OtherSpans::rank() == R)), "common_extents: ranks must match");
 
-    using index_type = FirstSpan::index_type;
+    using common_type = std::common_type_t<typename FirstSpan::index_type, typename OtherSpans::index_type...>;
+    // Usual arithmetic conversions can discard the signed operands' negative range.
+    // If even intmax_t cannot cover both ranges, common_type still covers the
+    // nonnegative coordinates, and the general zip keeps each child's physical offsets.
+    static constexpr bool needs_signed_promotion =
+        !(zip_index_fits<typename FirstSpan::index_type, common_type> &&
+          (zip_index_fits<typename OtherSpans::index_type, common_type> && ...));
+    using index_type = std::conditional_t<needs_signed_promotion && zip_index_fits<common_type, std::intmax_t>,
+                                          std::intmax_t, common_type>;
 
   private:
     // Fold-merge the static extents at dimension I
@@ -212,6 +225,18 @@ UNI20_HOST_DEVICE constexpr std::array<IndexType, Rank> mapping_strides(Mapping 
   return mapping_strides_impl<IndexType, Rank>(mapping, std::make_index_sequence<Rank>{});
 }
 
+// Preserve the actual result of each child's mapping, including tuple-valued offsets.
+template <typename Mapping, std::size_t... Axis>
+auto mapping_result(std::index_sequence<Axis...>)
+    -> decltype(std::declval<Mapping const&>()(((void)Axis, typename Mapping::index_type{})...));
+
+template <class Mapping, class Index>
+concept ZipOffsetsFit =
+    zip_index_fits<decltype(mapping_result<Mapping>(std::make_index_sequence<Mapping::extents_type::rank()>{})),
+                   Index> &&
+    (Mapping::extents_type::rank() == 0 ||
+     requires(Mapping const& m) { requires zip_index_fits<decltype(m.stride(0)), Index>; });
+
 // build a std::tuple of N default-constructed T’s
 template <typename T, std::size_t... I> constexpr auto make_tuple_n_impl(std::index_sequence<I...>)
 {
@@ -229,6 +254,10 @@ template <typename T, std::size_t N>
 using tuple_n = decltype(detail::make_tuple_n_impl<T>(std::make_index_sequence<N>{}));
 
 /// \brief Zip layout for \p NumSpans strided spans (all using layout_stride).
+/// \details A Uni20 layout, not a standard layout mapping policy: the mapping
+///          returns one offset per span, so it has no `required_span_size()`
+///          and works only with accessors and operations written for zipped
+///          views.
 /// \tparam NumSpans  Number of child spans to zip.
 /// \ingroup mdspan_ext
 template <std::size_t NumSpans> struct StridedZipLayout
@@ -238,7 +267,7 @@ template <std::size_t NumSpans> struct StridedZipLayout
     /// \brief Number of spans in this zip layout.
     static constexpr std::size_t num_spans = NumSpans;
 
-    /// \brief Nested mapping policy for extents \p Ext, modeling LayoutMappingPolicy.
+    /// \brief Nested mapping for extents \p Ext, returning a tuple of offsets.
     /// \tparam Ext Extents type managed by the mapping.
     /// \ingroup mdspan_ext
     template <typename Ext> struct mapping
@@ -272,8 +301,6 @@ template <std::size_t NumSpans> struct StridedZipLayout
         /// \brief Never exhaustive at runtime.
         /// \ingroup mdspan_ext
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept { return false; }
-
-        // std::size_t required_span_size() const does not make sense for a StridedZipLayout
 
         /// \brief True if every dimension uses the same stride across all spans.
         /// \return True when each span shares identical strides per dimension.
@@ -320,16 +347,18 @@ template <std::size_t NumSpans> struct StridedZipLayout
           return all_strides_;
         }
 
-        template <typename... Mappings>
         /// \brief Construct from extents and existing child mappings.
         /// \param exts Shared extents of all spans.
         /// \param maps Existing mappings whose strides are copied into this layout.
         /// \ingroup mdspan_ext
+        template <typename... Mappings>
+          requires(detail::ZipOffsetsFit<Mappings, index_type> && ...)
         UNI20_HOST_DEVICE constexpr mapping(extents_type const& exts, Mappings... maps) noexcept
             : extents_(exts), all_strides_{detail::mapping_strides<index_type, Ext::rank()>(maps)...}
         {}
 
         /// \brief Construct from shared extents and per-span raw strides.
+        /// \pre The reachable offsets of each operand are representable in `index_type`.
         /// \param exts         Common extents of the view.
         /// \param strides_pack strides_pack[s][d] is the stride of span s in dimension d.
         /// \ingroup mdspan_ext
@@ -413,10 +442,12 @@ template <std::size_t NumSpans> struct StridedZipLayout
 };
 
 /// \brief Fallback zip layout for arbitrary mapping policies.
-/// \details Models the C++23 LayoutMappingPolicy requirements.
-/// \tparam Layouts Child layout mapping policies to combine.
+/// \details Like StridedZipLayout, a Uni20 layout rather than a standard
+///          layout mapping policy: the mapping returns one offset per child
+///          mapping and has no `required_span_size()`.
+/// \tparam Mappings Original child mapping types, including their extents and index types.
 /// \ingroup mdspan_ext
-template <typename... Layouts> struct GeneralZipLayout
+template <typename... Mappings> struct GeneralZipLayout
 {
     template <typename Extents> struct mapping
     {
@@ -426,7 +457,8 @@ template <typename... Layouts> struct GeneralZipLayout
         using rank_type = typename Extents::rank_type;
         UNI20_HOST_DEVICE static constexpr rank_type rank() noexcept { return Extents::rank(); }
         UNI20_HOST_DEVICE static constexpr rank_type rank_dynamic() noexcept { return Extents::rank_dynamic(); }
-        using offset_type = std::tuple<span_offset_t<typename Layouts::template mapping<Extents>>...>;
+        using offset_type =
+            std::tuple<decltype(detail::mapping_result<Mappings>(std::make_index_sequence<Extents::rank()>{}))...>;
         using mapping_type = mapping<Extents>;
 
         /// \brief Always unique for uni20 tensors.
@@ -443,8 +475,7 @@ template <typename... Layouts> struct GeneralZipLayout
         /// \param ext Common extents shared by every mapping.
         /// \param m   Child mappings stored within the layout.
         /// \ingroup mdspan_ext
-        UNI20_HOST_DEVICE explicit constexpr mapping(Extents const& ext,
-                                                     typename Layouts::template mapping<Extents> const&... m) noexcept
+        UNI20_HOST_DEVICE explicit constexpr mapping(Extents const& ext, Mappings const&... m) noexcept
             : extents_(ext), impls_{m...}
         {}
 
@@ -452,21 +483,6 @@ template <typename... Layouts> struct GeneralZipLayout
         /// \return Shared extents across all child mappings.
         /// \ingroup mdspan_ext
         [[nodiscard]] UNI20_HOST_DEVICE constexpr extents_type const& extents() const noexcept { return extents_; }
-
-        /// \brief Return the maximum required span size among the child mappings.
-        /// \return Maximum number of elements any child mapping may touch.
-        /// \ingroup mdspan_ext
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t required_span_size() const noexcept
-        {
-          std::size_t max_sz = 0;
-          std::apply(
-              [&](auto const&... m) {
-                (void)std::initializer_list<int>{
-                    (max_sz = std::max<std::size_t>(max_sz, m.required_span_size()), 0)...};
-              },
-              impls_);
-          return max_sz;
-        }
 
         /// \brief Compute the per-layout offsets for a given multi-index.
         /// \tparam Idx Types of each index argument.
@@ -494,7 +510,7 @@ template <typename... Layouts> struct GeneralZipLayout
 
       private:
         extents_type extents_;
-        std::tuple<typename Layouts::template mapping<Extents>...> impls_;
+        std::tuple<Mappings...> impls_;
     };
 };
 
@@ -503,13 +519,15 @@ template <typename... Layouts> struct GeneralZipLayout
 /// \ingroup mdspan_ext
 template <typename... Spans> struct zip_layout_selector
 {
-    using type = GeneralZipLayout<typename Spans::layout_type...>;
+    using type = GeneralZipLayout<typename Spans::mapping_type...>;
 };
 
-/// \brief Specialization that selects StridedZipLayout when all spans are strided.
+/// \brief Pack strides when the common index type preserves each operand's offsets.
 /// \tparam Spans  Mdspan types that satisfy StridedMdspanLike.
 /// \ingroup mdspan_ext
-template <StridedMdspanLike... Spans> struct zip_layout_selector<Spans...>
+template <StridedMdspanLike... Spans>
+  requires(detail::ZipOffsetsFit<typename Spans::mapping_type, typename common_extents_t<Spans...>::index_type> && ...)
+struct zip_layout_selector<Spans...>
 {
     using type = StridedZipLayout<sizeof...(Spans)>;
 };

@@ -35,6 +35,15 @@ concept RawReadableCudaReductionMdspec =
     std::same_as<typename std::remove_cvref_t<Mdspec>::element_type, Scalar const> &&
     std::same_as<typename std::remove_cvref_t<Mdspec>::accessor_type, uni20::cuda::CudaPointerAccessor<Scalar const>>;
 
+// An empty strided mapping can report is_exhaustive() == false (LWG 4266), so
+// emptiness is tested before the layout.
+template <class Mdspec> [[nodiscard]] bool has_empty_index_space(Mdspec const& span)
+{
+  for (std::size_t axis = 0; axis < std::remove_cvref_t<Mdspec>::rank(); ++axis)
+    if (span.extent(axis) == 0) return true;
+  return false;
+}
+
 template <class Mdspec> [[nodiscard]] std::size_t reduction_element_count(Mdspec const& span)
 {
   if (!span.mapping().is_unique() || !span.mapping().is_exhaustive()) return 0;
@@ -60,6 +69,11 @@ KernelAttempt try_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec 
   for (std::size_t axis = 0; axis < std::remove_cvref_t<LhsMdspec>::rank(); ++axis)
     CHECK_EQUAL(lhs.extent(axis), rhs.extent(axis));
 
+  if (has_empty_index_space(lhs))
+  {
+    output = Scalar{};
+    return KernelAttempt::success;
+  }
   if (!lhs.mapping().is_unique() || !lhs.mapping().is_exhaustive() || !rhs.mapping().is_unique() ||
       !rhs.mapping().is_exhaustive())
     return KernelAttempt::unsupported_layout;
@@ -71,12 +85,6 @@ KernelAttempt try_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec 
   auto const size = reduction_element_count(lhs);
   CHECK_EQUAL(size, reduction_element_count(rhs));
   if (size > static_cast<std::size_t>(std::numeric_limits<int>::max())) return KernelAttempt::unsupported_instance;
-  if (size == 0)
-  {
-    output = Scalar{};
-    return KernelAttempt::success;
-  }
-
   auto const& lhs_descriptor = lhs.data_descriptor();
   auto const& rhs_descriptor = rhs.data_descriptor();
   if (lhs_descriptor.buffer().device() != rhs_descriptor.buffer().device()) return KernelAttempt::incompatible_devices;
@@ -97,16 +105,15 @@ template <class Scalar, class InputMdspec>
 KernelAttempt try_norm(uni20::make_real_t<Scalar>& output, InputMdspec const& input)
 {
   static_assert(RawReadableCudaReductionMdspec<InputMdspec, Scalar>);
-  if (!input.mapping().is_unique() || !input.mapping().is_exhaustive()) return KernelAttempt::unsupported_layout;
-
-  auto const size = reduction_element_count(input);
-  if (size > static_cast<std::size_t>(std::numeric_limits<int>::max())) return KernelAttempt::unsupported_instance;
-  if (size == 0)
+  if (has_empty_index_space(input))
   {
     output = uni20::make_real_t<Scalar>{};
     return KernelAttempt::success;
   }
+  if (!input.mapping().is_unique() || !input.mapping().is_exhaustive()) return KernelAttempt::unsupported_layout;
 
+  auto const size = reduction_element_count(input);
+  if (size > static_cast<std::size_t>(std::numeric_limits<int>::max())) return KernelAttempt::unsupported_instance;
   auto const& descriptor = input.data_descriptor();
   require_reduction_descriptor_range(input, size);
   auto execution = uni20::cublas::execution_pool(descriptor.buffer().resources()).acquire();

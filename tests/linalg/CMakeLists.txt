@@ -103,4 +103,11 @@ if(TARGET uni20_backend_cuda)
     CUDA_STANDARD 20
     CUDA_STANDARD_REQUIRED ON
   )
+
+  # User copy-selector overrides change selection for every TU that sees them,
+  # so they get their own executable.
+  add_test_module(linalg_cuda_copy_override
+    SOURCES test_cuda_copy_override.cpp
+    LIBS uni20_linalg uni20_async uni20_backend_cuda TBB::tbb
+  )
 endif()

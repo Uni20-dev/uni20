@@ -368,7 +368,7 @@ TEST(TbbScheduler, ReverseValue)
 {
   // Test a case where we are guaranteed that dependencies are non-trivial
   TbbScheduler sched{4};
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   ReverseValue<int> rv;
   Async<int> v;

@@ -279,11 +279,17 @@ source and records the remaining default-stream DMA in the destination buffer's
 completion ledger. CUDA issues these synchronous copies through the default
 stream and may synchronize work beyond the individual buffer ledger; they are
 not valid as a transparent stream-capture path.
+Operands that do not share one contiguous element order, such as a row-major
+host tensor and a column-major device tensor, or strided views on either side,
+move through one contiguous transfer with layout changes on each side
+(`CudaHostStagingBackend`).
 CUDA-to-CUDA copies use stream-ordered submission and retain completion in the
-destination buffer ledger. The Async `copy`, `to_host`, and `to_device`
-overloads also accept pageable host transfers; the blocking CUDA call then
-runs on, and blocks only, the scheduled task. A future pinned-host storage
-policy will provide genuinely non-blocking host transfer.
+destination buffer ledger; copies between devices in different layouts stage
+through the destination device (`CudaPeerStagingBackend`). The Async `copy`,
+`to_host`, and `to_device` overloads also accept pageable host transfers; the
+blocking CUDA call then runs on, and blocks only, the scheduled task. Transfers
+that do not block a scheduler thread are planned through Uni20-owned pinned
+staging and pinned host allocations.
 
 `to_host(scalar_tensor)[]` is therefore a valid explicit two-step expression,
 but a caller that only needs the value should prefer `sum_host`, `norm_host`,

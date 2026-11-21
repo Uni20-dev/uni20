@@ -20,6 +20,8 @@ small helpers used by dense kernels and layout-aware algorithms.
 - `generated_accessor.hpp` and `generated_layout.hpp`: read-only generated
   values with synthetic, non-strided logical offset mapping.
 - `strides.hpp`: stride inspection and stride utility helpers.
+- `permute.hpp`: zero-copy axis permutations of strided mdspans and mdspecs,
+  preserving static extents and accessor semantics.
 - `iteration_plan.hpp`: backend-neutral compact affine iteration planning over
   one or more strided mappings, including element counts and reachable offset
   ranges.
