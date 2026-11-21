@@ -1824,30 +1824,31 @@ constinit bool environment_diagnostics_service_started = false;
 namespace uni20::detail
 {
 
+// Either variable starts the service, so that a request file can be used
+// without a signal and without code in the program.
 void initialize_task_registry_diagnostics_from_environment() noexcept
 {
   auto const* configured_signal = nonempty_env("UNI20_DEBUG_DAG_SIGNAL");
-  if (!configured_signal) return;
+  auto const* configured_file = nonempty_env("UNI20_DEBUG_DAG_REQUEST_FILE");
+  if (!configured_signal && !configured_file) return;
 
   try
   {
     auto options = default_diagnostics_service_options();
-    if (options.signal_number == 0) return;
-
-    if (!diagnostic_service().start(std::move(options)))
+    if (options.signal_number == 0 && options.request_file.empty()) return; // the signal switched off, and no file
+    if (diagnostic_service().start(std::move(options)))
     {
-      std::fprintf(stderr,
-                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s (it takes SIGUSR1 or "
-                   "SIGUSR2)\n",
-                   configured_signal);
+      environment_diagnostics_service_started = true;
       return;
     }
-    environment_diagnostics_service_started = true;
   }
   catch (...)
-  {
-    std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s\n", configured_signal);
-  }
+  {}
+  std::fprintf(stderr,
+               "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s, "
+               "UNI20_DEBUG_DAG_REQUEST_FILE=%s; the signal must be SIGUSR1 or SIGUSR2, and not one the "
+               "program already handles\n",
+               configured_signal ? configured_signal : "(unset)", configured_file ? configured_file : "(unset)");
 }
 
 void finalize_task_registry_diagnostics_from_environment() noexcept
