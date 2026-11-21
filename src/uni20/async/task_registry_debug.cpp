@@ -238,14 +238,54 @@ bool write_text_file(std::string const& path, std::string_view contents)
   return write_ok && close_ok;
 }
 
-bool consume_request_file(std::string const& request_file)
+// "%p" becomes this process's id and "%%" a single "%", so that one process
+// among several watching the same directory can be asked for a dump.
+std::string expand_request_file(std::string const& path)
 {
-  if (request_file.empty()) return false;
-  std::error_code ec;
-  if (!std::filesystem::exists(request_file, ec) || ec) return false;
-  std::filesystem::remove(request_file, ec);
-  return true;
+  std::string expanded;
+  for (std::size_t i = 0; i < path.size(); ++i)
+  {
+    if (path[i] == '%' && i + 1 < path.size() && (path[i + 1] == 'p' || path[i + 1] == '%'))
+    {
+      expanded += path[i + 1] == 'p' ? std::to_string(current_process_id()) : std::string("%");
+      ++i;
+    }
+    else
+    {
+      expanded += path[i];
+    }
+  }
+  return expanded;
 }
+
+// The request file is never removed: each change of its modification time asks
+// every process watching it for a dump. The time when the service starts, or
+// the file's absence, is the starting point, so an old file asks for nothing.
+class RequestFileWatch {
+  public:
+    explicit RequestFileWatch(std::string const& path) : path_(expand_request_file(path)), seen_(this->stamp()) {}
+
+    bool changed()
+    {
+      auto const now = this->stamp();
+      if (now == seen_) return false;
+      seen_ = now;
+      return now.has_value(); // removing the file asks for nothing
+    }
+
+  private:
+    std::optional<std::filesystem::file_time_type> stamp() const
+    {
+      if (path_.empty()) return std::nullopt;
+      std::error_code ec;
+      auto const time = std::filesystem::last_write_time(path_, ec);
+      if (ec) return std::nullopt;
+      return time;
+    }
+
+    std::string path_;
+    std::optional<std::filesystem::file_time_type> seen_;
+};
 
 void ensure_output_dir(std::string const& output_dir)
 {
@@ -1623,6 +1663,19 @@ static_assert(std::atomic<unsigned>::is_always_lock_free);
 using signal_action = struct sigaction;
 
 void record_diagnostics_signal(int) noexcept { pending_signal_requests.fetch_add(1, std::memory_order_relaxed); }
+
+// The program's own handler, which the service must not replace. SIG_DFL and
+// SIG_IGN are dispositions rather than handlers.
+bool has_handler(signal_action const& action) noexcept
+{
+  if (action.sa_flags & SA_SIGINFO) return action.sa_sigaction != nullptr;
+  return action.sa_handler != SIG_DFL && action.sa_handler != SIG_IGN;
+}
+
+bool is_diagnostics_handler(signal_action const& action) noexcept
+{
+  return !(action.sa_flags & SA_SIGINFO) && action.sa_handler == record_diagnostics_signal;
+}
 #endif
 
 class DiagnosticServiceState {
@@ -1642,11 +1695,19 @@ class DiagnosticServiceState {
         // Once per process. A handler can still be running on another thread
         // after stop() returns, and would count its delivery for a later service.
         if (signal_taken_) return false;
+        // A signal the program handles itself, for example to checkpoint, stays its own.
+        signal_action current{};
+        if (sigaction(options.signal_number, nullptr, &current) != 0 || has_handler(current)) return false;
         signal_action action{};
         action.sa_handler = record_diagnostics_signal;
         sigemptyset(&action.sa_mask);
         action.sa_flags = SA_RESTART;
         if (sigaction(options.signal_number, &action, &previous_action_) != 0) return false;
+        if (has_handler(previous_action_)) // installed by another thread since the check
+        {
+          sigaction(options.signal_number, &previous_action_, nullptr);
+          return false;
+        }
         signal_taken_ = true;
       }
 #else
@@ -1660,7 +1721,11 @@ class DiagnosticServiceState {
       }
       try
       {
-        thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
+        // Read before start() returns, so that a change made after it asks for a dump.
+        RequestFileWatch request(options.request_file);
+        thread_ = std::thread([this, options = std::move(options), request = std::move(request)]() mutable {
+          this->run(options, request);
+        });
       }
       catch (...)
       {
@@ -1688,16 +1753,18 @@ class DiagnosticServiceState {
     ~DiagnosticServiceState() { this->stop(); }
 
   private:
-    // Called with lifecycle_ held.
+    // Called with lifecycle_ held. A handler the program installed meanwhile is left in place.
     void restore_signal_action() noexcept
     {
 #if defined(__linux__)
-      if (signal_number_ > 0) sigaction(signal_number_, &previous_action_, nullptr);
+      signal_action current{};
+      if (signal_number_ > 0 && sigaction(signal_number_, nullptr, &current) == 0 && is_diagnostics_handler(current))
+        sigaction(signal_number_, &previous_action_, nullptr);
 #endif
       signal_number_ = 0;
     }
 
-    void run(DiagnosticsServiceOptions options)
+    void run(DiagnosticsServiceOptions const& options, RequestFileWatch& request)
     {
 #if defined(__linux__)
       // This thread inherits its starter's signal mask. Unblocking the signal here
@@ -1722,7 +1789,7 @@ class DiagnosticServiceState {
         auto& registry = TaskRegistryImpl::instance();
         bool triggered =
             options.signal_number > 0 && pending_signal_requests.exchange(0, std::memory_order_relaxed) > 0;
-        if (consume_request_file(options.request_file)) triggered = true;
+        if (request.changed()) triggered = true;
         // Written here with the service's own options: through the shared
         // request counter, a scheduler progress point could take it first and
         // write it under the scheduler's directory instead.
