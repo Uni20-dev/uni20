@@ -248,6 +248,23 @@ TEST(TensorAsyncTest, ReshapeAliasRejectsSourcesOnItsParentQueue)
   EXPECT_EQ((values[1, 1]), uni20::complex<double>(7.0, 8.0));
 }
 
+TEST(TensorAsyncTest, ReshapeAliasCanWriteBackAnExplicitSnapshot)
+{
+  uni20::async::DebugScheduler sched;
+  uni20::async::ScopedScheduler scoped(&sched);
+  uni20::async::Async<matrix_type> parent(make_matrix());
+  auto alias = uni20::async::reshape_view(parent, 1, 4);
+  uni20::async::Async<matrix_type> snapshot(parent);
+  auto source = uni20::async::reshape_view(snapshot, 1, 4);
+
+  // Overwrite the existing parent timeline after the snapshot enrolled its read.
+  async_assign(parent, matrix_type(2, 2));
+  alias = source;
+  auto const restored = parent.get_wait().mdspan();
+  EXPECT_EQ((restored[0, 0]), uni20::complex<double>(1.0, 2.0));
+  EXPECT_EQ((restored[1, 1]), uni20::complex<double>(7.0, 8.0));
+}
+
 TEST(TensorAsyncTest, ReshapeAliasOutlivesParentHandle)
 {
   auto make_alias = [] {

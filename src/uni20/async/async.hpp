@@ -285,8 +285,8 @@ template <typename T> class Async {
 
     /// \brief Assign through a mutable async alias from another exact-type alias.
     /// \details The destination descriptor, owner, and queue remain unchanged.
-    ///          Self-assignment does nothing; another alias on the same epoch
-    ///          queue is rejected, as in async_assign().
+    ///          Assignment from the same descriptor does nothing. Distinct alias
+    ///          descriptors on the same epoch queue are rejected by async_assign().
     /// \param rhs Alias whose referenced value is the assignment source.
     /// \return Reference to this alias.
     Async& operator=(Async const& rhs)

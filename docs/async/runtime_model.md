@@ -108,6 +108,27 @@ can intentionally copy a read value, release that reader, and then await the
 later writer, but this is a sequential two-epoch transition rather than
 simultaneous read/write access.
 
+### Deadlock diagnostics
+
+Async operations must preserve correct programs. A submission-time deadlock
+diagnostic is best effort. Add a cheap check when the operation can establish
+that a dependency cannot complete. A shared queue identifies a timeline. Two
+accesses on that timeline can complete in sequence when the first releases its
+buffer before the second needs it. A custom provider can also supply a buffer
+it enrolled earlier.
+
+Prefer an ordering or a single-writer implementation that gives the operation
+a defined result at the same cost. When correctness requires a snapshot of
+overlapping tensor data, the caller materializes it explicitly. The library
+does not insert a tensor copy to avoid a possible deadlock.
+[Assignment through an alias](storage.md#assignment-through-an-alias) gives
+an example.
+
+Callers are responsible for the dependencies they construct. For a stalled
+operation, the [DAG debugging examples](dag_debug_examples.md) show how to
+inspect tasks and epochs. Detecting arbitrary dependency cycles at submission
+is outside the runtime contract.
+
 ## Queue Enrollment Threading Contract
 
 `EpochQueue` is one causal timeline, not a concurrent registration data

@@ -264,8 +264,15 @@ TEST(AsyncAliasTest, AssignmentFromTheAliasQueueIsRejectedAtSubmission)
   EXPECT_THROW(alias = parent, std::runtime_error);
   EXPECT_THROW(alias = sibling, std::runtime_error);
   EXPECT_THROW(async_assign(alias, parent), std::runtime_error);
-  EXPECT_THROW(async_assign(parent, parent), std::runtime_error);
-  EXPECT_THROW(async_move(parent, parent), std::runtime_error);
+  EXPECT_THROW(async_compound_op(parent, alias, [](int& x, MutableIntAlias const& y) { x += y.get(); }),
+               std::runtime_error);
+  // A copied handle shares the actual descriptor as well as the queue.
+  auto same_descriptor = alias;
+  auto const epoch = parent.queue().latest();
+  alias = same_descriptor;
+  async_assign(parent, parent);
+  async_move(parent, parent);
+  EXPECT_EQ(parent.queue().latest(), epoch);
 
   // A source on another queue still writes through, and the timeline is intact.
   Async<int> source = 11;

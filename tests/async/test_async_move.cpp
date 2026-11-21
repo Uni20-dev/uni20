@@ -105,3 +105,23 @@ TEST(AsyncMoveTest, AsyncMoveFromValueBuffersOnStack)
 
   reset_global_scheduler();
 }
+
+TEST(AsyncMoveTest, SourceWriterOnDestinationQueueReleasesBeforeDestinationWrite)
+{
+  using Ptr = std::unique_ptr<int>;
+  struct Writer
+  {
+      Async<Ptr>& source;
+      auto write() { return source.write(); }
+  };
+
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<Ptr> value;
+  auto expected = std::make_unique<int>(17);
+  auto const* address = expected.get();
+  async_move(value, std::move(expected));
+  Writer source{value};
+  async_move(value, source);
+  EXPECT_EQ(value.get_wait().get(), address);
+}

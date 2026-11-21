@@ -58,17 +58,6 @@ struct QueueMember
     int const& queue() const { return items; }
 };
 
-/// A borrowed async provider whose `queue()` returns a non-const EpochQueue&.
-struct Slot
-{
-    EpochQueue& q;
-    shared_storage<int> s;
-    WriteBuffer<int> reserved;
-    EpochQueue& queue() const { return q; }
-    auto read() const { return ReadBuffer<int>{q.create_read_context(s)}; }
-    auto write() { return std::move(reserved); }
-};
-
 /// An immediate payload that records an epoch queue as metadata.
 struct Stamp
 {
@@ -220,27 +209,39 @@ TEST(AsyncOpsTest, BasicArithmeticOps)
   EXPECT_DOUBLE_EQ(x.get_wait(), 20.0);
 }
 
-TEST(AsyncOpsTest, BinaryOperationRejectsOutputInputQueueAliasAtSubmission)
+TEST(AsyncOpsTest, BinaryOperationReadsBothInputsBeforeWritingTheirQueue)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  Async<int> other = 4;
+  async_binary_op(value, value, other, std::plus<>{});
+  async_binary_op(value, other, value, std::minus<>{});
+  async_binary_op(value, value, value, std::plus<>{});
+  EXPECT_EQ(value.get_wait(), -6);
+}
 
-  Async<int> output = 3;
-  Async<int> rhs = 4;
-  ErrorModeGuard const error_mode;
-
-  EXPECT_THROW(async_binary_op(output, output, rhs, std::plus<>{}), std::runtime_error);
-  EXPECT_EQ(output.get_wait(), 3);
+TEST(AsyncOpsTest, BinaryOperationPropagatesFailureWhenTheOutputIsAnInput)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  async_compound_op(value, 1, [](int&, int) { throw std::runtime_error("upstream"); });
+  bool called = false;
+  async_binary_op(value, value, 1, [&](int a, int b) {
+    called = true;
+    return a + b;
+  });
+  EXPECT_THROW((void)value.get_wait(), std::runtime_error);
+  EXPECT_FALSE(called);
 }
 
 TEST(AsyncOpsTest, CompoundOperationRejectsRhsQueueAliasAtSubmission)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
-
+  ScopedScheduler scoped(&sched);
   Async<int> value = 3;
   ErrorModeGuard const error_mode;
-
   EXPECT_THROW(value += value, std::runtime_error);
   EXPECT_EQ(value.get_wait(), 3);
 }
@@ -263,22 +264,45 @@ TEST(AsyncOpsTest, ImmediatePayloadQueueMemberIsNotAnEpochQueue)
   EXPECT_EQ(value.get_wait().items, 7);
 }
 
-TEST(AsyncOpsTest, ProviderQueueIsComparedWhateverItsQualification)
+TEST(AsyncOpsTest, MoveUsesImmediateConversionEvenWhenTheOperandCanBeRead)
 {
+  struct Operand
+  {
+      Async<int>& destination;
+      int& reads;
+      EpochQueue const& queue() const { return destination.queue(); }
+      auto read() const
+      {
+        ++reads;
+        return destination.read();
+      }
+      operator int() const { return 17; }
+  };
   DebugScheduler sched;
   ScopedScheduler scoped(&sched);
   ErrorModeGuard const error_mode;
+  Async<int> value = 4;
+  int reads = 0;
+  async_move(value, Operand{value, reads});
+  EXPECT_EQ(value.get_wait(), 17);
+  EXPECT_EQ(reads, 0);
+}
 
-  // A borrowed provider that returns a non-const EpochQueue& and reserves its writer, as FutureValue does.
-  EpochQueue queue;
-  queue.latest()->start();
-  auto storage = make_shared_storage<int>(4);
-  async_test_types::Slot slot{queue, storage, WriteBuffer<int>{queue.create_write_context(storage)}};
-  auto first = [](auto const&, int n) { return n; };
-  auto second = [](int n, auto const&) { return n; };
-
-  EXPECT_THROW(async_binary_op(slot, slot, 1, first), std::runtime_error);
-  EXPECT_THROW(async_binary_op(slot, 1, slot, second), std::runtime_error);
+TEST(AsyncOpsTest, OwningAssignmentReadsTheSourceBeforeEnrollingTheDestination)
+{
+  struct Reader
+  {
+      Async<int>& value;
+      auto read() & { return value.read(); }
+      operator int() const { return -1; }
+  };
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  async_assign(value, 11);
+  Reader reader{value};
+  async_assign(value, reader);
+  EXPECT_EQ(value.get_wait(), 11);
 }
 
 TEST(AsyncOpsTest, ImmediateValueRecordingTheDestinationQueueIsAssigned)
