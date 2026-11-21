@@ -56,14 +56,9 @@ and grow layouts the standard does not have.
 - `submdspan`. Uni20 does not use it.
 - New extents. `std::extents` is adequate.
 
-C++26's padded layouts, `layout_left_padded` and `layout_right_padded`, are not
-part of this migration, but nothing here excludes them. They are strided
-mappings, so rules 1 to 7 apply to them unchanged, and converting one to a
-narrower `index_type` needs the stride condition under rule 7, which LWG 4545
-proposes for the standard's. They say in the type what `layout_stride`
-says only at run time, that the inner stride is one and only the leading
-dimension varies, as BLAS and LAPACK matrices need. Uni20 can add them if that
-proves useful over a general strided layout.
+C++26's `layout_left_padded` and `layout_right_padded` are deferred. They
+encode a unit inner stride in the layout type, which may be useful for BLAS
+and LAPACK.
 
 ## Current Use
 
@@ -193,20 +188,17 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    only the number of elements to be representable, which says nothing about an
    empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
    Uni20's mappings require the product of the nonzero extents to be
-   representable in `index_type`. That keeps every canonical stride
-   representable under every permutation of the extents, so materializing a
-   permuted view, as `Tensor(permute(view))` from #137 does, cannot turn a valid
-   empty tensor into an invalid one. A condition on each stride would not be
-   enough, because it depends on the order of the extents. Uni20 algorithms
-   can assume this invariant once a mapping has been constructed. An explicit
-   import checks it when the source contract leaves it open. No LWG issue covers this for `layout_left` and
-   `layout_right`. Rule 7 bounds every canonical stride, but not a stride that
-   a mapping stores: on an axis of extent zero or one, a `layout_stride` or
-   padded stride adds nothing to the product or to `required_span_size()`.
-   Converting such a mapping to a narrower `index_type` therefore also requires
-   each stride to be representable in the destination, as LWG 4545 proposes for
-   the padded layouts, where a padding of 256 with extents `(1, 0)` would
-   otherwise narrow to zero in `uint8_t`.
+   representable in `index_type`. Native shape factories such as `zeros()`
+   take this as an unchecked caller precondition, including in debug builds.
+   The bound keeps canonical strides representable under any permutation,
+   including when materializing `Tensor(permute(view))` as in #137. Uni20
+   algorithms can assume this invariant. An explicit import checks it when the
+   source contract leaves it open. No LWG issue covers this for `layout_left`
+   and `layout_right`.
+
+   Every stride a mapping exposes, stored or derived, must fit its
+   `index_type`, including on empty and singleton axes. An import checks this
+   when the source type admits strides outside the destination range.
 
 ### Alignment With the Standard
 
@@ -245,9 +237,10 @@ Negative strides are useful in only a few cases, reversing the elements of an
 axis being the main one, and then only over operations where they are easy or
 cheap to support. Operations therefore accept `layout_signed_stride` as uses
 require, not in advance. The likely first are a one-axis `reverse` view and
-host `copy`. Host elementwise transforms and reductions cost little, because the
-backend-neutral iteration plan already normalizes negative strides. CUDA plan
-lowering would rebase the descriptor to `minimum` when a use needs it. BLAS and
+host `copy`. If any extent is zero, host copy produces a zero-element plan
+before normalizing any strides. Host elementwise transforms and reductions cost
+little, because the backend-neutral iteration plan already normalizes negative
+strides. CUDA plan lowering would rebase the descriptor to `minimum` when a use needs it. BLAS and
 LAPACK do not accept it: BLAS's negative-increment convention is different, and
 LAPACK leading dimensions must be positive.
 
