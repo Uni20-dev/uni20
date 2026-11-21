@@ -114,6 +114,14 @@ All live in namespace `uni20`, in new headers under `src/uni20/mdspan/`.
 so translated code keeps its meaning; Uni20 Tensors keep naming their layout
 explicitly.
 
+`mdspan` and `mdspec` take `index_type` and `size_type` from `extents_type`.
+Their `size()` returns the product of the extents as `extents_type::size_type`.
+For standard extents this is `std::make_unsigned_t<index_type>`.
+The `layout_left`, `layout_right` and `layout_stride` mappings return
+`index_type` from `required_span_size()`, which includes any gaps between
+elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
+`size() == 4` and `mapping().required_span_size() == 5`.
+
 ## Rules That Differ From the Standard
 
 1. **`stride(r)` exists at every rank** in every strided Uni20 mapping, in
@@ -409,9 +417,6 @@ form reads best, and documents `FetchContent_Declare(... SYSTEM)` and
 
 1. What a precondition failure does in device code, where Uni20 diagnostics are
    unavailable: trap, or nothing in release builds.
-2. Whether `size()` of `mdspan` and `mdspec` keeps the standard's `size_type`,
-   `make_unsigned_t<index_type>`, and the mappings' `required_span_size()` its
-   `index_type`, or whether Uni20 chooses its own count and offset types.
-3. NumPy interop: whether the Python bindings pass negatively strided arrays as
+2. NumPy interop: whether the Python bindings pass negatively strided arrays as
    `layout_signed_stride` views to the operations that accept them, or always
    copy them at the boundary.
