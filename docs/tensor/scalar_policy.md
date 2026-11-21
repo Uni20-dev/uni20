@@ -39,6 +39,11 @@ explicit bulk conversion. Fixed-precision storage and views have no correspondin
 runtime state. See [tensor construction defaults](mpreal.md#tensor-construction-defaults)
 for output allocation and view metadata semantics.
 
+Dense `permute<Axes...>` views carry the same live default binding through
+copied and nested descriptors. Their default cannot be set independently;
+`Tensor(view)` creates an owner with the current source default. Permuting
+indices never changes the precision of stored values.
+
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
 `src/uni20/core/scalar_traits.hpp` and `src/uni20/core/scalar_concepts.hpp`.

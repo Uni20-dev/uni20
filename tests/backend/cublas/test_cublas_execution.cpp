@@ -14,6 +14,7 @@
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/linalg/ops/gemm.hpp>
 #include <uni20/tensor/conjugate.hpp>
+#include <uni20/tensor/permute.hpp>
 #include <uni20/tensor/reductions.hpp>
 #include <uni20/tensor/tensor.hpp>
 
@@ -1296,6 +1297,30 @@ TEST_F(CublasExecutionTest, TensorReductionsSupportSinglePrecisionScalars)
 
   EXPECT_EQ(uni20::inner_product_host(complex_lhs, complex_rhs), scalar_type(-7, 6));
   EXPECT_FLOAT_EQ(uni20::norm_host(complex_lhs), std::sqrt(15.0F));
+}
+
+TEST_F(CublasExecutionTest, PermutedEmptyTensorsReduceToZero)
+{
+  // A permuted empty view has a strided mapping that reports
+  // is_exhaustive() == false. Emptiness is decided before the layout.
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(device_), .stream_count = 1});
+  uni20::CudaTensor<double, 3> tensor(resources, 0, 3, 4);
+  auto view = uni20::permute<0, 2, 1>(tensor);
+  auto span = uni20::mdspec_of(std::as_const(view));
+  ASSERT_FALSE(span.mapping().is_exhaustive());
+
+  double output = 17.0;
+  EXPECT_EQ(uni20::linalg::try_kernel(uni20::linalg::CublasBackend{}, uni20::linalg::norm_op{}, output, span),
+            uni20::linalg::KernelAttempt::success);
+  EXPECT_EQ(output, 0.0);
+  output = 17.0;
+  EXPECT_EQ(
+      uni20::linalg::try_kernel(uni20::linalg::CublasBackend{}, uni20::linalg::inner_product_op{}, output, span, span),
+      uni20::linalg::KernelAttempt::success);
+  EXPECT_EQ(output, 0.0);
+
+  EXPECT_EQ(uni20::norm_host(view), 0.0);
+  EXPECT_EQ(uni20::inner_product_host(view, view), 0.0);
 }
 
 TEST_F(CublasExecutionTest, InnerProductDeclinesDifferentLogicalStorageOrders)

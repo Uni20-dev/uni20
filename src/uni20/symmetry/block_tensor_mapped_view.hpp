@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <uni20/mdspan/mdspec.hpp>
+#include <uni20/mdspan/permute.hpp>
 #include <uni20/symmetry/block_tensor.hpp>
 
 #include <algorithm>
@@ -65,26 +65,6 @@ template <class Tensor, std::size_t Axis> struct TensorAxisSpace<Tensor, Axis, f
 };
 
 template <class Tensor, std::size_t Axis> using tensor_axis_space_t = typename TensorAxisSpace<Tensor, Axis>::type;
-
-template <std::size_t Size>
-consteval auto is_valid_axis_permutation(std::array<std::size_t, Size> const& permutation) -> bool
-{
-  std::array<bool, Size> seen{};
-  for (std::size_t const axis : permutation)
-  {
-    if (axis >= Size || seen[axis]) return false;
-    seen[axis] = true;
-  }
-  return true;
-}
-
-template <std::size_t Size> consteval auto make_identity_axis_permutation()
-{
-  std::array<std::size_t, Size> permutation{};
-  for (std::size_t axis = 0; axis < Size; ++axis)
-    permutation[axis] = axis;
-  return permutation;
-}
 
 template <class Tensor, std::size_t... Axis> consteval auto key_axis_flags_impl(std::index_sequence<Axis...>)
 {
@@ -154,69 +134,22 @@ auto permute_key(BlockKey<CoordinateCount> const& source, std::array<std::size_t
   return BlockKey<CoordinateCount>{coordinates};
 }
 
-template <class Block, bool Immediate = MdspanLike<std::remove_cvref_t<Block>>> struct StridedBlock;
-
-template <class Block> struct StridedBlock<Block, true>
+template <auto Permutation, TensorView Block>
+  requires(Permutation.size() == tensor_mdspec_t<Block>::rank() &&
+           (Permutation.size() == 0 || StridedTensorView<Block>))
+auto permute_block(Block block)
 {
-    using source_type = std::remove_cvref_t<Block>;
-    using extents_type = stdex::dextents<typename source_type::index_type, source_type::rank()>;
-    using type = stdex::mdspan<typename source_type::element_type, extents_type, stdex::layout_stride,
-                               typename source_type::accessor_type>;
-};
-
-template <class Block> struct StridedBlock<Block, false>
-{
-    using source_type = std::remove_cvref_t<Block>;
-    static_assert(MdspecLike<source_type>);
-    using extents_type = stdex::dextents<typename source_type::index_type, source_type::rank()>;
-    using type = mdspec<typename source_type::element_type, extents_type, stdex::layout_stride,
-                        typename source_type::accessor_type, typename source_type::data_descriptor_type>;
-};
-
-template <class Block> using strided_block_t = typename StridedBlock<Block>::type;
-
-template <MdspecLike Block, std::size_t DenseBlockOrder>
-  requires(DenseBlockOrder == 0 || StridedMdspecLike<Block>)
-auto permute_block_mdspec(Block block, std::array<std::size_t, DenseBlockOrder> const& permutation)
-    -> strided_block_t<Block>
-{
-  using result_type = strided_block_t<Block>;
-  using extents_type = typename result_type::extents_type;
-  using mapping_type = typename result_type::mapping_type;
-  using index_type = typename extents_type::index_type;
-
-  std::array<std::size_t, DenseBlockOrder> extents{};
-  std::array<index_type, DenseBlockOrder> strides{};
-  if constexpr (DenseBlockOrder > 0)
-  {
-    for (std::size_t axis = 0; axis < DenseBlockOrder; ++axis)
-    {
-      extents[axis] = static_cast<std::size_t>(block.extent(permutation[axis]));
-      strides[axis] = static_cast<index_type>(block.stride(permutation[axis]));
-    }
-  }
-  auto const result_extents = make_extents<extents_type>(extents);
-  if constexpr (MdspanLike<Block>)
-  {
-    return result_type(block.data_handle(), mapping_type(result_extents, strides), block.accessor());
-  }
+  if constexpr (Permutation.size() == 0)
+    return block;
   else
   {
-    return result_type(std::move(block.data_descriptor()), mapping_type(result_extents, strides), block.accessor());
+    auto mutable_mdspec = permute_mdspec<Permutation>(mdspec_of(block));
+    auto const_mdspec = permute_mdspec<Permutation>(mdspec_of(std::as_const(block)));
+    using selector_type = std::remove_cvref_t<decltype(block.backend_selector())>;
+    return MdspecTensorView<decltype(mutable_mdspec), decltype(const_mdspec), tensor_storage_policy_t<Block>,
+                            selector_type>{std::move(mutable_mdspec), std::move(const_mdspec),
+                                           durable_precision_source(block), block.backend_selector()};
   }
-}
-
-template <TensorView Block, std::size_t DenseBlockOrder>
-  requires(DenseBlockOrder == tensor_mdspec_t<Block>::rank() && (DenseBlockOrder == 0 || StridedTensorView<Block>))
-auto permute_block(Block block, std::array<std::size_t, DenseBlockOrder> const& permutation)
-{
-  auto mutable_mdspec = permute_block_mdspec(mdspec_of(block), permutation);
-  auto const_mdspec = permute_block_mdspec(mdspec_of(std::as_const(block)), permutation);
-  using mutable_mdspec_type = decltype(mutable_mdspec);
-  using const_mdspec_type = decltype(const_mdspec);
-  using storage_policy = tensor_storage_policy_t<Block>;
-  return MdspecTensorView<mutable_mdspec_type, const_mdspec_type, storage_policy>{std::move(mutable_mdspec),
-                                                                                  std::move(const_mdspec)};
 }
 
 template <TensorView Block> auto make_read_only_block_view(Block const& block)
@@ -224,7 +157,9 @@ template <TensorView Block> auto make_read_only_block_view(Block const& block)
   auto const_mdspec = mdspec_of(block);
   using mdspec_type = std::remove_cvref_t<decltype(const_mdspec)>;
   using storage_policy = tensor_storage_policy_t<Block>;
-  return MdspecTensorView<mdspec_type, mdspec_type, storage_policy>{const_mdspec, const_mdspec};
+  using selector_type = std::remove_cvref_t<decltype(block.backend_selector())>;
+  return MdspecTensorView<mdspec_type, mdspec_type, storage_policy, selector_type>{
+      const_mdspec, const_mdspec, durable_precision_source(block), block.backend_selector()};
 }
 
 // An identity map preserves the original mapping/accessor, including compressed
@@ -234,7 +169,7 @@ template <auto Permutation, TensorView Block> auto map_block(Block block)
   if constexpr (Permutation == make_identity_axis_permutation<std::tuple_size_v<decltype(Permutation)>>())
     return block;
   else
-    return permute_block(std::move(block), Permutation);
+    return permute_block<Permutation>(std::move(block));
 }
 
 template <class SourceTensor, class = void> class BlockTensorAllocationContextBinding {
