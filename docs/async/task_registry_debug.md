@@ -270,14 +270,14 @@ For external triggers, start the optional diagnostics service:
 uni20::TaskRegistry::DiagnosticsServiceOptions options;
 options.dump_options.output_dir = "/tmp/uni20-dag";
 options.dump_options.file_prefix = "run";
-options.request_file = "/tmp/uni20-dag/request";
+options.request_file = "/tmp/uni20-dag/request.%p"; // %p: this process's id
 options.signal_number = SIGUSR1; // Linux/POSIX use only
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
-The service owns a background thread. It writes best-effort DOT files when a request
-file appears, when the configured signal is received, or when program code calls
-`request_graphviz_dump()`. On Linux the service installs a handler for the signal
+The service owns a background thread. It writes best-effort DOT files when the
+request file's modification time changes, when the configured signal is received, or
+when program code calls `request_graphviz_dump()`. On Linux the service installs a handler for the signal
 that only records it, and the service thread writes the DOT file at its next poll,
 so no diagnostics run inside the handler. The signal may arrive on any thread, so the
 service can start at any point, including after worker threads exist. The service
@@ -285,13 +285,27 @@ thread unblocks the signal for itself, so a program started with the signal bloc
 still receives it, and it writes a dump that its signal or request file asked for with
 its own output options, rather than leaving it to a scheduler progress point.
 
+The service never removes the request file, so one file can serve several
+processes: `touch /tmp/uni20-dag/request` asks every process watching that path for a
+dump, and each later `touch` asks again. A file that already exists when the service
+starts asks for nothing until it changes. In the path, `%p` becomes the process id and
+`%%` a single `%`, so with `request.%p` the command `touch /tmp/uni20-dag/request.12345`
+reaches process 12345 alone. On NFS a client may see the change only when its
+attribute cache expires, and on a filesystem that keeps whole-second times, two
+touches within the same second count as one.
+
 The signal must be `SIGUSR1` or `SIGUSR2`, the two signals POSIX reserves for
 applications, and `start_diagnostics_service()` returns false for any other. The
 kernel raises a fault signal such as `SIGFPE` at the faulting instruction, which
-traps again as soon as a handler returns. A process gives a signal to the service
-once: stopping the service restores the signal's previous action, and a later start
-with a signal returns false. A service without a signal can still be started again.
-Setting `UNI20_DEBUG_DAG_SIGNAL` starts the service during program initialization.
+traps again as soon as a handler returns. The service also refuses a signal the
+program already handles, for example to checkpoint, so use the other one for
+diagnostics. A program that installs its own handler after the service starts takes
+the signal back, and stopping the service then leaves that handler in place.
+
+A process gives a signal to the service once: stopping the service restores the
+signal's previous action, and a later start with a signal returns false. A service
+without a signal can still be started again. Setting `UNI20_DEBUG_DAG_SIGNAL` starts
+the service during program initialization.
 
 Default output and service settings can be configured with environment variables:
 
@@ -300,7 +314,7 @@ Default output and service settings can be configured with environment variables
 | `UNI20_DEBUG_DAG_OUTPUT_DIR` | Default DOT output directory; defaults to `/tmp` |
 | `UNI20_DEBUG_DAG_FILE_PREFIX` | Default DOT filename prefix; defaults to `uni20-dag` |
 | `UNI20_DEBUG_DAG_DUMP_ON_EXCEPTION` | Enable a live registry report and DOT snapshot when an exception originates in an async coroutine; defaults to off |
-| `UNI20_DEBUG_DAG_REQUEST_FILE` | Control file consumed by `start_diagnostics_service()` |
+| `UNI20_DEBUG_DAG_REQUEST_FILE` | Request file for `start_diagnostics_service()`: each change of its modification time asks for a dump, and `%p` in the path becomes the process id |
 | `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service: `SIGUSR1` or `SIGUSR2`, also written `USR1`, `USR2` or as the signal's number; setting it starts the service during program initialization, and any other signal is reported on stderr |
 | `UNI20_DEBUG_DAG_POLL_MS` | Diagnostics-service poll interval in milliseconds |
 | `UNI20_DEBUG_DAG_STACKTRACE_FRAMES` | Maximum stack frames retained in snapshots and DOT tooltips; `0` hides trace text, `all`/`full`/`unlimited`/`max` disables the cap |
