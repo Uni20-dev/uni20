@@ -15,6 +15,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -89,7 +90,8 @@ template <class ElementType> class diagonal_reference {
 ///          store `min(extents...)` values.
 /// \tparam ElementType Presented element type, possibly const-qualified.
 /// \tparam Extents Logical tensor extents used to decode mapping offsets.
-template <class ElementType, class Extents> class diagonal_accessor {
+/// \tparam ComponentIndex Index type of the physical component mapping.
+template <class ElementType, class Extents, class ComponentIndex = std::ptrdiff_t> class diagonal_accessor {
   public:
     using value_type = std::remove_cv_t<ElementType>;
     using element_type = ElementType;
@@ -114,7 +116,7 @@ template <class ElementType, class Extents> class diagonal_accessor {
     /// \brief Construct an accessor for one logical index space and component stride.
     /// \param extents Full logical tensor extents.
     /// \param component_stride Offset between consecutive stored diagonal components.
-    UNI20_HOST_DEVICE explicit constexpr diagonal_accessor(extents_type extents, index_type component_stride = 1)
+    UNI20_HOST_DEVICE explicit constexpr diagonal_accessor(extents_type extents, ComponentIndex component_stride = 1)
         : extents_(std::move(extents)), component_stride_(component_stride)
     {}
 
@@ -122,7 +124,7 @@ template <class ElementType, class Extents> class diagonal_accessor {
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle, offset_type offset) const
     {
       auto const diagonal_index = this->component_index(handle, offset);
-      auto const component_offset = static_cast<index_type>(diagonal_index.index) * component_stride_;
+      auto const component_offset = static_cast<ComponentIndex>(diagonal_index.index) * component_stride_;
       if constexpr (std::is_const_v<element_type>)
       {
         return diagonal_index.present ? handle.data[component_offset] : value_type{};
@@ -145,7 +147,7 @@ template <class ElementType, class Extents> class diagonal_accessor {
     [[nodiscard]] UNI20_HOST_DEVICE constexpr auto extents() const noexcept -> extents_type const& { return extents_; }
 
     /// \brief Return the physical offset between consecutive diagonal components.
-    [[nodiscard]] UNI20_HOST_DEVICE constexpr auto component_stride() const noexcept -> index_type
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr auto component_stride() const noexcept -> ComponentIndex
     {
       return component_stride_;
     }
@@ -182,28 +184,31 @@ template <class ElementType, class Extents> class diagonal_accessor {
     }
 
     [[no_unique_address]] extents_type extents_{};
-    index_type component_stride_ = 1;
+    ComponentIndex component_stride_ = 1;
 };
 
 /// \brief Convert a writable diagonal accessor to its read-only form.
-template <class ElementType, class Extents>
+template <class ElementType, class Extents, class ComponentIndex>
   requires(!std::is_const_v<ElementType>)
-[[nodiscard]] UNI20_HOST_DEVICE constexpr auto const_accessor(diagonal_accessor<ElementType, Extents> const& accessor)
+[[nodiscard]] UNI20_HOST_DEVICE constexpr auto
+const_accessor(diagonal_accessor<ElementType, Extents, ComponentIndex> const& accessor)
 {
-  return diagonal_accessor<ElementType const, Extents>{accessor.extents(), accessor.component_stride()};
+  return diagonal_accessor<ElementType const, Extents, ComponentIndex>{accessor.extents(), accessor.component_stride()};
 }
 
 /// \brief Return an already read-only diagonal accessor unchanged.
-template <class ElementType, class Extents>
+template <class ElementType, class Extents, class ComponentIndex>
   requires std::is_const_v<ElementType>
-[[nodiscard]] UNI20_HOST_DEVICE constexpr auto const_accessor(diagonal_accessor<ElementType, Extents> const& accessor)
+[[nodiscard]] UNI20_HOST_DEVICE constexpr auto
+const_accessor(diagonal_accessor<ElementType, Extents, ComponentIndex> const& accessor)
 {
   return accessor;
 }
 
 /// \brief Diagonal accessors may be evaluated by ordinary host code.
-template <class ElementType, class Extents>
-inline constexpr bool enable_accessor_in_domain<diagonal_accessor<ElementType, Extents>, host_access_domain> = true;
+template <class ElementType, class Extents, class ComponentIndex>
+inline constexpr bool
+    enable_accessor_in_domain<diagonal_accessor<ElementType, Extents, ComponentIndex>, host_access_domain> = true;
 
 namespace detail
 {
@@ -224,6 +229,25 @@ template <class Extents>
       if (extents.extent(axis) < result) result = extents.extent(axis);
     return result;
   }
+}
+
+// GeneratedLayout encodes a full logical coordinate as one linear offset.
+template <class Index, std::size_t... Axes>
+constexpr auto diagonal_logical_extents(stdex::extents<Index, Axes...> extents, bool empty)
+{
+  using logical_index = std::common_type_t<Index, std::ptrdiff_t>;
+  if (!empty)
+  {
+    logical_index size = 1;
+    for (std::size_t axis = 0; axis < extents.rank(); ++axis)
+    {
+      auto const extent = static_cast<logical_index>(extents.extent(axis));
+      if (size > std::numeric_limits<logical_index>::max() / extent)
+        throw std::overflow_error("diagonal logical size exceeds its index range");
+      size *= extent;
+    }
+  }
+  return stdex::extents<logical_index, Axes...>{extents};
 }
 
 template <class Mapping, std::size_t... Axis>
@@ -247,16 +271,19 @@ template <class Mapping, std::size_t... Axis>
 /// \return Rank-one strided mdspan over the stored diagonal components.
 /// \throws std::invalid_argument If the logical view does not begin on or
 ///         advance along the represented diagonal.
-template <class ElementType, class Extents, class LayoutPolicy, class AccessorExtents>
+template <class ElementType, class Extents, class LayoutPolicy, class AccessorExtents, class ComponentIndex>
   requires(Extents::rank() == AccessorExtents::rank())
-[[nodiscard]] constexpr auto diagonal_components(
-    stdex::mdspan<ElementType, Extents, LayoutPolicy, diagonal_accessor<ElementType, AccessorExtents>> const& span)
+[[nodiscard]] constexpr auto
+diagonal_components(stdex::mdspan<ElementType, Extents, LayoutPolicy,
+                                  diagonal_accessor<ElementType, AccessorExtents, ComponentIndex>> const& span)
 {
-  using index_type = typename Extents::index_type;
+  using index_type = ComponentIndex;
   using component_extents_type = stdex::dextents<index_type, 1>;
   using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
   using component_mdspan_type = stdex::mdspan<ElementType, component_extents_type, stdex::layout_stride>;
-  auto const extents = component_extents_type{detail::diagonal_component_extent(span.extents())};
+  auto const count = detail::diagonal_component_extent(span.extents());
+  if (!std::in_range<index_type>(count)) throw std::overflow_error("diagonal component count exceeds its index range");
+  auto const extents = component_extents_type{count};
   index_type component_stride = span.accessor().component_stride();
   auto* data = span.data_handle().data;
   if (extents.extent(0) > 0)
@@ -284,28 +311,35 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
 /// \details The resulting mdspan has the supplied logical rank-N extents.
 ///          It reads as zero unless every logical index is equal and delegates
 ///          diagonal values to the supplied component view.
-/// \tparam Extents Full logical extents type.
+/// \throws std::invalid_argument If the component extent differs from the logical diagonal extent.
+/// \throws std::overflow_error If the logical size, component count, or stride exceeds its index range.
 /// \tparam Components Default-accessor rank-one strided mdspan type.
 /// \param logical_extents Full logical tensor extents.
 /// \param components Stored component view with `min(logical_extents)` entries.
 /// \return Full logical mdspan modelling `DiagonalMdspecLike`.
-/// \throws std::invalid_argument If the component extent does not match the logical diagonal extent.
 template <class Extents, class Components>
   requires RankedStridedMdspanLike<Components, 1> && DefaultAccessorMdspanLike<Components>
 [[nodiscard]] constexpr auto make_diagonal_mdspan(Extents logical_extents, Components const& components)
 {
   using component_type = std::remove_cvref_t<Components>;
   using element_type = typename component_type::element_type;
-  using index_type = typename Extents::index_type;
-  if (static_cast<index_type>(components.extent(0)) != detail::diagonal_component_extent(logical_extents))
+  auto const count = components.extent(0);
+  if (!std::cmp_equal(count, detail::diagonal_component_extent(logical_extents)))
   {
     throw std::invalid_argument("diagonal component extent does not match the logical tensor extents");
   }
-  using accessor_type = diagonal_accessor<element_type, Extents>;
-  using result_type = stdex::mdspan<element_type, Extents, GeneratedLayout, accessor_type>;
+  using component_index = std::remove_cvref_t<decltype(components.mapping()(0))>;
+  auto const stride = components.mapping().stride(0);
+  if (!std::in_range<component_index>(count) || !std::in_range<component_index>(stride))
+    throw std::overflow_error("diagonal component count or stride exceeds its index range");
+
+  auto extents = detail::diagonal_logical_extents(logical_extents, count == 0);
+  using extents_type = decltype(extents);
+  using accessor_type = diagonal_accessor<element_type, extents_type, component_index>;
+  using result_type = stdex::mdspan<element_type, extents_type, GeneratedLayout, accessor_type>;
   return result_type{typename accessor_type::data_handle_type{components.data_handle(), 0},
-                     typename result_type::mapping_type{logical_extents},
-                     accessor_type{std::move(logical_extents), static_cast<index_type>(components.stride(0))}};
+                     typename result_type::mapping_type{extents},
+                     accessor_type{extents, static_cast<component_index>(stride)}};
 }
 
 /// \brief Recover the stored value type from a writable diagonal proxy.

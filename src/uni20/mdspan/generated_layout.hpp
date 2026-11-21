@@ -43,12 +43,12 @@ struct GeneratedLayout
         /// \brief Return the number of synthetic offsets in the logical index space.
         [[nodiscard]] UNI20_HOST_DEVICE constexpr auto required_span_size() const noexcept -> index_type
         {
+          for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
+            if (extents_.extent(axis) == 0) return 0;
+
           index_type result = 1;
           for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
-          {
-            if (extents_.extent(axis) == 0) return 0;
             result *= extents_.extent(axis);
-          }
           return result;
         }
 
