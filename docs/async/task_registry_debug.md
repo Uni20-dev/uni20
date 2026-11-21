@@ -283,10 +283,15 @@ so no diagnostics run inside the handler. The signal may arrive on any thread, s
 service can start at any point, including after worker threads exist. The service
 thread unblocks the signal for itself, so a program started with the signal blocked
 still receives it, and it writes a dump that its signal or request file asked for with
-its own output options, rather than leaving it to a scheduler progress point. Stopping
-the service restores the signal's previous action; starting and stopping it are
-serialized. Setting `UNI20_DEBUG_DAG_SIGNAL`
-starts the service during program initialization.
+its own output options, rather than leaving it to a scheduler progress point.
+
+The signal must be `SIGUSR1` or `SIGUSR2`, the two signals POSIX reserves for
+applications, and `start_diagnostics_service()` returns false for any other. The
+kernel raises a fault signal such as `SIGFPE` at the faulting instruction, which
+traps again as soon as a handler returns. A process gives a signal to the service
+once: stopping the service restores the signal's previous action, and a later start
+with a signal returns false. A service without a signal can still be started again.
+Setting `UNI20_DEBUG_DAG_SIGNAL` starts the service during program initialization.
 
 Default output and service settings can be configured with environment variables:
 
@@ -296,7 +301,7 @@ Default output and service settings can be configured with environment variables
 | `UNI20_DEBUG_DAG_FILE_PREFIX` | Default DOT filename prefix; defaults to `uni20-dag` |
 | `UNI20_DEBUG_DAG_DUMP_ON_EXCEPTION` | Enable a live registry report and DOT snapshot when an exception originates in an async coroutine; defaults to off |
 | `UNI20_DEBUG_DAG_REQUEST_FILE` | Control file consumed by `start_diagnostics_service()` |
-| `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service, e.g. `SIGUSR1`, `USR2`, or a number; setting it starts the service during program initialization |
+| `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service: `SIGUSR1` or `SIGUSR2`, also written `USR1`, `USR2` or as the signal's number; setting it starts the service during program initialization, and any other signal is reported on stderr |
 | `UNI20_DEBUG_DAG_POLL_MS` | Diagnostics-service poll interval in milliseconds |
 | `UNI20_DEBUG_DAG_STACKTRACE_FRAMES` | Maximum stack frames retained in snapshots and DOT tooltips; `0` hides trace text, `all`/`full`/`unlimited`/`max` disables the cap |
 | `UNI20_DEBUG_DAG_STACKTRACE_INTERNAL_FRAMES` | Whether stacktrace text includes internal Uni20/libstdc++ frames; defaults to `true` |

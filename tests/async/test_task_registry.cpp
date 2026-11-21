@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -961,63 +962,53 @@ TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceDumpSurvivesADebugValueHookTh
 #endif
 
 #if defined(__linux__)
-TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
+namespace
 {
-  TaskRegistry::stop_diagnostics_service();
-  auto dir = make_temp_dir("uni20-dag-signal-test");
+// Each signal probe runs in a child process of its own (death-test style
+// "threadsafe" runs the test binary again for just that test). A process gives
+// its signal to the service only once, and the child has no thread from an
+// earlier test that could take the signal in place of the service thread. A
+// probe returns 0 and explains a failure on stderr.
 
+int probe_failed(char const* reason)
+{
+  std::fprintf(stderr, "%s\n", reason);
+  return 1;
+}
+
+TaskRegistry::DiagnosticsServiceOptions signal_service_options(std::filesystem::path const& dir, int signal)
+{
   TaskRegistry::DiagnosticsServiceOptions options;
   options.dump_options.output_dir = dir.string();
   options.dump_options.file_prefix = "signal";
-  options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 50;
+  options.signal_number = signal;
+  options.poll_interval_ms = 20;
+  return options;
+}
 
-  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
-  ASSERT_EQ(::kill(::getpid(), SIGUSR1), 0);
-  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
+// Starts the service, sends the signal with `send`, and waits for the DOT file.
+template <class Send> int signal_dump_probe(int signal, Send send)
+{
+  auto dir = make_temp_dir("uni20-dag-signal-test");
+  if (!TaskRegistry::start_diagnostics_service(signal_service_options(dir, signal)))
+    return probe_failed("the service did not start");
+  if (send() != 0) return probe_failed("the signal was not sent");
+  bool const dumped = wait_for_dot_file(dir, std::chrono::milliseconds(1000));
   TaskRegistry::stop_diagnostics_service();
   std::filesystem::remove_all(dir);
+  return dumped ? 0 : probe_failed("no DOT file after the signal");
 }
 
-namespace
+int signal_to_process_probe(int signal)
 {
-// Restores SIGUSR1's action and this thread's signal mask, unmasking first so
-// that a signal still pending reaches the test's own action.
-struct SignalStateGuard
-{
-    struct sigaction action = {};
-    sigset_t mask = {};
-    SignalStateGuard()
-    {
-      ::sigaction(SIGUSR1, nullptr, &action);
-      ::pthread_sigmask(SIG_SETMASK, nullptr, &mask);
-    }
-    ~SignalStateGuard()
-    {
-      ::pthread_sigmask(SIG_SETMASK, &mask, nullptr);
-      ::sigaction(SIGUSR1, &action, nullptr);
-    }
-};
-
-void ignore_signal(int) {}
-
-void ignore_sigusr1()
-{
-  struct sigaction ignore = {};
-  ignore.sa_handler = ignore_signal;
-  sigemptyset(&ignore.sa_mask);
-  ::sigaction(SIGUSR1, &ignore, nullptr);
+  return signal_dump_probe(signal, [signal] { return ::kill(::getpid(), signal); });
 }
-} // namespace
 
-TEST(TaskRegistryDebugTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
+// A thread that exists before the service starts and does not block the
+// signal, whatever mask the test was launched with, as a TBB worker would be.
+// The signal is sent to it directly, so its default action would end the process.
+int signal_to_earlier_thread_probe()
 {
-  TaskRegistry::stop_diagnostics_service();
-  auto dir = make_temp_dir("uni20-dag-signal-thread-test");
-
-  // A thread that exists before the service starts and does not block the
-  // signal, whatever earlier tests left, as a TBB worker would be. The signal
-  // is sent to it directly, so its default action would end the process.
   std::promise<void> ready;
   std::jthread bystander([&ready](std::stop_token stop) {
     sigset_t set;
@@ -1031,90 +1022,142 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceSignalReachesItFromThreadsStartedE
     idle.wait(lock, stop, [] { return false; });
   });
   ready.get_future().wait();
-
-  TaskRegistry::DiagnosticsServiceOptions options;
-  options.dump_options.output_dir = dir.string();
-  options.dump_options.file_prefix = "signal";
-  options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 50;
-
-  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
-  ASSERT_EQ(::pthread_kill(bystander.native_handle(), SIGUSR1), 0);
-  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
-  TaskRegistry::stop_diagnostics_service();
-  std::filesystem::remove_all(dir);
+  return signal_dump_probe(SIGUSR1, [&bystander] { return ::pthread_kill(bystander.native_handle(), SIGUSR1); });
 }
 
-TEST(TaskRegistryDebugTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
+std::ptrdiff_t thread_count()
 {
-  TaskRegistry::stop_diagnostics_service();
-  auto dir = make_temp_dir("uni20-dag-signal-blocked-test");
-  SignalStateGuard const guard;
-  ignore_sigusr1(); // so that a signal still pending after the test does no harm
+  return std::distance(std::filesystem::directory_iterator("/proc/self/task"), std::filesystem::directory_iterator());
+}
 
-  // The service thread inherits this mask, as in a program started with the signal blocked.
+// The only thread blocks the signal, as in a program started with it blocked,
+// and the service thread inherits that mask. Only the service thread can then
+// receive the signal.
+int signal_with_starter_blocking_it_probe()
+{
+  if (thread_count() != 1) return probe_failed("another thread could receive the signal");
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, SIGUSR1);
-  ASSERT_EQ(::pthread_sigmask(SIG_BLOCK, &set, nullptr), 0);
-
-  TaskRegistry::DiagnosticsServiceOptions options;
-  options.dump_options.output_dir = dir.string();
-  options.dump_options.file_prefix = "signal";
-  options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 50;
-
-  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
-  ASSERT_EQ(::kill(::getpid(), SIGUSR1), 0);
-  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
-  TaskRegistry::stop_diagnostics_service();
-  std::filesystem::remove_all(dir);
+  if (::pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) return probe_failed("could not block the signal");
+  return signal_to_process_probe(SIGUSR1);
 }
 
-TEST(TaskRegistryDebugTest, DiagnosticsServiceRestoresThePreviousSignalAction)
-{
-  TaskRegistry::stop_diagnostics_service();
-  SignalStateGuard const guard;
-  ignore_sigusr1();
+void ignore_signal(int) {}
 
+int restores_previous_action_probe()
+{
+  struct sigaction ignore = {};
+  ignore.sa_handler = ignore_signal;
+  sigemptyset(&ignore.sa_mask);
+  if (::sigaction(SIGUSR1, &ignore, nullptr) != 0) return probe_failed("could not install a handler");
   TaskRegistry::DiagnosticsServiceOptions options;
   options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 50;
-  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the service did not start");
   TaskRegistry::stop_diagnostics_service();
-
   struct sigaction current = {};
-  ASSERT_EQ(::sigaction(SIGUSR1, nullptr, &current), 0);
-  EXPECT_EQ(current.sa_handler, &ignore_signal);
+  if (::sigaction(SIGUSR1, nullptr, &current) != 0) return probe_failed("could not read the action");
+  return current.sa_handler == &ignore_signal ? 0 : probe_failed("stop did not restore the previous action");
 }
 
-TEST(TaskRegistryDebugTest, ConcurrentStartAndStopRestoreThePreviousSignalAction)
+int signal_taken_once_probe()
 {
-  TaskRegistry::stop_diagnostics_service();
-  SignalStateGuard const guard;
-  ignore_sigusr1();
-
-  // A restart during a stop must neither keep the stopping thread running nor
-  // replace the action that stop restores.
   TaskRegistry::DiagnosticsServiceOptions options;
   options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 1;
-  auto cycle = [&options] {
-    for (int i = 0; i < 100; ++i)
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the first start failed");
+  TaskRegistry::stop_diagnostics_service();
+  for (int signal : {SIGUSR1, SIGUSR2})
+  {
+    options.signal_number = signal;
+    if (TaskRegistry::start_diagnostics_service(options))
     {
-      TaskRegistry::start_diagnostics_service(options);
       TaskRegistry::stop_diagnostics_service();
+      return probe_failed("a second service took a signal");
     }
-  };
-  std::thread first(cycle);
-  std::thread second(cycle);
-  first.join();
-  second.join();
+  }
+  options.signal_number = 0;
+  if (!TaskRegistry::start_diagnostics_service(options))
+    return probe_failed("a service without a signal did not start");
   TaskRegistry::stop_diagnostics_service();
+  return 0;
+}
 
-  struct sigaction current = {};
-  ASSERT_EQ(::sigaction(SIGUSR1, nullptr, &current), 0);
-  EXPECT_EQ(current.sa_handler, &ignore_signal);
+int environment_signal_probe()
+{
+  {
+    EnvVarGuard signal("UNI20_DEBUG_DAG_SIGNAL", std::to_string(SIGFPE));
+    if (TaskRegistry::start_diagnostics_service())
+      return probe_failed("UNI20_DEBUG_DAG_SIGNAL accepted SIGFPE by number");
+  }
+  EnvVarGuard signal("UNI20_DEBUG_DAG_SIGNAL", std::to_string(SIGUSR2));
+  if (!TaskRegistry::start_diagnostics_service())
+    return probe_failed("UNI20_DEBUG_DAG_SIGNAL did not accept SIGUSR2 by number");
+  TaskRegistry::stop_diagnostics_service();
+  return 0;
+}
+} // namespace
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceHandlesEitherSignal)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR1)); }, ::testing::ExitedWithCode(0), "");
+  EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR2)); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_to_earlier_thread_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_with_starter_blocking_it_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRestoresThePreviousSignalAction)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(restores_previous_action_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceTakesASignalOncePerProcess)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_taken_once_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalEnvironmentRefusesOtherSignals)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(environment_signal_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+// A fault signal such as SIGFPE returns to the faulting instruction after a
+// handler, which traps again; the others belong to the program. start() refuses
+// them before changing anything, so this runs in the test process.
+TEST(TaskRegistryDebugTest, DiagnosticsServiceRefusesSignalsOtherThanUsr1AndUsr2)
+{
+  TaskRegistry::stop_diagnostics_service();
+  for (int signal : {SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGRTMIN, -1})
+  {
+    struct sigaction before = {};
+    if (signal > 0)
+    {
+      ASSERT_EQ(::sigaction(signal, nullptr, &before), 0);
+    }
+    TaskRegistry::DiagnosticsServiceOptions options;
+    options.signal_number = signal;
+    EXPECT_FALSE(TaskRegistry::start_diagnostics_service(options)) << "signal " << signal;
+    TaskRegistry::stop_diagnostics_service();
+    struct sigaction after = {};
+    if (signal > 0)
+    {
+      ASSERT_EQ(::sigaction(signal, nullptr, &after), 0);
+    }
+    EXPECT_EQ(after.sa_handler, before.sa_handler) << "signal " << signal;
+  }
 }
 #endif
 #endif

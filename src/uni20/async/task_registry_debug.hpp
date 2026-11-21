@@ -77,6 +77,8 @@ class TaskRegistryDebug {
     struct DiagnosticsServiceOptions
     {
         GraphvizDumpOptions dump_options{};
+        /// Signal that asks for a dump on Linux: `SIGUSR1`, `SIGUSR2`, or 0 for none.
+        /// A process gives a signal to the service once; it is not taken again after a stop.
         int signal_number{0};
         std::string request_file{};
         int poll_interval_ms{250};
@@ -253,7 +255,9 @@ class TaskRegistryDebug {
     static bool start_diagnostics_service();
     /// \brief Starts the optional background DAG diagnostics service.
     /// \param options Signal/control-file and output configuration.
-    /// \return true if a service was started or was already running.
+    /// \return true if a service was started or was already running; false if
+    ///         `options.signal_number` is not 0, `SIGUSR1` or `SIGUSR2`, or a service
+    ///         with a signal has already run in this process.
     static bool start_diagnostics_service(DiagnosticsServiceOptions const& options);
     /// \brief Stops the background DAG diagnostics service if it is running.
     static void stop_diagnostics_service() noexcept;
