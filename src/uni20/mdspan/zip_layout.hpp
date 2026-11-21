@@ -13,6 +13,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <tuple>
 #include <type_traits>
@@ -55,6 +56,11 @@ template <std::size_t A, std::size_t B, std::size_t... Rest> struct merge_pack<A
     static constexpr std::size_t value = merge_pack<merge_extent<A, B>(), Rest...>::value;
 };
 
+template <class From, class To>
+inline constexpr bool zip_index_fits =
+    std::is_integral_v<From> && std::numeric_limits<From>::digits <= std::numeric_limits<To>::digits &&
+    (!std::is_signed_v<From> || std::is_signed_v<To>);
+
 // Given a set of mdspans, determine the common extents using the merge_extent() function above
 template <typename FirstSpan, typename... OtherSpans> struct common_extents
 {
@@ -64,9 +70,15 @@ template <typename FirstSpan, typename... OtherSpans> struct common_extents
     static constexpr std::size_t R = FirstSpan::rank();
     static_assert((... && (OtherSpans::rank() == R)), "common_extents: ranks must match");
 
-    // Equal nonnegative extents fit regardless of which operand is first.
-    using index_type =
-        std::common_type_t<std::ptrdiff_t, typename FirstSpan::index_type, typename OtherSpans::index_type...>;
+    using common_type = std::common_type_t<typename FirstSpan::index_type, typename OtherSpans::index_type...>;
+    // Usual arithmetic conversions can discard the signed operands' negative range.
+    // If even intmax_t cannot cover both ranges, common_type still covers the
+    // nonnegative coordinates, and the general zip keeps each child's physical offsets.
+    static constexpr bool needs_signed_promotion =
+        !(zip_index_fits<typename FirstSpan::index_type, common_type> &&
+          (zip_index_fits<typename OtherSpans::index_type, common_type> && ...));
+    using index_type = std::conditional_t<needs_signed_promotion && zip_index_fits<common_type, std::intmax_t>,
+                                          std::intmax_t, common_type>;
 
   private:
     // Fold-merge the static extents at dimension I
@@ -200,10 +212,6 @@ UNI20_HOST_DEVICE constexpr std::array<T, N + 1> concat(const std::array<T, N>& 
 namespace detail
 {
 
-template <class From, class To>
-inline constexpr bool zip_index_fits = std::numeric_limits<From>::digits <= std::numeric_limits<To>::digits &&
-                                       (!std::is_signed_v<From> || std::is_signed_v<To>);
-
 template <typename IndexType, std::size_t Rank, typename Mapping, std::size_t... I>
 UNI20_HOST_DEVICE constexpr std::array<IndexType, Rank> mapping_strides_impl(Mapping const& mapping,
                                                                              std::index_sequence<I...>)
@@ -221,6 +229,13 @@ UNI20_HOST_DEVICE constexpr std::array<IndexType, Rank> mapping_strides(Mapping 
 template <typename Mapping, std::size_t... Axis>
 auto mapping_result(std::index_sequence<Axis...>)
     -> decltype(std::declval<Mapping const&>()(((void)Axis, typename Mapping::index_type{})...));
+
+template <class Mapping, class Index>
+concept ZipOffsetsFit =
+    zip_index_fits<decltype(mapping_result<Mapping>(std::make_index_sequence<Mapping::extents_type::rank()>{})),
+                   Index> &&
+    (Mapping::extents_type::rank() == 0 ||
+     requires(Mapping const& m) { requires zip_index_fits<decltype(m.stride(0)), Index>; });
 
 // build a std::tuple of N default-constructed T’s
 template <typename T, std::size_t... I> constexpr auto make_tuple_n_impl(std::index_sequence<I...>)
@@ -337,7 +352,7 @@ template <std::size_t NumSpans> struct StridedZipLayout
         /// \param maps Existing mappings whose strides are copied into this layout.
         /// \ingroup mdspan_ext
         template <typename... Mappings>
-          requires(detail::zip_index_fits<typename Mappings::index_type, index_type> && ...)
+          requires(detail::ZipOffsetsFit<Mappings, index_type> && ...)
         UNI20_HOST_DEVICE constexpr mapping(extents_type const& exts, Mappings... maps) noexcept
             : extents_(exts), all_strides_{detail::mapping_strides<index_type, Ext::rank()>(maps)...}
         {}
@@ -511,7 +526,7 @@ template <typename... Spans> struct zip_layout_selector
 /// \tparam Spans  Mdspan types that satisfy StridedMdspanLike.
 /// \ingroup mdspan_ext
 template <StridedMdspanLike... Spans>
-  requires(detail::zip_index_fits<typename Spans::index_type, typename common_extents_t<Spans...>::index_type> && ...)
+  requires(detail::ZipOffsetsFit<typename Spans::mapping_type, typename common_extents_t<Spans...>::index_type> && ...)
 struct zip_layout_selector<Spans...>
 {
     using type = StridedZipLayout<sizeof...(Spans)>;

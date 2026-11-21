@@ -244,6 +244,8 @@ TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
 
   auto ab = transform_view(plus_n{}, a, b);
   auto ba = transform_view(plus_n{}, b, a);
+  static_assert(std::same_as<decltype(ab)::index_type, int>);
+  static_assert(std::same_as<decltype(ba)::index_type, int>);
   for (int i = 0; i < 2; ++i)
     for (int j = 0; j < 2; ++j)
     {
@@ -253,18 +255,63 @@ TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
     }
 }
 
+TEST(TransformView1D, PromotesIndicesOnlyWhenNeeded)
+{
+  using signed_shape = stdex::extents<std::int32_t, 2>;
+  using unsigned_shape = stdex::extents<std::uint32_t, 2>;
+  std::array<int, 2> values{3, 7};
+  stdex::mdspan<int, signed_shape> a{values.data()};
+  stdex::mdspan<int, unsigned_shape> b{values.data()};
+
+  auto same = transform_view(plus_n{}, a, a);
+  auto mixed = transform_view(plus_n{}, a, b);
+  auto reversed = transform_view(plus_n{}, b, a);
+  static_assert(std::same_as<decltype(same)::mapping_type::offset_type, std::tuple<std::int32_t, std::int32_t>>);
+  static_assert(std::same_as<decltype(mixed)::mapping_type::offset_type, std::tuple<std::int64_t, std::int64_t>>);
+  static_assert(std::same_as<decltype(mixed)::mapping_type, decltype(reversed)::mapping_type>);
+  EXPECT_EQ(same[1], 14);
+  EXPECT_EQ(mixed[1], 14);
+  EXPECT_EQ(reversed[1], 14);
+}
+
 TEST(TransformView2D, PreservesChildMappingsWhenComposingMixedIndexTypes)
 {
-  using narrow = stdex::extents<int, 2, 2>;
-  using wide = stdex::extents<std::size_t, 2, 2>;
+  using signed_shape = stdex::extents<std::int64_t, 2, 2>;
+  using unsigned_shape = stdex::extents<std::uint64_t, 2, 2>;
   std::array<int, 4> dense{1, 2, 3, 4};
   std::array<int, 8> padded{10, 0, 20, 0, 30, 0, 40, 0};
-  stdex::mdspan<int, narrow> a{dense.data(), narrow{}};
-  stdex::layout_stride::mapping<wide> mapping{wide{}, std::array{4, 2}};
-  stdex::mdspan<int, wide, stdex::layout_stride> b{padded.data(), mapping};
+  stdex::mdspan<int, signed_shape> a{dense.data(), signed_shape{}};
+  stdex::layout_stride::mapping<unsigned_shape> mapping{unsigned_shape{}, std::array{4, 2}};
+  stdex::mdspan<int, unsigned_shape, stdex::layout_stride> b{padded.data(), mapping};
 
   auto sum = transform_view(plus_n{}, a, b);
+  static_assert(std::same_as<decltype(sum)::mapping_type::offset_type, std::tuple<std::int64_t, std::uint64_t>>);
   auto nested = transform_view(plus_n{}, sum, b);
   EXPECT_EQ((nested[1, 0]), 63);
   EXPECT_EQ((nested[1, 1]), 84);
+}
+
+// A structural strided mapping with narrow coordinates can still return wider offsets.
+struct wide_offset_layout
+{
+    template <class Extents> struct mapping : stdex::layout_right::mapping<Extents>
+    {
+        static_assert(Extents::rank() == 1 && Extents::static_extent(0) == 2);
+        using layout_type = wide_offset_layout;
+        static constexpr bool is_always_exhaustive() { return false; }
+        constexpr bool is_exhaustive() const { return false; }
+        constexpr int operator()(typename Extents::index_type i) const { return i * 300; }
+        constexpr int stride(std::size_t) const { return 300; }
+        constexpr int required_span_size() const { return 301; }
+    };
+};
+
+TEST(TransformView1D, PreservesWiderMappingOffsetsWithNarrowCoordinates)
+{
+  using shape = stdex::extents<std::uint8_t, 2>;
+  std::array<int, 301> storage{};
+  storage[300] = 23;
+  stdex::mdspan<int, shape, wide_offset_layout> input{storage.data(), wide_offset_layout::mapping<shape>{}};
+  auto sum = transform_view(plus_n{}, input, input);
+  EXPECT_EQ(sum[1], 46);
 }

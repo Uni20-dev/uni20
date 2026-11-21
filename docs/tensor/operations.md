@@ -155,11 +155,16 @@ identity view. Applying `conj` twice returns a read-only view of the original
 values rather than a writable left-hand side.
 
 When `transform_view` combines mdspans with the same shape, each operand
-retains its physical offsets even if their index types differ. A diagonal view
-created by `make_diagonal_mdspan` similarly keeps its component stride in
-`std::ptrdiff_t`. Construction checks that the component view has the requested
-length and that the stride and last component offset fit.
-`diagonal_components(view)` recovers that physical stride.
+retains its physical offsets. Two `int32_t` inputs use 32-bit offsets.
+Combining `int32_t` and `uint32_t` uses signed 64-bit offsets. If no
+standard integer type covers both ranges, the zip keeps each child mapping.
+
+`make_diagonal_mdspan` preserves the physical component mapping's index type
+and stride, including when `diagonal_components(view)` recovers the component
+view. The diagonal's logical mapping flattens coordinates into a separate wide
+index. Construction checks the component count and the representability of the
+logical size. For example, a 50,000 × 50,000 diagonal stores 50,000 components
+but its last logical offset is 2,499,999,999.
 
 Materialization is explicit:
 
