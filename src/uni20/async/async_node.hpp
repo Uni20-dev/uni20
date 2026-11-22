@@ -316,13 +316,14 @@ class NodeInfo {
     inline static std::atomic<uint64_t> next_global_ = 0;
 
     // Per-instance data:
-    Block* storage_{nullptr};                             ///< Storage control block; may have been released.
-    void const* raw_value_address_{nullptr};              ///< Identity of the value of a raw-pointer node.
-    char const* type_key_;                                ///< Mangled type name (from typeid).
-    ReservedAddressObserver reserved_address_observer_{}; ///< Value address reserved in the block.
-    ValueTextObserver value_text_observer_{};             ///< One-line text of a live value.
-    uint64_t global_index_;                               ///< Globally unique node index.
-    mutable detail::StorageObservationAnchor anchor_;     ///< Retired by the final release of storage_.
+    Block* storage_{nullptr};                ///< Storage control block; may have been released.
+    void const* raw_value_address_{nullptr}; ///< Identity of the value of a raw-pointer node.
+    char const* type_key_;                   ///< Mangled type name (from typeid).
+    // Read only by observe() in DAG builds, the only ones that can pin the storage.
+    [[maybe_unused]] ReservedAddressObserver reserved_address_observer_{}; ///< Value address reserved in the block.
+    ValueTextObserver value_text_observer_{};                              ///< One-line text of a live value.
+    uint64_t global_index_;                                                ///< Globally unique node index.
+    mutable detail::StorageObservationAnchor anchor_; ///< Retired by the final release of storage_.
 #if 0 && UNI20_HAS_STACKTRACE
     std::stacktrace stack_; ///< stacktrace of where the node was constructed
 #endif
