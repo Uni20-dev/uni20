@@ -10,7 +10,7 @@ using namespace uni20::async;
 TEST(AsyncToysTest, SinAndCosMatchStd)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double const x_value = 0.5;
   Async<double> x = x_value;
@@ -25,7 +25,7 @@ TEST(AsyncToysTest, SinAndCosMatchStd)
 TEST(AsyncToysTest, ComplexTransformsMatchStd)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using complex_t = uni20::complex<double>;
   complex_t const z_value{2.0, -3.0};
@@ -45,7 +45,7 @@ TEST(AsyncToysTest, ComplexTransformsMatchStd)
 TEST(AsyncToysTest, CoSinReleasesReadBeforeWriteAcquire)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   double const x_value = 1.25;
   Async<double> x = x_value;

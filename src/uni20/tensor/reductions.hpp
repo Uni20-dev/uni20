@@ -97,14 +97,11 @@ template <class Reference, class... Others>
 void require_reduction_extents(Reference const& reference, Others const&... others)
 {
   constexpr std::size_t rank = tensor_mdspec_t<Reference>::rank();
-  if constexpr (rank > 0)
-  {
-    auto require_one = [&](auto const& other) {
-      for (std::size_t axis = 0; axis < rank; ++axis)
-        ERROR_IF(reference.extent(axis) != other.extent(axis), "reduction operands have different extents");
-    };
-    (require_one(others), ...);
-  }
+  auto require_one = [&](auto const& other) {
+    for (std::size_t axis = 0; axis < rank; ++axis)
+      ERROR_IF(reference.extent(axis) != other.extent(axis), "reduction operands have different extents");
+  };
+  (require_one(others), ...);
 }
 
 } // namespace detail

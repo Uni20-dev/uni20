@@ -101,6 +101,13 @@ template <std::size_t OperandCount, std::size_t MaximumRank> struct multi_iterat
 namespace detail
 {
 
+template <class Extents> constexpr bool has_zero_extent(Extents const& extents)
+{
+  for (std::size_t axis = 0; axis != Extents::rank(); ++axis)
+    if (extents.extent(axis) == 0) return true;
+  return false;
+}
+
 [[nodiscard]] constexpr bool checked_iteration_multiply(std::ptrdiff_t lhs, std::ptrdiff_t rhs,
                                                         std::ptrdiff_t& result) noexcept
 {
@@ -202,20 +209,16 @@ template <typename Mapping> auto make_iteration_plan_with_offset(Mapping const& 
   static_vector<extent_stride<size_type, index_type>, Rank> plan;
   index_type offset = 0;
 
+  if (detail::has_zero_extent(mapping.extents()))
+  {
+    // A retained zero extent gives zero iterations. An empty list of dimensions denotes a scalar.
+    plan.emplace_back(size_type{0}, index_type{0});
+    return std::pair{plan, index_type{0}};
+  }
+
   for (size_type i = 0; i < Rank; ++i)
   {
     size_type const extent = mapping.extents().extent(i);
-
-    // A zero-extent dimension makes the whole iteration empty (0 elements).
-    // Encode that as a single retained extent-0 dim so the loop nest runs it
-    // zero times; no other dimension's stride matters. This is deliberately
-    // distinct from an *empty* plan, which denotes a single element at the base
-    // offset (a rank-0 scalar) -- see the empty-plan return below.
-    if (extent == 0)
-    {
-      plan.emplace_back(size_type{0}, index_type{0});
-      return std::pair{plan, index_type{0}};
-    }
 
     // A size-1 dimension spans index 0 only: it adds 0*stride to every offset
     // and a factor of 1 to the element count, so it coalesces with anything by
@@ -288,40 +291,20 @@ template <typename... Mappings> auto make_multi_iteration_plan(std::tuple<Mappin
 
   if constexpr (Rank > 0)
   {
-    auto make_empty_plan = [&] {
-      plan.dimensions.clear();
+    if (detail::has_zero_extent(base_extents))
+    {
       plan.dimensions.emplace_back(size_type{0}, std::array<index_type, N>{});
-      plan.base_offsets = std::array<index_type, N>{};
       detail::finish_iteration_plan(plan);
-    };
+      return plan;
+    }
 
     for (size_type i = 0; i < Rank; ++i)
     {
       size_type const extent = base_extents.extent(i);
 
-      // A zero-extent dimension makes the whole iteration empty (0 elements):
-      // retain a single extent-0 dim so the loop nest runs zero times, and reset
-      // the offset corrections (unused once nothing is visited). Distinct from an
-      // empty plan, which denotes a single element (rank-0 scalar).
-      if (extent == 0)
-      {
-        make_empty_plan();
-        return plan;
-      }
-
       if (std::cmp_greater(extent, std::numeric_limits<std::ptrdiff_t>::max()) ||
           logical_element_count > std::numeric_limits<std::ptrdiff_t>::max() / static_cast<std::size_t>(extent))
       {
-        // Only the exceptional overflow path scans ahead. A later zero extent
-        // still makes the complete logical iteration space empty.
-        for (size_type remaining = i + 1; remaining < Rank; ++remaining)
-        {
-          if (base_extents.extent(remaining) == 0)
-          {
-            make_empty_plan();
-            return plan;
-          }
-        }
         plan.representable = false;
         return plan;
       }

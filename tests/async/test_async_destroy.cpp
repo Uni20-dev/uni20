@@ -20,7 +20,7 @@ TEST(AsyncDestroyTest, DestroyWaitingReader)
 {
   Async<int> a;
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> result;
 
@@ -52,7 +52,7 @@ TEST(AsyncDestroyTest, DestroyNewReader)
 {
   Async<int> a;
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> result;
 
@@ -88,7 +88,7 @@ TEST(AsyncDestroyTest, DestroySubsequentReader)
 {
   Async<int> a;
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> result;
 

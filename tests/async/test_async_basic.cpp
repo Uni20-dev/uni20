@@ -246,7 +246,7 @@ TEST(AsyncBasicTest, WriteProxyReleasesEpochs)
 TEST(AsyncBasicTest, CopyConstructor)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> original = 42;
 

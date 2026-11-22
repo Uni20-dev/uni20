@@ -1,11 +1,16 @@
+#include <uni20/symmetry/block_tensor_mapped_view.hpp>
 #include <uni20/symmetry/block_tensor_permute.hpp>
 #include <uni20/symmetry/block_tensor_repartition.hpp>
+#include <uni20/tensor/permute.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <concepts>
+#include <optional>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using namespace uni20;
 
@@ -233,3 +238,59 @@ TEST(BlockTensorPermutationTest, AsyncRankZeroPermutationPreservesScalarEpochIde
   static_assert(!ImmediateTensorView<decltype(block)>);
   EXPECT_EQ(&mdspec_of(block).data_descriptor().async_block(), &tensor.async_block(key));
 }
+
+#if UNI20_HAS_MPREAL
+namespace
+{
+// A parent-backed block reporting its owner's default only through
+// default_precision_if_set(), with no precision_source() or base(). The
+// in-tree conjugation and reshape views follow the same convention.
+struct OwnerDefault
+{
+    std::optional<Precision> value;
+};
+
+struct ParentBackedBlock
+{
+    using storage_policy = HostStorage;
+    using element_type = mpreal;
+    using extents_type = stdex::dextents<index_type, 2>;
+    using borrowed_tensor_view_tag = void;
+
+    OwnerDefault const* owner;
+    mpreal* data;
+
+    auto mdspan() { return stdex::mdspan<mpreal, extents_type, stdex::layout_left>{data, extents_type{2, 3}}; }
+    auto mdspan() const
+    {
+      return stdex::mdspan<mpreal const, extents_type, stdex::layout_left>{data, extents_type{2, 3}};
+    }
+    auto extents() const { return extents_type{2, 3}; }
+    auto extent(std::size_t axis) const { return extents().extent(axis); }
+    static auto backend_selector() { return HostStorage::backend_selector(); }
+    std::optional<Precision> default_precision_if_set() const { return owner->value; }
+};
+} // namespace
+
+TEST(BlockTensorPermuteTest, PermutedViewsBindPrecisionOnlyToObjectsThatOutliveThem)
+{
+  auto const p = Precision::bits(128);
+  OwnerDefault owner{p};
+  std::vector<mpreal> payload(6, mpreal(0, p));
+  ParentBackedBlock block{&owner, payload.data()};
+  ASSERT_EQ(block.default_precision_if_set(), p);
+
+  // A tensor lvalue outlives the view that borrows it, so the view reads its default.
+  auto lvalue_view = uni20::permute<1, 0>(block);
+  EXPECT_EQ(lvalue_view.default_precision_if_set(), p);
+
+  // A borrowed temporary and the by-value block of a BlockTensor permutation
+  // die before the view, so their addresses are not bound and no default is reported.
+  auto temporary_view = uni20::permute<1, 0>(ParentBackedBlock{&owner, payload.data()});
+  EXPECT_FALSE(temporary_view.default_precision_if_set().has_value());
+  auto block_view = detail::permute_block<std::array<std::size_t, 2>{1, 0}>(block);
+  EXPECT_FALSE(block_view.default_precision_if_set().has_value());
+  auto read_only_view = detail::make_read_only_block_view(block);
+  EXPECT_FALSE(read_only_view.default_precision_if_set().has_value());
+}
+#endif

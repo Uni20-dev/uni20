@@ -103,6 +103,9 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span>
 [[nodiscard]] bool has_canonical_contiguous_mapping(Span const& span)
 {
   auto const logical_size = checked_element_count(span.extents());
+  // An empty index space has no elements to place or order. Test it before
+  // is_exhaustive(), which can be false for empty strided mappings (LWG 4266).
+  if (logical_size == 0) return true;
   if constexpr (requires { span.mapping().is_unique(); })
     if (!span.mapping().is_unique()) return false;
   if constexpr (requires { span.mapping().is_exhaustive(); })
@@ -114,8 +117,8 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span>
       return false;
   }
 
-  // An empty or scalar index space has no observable traversal-order distinction.
-  if (logical_size <= 1) return true;
+  // A scalar index space has no observable traversal-order distinction.
+  if (logical_size == 1) return true;
 
   if constexpr (std::same_as<LayoutPolicy, stdex::layout_left>)
     return has_column_major_contiguous_mapping(span);

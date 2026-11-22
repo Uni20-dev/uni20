@@ -68,14 +68,11 @@ void check_reduction_extents(Reference const& reference, Others const&... others
   if constexpr (sizeof...(Others) > 0)
   {
     constexpr std::size_t rank = std::remove_cvref_t<Reference>::rank();
-    if constexpr (rank > 0)
-    {
-      auto check_one = [&](auto const& other) {
-        for (std::size_t axis = 0; axis < rank; ++axis)
-          CHECK_EQUAL(reference.extent(axis), other.extent(axis));
-      };
-      (check_one(others), ...);
-    }
+    auto check_one = [&](auto const& other) {
+      for (std::size_t axis = 0; axis < rank; ++axis)
+        CHECK_EQUAL(reference.extent(axis), other.extent(axis));
+    };
+    (check_one(others), ...);
   }
 }
 
