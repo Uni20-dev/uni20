@@ -275,15 +275,23 @@ options.signal_number = SIGUSR1; // Linux/POSIX use only
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
-The service owns a background thread. It writes best-effort DOT files when a request
-file appears, when the configured signal is received, or when program code calls
-`request_graphviz_dump()`. On Linux the service installs a handler for the signal
-that only records it, and the service thread writes the DOT file at its next poll,
-so no diagnostics run inside the handler. The signal may arrive on any thread, so the
-service can start at any point, including after worker threads exist. The service
-thread unblocks the signal for itself, so a program started with the signal blocked
-still receives it, and it writes a dump that its signal or request file asked for with
-its own output options, rather than leaving it to a scheduler progress point.
+The service owns a background thread. At each poll it checks for a signal request
+or a request file and writes a best-effort DOT dump with the service's output
+options if either is present. It also services queued `request_graphviz_dump()` calls.
+
+On Linux the service installs a process-wide signal handler, so it can start
+after worker threads already exist. For a signal sent to the process (for
+example, `kill -USR1 <pid>`), the kernel chooses a thread that has the signal
+unblocked. The handler only increments a lock-free counter. If it interrupts a
+system call on that thread, `SA_RESTART` restarts some calls automatically.
+Calls such as `poll()` and `select()` can still return `-1` with `errno` set
+to `EINTR`.
+
+To confine delivery to the diagnostics thread, block the configured signal with
+`pthread_sigmask()` in the main thread before creating other threads. New threads
+inherit that mask, and the diagnostics thread explicitly unblocks the signal for
+itself. Any existing thread that also needs to block the signal must update its
+own mask.
 
 The signal must be `SIGUSR1` or `SIGUSR2`, the two signals POSIX reserves for
 applications, and `start_diagnostics_service()` returns false for any other. The
