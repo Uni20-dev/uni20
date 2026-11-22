@@ -25,22 +25,23 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_test(
     NAME TaskRegistryDebugTest.SignalEnvironmentStartsDiagnosticsServiceAtStartup
     COMMAND
-      ${CMAKE_COMMAND} -E env
+      ${CMAKE_COMMAND} -E env --unset=UNI20_DEBUG_DAG_REQUEST_FILE
       UNI20_DEBUG_DAG_SIGNAL=SIGUSR1
       UNI20_DEBUG_DAG_POLL_MS=10
       UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_signal_startup
       UNI20_DEBUG_DAG_FILE_PREFIX=startup
       $<TARGET_FILE:uni20_task_registry_signal_startup_test>
   )
+  set(request_file "${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup/request")
   add_test(
     NAME TaskRegistryDebugTest.RequestFileEnvironmentStartsDiagnosticsServiceAtStartup
     COMMAND
-      ${CMAKE_COMMAND} -E env
-      UNI20_DEBUG_DAG_REQUEST_FILE=${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup/request
+      ${CMAKE_COMMAND} -E env --unset=UNI20_DEBUG_DAG_SIGNAL
+      "UNI20_DEBUG_DAG_REQUEST_FILE=${request_file}"
       UNI20_DEBUG_DAG_POLL_MS=10
       UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup
       UNI20_DEBUG_DAG_FILE_PREFIX=startup
-      $<TARGET_FILE:uni20_task_registry_signal_startup_test>
+      $<TARGET_FILE:uni20_task_registry_signal_startup_test> "${request_file}"
   )
 endif()
 

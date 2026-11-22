@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -38,23 +37,29 @@ void remove_graphviz_files(std::filesystem::path const& directory, std::string c
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
   using namespace std::chrono_literals;
 
+  if (argc > 2) return 1;
   auto const options = uni20::TaskRegistry::default_graphviz_dump_options();
   auto const output_dir = std::filesystem::path(options.output_dir);
   std::error_code ec;
   std::filesystem::create_directories(output_dir, ec);
   remove_graphviz_files(output_dir, options.file_prefix);
 
-  // With a request file in the environment the program asks through it, and otherwise with SIGUSR1.
-  if (auto const* request_file = std::getenv("UNI20_DEBUG_DAG_REQUEST_FILE"))
+  // The file-trigger CTest supplies its own request path. The signal CTest always sends SIGUSR1.
+  if (argc == 2)
   {
-    std::ofstream request(request_file);
-    if (!(request << "dump\n"))
+    std::filesystem::path const request_file(argv[1]);
+    if (std::filesystem::exists(request_file))
     {
-      std::perror(request_file);
+      auto const previous = std::filesystem::last_write_time(request_file);
+      std::filesystem::last_write_time(request_file, previous + 2s);
+    }
+    else if (!std::ofstream(request_file, std::ios::app))
+    {
+      std::perror(argv[1]);
       return 1;
     }
   }
