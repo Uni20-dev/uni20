@@ -272,8 +272,14 @@ options.dump_options.output_dir = "/tmp/uni20-dag";
 options.dump_options.file_prefix = "run";
 options.request_file = "/tmp/uni20-dag/request.%p"; // %p: this process's id
 options.signal_number = SIGUSR1; // Linux/POSIX use only
-uni20::TaskRegistry::start_diagnostics_service(options);
+bool const started_here = uni20::TaskRegistry::start_diagnostics_service(options);
+// Run the computation.
+if (started_here) uni20::TaskRegistry::stop_diagnostics_service();
 ```
+
+Only the call that starts the process-wide service returns `true`. If the
+environment or another caller already started it, a second start returns
+`false` even with identical options, and the original configuration stays active.
 
 The service owns a background thread. It writes best-effort DOT files when the
 request file's modification time changes, when the configured signal is received, or

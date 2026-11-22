@@ -945,6 +945,7 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceDumpsOnEachChangeOfTheRequestFile)
   options.poll_interval_ms = 10;
 
   ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
+  EXPECT_FALSE(TaskRegistry::start_diagnostics_service(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   EXPECT_EQ(count_dot_files(dir), 0u) << "a file that existed before the service started asked for a dump";
 
