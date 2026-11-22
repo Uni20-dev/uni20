@@ -6,6 +6,7 @@ add_library(uni20_linalg STATIC
 if(TARGET uni20_backend_cuda)
   target_sources(uni20_linalg PRIVATE
       backends/cuda/elementwise.cu
+      backends/cuda/reduction.cu
   )
   set_target_properties(uni20_linalg PROPERTIES
       CUDA_STANDARD 20

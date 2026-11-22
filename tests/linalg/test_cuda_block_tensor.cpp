@@ -350,6 +350,47 @@ TEST_F(CudaBlockTensorTest, ParallelPackedLinearOperationsDispatchFromSchedulerB
   }
 }
 
+TEST_F(CudaBlockTensorTest, PermutedViewReducesAgainstPackedTensor)
+{
+  using namespace uni20;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::cuda::ScopedDevice scoped_device(0);
+  Symmetry const sym{"N:U(1)"};
+  auto const q0 = QNum::identity(sym);
+  auto const q1 = make_qnum(sym, {{"N", 1}});
+  BlockSpace const charged(sym, {{q0, 2}, {q1, 2}}, "charged");
+  BlockSpace const neutral(sym, {{q0, 2}}, "neutral");
+  using DomainType = Domain<BlockSpace, BlockSpace, BlockSpace, BlockSpace>;
+  using CodomainType = Codomain<BlockSpace, BlockSpace>;
+  using Host = BlockTensor<double, DomainType, CodomainType, host_storage>;
+  using Device = BlockTensor<double, DomainType, CodomainType, cuda_storage>;
+  Host host(sym, DomainType{charged, neutral, neutral, neutral}, CodomainType{charged, neutral});
+  for (std::size_t sector = 0; sector < 2; ++sector)
+  {
+    auto block = host.block(Host::key_type{{sector, 0, 0, 0, sector, 0}});
+    for (index_type a = 0; a < 2; ++a)
+      for (index_type b = 0; b < 2; ++b)
+        for (index_type c = 0; c < 2; ++c)
+          for (index_type d = 0; d < 2; ++d)
+            for (index_type e = 0; e < 2; ++e)
+              for (index_type f = 0; f < 2; ++f)
+                block[a, b, c, d, e, f] =
+                    static_cast<double>(1 + a + 2 * b + 3 * c + 5 * d + 7 * e + 11 * f + 13 * sector);
+  }
+  Device device(sym, host.domain(), host.codomain(), runtime.device_resources(0));
+  for (std::size_t ordinal = 0; ordinal < host.stored_block_count(); ++ordinal)
+    uni20::copy(device.block_by_ordinal(ordinal), host.block_by_ordinal(ordinal));
+
+  // The permuted view's blocks are strided in a different order from the
+  // packed tensor's, which cuBLAS cannot reduce.
+  auto view = permute<0, 3, 2, 1, 4, 5>(device);
+  Device reordered(sym, view.domain(), view.codomain(), runtime.device_resources(0));
+  uni20::copy(reordered, view);
+  double const sum_of_squares = uni20::inner_product_host(host, host);
+  EXPECT_DOUBLE_EQ(uni20::inner_product_host(view, reordered), sum_of_squares);
+  EXPECT_DOUBLE_EQ(uni20::norm_host(view), std::sqrt(sum_of_squares));
+}
+
 TEST_F(CudaBlockTensorTest, SixLegPermutationPreservesDenseAxesAndChargeSectors)
 {
   using namespace uni20;

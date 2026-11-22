@@ -43,6 +43,19 @@ one launch per outer index. The compiled executor is arity-generic and
 separates overwrite operations, which do not read the output, from update
 operations, which do.
 
+`reductions.hpp` and `reduction.cu` give `CudaReferenceBackend` full
+inner-product and Euclidean-norm reductions to a host scalar for `float`,
+`double`, `uni20::cfloat` and `uni20::cdouble`. They follow `CublasBackend` in
+the selector and take what it declines: non-contiguous operands, operands whose
+layouts differ, and element counts beyond cuBLAS's `int` range. The shared
+elementwise plan supplies each element's offsets, with host-loop slices beyond
+eight compact dimensions. Each launch writes one partial per block and a single
+block combines the partials in index order. The grid depends only on the element
+count, so results are bitwise reproducible for the same input, shape and kind of
+device. Products and squares accumulate in `double`; the norm keeps the
+reference BLAS `dnrm2` small, medium and large sums of squares, so no square
+overflows or underflows.
+
 Copy is the first one-input overwrite instantiation. `conjugate_inplace_op` is
 the first zero-input update instantiation: it reads and writes each output
 element through one exclusive CUDA access. Real and integer conjugation succeeds
