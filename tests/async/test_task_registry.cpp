@@ -923,6 +923,21 @@ namespace
 // earlier test that could take the signal in place of the service thread. A
 // probe returns 0 and explains a failure on stderr.
 
+class TaskRegistryDebugServiceDeathTest : public ::testing::Test {
+  protected:
+    void SetUp() override
+    {
+      // Re-exec the probe with no environment-started diagnostics worker.
+      signal_.unset();
+      request_file_.unset();
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+    }
+
+  private:
+    EnvVarGuard signal_{"UNI20_DEBUG_DAG_SIGNAL"};
+    EnvVarGuard request_file_{"UNI20_DEBUG_DAG_REQUEST_FILE"};
+};
+
 int probe_failed(char const* reason)
 {
   std::fprintf(stderr, "%s\n", reason);
@@ -1136,41 +1151,35 @@ int environment_signal_probe()
 }
 } // namespace
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceHandlesEitherSignal)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceHandlesEitherSignal)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR1)); }, ::testing::ExitedWithCode(0), "");
   EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR2)); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(signal_to_earlier_thread_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(signal_with_starter_blocking_it_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRestoresThePreviousSignalAction)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceRestoresThePreviousSignalAction)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(restores_previous_action_probe()); }, ::testing::ExitedWithCode(0), "");
   EXPECT_EXIT({ std::_Exit(stop_leaves_a_later_handler_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRefusesASignalTheProgramHandles)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceRefusesASignalTheProgramHandles)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(refuses_a_handled_signal_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRequestFileReachesEveryProcessWatchingIt)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceRequestFileReachesEveryProcessWatchingIt)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(request_file_reaches_every_process_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
@@ -1197,15 +1206,13 @@ TEST(TaskRegistryDebugTest, DiagnosticsServiceRequestFileNamesTheProcess)
   std::filesystem::remove_all(dir);
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceTakesASignalOncePerProcess)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceTakesASignalOncePerProcess)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(signal_taken_once_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
-TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalEnvironmentRefusesOtherSignals)
+TEST_F(TaskRegistryDebugServiceDeathTest, DiagnosticsServiceSignalEnvironmentRefusesOtherSignals)
 {
-  GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(environment_signal_probe()); }, ::testing::ExitedWithCode(0), "");
 }
 
