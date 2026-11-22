@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fmt/chrono.h>
 #include <fmt/core.h>
@@ -238,55 +239,14 @@ bool write_text_file(std::string const& path, std::string_view contents)
   return write_ok && close_ok;
 }
 
-// "%p" becomes this process's id and "%%" a single "%", so that one process
-// among several watching the same directory can be asked for a dump.
-std::filesystem::path resolve_request_file(std::string const& path)
+bool consume_request_file(std::string const& request_file)
 {
-  if (path.empty()) return {};
-  std::string expanded;
-  for (std::size_t i = 0; i < path.size(); ++i)
-  {
-    if (path[i] == '%' && i + 1 < path.size() && (path[i + 1] == 'p' || path[i + 1] == '%'))
-    {
-      expanded += path[i + 1] == 'p' ? std::to_string(current_process_id()) : std::string("%");
-      ++i;
-    }
-    else
-    {
-      expanded += path[i];
-    }
-  }
-  return std::filesystem::absolute(expanded);
+  if (request_file.empty()) return false;
+  std::error_code ec;
+  if (!std::filesystem::exists(request_file, ec) || ec) return false;
+  std::filesystem::remove(request_file, ec);
+  return true;
 }
-
-// The request file is never removed: each change of its modification time asks
-// every process watching it for a dump. The time when the service starts, or
-// the file's absence, is the starting point, so an old file asks for nothing.
-class RequestFileWatch {
-  public:
-    explicit RequestFileWatch(std::string const& path) : path_(resolve_request_file(path)), seen_(this->stamp()) {}
-
-    bool changed()
-    {
-      auto const now = this->stamp();
-      if (now == seen_) return false;
-      seen_ = now;
-      return now.has_value(); // removing the file asks for nothing
-    }
-
-  private:
-    std::optional<std::filesystem::file_time_type> stamp() const
-    {
-      if (path_.empty()) return std::nullopt;
-      std::error_code ec;
-      auto const time = std::filesystem::last_write_time(path_, ec);
-      if (ec) return std::nullopt;
-      return time;
-    }
-
-    std::filesystem::path path_;
-    std::optional<std::filesystem::file_time_type> seen_;
-};
 
 void ensure_output_dir(std::string const& output_dir)
 {
@@ -1666,10 +1626,10 @@ using signal_action = struct sigaction;
 void record_diagnostics_signal(int) noexcept { pending_signal_requests.fetch_add(1, std::memory_order_relaxed); }
 
 // The program's own handler, which the service must not replace. SIG_DFL and
-// SIG_IGN are dispositions rather than handlers.
+// SIG_IGN are dispositions rather than handlers, even when an action keeps
+// SA_SIGINFO set; on Linux sa_handler and sa_sigaction share storage.
 bool has_handler(signal_action const& action) noexcept
 {
-  if (action.sa_flags & SA_SIGINFO) return action.sa_sigaction != nullptr;
   return action.sa_handler != SIG_DFL && action.sa_handler != SIG_IGN;
 }
 
@@ -1684,11 +1644,8 @@ class DiagnosticServiceState {
     bool start(DiagnosticsServiceOptions options)
     {
       std::lock_guard lifecycle(lifecycle_);
-      if (thread_.joinable()) return false;
       if (options.signal_number != 0 && !is_diagnostics_signal(options.signal_number)) return false;
-
-      // Resolve the watch and sample its starting timestamp before taking a signal or launching the worker.
-      RequestFileWatch request(options.request_file);
+      if (thread_.joinable()) return true;
 
 #if defined(__linux__)
       // A handler rather than a blocked signal: the kernel may deliver a
@@ -1725,9 +1682,7 @@ class DiagnosticServiceState {
       }
       try
       {
-        thread_ = std::thread([this, options = std::move(options), request = std::move(request)]() mutable {
-          this->run(options, request);
-        });
+        thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
       }
       catch (...)
       {
@@ -1766,7 +1721,7 @@ class DiagnosticServiceState {
       signal_number_ = 0;
     }
 
-    void run(DiagnosticsServiceOptions const& options, RequestFileWatch& request)
+    void run(DiagnosticsServiceOptions options)
     {
 #if defined(__linux__)
       // This thread inherits its starter's signal mask. Unblocking the signal here
@@ -1791,7 +1746,7 @@ class DiagnosticServiceState {
         auto& registry = TaskRegistryImpl::instance();
         bool triggered =
             options.signal_number > 0 && pending_signal_requests.exchange(0, std::memory_order_relaxed) > 0;
-        if (request.changed()) triggered = true;
+        if (consume_request_file(options.request_file)) triggered = true;
         // Written here with the service's own options: through the shared
         // request counter, a scheduler progress point could take it first and
         // write it under the scheduler's directory instead.
@@ -1801,14 +1756,14 @@ class DiagnosticServiceState {
       }
     }
 
-    std::mutex lifecycle_; // start and stop: thread_, signal_taken_, signal_number_, previous_action_
+    std::mutex lifecycle_; // start and stop: thread_, signal_number_, signal_taken_, previous_action_
     std::mutex mutex_;     // stop_, with wake_
     std::condition_variable wake_;
     std::thread thread_{};
     bool stop_{false};
-    bool signal_taken_{false};
     int signal_number_{0};
 #if defined(__linux__)
+    bool signal_taken_{false};
     signal_action previous_action_{};
 #endif
 };
@@ -1826,31 +1781,35 @@ constinit bool environment_diagnostics_service_started = false;
 namespace uni20::detail
 {
 
-// Either variable starts the service, so that a request file can be used
-// without a signal and without code in the program.
 void initialize_task_registry_diagnostics_from_environment() noexcept
 {
   auto const* configured_signal = nonempty_env("UNI20_DEBUG_DAG_SIGNAL");
-  auto const* configured_file = nonempty_env("UNI20_DEBUG_DAG_REQUEST_FILE");
-  if (!configured_signal && !configured_file) return;
+  if (!configured_signal) return;
 
   try
   {
     auto options = default_diagnostics_service_options();
-    if (options.signal_number == 0 && options.request_file.empty()) return; // the signal switched off, and no file
-    if (diagnostic_service().start(std::move(options)))
+    if (options.signal_number == 0) return;
+
+    if (!diagnostic_service().start(std::move(options)))
     {
-      environment_diagnostics_service_started = true;
+      std::fprintf(stderr,
+                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: it takes SIGUSR1 or "
+                   "SIGUSR2, and not a signal the program already handles\n",
+                   configured_signal);
       return;
     }
+    environment_diagnostics_service_started = true;
+  }
+  catch (std::exception const& e)
+  {
+    std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: %s\n",
+                 configured_signal, e.what());
   }
   catch (...)
-  {}
-  std::fprintf(stderr,
-               "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s, "
-               "UNI20_DEBUG_DAG_REQUEST_FILE=%s; the signal must be SIGUSR1 or SIGUSR2, and not one the "
-               "program already handles\n",
-               configured_signal ? configured_signal : "(unset)", configured_file ? configured_file : "(unset)");
+  {
+    std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s\n", configured_signal);
+  }
 }
 
 void finalize_task_registry_diagnostics_from_environment() noexcept

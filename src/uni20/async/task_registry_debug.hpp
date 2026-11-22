@@ -81,10 +81,6 @@ class TaskRegistryDebug {
         /// The service does not take a signal the program already handles, and a
         /// process gives a signal to it once; it is not taken again after a stop.
         int signal_number{0};
-        /// File whose every change of modification time asks for a dump; empty for none.
-        /// A relative path is resolved against the working directory when the service starts.
-        /// The file is not removed, so each change reaches every process watching it.
-        /// `%p` in the path becomes the process id and `%%` a single `%`.
         std::string request_file{};
         int poll_interval_ms{250};
     };
@@ -256,17 +252,16 @@ class TaskRegistryDebug {
     /// \return true if at least one request was serviced.
     static bool service_debug_requests(GraphvizDumpOptions const& options);
     /// \brief Starts the optional background DAG diagnostics service.
-    /// \return true only if this call started the service.
+    /// \return true if a service was started or was already running.
     static bool start_diagnostics_service();
     /// \brief Starts the optional background DAG diagnostics service.
     /// \param options Signal/control-file and output configuration.
-    /// \return true only if this call started the service. An active service rejects
-    ///         every start, including one with identical options. A signal request also
-    ///         fails if the signal is unsupported, is already handled by the program,
-    ///         or a service has already taken a signal in this process.
+    /// \return true if a service was started or was already running; false if
+    ///         `options.signal_number` is not 0, `SIGUSR1` or `SIGUSR2`, if the program
+    ///         already has a handler for it, or if a service with a signal has already
+    ///         run in this process.
     static bool start_diagnostics_service(DiagnosticsServiceOptions const& options);
     /// \brief Stops the background DAG diagnostics service if it is running.
-    /// \details Pair this call with a start that returned true.
     static void stop_diagnostics_service() noexcept;
     /// \brief Prints global task-registry diagnostics.
     static void dump();
