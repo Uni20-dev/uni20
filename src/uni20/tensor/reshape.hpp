@@ -165,10 +165,6 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span, std::inte
   }
 }
 
-template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::integral... Extents>
-  requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
-[[nodiscard]] auto make_tensor_reshape_view(Tensor&& tensor, Extents... requested_extents);
-
 } // namespace detail
 
 /// \brief Return a no-copy mdspan reshape preserving a canonical source layout.
@@ -393,21 +389,19 @@ class IndirectReshapedTensorView {
 namespace detail
 {
 
-template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::integral... Extents>
-  requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
-[[nodiscard]] auto make_tensor_reshape_view(Tensor&& tensor, Extents... requested_extents)
+template <CanonicalReshapeLayout LayoutPolicy, StridedTensorView Tensor, std::integral... Extents>
+[[nodiscard]] auto make_tensor_reshape_view(Tensor& tensor, Extents... requested_extents)
 {
-  if constexpr (has_runtime_precision_v<tensor_element_t<Tensor>>)
+  if constexpr (!ImmediateTensorView<Tensor> || has_runtime_precision_v<tensor_element_t<Tensor>>)
   {
-    // Retain the parent so later default changes are visible without a metadata cache.
-    return IndirectReshapedTensorView<std::remove_reference_t<Tensor>, LayoutPolicy, Extents...>{tensor,
-                                                                                                 requested_extents...};
+    // Rebuild deferred metadata without acquiring storage, and follow runtime precision through the parent.
+    return IndirectReshapedTensorView<Tensor, LayoutPolicy, Extents...>{tensor, requested_extents...};
   }
   else
   {
-    auto span = make_reshape_view<LayoutPolicy>(tensor.mdspan(), requested_extents...);
+    auto span = make_reshape_view<LayoutPolicy>(mdspec_of(tensor), requested_extents...);
     using span_type = decltype(span);
-    using storage_policy = tensor_storage_policy_t<std::remove_cvref_t<Tensor>>;
+    using storage_policy = tensor_storage_policy_t<Tensor>;
     using selector_type = std::remove_cvref_t<decltype(tensor.backend_selector())>;
     return ReshapedTensor<span_type, storage_policy, selector_type>{std::move(span), tensor.backend_selector()};
   }
@@ -416,33 +410,31 @@ template <CanonicalReshapeLayout LayoutPolicy, ImmediateTensorView Tensor, std::
 } // namespace detail
 
 /// \brief Return a tensor-level no-copy reshape preserving a canonical source layout.
-/// \details Rvalue tensors are rejected because the returned descriptor does
-///          not extend the lifetime of addressable source storage. Runtime-precision
-///          views also retain a reference to the parent tensor to inherit its
-///          default, so that parent object must outlive the view.
-template <ImmediateTensorView Tensor, std::integral... Extents>
-  requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor> &&
-           detail::CanonicalReshapeLayout<typename immediate_tensor_mdspan_t<Tensor>::layout_type>)
+/// \details The view borrows storage from an lvalue. For deferred or runtime-precision
+///          tensors the parent object must also outlive the view.
+template <StridedTensorView Tensor, std::integral... Extents>
+  requires(std::is_lvalue_reference_v<Tensor &&> &&
+           detail::CanonicalReshapeLayout<typename tensor_mdspec_t<Tensor>::layout_type>)
 [[nodiscard]] auto reshape_view(Tensor&& tensor, Extents... requested_extents)
 {
-  using layout_type = typename immediate_tensor_mdspan_t<Tensor>::layout_type;
-  return detail::make_tensor_reshape_view<layout_type>(std::forward<Tensor>(tensor), requested_extents...);
+  using layout_type = typename tensor_mdspec_t<Tensor>::layout_type;
+  return detail::make_tensor_reshape_view<layout_type>(tensor, requested_extents...);
 }
 
 /// \brief Return a tensor-level no-copy column-major reshape of a strided source.
-template <ImmediateTensorView Tensor, std::integral... Extents>
-  requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
+template <StridedTensorView Tensor, std::integral... Extents>
+  requires std::is_lvalue_reference_v<Tensor&&>
 [[nodiscard]] auto reshape_view_left(Tensor&& tensor, Extents... requested_extents)
 {
-  return detail::make_tensor_reshape_view<stdex::layout_left>(std::forward<Tensor>(tensor), requested_extents...);
+  return detail::make_tensor_reshape_view<stdex::layout_left>(tensor, requested_extents...);
 }
 
 /// \brief Return a tensor-level no-copy row-major reshape of a strided source.
-template <ImmediateTensorView Tensor, std::integral... Extents>
-  requires(std::is_lvalue_reference_v<Tensor &&> && StridedImmediateTensorView<Tensor>)
+template <StridedTensorView Tensor, std::integral... Extents>
+  requires std::is_lvalue_reference_v<Tensor&&>
 [[nodiscard]] auto reshape_view_right(Tensor&& tensor, Extents... requested_extents)
 {
-  return detail::make_tensor_reshape_view<stdex::layout_right>(std::forward<Tensor>(tensor), requested_extents...);
+  return detail::make_tensor_reshape_view<stdex::layout_right>(tensor, requested_extents...);
 }
 
 /// \brief Change a canonical owning tensor's shape without reallocating storage.

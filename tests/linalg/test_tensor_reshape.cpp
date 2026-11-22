@@ -45,6 +45,8 @@ template <class Tensor>
 concept CanReshapeViewRvalue = requires(Tensor tensor) { uni20::reshape_view(std::move(tensor), 6); };
 
 static_assert(!CanReshapeViewRvalue<mutable_matrix>);
+static_assert(!CanReshapeViewRvalue<deferred_complex_matrix>);
+static_assert(!CanReshapeViewRvalue<deferred_complex_matrix const>);
 
 template <class Tensor>
 concept CanAutomaticallyReshapeView = requires(Tensor& tensor) { uni20::reshape_view(tensor, 6); };
@@ -212,6 +214,20 @@ TEST(TensorReshapeTest, ViewRejectsInvalidShapeAndNoncontiguousMapping)
   using tensor_type = uni20::StridedTensor<int, 2>;
   tensor_type noncontiguous(typename tensor_type::extents_type{2, 3}, std::array<uni20::index_type, 2>{4, 1});
   EXPECT_THROW(static_cast<void>(uni20::reshape_view_right(noncontiguous, 6)), std::runtime_error);
+}
+
+TEST(TensorReshapeTest, DeferredViewValidatesShapeAndOrderAtConstruction)
+{
+  ErrorModeGuard const error_mode;
+  uni20::test::DeferredHostTensor<double, 2> input(2, 3);
+  auto flat = uni20::reshape_view_left(input, -1);
+
+  static_assert(uni20::MutableTensorView<decltype(flat)>);
+  static_assert(!uni20::ImmediateTensorView<decltype(flat)>);
+  EXPECT_EQ(flat.extent(0), 6);
+  EXPECT_EQ(flat.mdspec().data_descriptor().storage, &input.storage());
+  EXPECT_THROW(static_cast<void>(uni20::reshape_view(input, 5)), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(uni20::reshape_view_right(input, 6)), std::runtime_error);
 }
 
 TEST(TensorReshapeTest, InplaceReshapeKeepsAllocationAndChangesDescriptor)
