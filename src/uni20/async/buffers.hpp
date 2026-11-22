@@ -636,7 +636,7 @@ template <typename T> class TakeAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_->resume();
-      return writer_->storage().take();
+      return writer_->take();
     }
 
     /// \brief Returns the epoch context used for exception propagation.
@@ -682,7 +682,7 @@ template <typename T> class TakeReleaseAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_->resume();
-      T value = writer_->storage().take();
+      T value = writer_->take();
       writer_->release();
       return value;
     }
@@ -725,7 +725,7 @@ template <typename T> class OwningStorageAccessProxy {
 
     /// \brief Move the stored value out of writer storage.
     /// \return Moved value.
-    T take() { return writer_.storage().take(); }
+    T take() { return writer_.take(); }
 
     /// \brief Move the stored value out and release the writer epoch.
     /// \return Moved value.
@@ -829,7 +829,7 @@ template <typename T> class OwningTakeAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_.resume();
-      T value = writer_.storage().take();
+      T value = writer_.take();
       writer_.release();
       return value;
     }
@@ -953,9 +953,10 @@ template <typename T> class WriteBuffer {
       return OwningWriteAccessProxy<T>(std::move(writer_));
     }
 
-    /// \brief Release the writer epoch held by this buffer.
+    /// \brief Retire this buffer as an exception sink and release its writer epoch.
     void release() noexcept
     {
+      this->unregister_exception_sink(false);
       this->invalidate_proxy_state();
       writer_.release();
     }
@@ -1162,7 +1163,7 @@ template <typename T> class WriteBuffer {
     }
 
     EpochContextWriter<T> writer_;
-    mutable TaskPromiseBase::ExceptionSinkNode exception_sink_{};
+    mutable TaskPromiseBase::ExceptionSinkNode exception_sink_{.requires_writer = true};
 #if UNI20_DEBUG_ASYNC_TASKS
     std::shared_ptr<WriteProxyLifetimeState> proxy_state_{std::make_shared<WriteProxyLifetimeState>()};
 #endif
@@ -1384,7 +1385,7 @@ template <typename T> class WriteAccessProxy {
     T take()
       requires(!is_async_alias_v<T>)
     {
-      return this->writer().storage().take();
+      return this->writer().take();
     }
 
     /// \brief Move out the value and release the writer epoch.
@@ -1625,7 +1626,7 @@ template <typename T> class OwningWriteAccessProxy {
     T take()
       requires(!is_async_alias_v<T>)
     {
-      return writer_.storage().take();
+      return writer_.take();
     }
 
     /// \brief Move out the value and release the writer epoch.

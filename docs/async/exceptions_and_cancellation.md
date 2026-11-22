@@ -39,6 +39,9 @@ Defined in `src/uni20/async/async_errors.hpp`.
 - awaiting an unconstructed writer still returns `WriteAccessProxy<T>`
 - requesting `get()`, `operator->`, or conversion to `T&` from that proxy: `buffer_write_uninitialized`
 - preferred fix: `co_await writer = value` (or proxy `emplace(...)`)
+- consuming a value through `take()`, `take_release()`, or `move_from_wait()`
+  rethrows the producer's exception before checking for a constructed value.
+  Empty storage with no producer failure raises `buffer_write_uninitialized`.
 
 ## Suspension Registration
 
@@ -84,7 +87,10 @@ At continuation/final-suspend boundaries, stored exceptions are forwarded to con
 `WriteBuffer` coroutine parameters are auto-registered as sinks.
 
 This covers the normal kernel pattern where output buffers should receive failures
-from the coroutine computing them.
+from the coroutine computing them. Explicitly releasing a writer ends exception
+delivery through that writer. A later failure still reaches the coroutine's
+remaining output writers. An output can also fail while waiting for an earlier
+epoch to finish. A successful predecessor preserves that failure.
 
 ### Explicit path
 

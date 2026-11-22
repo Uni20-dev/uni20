@@ -1,8 +1,10 @@
 #include "gtest/gtest.h"
+#include <functional>
 #include <uni20/async/async.hpp>
 #include <uni20/async/async_ops.hpp>
 #include <uni20/async/async_task.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <utility>
 
 using namespace uni20::async;
 
@@ -234,6 +236,40 @@ TEST(AsyncOpsTest, BinaryOperationPropagatesFailureWhenTheOutputIsAnInput)
   });
   EXPECT_THROW((void)value.get_wait(), std::runtime_error);
   EXPECT_FALSE(called);
+}
+
+TEST(AsyncOpsTest, BinaryCallbackFailureSurvivesSuccessfulInputOnOutputQueue)
+{
+  struct CallbackFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  async_binary_op(value, value, 1, [](int, int) -> int { throw CallbackFailure{}; });
+  EXPECT_THROW((void)value.get_wait(), CallbackFailure);
+}
+
+TEST(AsyncOpsTest, BinaryResultIsConvertedBeforeReleasingInputs)
+{
+  using Pair = std::pair<int, int>;
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<Pair> value(Pair{1, 2});
+  async_binary_op(value, value, 0,
+                  [](Pair const& pair, int) { return std::pair{std::cref(pair.second), std::cref(pair.first)}; });
+  EXPECT_EQ(value.get_wait(), (Pair{2, 1}));
+}
+
+TEST(AsyncOpsTest, BinaryResultCanBeConstructedWhenItHasNoMoveAssignment)
+{
+  using Result = async_test_types::AssignmentAware;
+  static_assert(!std::is_move_assignable_v<Result>);
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> input = 2;
+  Async<Result> output;
+  async_binary_op(output, input, 3, std::plus<>{});
+  EXPECT_EQ(output.get_wait().value, 5);
 }
 
 TEST(AsyncOpsTest, CompoundOperationRejectsRhsQueueAliasAtSubmission)

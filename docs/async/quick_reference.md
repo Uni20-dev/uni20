@@ -156,8 +156,8 @@ Explicit alternatives:
 | Helper | Typical use |
 |---|---|
 | `async_assign(dst, src)` | copy-like value propagation |
-| `async_move(dst, src)` | move-like value transfer |
-| `async_binary_op(out, a, b, op)` | Read both operands before writing the result. An ordinary owning output may also be an input. |
+| `async_move(dst, src)` | For an owning destination, convert an immediate source before enrolling the writer. An async source enrolls its own writer first. |
+| `async_binary_op(out, a, b, op)` | Construct the output's `value_type` while both inputs are readable, then write it. An ordinary owning output may also be an input. |
 | `async_compound_op(lhs, rhs, op)` | Update in place using a writer for `lhs` and a distinct reader or immediate value for `rhs`. |
 
 Helper awaiters:

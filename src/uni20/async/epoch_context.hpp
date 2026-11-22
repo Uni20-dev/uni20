@@ -268,7 +268,8 @@ class EpochContext {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start", this, counter_);
       DEBUG_CHECK(phase_ == Phase::Pending, this);
-      eptr_ = eptr;
+      // A task may already have failed while waiting for this epoch to start.
+      if (eptr) eptr_ = std::move(eptr);
       this->advance_start_locked(std::move(lock));
     }
 
@@ -373,7 +374,7 @@ class EpochContext {
     // Writer interface
     // internal private used only by EpochContextWriter<T>
     template <typename T> friend class EpochContextWriter;
-    friend void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept;
+    friend void propagate_unhandled_buffer_exception(EpochContext*, std::exception_ptr, bool) noexcept;
 
     /// \brief Acquire the writer role for this epoch.
     /// \pre phase_ <= Phase::Started
@@ -456,10 +457,21 @@ class EpochContext {
       writer_ready_waiters_.push_back(std::move(notify));
     }
 
-    void writer_set_exception(std::exception_ptr e) noexcept
+    /// \brief Read the failure of the value currently held by the active writer.
+    std::exception_ptr writer_exception() const noexcept
+    {
+      std::lock_guard lock(mtx_);
+      DEBUG_PRECONDITION(phase_ == Phase::Writing && writer_active_);
+      return eptr_;
+    }
+
+    void writer_set_exception(std::exception_ptr e, bool requires_writer = true) noexcept
     {
       std::lock_guard lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception", this, counter_);
+      // A proxy can explicitly release a writer while the parameter that registered
+      // the sink still exists. Explicit read sinks can receive failures in Reading.
+      if (requires_writer && writer_sink_retired_) return;
       DEBUG_CHECK(phase_ <= Phase::Reading);
       if (!eptr_) eptr_ = e;
     }
@@ -497,7 +509,7 @@ class EpochContext {
     /// \note This is called when a currently running coroutine releases a write buffer
     /// \pre We must be in the Writing phase here (otherwise we would not have an active coroutine).
     /// \return true if this call released the final writer.
-    bool writer_release_active() noexcept
+    bool writer_release_active(bool retire_sink) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);
@@ -510,6 +522,7 @@ class EpochContext {
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {
+        writer_sink_retired_ = retire_sink;
         this->advance_reading_locked(std::move(lock));
         return true;
       }
@@ -761,6 +774,7 @@ class EpochContext {
     std::vector<TaskState> writer_tasks_;
     std::vector<std::function<void()>> writer_ready_waiters_;
     bool writer_active_{false};
+    bool writer_sink_retired_{false};
 
     // Reader interface
     int num_readers_{0};
@@ -833,10 +847,11 @@ class EpochContext {
     // }
 };
 
-inline void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept
+inline void propagate_unhandled_buffer_exception(EpochContext* epoch, std::exception_ptr eptr,
+                                                 bool requires_writer) noexcept
 {
   if (!epoch || !eptr) return;
-  epoch->writer_set_exception(std::move(eptr));
+  epoch->writer_set_exception(std::move(eptr), requires_writer);
 }
 
 constexpr std::string_view format_as(uni20::async::EpochContext::Phase p)
@@ -1093,8 +1108,9 @@ template <typename T> class EpochContextWriter {
       return *this;
     }
 
-    /// \brief Destructor releasing any held writer epoch.
-    ~EpochContextWriter() { this->release(); }
+    /// \brief Release the writer on destruction.
+    /// \note A proxy can unwind before its registered coroutine parameter receives an exception.
+    ~EpochContextWriter() { this->release(false); }
 
 #if UNI20_DEBUG_DAG
     /// \brief Get the debug node pointer of the object
@@ -1173,6 +1189,14 @@ template <typename T> class EpochContextWriter {
       }
     }
 
+    /// \brief Consume the current value under the writer gate, propagating a failed producer.
+    T take()
+    {
+      this->rethrow_producer_failure();
+      if (!storage_.constructed()) throw buffer_write_uninitialized{};
+      return storage_.take();
+    }
+
     shared_storage<T>& storage() { return storage_; }
 
     void set_exception(std::exception_ptr e) const noexcept { epoch_->writer_set_exception(e); }
@@ -1183,14 +1207,19 @@ template <typename T> class EpochContextWriter {
     /// \return true if the epoch reports initialized storage.
     bool value_is_initialized() const noexcept { return storage_.constructed(); }
 
-    /// \brief Wait for the epoch to become available, and then return a prvalue-reference to the value.
     /// \brief Finalize this write gate, if not already done.
-    void release() noexcept
+    void release() noexcept { this->release(true); }
+
+    /// \brief Wait for the epoch to become available and move from the current value.
+    T&& move_from_wait();
+
+  private:
+    void release(bool retire_sink) noexcept
     {
       if (epoch_)
       {
         if (acquired_)
-          epoch_->writer_release_active();
+          epoch_->writer_release_active(retire_sink);
         else
           epoch_->writer_cancel(); // releasing without ever
         epoch_.reset();
@@ -1198,10 +1227,11 @@ template <typename T> class EpochContextWriter {
       }
     }
 
-    /// \brief Wait for the epoch to become available, and then return a prvalue-reference to the value.
-    T&& move_from_wait();
+    void rethrow_producer_failure() const
+    {
+      if (auto failure = epoch_->writer_exception()) std::rethrow_exception(failure);
+    }
 
-  private:
     mutable shared_storage<T> storage_;
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
