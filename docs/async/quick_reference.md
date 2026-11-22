@@ -274,7 +274,9 @@ signal:
 uni20::TaskRegistry::DiagnosticsServiceOptions options;
 options.request_file = "/tmp/uni20-dag/request";
 options.signal_number = SIGUSR1;
-uni20::TaskRegistry::start_diagnostics_service(options);
+bool const started_here = uni20::TaskRegistry::start_diagnostics_service(options);
+// At shutdown, after the computation.
+if (started_here) uni20::TaskRegistry::stop_diagnostics_service();
 ```
 
 Each `touch /tmp/uni20-dag/request` asks every process watching that file for a

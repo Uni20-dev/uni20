@@ -1684,8 +1684,8 @@ class DiagnosticServiceState {
     bool start(DiagnosticsServiceOptions options)
     {
       std::lock_guard lifecycle(lifecycle_);
+      if (thread_.joinable()) return false;
       if (options.signal_number != 0 && !is_diagnostics_signal(options.signal_number)) return false;
-      if (thread_.joinable()) return true;
 
       // Resolve the watch and sample its starting timestamp before taking a signal or launching the worker.
       RequestFileWatch request(options.request_file);
