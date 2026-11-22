@@ -1675,6 +1675,7 @@ class DiagnosticServiceState {
       if (options.signal_number > 0) return false;
 #endif
 
+      start_pid_.store(current_process_id(), std::memory_order_relaxed);
       signal_number_ = options.signal_number;
       {
         std::lock_guard lock(mutex_);
@@ -1694,6 +1695,9 @@ class DiagnosticServiceState {
 
     void stop() noexcept
     {
+      // After fork(), the child has a copy of the locks and no service thread.
+      if (start_pid_.load(std::memory_order_relaxed) != current_process_id()) return;
+
       // Held through the join and the restoration, so that a concurrent start()
       // cannot reset the stopping thread's flag.
       std::lock_guard lifecycle(lifecycle_);
@@ -1756,6 +1760,8 @@ class DiagnosticServiceState {
       }
     }
 
+    std::atomic<long> start_pid_{-1};
+    static_assert(decltype(start_pid_)::is_always_lock_free);
     std::mutex lifecycle_; // start and stop: thread_, signal_number_, signal_taken_, previous_action_
     std::mutex mutex_;     // stop_, with wake_
     std::condition_variable wake_;
@@ -1794,8 +1800,8 @@ void initialize_task_registry_diagnostics_from_environment() noexcept
     if (!diagnostic_service().start(std::move(options)))
     {
       std::fprintf(stderr,
-                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: it takes SIGUSR1 or "
-                   "SIGUSR2, and not a signal the program already handles\n",
+                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: reserve SIGUSR1 or "
+                   "SIGUSR2 for diagnostics with a default or ignored disposition\n",
                    configured_signal);
       return;
     }

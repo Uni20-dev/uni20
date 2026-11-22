@@ -278,7 +278,9 @@ options.signal_number = SIGUSR1;
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
-The signal must be `SIGUSR1` or `SIGUSR2`, and not one the program already handles.
+Reserve an unused `SIGUSR1` or `SIGUSR2` for diagnostics. Uni20 detects installed
+handlers. If your program consumes a signal through `sigwait()` or `signalfd()`,
+choose a different signal for diagnostics.
 
 Alternatively, setting `UNI20_DEBUG_DAG_SIGNAL=SIGUSR1` before launching the
 program starts the service during program initialization. Uni20's signal handler

@@ -296,10 +296,15 @@ own mask.
 The signal must be `SIGUSR1` or `SIGUSR2`, the two signals POSIX reserves for
 applications, and `start_diagnostics_service()` returns false for any other. The
 kernel raises a fault signal such as `SIGFPE` at the faulting instruction, which
-traps again as soon as a handler returns. The service also refuses a signal the
-program already handles, for example to checkpoint, so use the other one for
-diagnostics; an ignored signal or one with its default action can be taken. A
-program that installs its own handler after the service starts takes the signal
+traps again as soon as a handler returns. Reserve an unused signal for diagnostics.
+The service checks the disposition with `sigaction()` and refuses to replace an
+installed handler. A program can also receive a blocked signal through `sigwait()`
+or `signalfd()` while leaving its disposition at the default. Uni20 cannot detect
+those consumers. For example, if a checkpoint thread waits for `SIGUSR1`, reserve
+`SIGUSR2` for diagnostics if it is free. Sharing `SIGUSR1` would allow the
+diagnostics thread to receive a signal intended for checkpointing.
+
+A program that installs its own handler after the service starts takes the signal
 back, and stopping the service then leaves that handler in place.
 
 The service reads and changes the signal's action in separate steps, so install the
@@ -310,6 +315,11 @@ A process gives a signal to the service once: stopping the service restores the
 signal's previous action, and a later start with a signal returns false. A service
 without a signal can still be started again. Setting `UNI20_DEBUG_DAG_SIGNAL` starts
 the service during program initialization.
+
+After `fork()`, only the parent retains the diagnostics thread. The child's
+diagnostics finalizer skips shutdown of the inherited service. In the child of a
+multithreaded process, use only async-signal-safe operations until `exec()` or
+`_exit()`. See [fork(2)](https://man7.org/linux/man-pages/man2/fork.2.html).
 
 Default output and service settings can be configured with environment variables:
 
