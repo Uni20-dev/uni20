@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -219,13 +220,28 @@ class NodeInfo {
 
     /// \brief Returns type-specific display text for the current value.
     /// \return One-line value text, such as a scalar value or `shape=(...)`, when available.
+    ///         If formatting the value throws, such as a custom `uni20_async_debug_value`
+    ///         hook, the text says so instead. Diagnostics are best effort: a dump written by
+    ///         the diagnostics service or at a scheduler progress point must not end the
+    ///         program, and the rest of the dump is still useful.
     [[nodiscard]] std::string value_text() const
     {
       auto const state = this->value_state();
       if (state != NodeValueState::Constructed) return {};
       if (!value_text_observer_) return {};
       auto const* context = value_constructed_observer_ ? storage_address_ : fallback_value_address_;
-      return value_text_observer_(context);
+      try
+      {
+        return value_text_observer_(context);
+      }
+      catch (std::exception const& e)
+      {
+        return detail::sanitize_debug_value(std::string("(debug value threw: ") + e.what() + ")");
+      }
+      catch (...)
+      {
+        return "(debug value threw)";
+      }
     }
 
     /// \brief Returns a human-readable, demangled type name.
