@@ -3,7 +3,7 @@
 /**
  * \file reductions.hpp
  * \ingroup linalg
- * \brief Deterministic CUDA reference inner-product and Euclidean-norm reductions over strided operands.
+ * \brief Deterministic CUDA reference reductions over strided operands.
  */
 
 #include <uni20/backend/cuda/buffer.hpp>
@@ -129,33 +129,96 @@ reduce_lowered_plan(LoweredStridedElementwisePlan<OperandCount, reduction_maximu
   return result;
 }
 
-/// \brief Compute the Euclidean norm of `input` over a lowered plan of its mapping.
-/// \pre `plan` lowers `input.mapping()` and is not empty.
-template <class Scalar, class InputMdspec>
-[[nodiscard]] uni20::make_real_t<Scalar>
-reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan, InputMdspec const& input)
+/// \brief Reduce one strided CUDA buffer to a host partial.
+template <class Partial, class Scalar, class InputMdspec, class EnqueueSlice, class EnqueueCombine>
+[[nodiscard]] Partial reduce_unary_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan,
+                                        InputMdspec const& input, EnqueueSlice enqueue_slice,
+                                        EnqueueCombine enqueue_combine)
 {
   static_assert(RawCudaReductionMdspec<InputMdspec, Scalar>);
   using real_type = uni20::make_real_t<Scalar>;
   require_reduction_range(input);
   auto const& descriptor = input.data_descriptor();
   auto& resources = descriptor.buffer().resources();
-  auto workspace = make_reduction_workspace<NormPartial>(plan, resources);
+  auto workspace = make_reduction_workspace<Partial>(plan, resources);
   auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto access = descriptor.buffer().read_synchronized_with(stream);
   auto const* data = reinterpret_cast<real_type const*>(access.data() + descriptor.element_offset());
-  auto const partial = reduce_lowered_plan<NormPartial>(
+  auto const partial = reduce_lowered_plan<Partial>(
       plan, workspace, stream,
-      [&](auto const& kernel_plan, NormPartial* partials) {
-        enqueue_norm_partials<real_type, reduction_components<Scalar>>(data, kernel_plan, partials,
-                                                                       stream.native_handle(), stream.device());
+      [&](auto const& kernel_plan, Partial* partials) {
+        enqueue_slice(data, kernel_plan, partials, stream.native_handle(), stream.device());
       },
-      [&](NormPartial const* partials, std::size_t count, NormPartial* result) {
-        enqueue_norm_combine(partials, count, result, stream.native_handle(), stream.device());
+      [&](Partial const* partials, std::size_t count, Partial* result) {
+        enqueue_combine(partials, count, result, stream.native_handle(), stream.device());
       });
   access.release_after_synchronization();
+  return partial;
+}
+
+/// \brief Compute the Euclidean norm of `input` over a lowered plan of its mapping.
+/// \pre `plan` lowers `input.mapping()` and is not empty.
+template <class Scalar, class InputMdspec>
+[[nodiscard]] uni20::make_real_t<Scalar>
+reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan, InputMdspec const& input)
+{
+  using real_type = uni20::make_real_t<Scalar>;
+  auto const partial = reduce_unary_plan<NormPartial, Scalar>(
+      plan, input,
+      [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
+        enqueue_norm_partials<real_type, reduction_components<Scalar>>(data, kernel_plan, partials, stream, device);
+      },
+      enqueue_norm_combine);
   return static_cast<real_type>(finish_norm(partial));
+}
+
+template <class Scalar> [[nodiscard]] Scalar finish_sum(SumPartial partial)
+{
+  using real_type = uni20::make_real_t<Scalar>;
+  if constexpr (uni20::is_complex_v<Scalar>)
+    return Scalar(static_cast<real_type>(partial.real), static_cast<real_type>(partial.imag));
+  else
+    return static_cast<Scalar>(partial.real);
+}
+
+template <class Scalar, class InputMdspec> KernelAttempt try_reference_sum(Scalar& output, InputMdspec const& input)
+{
+  LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
+  if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
+          make_multi_iteration_plan(std::tuple{input.mapping()}), plan))
+    return KernelAttempt::unsupported_layout;
+  if (plan.element_count() == 0)
+  {
+    output = Scalar{};
+    return KernelAttempt::success;
+  }
+  auto const partial = reduce_unary_plan<SumPartial, Scalar>(
+      plan, input,
+      [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
+        enqueue_sum_partials<uni20::make_real_t<Scalar>, reduction_components<Scalar>>(data, kernel_plan, partials,
+                                                                                       stream, device);
+      },
+      enqueue_sum_combine);
+  output = finish_sum<Scalar>(partial);
+  return KernelAttempt::success;
+}
+
+template <class Scalar, class InputMdspec> KernelAttempt try_reference_maximum(Scalar& output, InputMdspec const& input)
+{
+  LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
+  if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
+          make_multi_iteration_plan(std::tuple{input.mapping()}), plan))
+    return KernelAttempt::unsupported_layout;
+  ERROR_IF(plan.element_count() == 0, "maximum requires a nonempty tensor");
+  auto const partial = reduce_unary_plan<MaximumPartial, Scalar>(
+      plan, input,
+      [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
+        enqueue_maximum_partials(data, kernel_plan, partials, stream, device);
+      },
+      enqueue_maximum_combine);
+  output = static_cast<Scalar>(partial.value);
+  return KernelAttempt::success;
 }
 
 /// \brief Compute a Euclidean norm over any positive-strided layout.
@@ -187,28 +250,25 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   require_reduction_range(rhs);
 
   auto& resources = lhs_descriptor.buffer().resources();
-  auto workspace = make_reduction_workspace<InnerProductPartial>(plan, resources);
+  auto workspace = make_reduction_workspace<SumPartial>(plan, resources);
   auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto lhs_access = lhs_descriptor.buffer().read_synchronized_with(stream);
   auto rhs_access = rhs_descriptor.buffer().read_synchronized_with(stream);
   auto const* lhs_data = reinterpret_cast<real_type const*>(lhs_access.data() + lhs_descriptor.element_offset());
   auto const* rhs_data = reinterpret_cast<real_type const*>(rhs_access.data() + rhs_descriptor.element_offset());
-  auto const partial = reduce_lowered_plan<InnerProductPartial>(
+  auto const partial = reduce_lowered_plan<SumPartial>(
       plan, workspace, stream,
-      [&](auto const& kernel_plan, InnerProductPartial* partials) {
+      [&](auto const& kernel_plan, SumPartial* partials) {
         enqueue_inner_product_partials<real_type, reduction_components<Scalar>>(
             lhs_data, rhs_data, kernel_plan, partials, stream.native_handle(), stream.device());
       },
-      [&](InnerProductPartial const* partials, std::size_t count, InnerProductPartial* result) {
-        enqueue_inner_product_combine(partials, count, result, stream.native_handle(), stream.device());
+      [&](SumPartial const* partials, std::size_t count, SumPartial* result) {
+        enqueue_sum_combine(partials, count, result, stream.native_handle(), stream.device());
       });
   lhs_access.release_after_synchronization();
   rhs_access.release_after_synchronization();
-  if constexpr (uni20::is_complex_v<Scalar>)
-    return Scalar(static_cast<real_type>(partial.real), static_cast<real_type>(partial.imag));
-  else
-    return static_cast<Scalar>(partial.real);
+  return finish_sum<Scalar>(partial);
 }
 
 /// \brief Compute `sum(conj(lhs) * rhs)` over any positive-strided layouts.
@@ -296,6 +356,36 @@ KernelAttempt try_kernel(CudaReferenceBackend, norm_op const&, Output& output, I
 {
   using scalar_type = typename std::remove_cvref_t<InputMdspec>::value_type;
   return detail::cuda_reference::try_reference_norm<scalar_type>(output, input);
+}
+
+/// \brief Report eligibility for a full CUDA sum returning a host scalar.
+template <class Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input, std::size_t Rank>
+consteval auto kernel_accepts_types(CudaReferenceBackend const&, sum_reduction_op<Rank, Rank> const&, Scalar&, Input&)
+{
+  return kernel_types_maybe;
+}
+
+/// \brief Return a strided CUDA sum as a host scalar.
+template <class Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input, std::size_t Rank>
+KernelAttempt try_kernel(CudaReferenceBackend, sum_reduction_op<Rank, Rank> const& operation, Scalar& output,
+                         Input& input)
+{
+  CHECK(reduction_axes_are_valid(operation.axes));
+  return detail::cuda_reference::try_reference_sum(output, input);
+}
+
+/// \brief Report eligibility for a signed CUDA maximum returning a host scalar.
+template <uni20::Real Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input>
+consteval auto kernel_accepts_types(CudaReferenceBackend const&, maximum_op const&, Scalar&, Input&)
+{
+  return kernel_types_maybe;
+}
+
+/// \brief Return the largest real entry of a strided CUDA buffer.
+template <uni20::Real Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input>
+KernelAttempt try_kernel(CudaReferenceBackend, maximum_op const&, Scalar& output, Input& input)
+{
+  return detail::cuda_reference::try_reference_maximum(output, input);
 }
 
 } // namespace uni20::linalg

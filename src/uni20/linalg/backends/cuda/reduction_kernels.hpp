@@ -59,12 +59,24 @@ struct NormPartial
     double big;
 };
 
-/// \brief Partial inner-product state, accumulated in `double`.
-struct InnerProductPartial
+/// \brief Partial real or complex sum, accumulated in `double`.
+struct SumPartial
 {
     double real;
     double imag;
 };
+
+/// \brief Partial signed maximum of real elements.
+struct MaximumPartial
+{
+    double value;
+};
+
+[[nodiscard]] UNI20_HOST_DEVICE constexpr MaximumPartial combine(MaximumPartial lhs, MaximumPartial rhs) noexcept
+{
+  if (rhs.value != rhs.value || lhs.value < rhs.value) return rhs;
+  return lhs;
+}
 
 inline constexpr double norm_small_threshold = 0x1p-511;
 inline constexpr double norm_big_threshold = 0x1p486;
@@ -97,11 +109,10 @@ UNI20_HOST_DEVICE constexpr void accumulate_norm(NormPartial& partial, double ma
   return NormPartial{lhs.small + rhs.small, lhs.medium + rhs.medium, lhs.big + rhs.big};
 }
 
-/// \brief Combine two inner-product partials.
-[[nodiscard]] UNI20_HOST_DEVICE constexpr InnerProductPartial combine(InnerProductPartial const& lhs,
-                                                                      InnerProductPartial const& rhs) noexcept
+/// \brief Combine two additive partials.
+[[nodiscard]] UNI20_HOST_DEVICE constexpr SumPartial combine(SumPartial const& lhs, SumPartial const& rhs) noexcept
 {
-  return InnerProductPartial{lhs.real + rhs.real, lhs.imag + rhs.imag};
+  return SumPartial{lhs.real + rhs.real, lhs.imag + rhs.imag};
 }
 
 /// \brief Return the Euclidean norm described by a fully combined partial.
@@ -152,16 +163,29 @@ void enqueue_norm_partials(Real const* input, Plan const& plan, NormPartial* par
 void enqueue_norm_combine(NormPartial const* partials, std::size_t count, NormPartial* result, cudaStream_t stream,
                           int device);
 
+/// \brief Write one additive partial per block for a full sum.
+template <class Real, std::size_t Components, class Plan>
+void enqueue_sum_partials(Real const* input, Plan const& plan, SumPartial* partials, cudaStream_t stream, int device);
+
+/// \brief Write one signed-maximum partial per block.
+template <class Real, class Plan>
+void enqueue_maximum_partials(Real const* input, Plan const& plan, MaximumPartial* partials, cudaStream_t stream,
+                              int device);
+
+/// \brief Combine additive partials in a fixed order.
+void enqueue_sum_combine(SumPartial const* partials, std::size_t count, SumPartial* result, cudaStream_t stream,
+                         int device);
+
+/// \brief Combine signed-maximum partials in a fixed order.
+void enqueue_maximum_combine(MaximumPartial const* partials, std::size_t count, MaximumPartial* result,
+                             cudaStream_t stream, int device);
+
 /// \brief Write one inner-product partial per block for one launch over `plan`.
 /// \details Accumulates `conj(lhs) * rhs` with the left operand at plan
 ///          operand 0 and the right at operand 1.
 /// \tparam Plan `ReductionPlan32<2>` or `ReductionPlan64<2>`.
 template <class Real, std::size_t Components, class Plan>
-void enqueue_inner_product_partials(Real const* lhs, Real const* rhs, Plan const& plan, InnerProductPartial* partials,
+void enqueue_inner_product_partials(Real const* lhs, Real const* rhs, Plan const& plan, SumPartial* partials,
                                     cudaStream_t stream, int device);
-
-/// \brief Combine `count` inner-product partials into `result[0]` in a fixed order.
-void enqueue_inner_product_combine(InnerProductPartial const* partials, std::size_t count, InnerProductPartial* result,
-                                   cudaStream_t stream, int device);
 
 } // namespace uni20::linalg::detail::cuda_reference

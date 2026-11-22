@@ -9,10 +9,11 @@
 #include "access.hpp"
 #include "basic_tensor.hpp"
 #include "conjugate.hpp"
+#include "diagonal.hpp"
 #include "generated.hpp"
 #include "mdspec_tensor_view.hpp"
-#include "permute.hpp"
 #include "output.hpp"
+#include "permute.hpp"
 #include "precision.hpp"
 #include "reshape.hpp"
 

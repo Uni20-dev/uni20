@@ -304,6 +304,21 @@ template <TensorView InputTensor>
   return sum_host(selector, input);
 }
 
+/// \brief Return the largest real tensor entry as a host scalar.
+/// \details The signed order is used for negative entries. A NaN propagates.
+/// \pre The tensor is nonempty.
+template <TensorView InputTensor>
+  requires Real<tensor_element_t<InputTensor>>
+[[nodiscard]] auto maximum_host(InputTensor const& input) -> tensor_element_t<InputTensor>
+{
+  tensor_element_t<InputTensor> result{};
+  auto operation = linalg::maximum_op{};
+  auto selector = linalg::select_backend(operation, input);
+  auto descriptor = mdspec_of(input);
+  linalg::dispatch_kernel(selector, operation, result, descriptor);
+  return result;
+}
+
 /// \brief Compute an mdspan inner product into a rank-zero output.
 /// \details The operation is conjugate-linear in `lhs` and linear in `rhs`.
 /// \pre All input extents agree and output does not overlap an input.

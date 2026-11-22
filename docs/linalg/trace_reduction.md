@@ -1,25 +1,29 @@
 # Trace As A Dense Reduction Primitive
 
-Status: general one-or-more-axis CPU sum reduction is implemented; synthetic
-diagonal views and trace front ends remain design work.
+`diagonal_view<A, B, ...>(tensor)` ties each pair of axes together without
+copying elements. Each pair must have equal extents. Unpaired axes keep
+their original order, followed by one independent index per pair in the
+specified order.
 
-## Summary
+```cpp
+auto matrix_trace = uni20::sum_host(uni20::diagonal_view<0, 1>(matrix));
+auto torus_trace = uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(tensor));
 
-For a generic dense tensor, trace should be implemented as:
-
-```text
-synthetic diagonal view
-  -> reduction over the diagonal axis
+// Trace two axes of a rank-three host tensor, keeping the third axis.
+auto diagonal = uni20::diagonal_view<0, 1>(host_rank3);
+auto partial_trace = uni20::sum(diagonal, 1);
 ```
 
-It should not be treated as a special high-level tensor operation in the dense backend.
+The first two calls work on host tensors and on positive-strided CUDA tensors
+with the default CUDA pointer accessor. The CUDA reduction reads the diagonal
+elements in place and transfers only its result. The partial-trace example
+uses the CPU axis-reduction backend.
 
-This note is about dense tensor data. Symmetric tensors may expose a trace-like operation, but that operation should first lower through sector/block logic and then call dense primitives on the relevant blocks.
-
-Full-reduction result residency is a separate front-end decision. See
-[Scalar Tensors, Host Scalars, and Storage Transfer](../tensor/scalar_tensors_and_transfer.md)
-for the distinction between a rank-zero Tensor result and an ordinary host
-scalar.
+A diagonal view borrows its tensor and retains the source accessor, placement,
+and backend selector. A mutable source supports write-through access on its
+diagonal. A const source produces a read-only view. This is a dense tensor
+primitive. A block-sparse trace must apply the sector and leg rules before
+reducing its dense blocks.
 
 ## Dense Trace Model
 
@@ -65,21 +69,11 @@ This motivates two important dense tensor primitives:
 - arbitrary or synthetic strided views;
 - reduction over one or more axes.
 
-With those primitives, matrix diagonal, vector sum, tensor trace, partial trace, and many related operations are all special cases of the same mechanism.
-
-The implemented `sum_reduction_op<R, N>` and CPU reference executor provide the
-second primitive for ordinary tensor axes. The executor preserves logical
-surviving-axis order, traverses canonical input and output layouts in their
-natural physical order, and respects non-default accessors. Trace still needs
-the first primitive: a synthetic diagonal view whose accessor/mapping combines
-the traced strides before invoking the same reduction machinery.
-
-For example:
-
-- diagonal of a matrix: synthetic diagonal view, no reduction;
-- trace of a matrix: synthetic diagonal view, reduce the diagonal axis;
-- trace of an n-leg tensor: synthetic diagonal view, reduce the diagonal axis, keep the surviving axes;
-- sum of vector elements: ordinary one-axis reduction.
+The CPU axis-reduction backend preserves logical surviving-axis order and
+respects the source accessor. The CUDA full-reduction backend lowers the
+diagonal strides through the same iteration planner as other strided
+reductions. Diagonal and survivor strides can interleave, so the view uses
+a mapping that supports these strides directly.
 
 ## Layout Optimization
 

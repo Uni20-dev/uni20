@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -28,6 +29,57 @@ class ErrorModeGuard {
   private:
     bool previous_;
 };
+
+TEST(TensorReductionTest, MaximumUsesSignedOrderAndPropagatesNaN)
+{
+  ErrorModeGuard const error_mode;
+  uni20::RowMajorTensor<double, 2> input(2, 2);
+  input[0, 0] = -10.0;
+  input[0, 1] = -2.0;
+  input[1, 0] = -1.0;
+  input[1, 1] = -5.0;
+  EXPECT_EQ(uni20::maximum_host(input), -1.0);
+  input[0, 0] = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_TRUE(std::isnan(uni20::maximum_host(input)));
+  EXPECT_THROW(static_cast<void>(uni20::maximum_host(uni20::Tensor<double, 1>(0))), std::runtime_error);
+}
+
+TEST(TensorReductionTest, DiagonalViewPreservesSurvivorOrderAndInterleavedStrides)
+{
+  uni20::Tensor<double, 3> input(2, 2, 3);
+  for (uni20::index_type layer = 0; layer < 3; ++layer)
+  {
+    input[0, 0, layer] = 10.0 * layer + 1.0;
+    input[1, 1, layer] = 10.0 * layer + 2.0;
+  }
+
+  auto view = uni20::diagonal_view<0, 1>(input);
+  ASSERT_EQ(view.extent(0), 3);
+  ASSERT_EQ(view.extent(1), 2);
+  EXPECT_EQ(view.stride(0), 4);
+  EXPECT_EQ(view.stride(1), 3);
+  EXPECT_EQ(view.mdspec().mapping().required_span_size(), 12);
+
+  view[2, 1] = 42.0;
+  EXPECT_EQ((input[1, 1, 2]), 42.0);
+  auto reduced = uni20::sum(std::as_const(view), 1);
+  EXPECT_EQ(reduced[0], 3.0);
+  EXPECT_EQ(reduced[1], 23.0);
+  EXPECT_EQ(reduced[2], 63.0);
+}
+
+TEST(TensorReductionTest, DiagonalViewChecksEachPairAndHandlesEmptyInputs)
+{
+  uni20::Tensor<double, 4> mismatched(2, 3, 3, 1);
+  EXPECT_THROW((uni20::diagonal_view<0, 3, 1, 2>(mismatched)), std::invalid_argument);
+
+  uni20::Tensor<double, 4> empty(0, 3, 3, 0);
+  auto view = uni20::diagonal_view<0, 3, 1, 2>(empty);
+  EXPECT_EQ(view.extent(0), 0);
+  EXPECT_EQ(view.extent(1), 3);
+  EXPECT_EQ(view.mdspec().mapping().required_span_size(), 0);
+  EXPECT_EQ(uni20::sum_host(view), 0.0);
+}
 
 TEST(TensorReductionTest, InnerProductReturnsScalarTensorOrHostScalar)
 {

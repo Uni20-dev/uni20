@@ -1,5 +1,6 @@
 #include <uni20/core/compiler_attributes.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
+#include <uni20/mdspan/diagonal_view.hpp>
 #include <uni20/mdspan/generated_accessor.hpp>
 #include <uni20/mdspan/generated_layout.hpp>
 #include <uni20/mdspan/transform_view.hpp>
@@ -138,6 +139,13 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   auto binary_value = binary.access(handles, offsets);
   auto complex_value = complex_transform.access(complex_input, 0);
   if (unary_value == binary_value && complex_value.real() == 0.0F) return;
+}
+
+[[maybe_unused]] __global__ void diagonal_mapping_probe(double* output)
+{
+  using layout_type = uni20::detail::DiagonalLayout;
+  layout_type::mapping<extents_type> mapping(extents_type{3, 2}, {4, 3});
+  output[0] = static_cast<double>(mapping(2, 1) + mapping.required_span_size() + mapping.stride(0));
 }
 
 [[maybe_unused]] __global__ void conjugate_proxy_probe(uni20::cfloat* value)

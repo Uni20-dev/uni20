@@ -188,6 +188,12 @@ struct lq_op
     static constexpr std::string_view name = "lq";
 };
 
+/// \brief Full signed maximum reduction for real elements.
+struct maximum_op
+{
+    static constexpr std::string_view name = "maximum";
+};
+
 /// \brief Sum reduction over one or more fixed-rank input axes.
 /// \details The diagnostic name remains the user-facing operation name while
 ///          the C++ type makes its reduction role explicit.

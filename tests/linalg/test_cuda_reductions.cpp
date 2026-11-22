@@ -135,6 +135,48 @@ class CudaReductionTest : public ::testing::Test {
     int device_count_ = 0;
 };
 
+TEST_F(CudaReductionTest, SignedMaximumReadsOnlyStridedElements)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<float, 2> host(2, 1030);
+  for (index_type i = 0; i < 1030; ++i)
+  {
+    host[0, i] = -8.0F;
+    host[1, i] = 100.0F;
+  }
+  host[0, 1029] = -2.0F;
+
+  auto device = uni20::to_device(host, 0);
+  auto first_row = cuda_strided_view(device, std::array<index_type, 1>{1030}, std::array<index_type, 1>{2});
+  EXPECT_EQ(uni20::maximum_host(first_row), -2.0F);
+
+  host[0, 775] = std::numeric_limits<float>::quiet_NaN();
+  uni20::copy(device, host);
+  EXPECT_TRUE(std::isnan(uni20::maximum_host(first_row)));
+}
+
+TEST_F(CudaReductionTest, PairedDiagonalSumTransfersOnlyTheScalar)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  using scalar_type = uni20::cdouble;
+  uni20::RowMajorTensor<scalar_type, 4> host(2, 3, 3, 2);
+  // Large values off the torus diagonal reveal a mistaken stride or pair order.
+  std::fill_n(host.storage().data(), host.size(), scalar_type{1000.0, -1000.0});
+  for (index_type i = 0; i < 2; ++i)
+    for (index_type j = 0; j < 3; ++j)
+      host[i, j, j, i] = {static_cast<double>(3 * i + j + 1), static_cast<double>(i - j)};
+
+  auto device = uni20::to_device(host, 0);
+  auto diagonal = uni20::diagonal_view<0, 3, 1, 2>(std::as_const(device));
+  static_assert(!uni20::ImmediateTensorView<decltype(diagonal)>);
+  auto const expected = scalar_type{21.0, -3.0};
+  EXPECT_EQ(uni20::sum_host(diagonal), expected);
+  EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(host)), expected);
+
+  uni20::CudaTensor<scalar_type, 4> empty(runtime.device_resources(0), 2, 0, 0, 2);
+  EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(empty)), scalar_type{});
+}
+
 TEST(CudaReductionPartialTest, NormCombinesScaledRangesLikeReferenceBlas)
 {
   EXPECT_EQ(norm_of({}), 0.0);
