@@ -152,10 +152,10 @@ bool try_lower_unary_reduction(InputMdspec const& input, LoweredStridedElementwi
 /// \pre `plan` lowers `input.mapping()` and is not empty.
 template <class Scalar, class InputMdspec>
 [[nodiscard]] uni20::make_real_t<Scalar>
-reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan, InputMdspec const& input)
+reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan, InputMdspec const& input,
+                       uni20::cuda::Stream const& stream)
 {
   using real_type = uni20::make_real_t<Scalar>;
-  auto stream = input.data_descriptor().buffer().resources().streams().acquire();
   auto const partial = reduce_unary_plan<NormPartial, Scalar>(
       plan, input, stream,
       [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
@@ -224,7 +224,13 @@ KernelAttempt try_reference_norm(uni20::make_real_t<Scalar>& output, InputMdspec
 {
   LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
   if (!try_lower_unary_reduction(input, plan)) return KernelAttempt::unsupported_layout;
-  output = plan.element_count() == 0 ? uni20::make_real_t<Scalar>{} : reference_norm_of_plan<Scalar>(plan, input);
+  if (plan.element_count() == 0)
+    output = {};
+  else
+  {
+    auto stream = input.data_descriptor().buffer().resources().streams().acquire();
+    output = reference_norm_of_plan<Scalar>(plan, input, stream);
+  }
   return KernelAttempt::success;
 }
 

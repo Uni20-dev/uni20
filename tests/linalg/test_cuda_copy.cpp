@@ -571,6 +571,33 @@ TEST_F(CudaCopyTest, AsyncMaterializationStaysOnDeviceAndToHostTransfers)
   expect_matrix(host.get_wait(scheduler));
 }
 
+TEST_F(CudaCopyTest, AsyncCopyAllocationsSuspendAndPreservePlacement)
+{
+  int const device = device_count_ > 1 ? 1 : 0;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {device}, .streams_per_device = 1});
+  uni20::async::DebugCudaScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  auto& resources = runtime.device_resources(device);
+  uni20::async::Async<host_matrix_type> host = make_matrix();
+  async_cuda_matrix_type input = uni20::to_device(make_matrix(), resources);
+  async_cuda_matrix_type resized = cuda_matrix_type(resources, 1, 1);
+
+  auto held = resources.streams().acquire();
+  auto materialized = uni20::make_tensor(input);
+  auto uploaded = uni20::to_device(host, resources);
+  uni20::copy(resized, host);
+  scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
+  EXPECT_EQ(scheduler.external_waits(), 3U);
+  held = {};
+
+  for (auto* output : {&materialized, &uploaded, &resized})
+  {
+    auto const& value = output->get_wait(scheduler);
+    EXPECT_EQ(value.storage().device().ordinal(), device);
+    expect_matrix(uni20::to_host(value));
+  }
+}
+
 TEST_F(CudaCopyTest, FixedOutputPageableTransfersResizeAndRoundTrip)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});

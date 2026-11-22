@@ -363,13 +363,13 @@ contracts described later in this guide.
 | `conjugate_inplace(x)` | Eager element mutation. CPU accessors are evaluated directly; positive-strided CUDA `cfloat` and `cdouble` storage uses the CUDA reference elementwise executor. Real and integer values return as a no-op. | Reuses existing storage and takes one exclusive execution-domain access when work is required. | Implemented through one writer epoch. |
 | `sum(input)` | Full reduction returning a same-element-type `ScalarTensor`. | Allocates a rank-zero result in the selected storage domain; an explicit scalar output is also supported. | Implemented; returns `Async<ScalarTensor>` or writes an explicit async scalar output. |
 | `sum(input, axes...)` | Remove one or more runtime-selected axes; negative axes are accepted. | Allocates rank `R - sizeof...(axes)`, preserves canonical input layout, and retains surviving-axis order. Explicit outputs may resize. | Implemented; returns an async storage-preserving result or writes an explicit async output. |
-| `sum_host(input)` | Full sum returning a C++ scalar. | The CPU path writes the scalar directly. CUDA supports `float`, `double`, `cfloat`, and `cdouble` with a positive-strided pointer mapping. It transfers a single reduction result. | Implemented; returns `Async<Element>` without blocking submission. |
+| `sum_host(input)` | Full sum returning a C++ scalar. | The CPU path writes the scalar directly. CUDA supports `float`, `double`, `cfloat`, and `cdouble` with a positive-strided pointer mapping. It transfers a single reduction result. | Returns `Async<Element>`. CUDA submission requires a CUDA-aware scheduler for the input device. |
 | `maximum_host(input)` | Largest signed real entry as a C++ scalar. Requires a nonempty input. NaNs propagate. | CPU and deterministic CUDA reduction. CUDA supports positive-strided `float` and `double` with the default pointer accessor. | Synchronous API. |
 | `diagonal_view<A, B, ...>(input)` | Borrow a dense view with one shared index per axis pair, up to the smaller extent. | Preserves the source storage and accessor. See [Trace As A Dense Reduction Primitive](../linalg/trace_reduction.md). | Synchronous tensor view. |
 | `inner_product(lhs, rhs)` | Conjugate-linear-left full reduction returning a `ScalarTensor`. | Allocates a rank-zero result in the selected storage domain; an explicit scalar output is also supported. | Implemented; returns an Async scalar Tensor or writes an explicit async scalar output. |
 | `inner_product_host(lhs, rhs)` | Same inner product returning a C++ scalar. | CPU path writes the host result directly without allocating a scalar tensor. CUDA operands use cuBLAS when contiguous in one order, otherwise a deterministic reference reduction over any positive-strided layouts. | Implemented; returns `Async<Element>`. |
 | `norm(input)` | Stable Euclidean full reduction returning a real `ScalarTensor`. | Uses scaled sum-of-squares in the CPU reference backend. | Implemented; returns an Async real scalar Tensor or writes an explicit async scalar output. |
-| `norm_host(input)` | Same Euclidean norm returning a real C++ scalar. | CPU path writes the host result directly. CUDA operands use cuBLAS when contiguous, otherwise a deterministic, overflow-safe reference reduction. | Implemented; returns `Async<Real>`. |
+| `norm_host(input)` | Same Euclidean norm returning a real C++ scalar. | CPU path writes the host result directly. CUDA operands use cuBLAS when contiguous, otherwise a deterministic, overflow-safe reference reduction. | Returns `Async<Real>`. CUDA submission requires a CUDA-aware scheduler for the input device. |
 | `require_output`, `prepare_output` | Output-policy helpers for operation authors. | Validate only, or construct/resize/replace when the output type permits it. | Replaceable-output preparation may be provisional across backend decline; fixed and update outputs remain unchanged. |
 
 For a rank-`R` result, generalized `eye<T>(n0, ..., n{R-1})` returns
@@ -425,6 +425,19 @@ readable. A value-returning sum creates an independent result epoch;
 internally. Explicit outputs must have a distinct epoch queue from the input.
 Mutable async aliases are accepted as fixed-shape outputs and write through
 their bound descriptor.
+
+For async `sum_host` and `norm_host` on CUDA tensors, install `DebugCudaScheduler` or
+`TbbCudaScheduler` with the input device available before scheduling work.
+CUDA runtime initialization sets up device resources. The default
+`DebugScheduler` accepts host tasks only. Both reductions suspend while waiting
+for a stream (and a cuBLAS handle when used). The task waits for the scalar
+readback on its leased stream before publishing the result.
+
+Async copies that allocate or resize a CUDA Tensor also use a CUDA-aware
+scheduler. A fresh device-to-device copy inherits the source device. A resized
+destination stays on its existing device. Allocation releases its stream before
+the selected copy backend acquires execution resources, so one stream suffices
+for an ordinary device-to-device copy.
 
 ## Dense Linear Algebra Support
 

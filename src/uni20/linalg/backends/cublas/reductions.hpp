@@ -101,25 +101,44 @@ KernelAttempt try_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec 
   return KernelAttempt::success;
 }
 
-template <class Scalar, class InputMdspec>
-KernelAttempt try_norm(uni20::make_real_t<Scalar>& output, InputMdspec const& input)
+template <class InputMdspec> KernelAttempt prepare_norm(InputMdspec const& input, int& count)
 {
-  static_assert(RawReadableCudaReductionMdspec<InputMdspec, Scalar>);
   if (has_empty_index_space(input))
   {
-    output = uni20::make_real_t<Scalar>{};
+    count = 0;
     return KernelAttempt::success;
   }
   if (!input.mapping().is_unique() || !input.mapping().is_exhaustive()) return KernelAttempt::unsupported_layout;
-
   auto const size = reduction_element_count(input);
   if (size > static_cast<std::size_t>(std::numeric_limits<int>::max())) return KernelAttempt::unsupported_instance;
-  auto const& descriptor = input.data_descriptor();
   require_reduction_descriptor_range(input, size);
-  auto execution = uni20::cublas::execution_pool(descriptor.buffer().resources()).acquire();
+  count = static_cast<int>(size);
+  return KernelAttempt::success;
+}
+
+template <class InputMdspec>
+auto execute_norm(uni20::cublas::ExecutionLease& execution, InputMdspec const& input, int count)
+{
+  auto const& descriptor = input.data_descriptor();
   auto access = descriptor.buffer().read_synchronized_with(execution.stream());
-  output = uni20::cublas::nrm2(execution, static_cast<int>(size), access.data() + descriptor.element_offset());
+  auto result = uni20::cublas::nrm2(execution, count, access.data() + descriptor.element_offset());
   access.release_after_synchronization();
+  return result;
+}
+
+template <class Scalar, class InputMdspec>
+KernelAttempt try_norm(uni20::make_real_t<Scalar>& output, InputMdspec const& input)
+{
+  int count = 0;
+  auto const attempt = prepare_norm(input, count);
+  if (!kernel_attempt_succeeded(attempt)) return attempt;
+  if (count == 0)
+    output = {};
+  else
+  {
+    auto execution = uni20::cublas::execution_pool(input.data_descriptor().buffer().resources()).acquire();
+    output = execute_norm(execution, input, count);
+  }
   return KernelAttempt::success;
 }
 

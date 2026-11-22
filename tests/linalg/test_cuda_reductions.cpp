@@ -1,5 +1,6 @@
 #include <uni20/async/debug_cuda_scheduler.hpp>
 #include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/linalg/async/copy.hpp>
 #include <uni20/linalg/async/reductions.hpp>
 #include <uni20/linalg/backends/cuda/reductions.hpp>
 #include <uni20/tensor/copy.hpp>
@@ -201,6 +202,38 @@ TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)
     EXPECT_EQ(first_reader.get_wait(scheduler), 5);
     EXPECT_EQ(second_reader.get_wait(scheduler), 5);
   }
+}
+
+TEST_F(CudaReductionTest, FreshCopyAndHostNormsSuspendAlongsideASum)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::async::DebugCudaScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  uni20::Tensor<double, 1> host(2);
+  host[0] = 3;
+  host[1] = 4;
+  uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
+  uni20::async::Async<uni20::CudaTensor<double, 1>> output;
+  auto& pool = runtime.device_resources(0).streams();
+  auto held = pool.acquire();
+  auto sum = uni20::sum_host(input);
+  uni20::copy(output, input);
+#if UNI20_BACKEND_CUBLAS
+  auto norm = uni20::norm_host(uni20::linalg::CublasBackend{}, input);
+#else
+  auto norm = uni20::norm_host(input);
+#endif
+  auto reference_norm = uni20::norm_host(uni20::linalg::CudaReferenceBackend{}, input);
+
+  scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
+  EXPECT_EQ(scheduler.external_waits(), 4U);
+  held = {};
+  EXPECT_EQ(sum.get_wait(scheduler), 7);
+  EXPECT_EQ(norm.get_wait(scheduler), 5);
+  EXPECT_EQ(reference_norm.get_wait(scheduler), 5);
+  auto copied = uni20::to_host(output.get_wait(scheduler));
+  EXPECT_EQ(copied[0], 3);
+  EXPECT_EQ(copied[1], 4);
 }
 
 TEST_F(CudaReductionTest, SignedMaximumReadsOnlyStridedElements)
@@ -444,8 +477,11 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   reference::LoweredStridedElementwisePlan<1, reference::reduction_maximum_rank> norm_64;
   norm_64.index_kind = reference::ElementwiseIndexKind::index_64;
   ASSERT_TRUE(reference::elementwise_plan_detail::try_lower(norm_source, norm_64.plan_64, 0));
-  EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs)),
-            bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs)));
+  {
+    auto stream = runtime.device_resources(0).streams().acquire();
+    EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs, stream)),
+              bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs, stream)));
+  }
 
   auto const product_source = uni20::make_multi_iteration_plan(std::tuple{lhs.mapping(), rhs.mapping()});
   reference::LoweredStridedElementwisePlan<2, reference::reduction_maximum_rank> product_32;

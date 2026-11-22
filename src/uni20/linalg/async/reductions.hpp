@@ -17,6 +17,9 @@
 #if UNI20_BACKEND_CUDA
 #include <uni20/linalg/backends/cuda/reduction_task.hpp>
 #endif
+#if UNI20_BACKEND_CUBLAS
+#include <uni20/linalg/backends/cublas/reduction_task.hpp>
+#endif
 
 #include <concepts>
 #include <cstddef>
@@ -165,7 +168,9 @@ async::AsyncTask co_norm_host(BackendSelector const selector,
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
 
-  auto result = uni20::norm_host(selector, input_value);
+  make_real_t<tensor_element_t<InputTensor>> result{};
+  auto descriptor = mdspec_of(input_value);
+  co_await linalg::co_dispatch_kernel(selector, linalg::norm_op{}, result, descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -437,6 +442,7 @@ template <TensorView InputTensor, linalg::ReductionAxis FirstAxis, linalg::Reduc
 }
 
 /// \brief Return a nonblocking async host C++ scalar sum through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(BackendSelector selector, async::Async<InputTensor> const& input)
@@ -445,6 +451,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar sum using storage policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(async::Async<InputTensor> const& input)
@@ -558,6 +565,7 @@ template <TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar norm through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto norm_host(BackendSelector selector, async::Async<InputTensor> const& input)
@@ -566,6 +574,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar norm using static Tensor policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto norm_host(async::Async<InputTensor> const& input)
