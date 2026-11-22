@@ -448,6 +448,7 @@ template <typename T> T&& EpochContextWriter<T>::move_from_wait()
             [epoch](IAsyncScheduler::WaitWakeup notify) { epoch->writer_notify_when_ready(std::move(notify)); },
     });
   }
+  this->rethrow_producer_failure();
   return std::move(this->data());
 }
 

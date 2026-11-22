@@ -32,10 +32,11 @@ struct CudaTaskAwaiterTag
 template <typename T>
 concept CudaTaskAwaitable = std::derived_from<std::remove_cvref_t<T>, CudaTaskAwaiterTag>;
 
-/// \brief Inject an unhandled writer-side coroutine exception into an epoch.
-/// \param epoch Target epoch context associated with a writer buffer.
+/// \brief Deliver an unhandled coroutine exception to a registered buffer.
+/// \param epoch Epoch selected by the registered buffer.
 /// \param eptr Exception captured by the coroutine promise.
-void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept;
+/// \param requires_writer Whether explicit publication by the writer ends delivery to this sink.
+void propagate_unhandled_buffer_exception(EpochContext* epoch, std::exception_ptr eptr, bool requires_writer) noexcept;
 
 /// \brief Concept for the valid return types of await_suspend.
 /// \details
@@ -106,6 +107,7 @@ class TaskPromiseBase {
         ExceptionSinkNode* next{nullptr};
         std::shared_ptr<EpochContext> epoch{};
         bool explicit_sink{false};
+        bool requires_writer{false};
     };
 
     /// \brief Tracks whether the coroutine has been scheduled or otherwise started.
@@ -602,7 +604,7 @@ class TaskPromiseBase {
         TaskRegistry::record_unhandled_exception(this->self().coroutine(), eptr, originating_failure);
         this->set_exception(eptr);
         for (auto* node = exception_sinks_head_; node; node = node->next)
-          propagate_unhandled_writer_exception(node->epoch.get(), eptr);
+          propagate_unhandled_buffer_exception(node->epoch.get(), eptr, node->requires_writer);
       }
     }
 

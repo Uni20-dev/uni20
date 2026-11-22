@@ -1061,3 +1061,18 @@ TEST(AsyncAwaitersTest, TransferWriteStorageKeepsRefcountStableDuringOwnershipTr
   EXPECT_EQ(count_after, 1u);
   EXPECT_EQ(value.get_wait(), 13);
 }
+
+TEST(AsyncAwaitersTest, TransferredStorageUnwindPropagatesToItsWriterParameter)
+{
+  struct Failure
+  {};
+  DebugScheduler scheduler;
+  ScopedScheduler scoped(&scheduler);
+  Async<int> value = 4;
+  schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+    auto storage = co_await writer.transfer().storage();
+    (void)storage;
+    throw Failure{};
+  }(value.write()));
+  EXPECT_THROW((void)value.get_wait(), Failure);
+}

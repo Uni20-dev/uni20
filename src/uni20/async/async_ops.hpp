@@ -20,17 +20,19 @@ namespace uni20::async
 namespace detail
 {
 
-template <class Output, class Input>
-void validate_distinct_async_operand_queues(Output const& output, Input const& input)
+// Only Async handles establish what queue an operation actually uses. Other
+// providers may expose a queue as metadata or return a previously acquired buffer.
+template <typename T, typename U> bool same_async_storage(Async<T> const& lhs, U const& rhs)
 {
-  if constexpr (requires {
-                  output.queue();
-                  input.queue();
-                })
-  {
-    ERROR_IF(std::addressof(output.queue()) == std::addressof(input.queue()),
-             "async output must not share an epoch queue with an input");
-  }
+  if constexpr (std::same_as<U, Async<T>>) return lhs.storage().control_address() == rhs.storage().control_address();
+  return false;
+}
+
+template <typename T, typename U> void check_simultaneous_async_access(Async<T> const& lhs, U const& rhs)
+{
+  if constexpr (async_source<U>)
+    ERROR_IF(std::addressof(lhs.queue()) == std::addressof(rhs.queue()),
+             "simultaneous reader and writer on the same epoch queue");
 }
 
 } // namespace detail
@@ -184,7 +186,9 @@ concept is_async_compound_applicable =
 
 /// \brief Launch a coroutine computing result = op(a, b)
 ///
-/// Constructs read/write buffers in dependency order and schedules the operation.
+/// Enrolls both reads before requesting the output writer. Constructs the output value while
+/// both reads are held, then releases them before writing. A provider supplying a pre-enrolled
+/// writer must ensure that the input reads can finish before that writer is released.
 ///
 /// \tparam A First operand (scalar or Async<T>)
 /// \tparam B Second operand (scalar or Async<U>)
@@ -194,19 +198,21 @@ template <typename A, typename B, async_writer Writer, typename Op>
   requires async_binary_applicable<A, B, Op>
 void async_binary_op(Writer& out, A&& a, B&& b, Op op)
 {
-  detail::validate_distinct_async_operand_queues(out, a);
-  detail::validate_distinct_async_operand_queues(out, b);
-
   auto a_buf = read(std::forward<A>(a));
   auto b_buf = read(std::forward<B>(b));
   auto out_buf = out.write();
 
   schedule([](auto a_, auto b_, auto out_, Op op_) static -> AsyncTask {
     auto ab = co_await all(a_, b_);
-    auto tmp = op_(std::get<0>(ab), std::get<1>(ab));
+    using Result = typename decltype(out_)::value_type;
+    Result result(op_(std::get<0>(ab), std::get<1>(ab)));
     a_.release();
     b_.release();
-    co_await out_ = std::move(tmp);
+    auto&& target = co_await out_;
+    if constexpr (std::is_assignable_v<decltype(target), Result&&>)
+      std::forward<decltype(target)>(target) = std::move(result);
+    else
+      std::forward<decltype(target)>(target).emplace(std::move(result));
     co_return;
   }(std::move(a_buf), std::move(b_buf), std::move(out_buf), std::move(op)));
 }
@@ -224,7 +230,7 @@ void async_binary_op(Writer& out, A&& a, B&& b, Op op)
 /// \param op  In-place operation to apply (e.g., a lambda using operator+=)
 template <typename T, typename U, typename Op> void async_compound_op(Async<T>& lhs, U&& rhs, Op op)
 {
-  detail::validate_distinct_async_operand_queues(lhs, rhs);
+  detail::check_simultaneous_async_access(lhs, rhs);
 
   auto rhs_buf = read(std::forward<U>(rhs));
   auto lhs_out = lhs.write();
@@ -333,6 +339,12 @@ void async_assign(WriteBuffer<T> destination, U&& source)
 }
 
 /// \brief Assigns an Async or scalar value into an Async destination.
+/// \details Handles for the same stored value or alias descriptor leave pending work intact.
+///          An owning destination enrolls the source read first and releases it
+///          after constructing the assigned value. A write-through alias needs
+///          the source throughout the write. Supply an independent snapshot for
+///          overlapping relayouts.
+/// \pre For write-through assignment, the input can be read while the destination is writable.
 /// \tparam T Destination value type.
 /// \tparam U Source type (scalar or Async-like).
 /// \param lhs Destination async value.
@@ -342,7 +354,10 @@ void async_assign(Async<T>& lhs, U&& rhs)
   requires(detail::current_value_assignment_source<T, U> ||
            (is_async_alias_v<T> && detail::async_alias_assignable_from<T, async_value_t<U> const&>))
 {
-  async_assign(lhs.write(), read(std::forward<U>(rhs)));
+  if (detail::same_async_storage(lhs, rhs)) return;
+  if constexpr (is_async_alias_v<T>) detail::check_simultaneous_async_access(lhs, rhs);
+  auto&& source = read(std::forward<U>(rhs));
+  async_assign(lhs.write(), std::forward<decltype(source)>(source));
 }
 
 /// \brief Assigns an Async or scalar value into a write buffer destination.
@@ -359,44 +374,65 @@ void async_assign(WriteBuffer<T> lhs, U&& rhs)
   async_assign(std::move(lhs), read(std::forward<U>(rhs)));
 }
 
+namespace detail
+{
+template <typename T, typename U>
+concept immediate_move_source =
+    !async_writer<std::remove_cvref_t<U>> && std::constructible_from<T, std::remove_reference_t<U>&&>;
+
+template <typename T> AsyncTask write_moved_value(WriteBuffer<T> destination, T value)
+{
+  co_await destination = std::move(value);
+}
+
+template <typename T, typename SourceWriter>
+AsyncTask move_between_writers(WriteBuffer<T> destination, SourceWriter source)
+{
+  T value(co_await source.take());
+  source.release();
+  co_await destination = std::move(value);
+}
+} // namespace detail
+
+/// \brief Move from a source writer into an already enrolled destination writer.
+/// \pre The source writer can complete while the destination writer is held.
 template <typename T, typename U>
   requires(!is_async_alias_v<T>) && async_mutable_writer_of<U, T> && async_movable_to<U, T>
-/// \brief Move-assign from an async writer into a write buffer.
-/// \tparam T Destination value type.
-/// \tparam U Source async-like type.
-/// \param lhs Destination write buffer.
-/// \param rhs Source expression.
 void async_move(WriteBuffer<T> lhs, U&& rhs)
 {
-  auto src = std::forward<U>(rhs).write();
-  schedule([](auto src, WriteBuffer<T> dst) static -> AsyncTask {
-    T movable(co_await src.take());
-    src.release();
-    co_await dst = std::move(movable);
-    co_return;
-  }(std::move(src), std::move(lhs)));
+  schedule(detail::move_between_writers(std::move(lhs), std::forward<U>(rhs).write()));
 }
 
 template <typename T, typename U>
-  requires(!is_async_alias_v<T>) && (!async_writer<std::remove_cvref_t<U>>) && std::constructible_from<T, U&&>
+  requires(!is_async_alias_v<T>) && detail::immediate_move_source<T, U>
 void async_move(WriteBuffer<T> lhs, U&& rhs)
 {
-  schedule([](T val, WriteBuffer<T> dst) static -> AsyncTask {
-    co_await dst = std::move(val);
-    co_return;
-  }(std::move(rhs), std::move(lhs)));
+  schedule(detail::write_moved_value(std::move(lhs), T(std::move(rhs))));
 }
 
 /// \brief Move-assign from a source expression into an Async destination.
+/// \details Exact self-move leaves the handle intact. A source writer is enrolled
+///          before the destination writer and releases the moved value first.
+///          An immediate source is converted before enrolling the destination writer.
 /// \tparam T Destination value type.
 /// \tparam U Source type.
 /// \param lhs Destination async value.
 /// \param rhs Source expression.
 template <typename T, typename U>
-  requires(!is_async_alias_v<T>)
+  requires(!is_async_alias_v<T>) && (async_movable_to<U, T> || detail::immediate_move_source<T, U>)
 void async_move(Async<T>& lhs, U&& rhs)
 {
-  async_move(lhs.write(), std::forward<U>(rhs));
+  if (detail::same_async_storage(lhs, rhs)) return;
+  if constexpr (async_movable_to<U, T>)
+  {
+    auto source = std::forward<U>(rhs).write();
+    schedule(detail::move_between_writers(lhs.write(), std::move(source)));
+  }
+  else
+  {
+    T value(std::move(rhs));
+    schedule(detail::write_moved_value(lhs.write(), std::move(value)));
+  }
 }
 
 // +, -, *, /
