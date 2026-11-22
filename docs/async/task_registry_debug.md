@@ -165,7 +165,8 @@ Shape-like objects that expose `mdspan().extents()` or `extents()` may also show
 `value=shape=(...)`; built-in scalar values show their value. Other constructed
 objects omit the `value=...` line by default. Custom types can provide a one-line
 `uni20_async_debug_value(T const&)` overload in their own namespace to override
-the default.
+the default. If it throws, the dump shows `value=(debug value threw: ...)` for that
+value and continues.
 
 Async values and coroutine tasks can be labelled explicitly for diagnostic output:
 

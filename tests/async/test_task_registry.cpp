@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <iterator>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -83,6 +84,7 @@ AsyncTask copy_value(ReadBuffer<int> reader, WriteBuffer<int> writer)
   co_return;
 }
 
+#if UNI20_DEBUG_DAG
 AsyncTask sum_all_values(ReadBuffer<int> lhs, ReadBuffer<int> rhs, WriteBuffer<int> writer)
 {
   auto [left, right] = co_await all(lhs, rhs);
@@ -111,6 +113,20 @@ struct OpaqueValue
 {};
 
 std::string uni20_async_debug_value(CustomDebugValue const& value) { return "custom id=" + std::to_string(value.id); }
+
+struct ThrowingDebugValue
+{};
+
+struct NonStandardThrowingDebugValue
+{};
+
+std::string uni20_async_debug_value(ThrowingDebugValue const&)
+{
+  throw std::runtime_error("formatter unavailable\nsecond line");
+}
+
+std::string uni20_async_debug_value(NonStandardThrowingDebugValue const&) { throw 42; }
+#endif
 
 std::filesystem::path make_temp_dir(std::string_view name)
 {
@@ -656,6 +672,34 @@ TEST(TaskRegistryDebugTest, GraphSnapshotUsesCustomDebugValueHook)
   EXPECT_NE(dot.find("value=custom id=7"), std::string::npos);
 }
 
+// A debug-value hook that throws must not end the program or lose the rest of
+// the dump: diagnostics are best effort.
+TEST(TaskRegistryDebugTest, GraphSnapshotReportsADebugValueHookThatThrows)
+{
+  Async<ThrowingDebugValue> throwing(ThrowingDebugValue{});
+  throwing.debug_name("throwing value");
+  Async<NonStandardThrowingDebugValue> non_standard(NonStandardThrowingDebugValue{});
+  non_standard.debug_name("non-standard throwing value");
+  Async<CustomDebugValue> custom(CustomDebugValue{7});
+  custom.debug_name("custom value");
+
+  TaskRegistry::GraphSnapshot snapshot;
+  ASSERT_NO_THROW(snapshot = TaskRegistry::snapshot());
+  auto value_of = [&snapshot](std::string_view label) {
+    auto const node = std::find_if(snapshot.data_nodes.begin(), snapshot.data_nodes.end(),
+                                   [label](auto const& node) { return node.label == label; });
+    return node == snapshot.data_nodes.end() ? std::string("(missing)") : node->value;
+  };
+  EXPECT_EQ(value_of("throwing value"), "(debug value threw: formatter unavailable second line)");
+  EXPECT_EQ(value_of("non-standard throwing value"), "(debug value threw)");
+  EXPECT_EQ(value_of("custom value"), "custom id=7");
+
+  std::string dot;
+  ASSERT_NO_THROW(dot = TaskRegistry::graphviz_dot(snapshot));
+  EXPECT_NE(dot.find("value=(debug value threw: formatter unavailable second line)"), std::string::npos);
+  EXPECT_NE(dot.find("value=custom id=7"), std::string::npos);
+}
+
 TEST(TaskRegistryDebugTest, GraphSnapshotOmitsValueForOpaqueConstructedTypes)
 {
   Async<OpaqueValue> value(OpaqueValue{});
@@ -874,6 +918,42 @@ TEST(TaskRegistryDebugTest, DiagnosticsServicePollsControlFile)
   TaskRegistry::stop_diagnostics_service();
   std::filesystem::remove_all(dir);
 }
+
+#if UNI20_DEBUG_DAG
+namespace
+{
+// The diagnostics service writes a requested dump on its own thread, where an
+// exception from formatting a value would end the program.
+int service_dump_with_throwing_value_probe()
+{
+  TaskRegistry::stop_diagnostics_service();
+  Async<ThrowingDebugValue> throwing(ThrowingDebugValue{});
+  throwing.debug_name("throwing value");
+  auto dir = make_temp_dir("uni20-dag-throwing-value-test");
+  auto request_file = dir / "dump.request";
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.dump_options.output_dir = dir.string();
+  options.request_file = request_file.string();
+  options.poll_interval_ms = 10;
+  if (!TaskRegistry::start_diagnostics_service(options)) return 2;
+  {
+    std::ofstream request(request_file);
+    request << "dump\n";
+  }
+  bool const dumped = wait_for_dot_file(dir, std::chrono::milliseconds(2000));
+  TaskRegistry::stop_diagnostics_service();
+  auto const dot = dumped ? read_file(find_dot_file(dir)) : std::string();
+  std::filesystem::remove_all(dir);
+  return dot.find("debug value threw: formatter unavailable") != std::string::npos ? 0 : 1;
+}
+} // namespace
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceDumpSurvivesADebugValueHookThatThrows)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(service_dump_with_throwing_value_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+#endif
 
 #if defined(__linux__)
 TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
