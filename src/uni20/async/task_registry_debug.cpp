@@ -19,6 +19,7 @@
 #include <fmt/format.h>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 #if UNI20_HAS_STACKTRACE
@@ -576,6 +577,14 @@ struct EpochDebugInfo
 #if UNI20_HAS_STACKTRACE
     std::stacktrace creation_trace{};
 #endif
+};
+
+/// \brief Registry entry for a live epoch.
+/// \details Only a weak reference is kept, so registration never extends an epoch's lifetime.
+struct EpochRegistration
+{
+    std::weak_ptr<EpochContext const> epoch{};
+    EpochDebugInfo info{};
 };
 
 struct EpochDotRecord
@@ -1161,17 +1170,18 @@ class TaskRegistryImpl {
         node_names_[node] = label;
     }
 
-    void register_epoch_context(EpochContext const* epoch_context)
+    void register_epoch_context(std::shared_ptr<EpochContext> const& epoch_context)
     {
       if (!epoch_context) return;
       std::lock_guard lock(mutex_);
-      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context);
+      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context.get());
       if (inserted)
       {
-        it->second.id = next_epoch_id_++;
-        it->second.creation_timestamp = std::chrono::system_clock::now();
+        it->second.epoch = epoch_context;
+        it->second.info.id = next_epoch_id_++;
+        it->second.info.creation_timestamp = std::chrono::system_clock::now();
 #if UNI20_HAS_STACKTRACE
-        it->second.creation_trace = std::stacktrace::current(2);
+        it->second.info.creation_trace = std::stacktrace::current(2);
 #endif
       }
     }
@@ -1210,7 +1220,10 @@ class TaskRegistryImpl {
     {
       std::unordered_map<void*, TaskDebugInfo> tasks_copy;
       std::unordered_map<NodeInfo const*, std::string> node_names_copy;
-      std::vector<std::pair<EpochContext const*, EpochDebugInfo>> epoch_records;
+      // Strong references taken under the registry lock keep each listed epoch alive until this
+      // snapshot has read it. Declared outside the locked scope so that, on every path, they are
+      // released after the lock: the last release runs ~EpochContext, which takes the registry lock.
+      std::vector<std::pair<std::shared_ptr<EpochContext const>, EpochDebugInfo>> epoch_records;
       StacktraceOptions stacktrace_options;
       {
         std::unique_lock<std::mutex> lock;
@@ -1229,18 +1242,20 @@ class TaskRegistryImpl {
         node_names_copy = node_names_;
         stacktrace_options = stacktrace_options_;
         epoch_records.reserve(epoch_contexts_.size());
-        for (auto const& [epoch, info] : epoch_contexts_)
+        for (auto const& [address, registration] : epoch_contexts_)
         {
-          if (!epoch) continue;
-          epoch_records.emplace_back(epoch, info);
+          // Empty once the epoch's count has reached zero: its destructor is waiting for this lock
+          // to unregister it.
+          if (auto epoch = registration.epoch.lock()) epoch_records.emplace_back(std::move(epoch), registration.info);
         }
       }
+      if (auto* hook = snapshot_unlock_hook_.load(std::memory_order_acquire)) hook();
 
       std::vector<EpochDotRecord> epochs;
       epochs.reserve(epoch_records.size());
       for (auto const& [epoch, info] : epoch_records)
       {
-        EpochDotRecord record{epoch, info, {}, true};
+        EpochDotRecord record{epoch.get(), info, {}, true};
         if (best_effort)
           record.snapshot_available = epoch->try_debug_snapshot(record.snapshot);
         else
@@ -1411,6 +1426,11 @@ class TaskRegistryImpl {
     GraphSnapshot snapshot() { return this->snapshot(false); }
 
     GraphSnapshot snapshot_best_effort() { return this->snapshot(true); }
+
+    void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+    {
+      snapshot_unlock_hook_.store(hook, std::memory_order_release);
+    }
 
     std::string graphviz_dot(bool best_effort)
     {
@@ -1583,12 +1603,13 @@ class TaskRegistryImpl {
     std::mutex mutex_;
     TaskDebugInfoMap tasks_;
     std::unordered_map<NodeInfo const*, std::string> node_names_;
-    std::unordered_map<EpochContext const*, EpochDebugInfo> epoch_contexts_;
+    std::unordered_map<EpochContext const*, EpochRegistration> epoch_contexts_;
     StacktraceOptions stacktrace_options_{default_stacktrace_options()};
     CoroutineExceptionDiagnosticsOptions coroutine_exception_diagnostics_options_{
         default_coroutine_exception_diagnostics_options()};
     std::size_t next_task_id_{1};
     std::size_t next_epoch_id_{1};
+    std::atomic<void (*)()> snapshot_unlock_hook_{nullptr};
 };
 
 class DiagnosticServiceState {
@@ -1784,7 +1805,7 @@ void TaskRegistry::name_async_value(async::NodeInfo const* node, std::string con
   TaskRegistryImpl::instance().name_async_value(node, label);
 }
 
-void TaskRegistry::register_epoch_context(async::EpochContext const* epoch_context)
+void TaskRegistry::register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context)
 {
   TaskRegistryImpl::instance().register_epoch_context(epoch_context);
 }
@@ -1828,6 +1849,11 @@ TaskRegistry::GraphSnapshot TaskRegistry::snapshot() { return TaskRegistryImpl::
 TaskRegistry::GraphSnapshot TaskRegistry::snapshot_best_effort()
 {
   return TaskRegistryImpl::instance().snapshot_best_effort();
+}
+
+void TaskRegistry::set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+{
+  TaskRegistryImpl::instance().set_snapshot_unlock_hook_for_testing(hook);
 }
 
 TaskRegistry::GraphDiagnostics TaskRegistry::diagnose_snapshot(GraphSnapshot const& snapshot)

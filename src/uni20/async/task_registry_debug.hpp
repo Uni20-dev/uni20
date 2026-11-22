@@ -12,6 +12,7 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -136,9 +137,11 @@ class TaskRegistryDebug {
     /// \param node Async value node to label.
     /// \param label Label to show in diagnostic graph output.
     static void name_async_value(async::NodeInfo const* node, std::string const& label);
-    /// \brief Registers an epoch context for debug tracking.
-    /// \param epoch_context Epoch context pointer to register.
-    static void register_epoch_context(async::EpochContext const* epoch_context);
+    /// \brief Registers a fully constructed epoch context for debug tracking.
+    /// \details The registry keeps only a weak reference. A snapshot holds a strong reference to each
+    ///          live epoch while it reads it, so an epoch released meanwhile is destroyed after the read.
+    /// \param epoch_context Epoch context to register.
+    static void register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context);
     /// \brief Removes an epoch context from debug tracking.
     /// \param epoch_context Epoch context pointer to remove.
     static void destroy_epoch_context(async::EpochContext const* epoch_context);
@@ -175,6 +178,11 @@ class TaskRegistryDebug {
     /// \brief Captures a best-effort task/epoch/value DAG snapshot without indefinite lock waits.
     /// \return Structured graph snapshot, possibly marked unavailable or partial.
     static GraphSnapshot snapshot_best_effort();
+    /// \brief Test seam: sets a function that each snapshot calls just after releasing the registry lock.
+    /// \details Lets a test destroy objects at the point where a snapshot has listed them but not yet
+    ///          read them. Pass `nullptr` to remove it. Only tests should set it.
+    /// \param hook Function to call, or `nullptr`.
+    static void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept;
     /// \brief Diagnoses blocked tasks, missing writers, and dependency cycles in a graph snapshot.
     /// \param snapshot Structured graph snapshot to inspect.
     /// \return Diagnostic annotations for the snapshot.

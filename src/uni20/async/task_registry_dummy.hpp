@@ -10,6 +10,7 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -150,8 +151,8 @@ class TaskRegistry {
       static_cast<void>(label);
     }
     /// \brief No-op epoch-context registration hook.
-    /// \param epoch_context Epoch context pointer ignored in dummy mode.
-    static constexpr void register_epoch_context(async::EpochContext const* epoch_context) noexcept
+    /// \param epoch_context Epoch context ignored in dummy mode.
+    static constexpr void register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context) noexcept
     {
       static_cast<void>(epoch_context);
     }
