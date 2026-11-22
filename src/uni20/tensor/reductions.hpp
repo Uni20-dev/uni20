@@ -3,7 +3,7 @@
 /**
  * \file reductions.hpp
  * \ingroup tensor
- * \brief Tensor sums, inner products, and Euclidean norms with explicit result residency.
+ * \brief Tensor sums, maxima, inner products, and Euclidean norms.
  */
 
 #include <uni20/common/trace.hpp>
@@ -294,6 +294,8 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a full Tensor sum as a host C++ scalar using storage policy.
+/// \details With supported CUDA operands, the reduction reads the input in
+///          device storage and transfers one result to the host.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(InputTensor const& input) -> tensor_element_t<InputTensor>
