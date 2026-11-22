@@ -999,6 +999,28 @@ TEST_F(CudaCopyTest, ZeroExtentRoundTripIsAnEmptySuccessfulTransfer)
   EXPECT_EQ(result.cols(), 0);
 }
 
+TEST_F(CudaCopyTest, SynchronousReshapeReadsAndWritesTheOriginalDeviceTensor)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  cuda_matrix_type device(runtime.device_resources(0), 2, 3);
+  auto flat = uni20::reshape_view(device, -1);
+  static_assert(!uni20::ImmediateTensorView<decltype(flat)>);
+  uni20::Tensor<double, 1> values(6);
+  for (int i = 0; i < 6; ++i)
+    values[i] = i + 1;
+  uni20::copy(flat, values);
+
+  auto matrix = [&device] {
+    auto transposed = uni20::permute<1, 0>(std::as_const(device));
+    return uni20::reshape_view_right(transposed, 2, 3);
+  }();
+  static_assert(std::is_const_v<typename decltype(matrix.mdspec())::element_type>);
+  auto result = uni20::to_host(matrix);
+  for (int row = 0; row < 2; ++row)
+    for (int col = 0; col < 3; ++col)
+      EXPECT_EQ((result[row, col]), values[3 * row + col]);
+}
+
 TEST_F(CudaCopyTest, PermutedViewsCopyBetweenHostAndDeviceWhenEmpty)
 {
   // A permuted empty view has a layout_stride mapping that can report

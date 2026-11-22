@@ -2,6 +2,7 @@
 #include <uni20/core/types.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/conjugate.hpp>
+#include <uni20/tensor/permute.hpp>
 #include <uni20/tensor/tensor.hpp>
 
 #include "deferred_host_tensor.hpp"
@@ -45,6 +46,8 @@ template <class Tensor>
 concept CanReshapeViewRvalue = requires(Tensor tensor) { uni20::reshape_view(std::move(tensor), 6); };
 
 static_assert(!CanReshapeViewRvalue<mutable_matrix>);
+static_assert(!CanReshapeViewRvalue<deferred_complex_matrix>);
+static_assert(!CanReshapeViewRvalue<deferred_complex_matrix const>);
 
 template <class Tensor>
 concept CanAutomaticallyReshapeView = requires(Tensor& tensor) { uni20::reshape_view(tensor, 6); };
@@ -212,6 +215,58 @@ TEST(TensorReshapeTest, ViewRejectsInvalidShapeAndNoncontiguousMapping)
   using tensor_type = uni20::StridedTensor<int, 2>;
   tensor_type noncontiguous(typename tensor_type::extents_type{2, 3}, std::array<uni20::index_type, 2>{4, 1});
   EXPECT_THROW(static_cast<void>(uni20::reshape_view_right(noncontiguous, 6)), std::runtime_error);
+}
+
+TEST(TensorReshapeTest, DeferredViewValidatesShapeAndOrderAtConstruction)
+{
+  ErrorModeGuard const error_mode;
+  uni20::test::DeferredHostTensor<double, 2> input(2, 3);
+  auto flat = uni20::reshape_view_left(input, -1);
+
+  static_assert(uni20::MutableTensorView<decltype(flat)>);
+  static_assert(!uni20::ImmediateTensorView<decltype(flat)>);
+  EXPECT_EQ(flat.extent(0), 6);
+  EXPECT_EQ(flat.mdspec().data_descriptor().storage, &input.storage());
+  EXPECT_THROW(static_cast<void>(uni20::reshape_view(input, 5)), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(uni20::reshape_view_right(input, 6)), std::runtime_error);
+}
+
+TEST(TensorReshapeTest, ReshapingAPermutationKeepsTheOriginalStorage)
+{
+  uni20::test::DeferredHostTensor<int, 2> first(2, 3), second(2, 3);
+  auto permuted = uni20::permute<1, 0>(first);
+  auto flat = uni20::reshape_view_right(permuted, 6);
+  permuted = uni20::permute<1, 0>(second);
+
+  EXPECT_EQ(flat.mdspec().data_descriptor().storage, &first.storage());
+  EXPECT_EQ(std::as_const(flat).mdspec().data_descriptor().storage, &first.storage());
+}
+
+TEST(TensorReshapeTest, ReshapePreservesIndependentReadAndWriteAccess)
+{
+  using Source = uni20::test::DeferredHostTensor<int, 2>;
+  Source source(2, 3);
+  Source::mutable_mdspan_type immediate{source.storage().data(), source.mapping()};
+  using DeferredWrite =
+      uni20::MdspecTensorView<Source::mutable_mdspec_type, Source::const_mdspan_type, uni20::HostStorage>;
+  DeferredWrite deferred_write{source.mdspec(), Source::const_mdspan_type{immediate}};
+  auto a = uni20::reshape_view(deferred_write, 6);
+  auto write_spec = a.mdspec();
+  {
+    auto lease = acquire_host_write_access_sync(write_spec);
+    lease.mdspan()[5] = 17;
+  }
+  EXPECT_EQ(std::as_const(a).mdspan()[5], 17);
+
+  using DeferredRead =
+      uni20::MdspecTensorView<Source::mutable_mdspan_type, Source::const_mdspec_type, uni20::HostStorage>;
+  DeferredRead deferred_read{immediate, std::as_const(source).mdspec()};
+  auto b = uni20::reshape_view(deferred_read, 3, 2);
+  b[2, 1] = 23;
+  auto read_spec = std::as_const(b).mdspec();
+  static_assert(!uni20::MdspanLike<decltype(write_spec)> && !uni20::MdspanLike<decltype(read_spec)>);
+  auto lease = acquire_host_read_access_sync(read_spec);
+  EXPECT_EQ((lease.mdspan()[2, 1]), 23);
 }
 
 TEST(TensorReshapeTest, InplaceReshapeKeepsAllocationAndChangesDescriptor)

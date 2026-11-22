@@ -213,8 +213,8 @@ count. All forms reject mismatched element counts and ambiguous inference.
 ### `reshape_view`
 
 `reshape_view` never allocates or copies elements. It preserves the source data
-handle and accessor. Automatic order selection is available only when the
-source mdspan's static layout type is `layout_left` or `layout_right`; the
+handle or deferred data descriptor and its accessor. Automatic order selection
+is available only when the source's static layout type is `layout_left` or `layout_right`; the
 result preserves that same layout type.
 
 For a general strided mapping, select the interpretation explicitly:
@@ -236,6 +236,13 @@ accessor: reshaping a mutable tensor gives a mutable alias, while a const source
 remains read-only. Generated tensors are layout-neutral and do not have a
 structural `reshape_view`; use owning `reshape` when a value-level reshape is
 required.
+
+A synchronous reshape stores its read and write descriptors by value. For
+example, a helper can reshape a local permutation of a CUDA tensor and return
+the result. The local permutation can go out of scope as long as the underlying
+buffer remains valid. Construction validates the shape using metadata
+alone. Operations such as `copy(matrix, source)` acquire device access when
+they execute. Runtime-precision views retain the source's live precision binding.
 
 Repeated tensor-level reshapes preserve order through the result's static
 `layout_left` or `layout_right` type. No runtime provenance flag is required,

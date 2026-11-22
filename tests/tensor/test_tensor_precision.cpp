@@ -118,9 +118,14 @@ TEST(TensorPrecision, RealViewsFollowParentDefaults)
   DenseMatrix<mpreal> a(2, 3, p);
   auto const& c = conj(a);
   IndirectReshapedTensorView<DenseMatrix<mpreal>, stdex::layout_left, int> r(a, 6);
+  auto flat = [&a] {
+    auto transposed = permute<1, 0>(a);
+    return reshape_view_right(transposed, 6);
+  }();
   a.default_precision(q);
   EXPECT_EQ(c.default_precision(), q);
   EXPECT_EQ(r.default_precision(), q);
+  EXPECT_EQ(flat.default_precision(), q);
   auto copy = Tensor(r);
   EXPECT_EQ(copy.default_precision(), q);
   auto deferred = ConstTensorView<DenseMatrix<mpreal>>(&a);
@@ -128,6 +133,7 @@ TEST(TensorPrecision, RealViewsFollowParentDefaults)
   a.default_precision(p);
   EXPECT_EQ(deferred.default_precision(), p);
   EXPECT_EQ(r.default_precision(), p);
+  EXPECT_EQ(flat.default_precision(), p);
   EXPECT_EQ(copy.default_precision(), q);
 
   DenseMatrix<mpreal> empty;

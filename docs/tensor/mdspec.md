@@ -163,6 +163,10 @@ provides a descriptor. Only a missing immediate handle selects the
 metadata-only `uni20::mdspec` representation. Read, write, immediate,
 and deferred capabilities are detected independently.
 
+`HostStorage` provides immediate handles for both reads and writes.
+`CudaStorage` provides deferred descriptors for both. A custom storage policy
+can expose a const handle for reading and require a lease for writing.
+
 The unresolved model must expose compatible element, extent, layout, mapping,
 accessor, handle, and reference aliases. Its accessor must satisfy
 `AccessorPolicy`.
@@ -212,9 +216,11 @@ Metadata-only helpers use the mdspec concepts directly. For example,
 `uni20::strides()` accepts `StridedMdspecLike`, and its tensor overload
 accepts `StridedTensorView`. Both immediate and descriptor-backed inputs
 therefore expose the same mapping information without acquiring a handle.
-Contiguous-mapping analysis used by reshape order validation follows the same
-rule; the view-producing reshape operations remain mdspan-only because they
-must retain an immediately usable handle.
+Tensor-level `reshape_view` validates contiguity from the mapping and stores
+the reshaped read and write descriptors. Each retains its source's access
+mode, so a deferred write still acquires its handle when an operation uses
+the view. The [reshape guide](creation_and_reshape.md#reshape_view) describes
+the lifetime of the underlying storage.
 
 ### Tensor-Level Concepts
 
