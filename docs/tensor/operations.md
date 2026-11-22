@@ -428,8 +428,8 @@ their bound descriptor.
 
 For async `sum_host` and `norm_host` on CUDA tensors, install `DebugCudaScheduler` or
 `TbbCudaScheduler` with the input device available before scheduling work.
-CUDA runtime initialization sets up device resources. The default
-`DebugScheduler` accepts host tasks only. Both reductions suspend while waiting
+See [Choosing a Scheduler](../async/schedulers.md#choosing-a-scheduler) for a
+complete `sum_host` example. Both reductions suspend while waiting
 for a stream (and a cuBLAS handle when used). The task waits for the scalar
 readback on its leased stream before publishing the result.
 

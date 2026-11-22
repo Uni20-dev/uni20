@@ -17,7 +17,7 @@ Related documents:
 
 - [Coroutine Primer](coroutines_primer.md) introduces coroutine ownership and
   nesting.
-- [Schedulers](schedulers.md) describes host scheduler behavior.
+- [Choosing a Scheduler](schedulers.md#choosing-a-scheduler) covers host and CUDA application setup.
 - [oneTBB Execution Primer](tbb_execution_primer.md) distinguishes an arena,
   its slots, and the physical threads that participate.
 
@@ -119,11 +119,10 @@ new scheduler.
 
 ## Nested Entry and Return
 
-When a coroutine awaits another Uni20 task, an unbound child inherits the
-parent scheduler only when both tasks have the same domain. A same-domain CUDA
-child may also inherit its parent's device. Cross-domain nesting requires the
-child to have been explicitly admitted or bound to a scheduler before it is
-awaited. Entry then follows this rule:
+When a coroutine awaits another Uni20 task, a child with no scheduler inherits
+the parent's scheduler if it accepts the child's domain and device. A child
+already bound to a scheduler keeps that binding. A CUDA child with no device
+affinity inherits its CUDA parent's device if the parent has selected one.
 
 | Prepared child route | Action |
 |---|---|
@@ -143,16 +142,10 @@ Scheduler-pointer equality is therefore necessary but not sufficient for
 symmetric transfer. The same predicate governs nested task entry, a task
 returned by a forwarding awaiter, and final continuation return.
 
-The common promise base and promise-neutral continuation handle make this work
-for all four parent/child combinations of `AsyncTask` and `CudaTask`. In
-particular, an `AsyncTask` parent may await a scheduler-unbound `CudaTask`. The
-child inherits the parent's scheduler only when that scheduler accepts the
-child's CUDA route and any established device affinity. The child runs in the
-CUDA domain and the parent later resumes in the host domain through the same
-unified scheduler. A host-only scheduler rejects the child route.
-
-The parent does not become a `CudaTask`, and the child does not carry the parent
-onto the CUDA scheduler after completion.
+For example, an `AsyncTask` on `DebugCudaScheduler` can directly `co_await`
+a newly created `CudaTask`. The scheduler queues the CUDA child and later
+resumes the parent in the host domain. On a host-only scheduler the same
+attempt to inherit fails at the child's route check.
 
 ## Current CUDA Schedulers
 
@@ -282,10 +275,6 @@ Before adding this capability, define and test:
   should be no);
 - diagnostics for creation scheduler versus current scheduler.
 
-A CPU parent can enter a CUDA domain by awaiting a separately admitted
-`CudaTask`, which keeps the transition explicit and returns naturally to CPU
-control flow.
-
 ## Lifetime and Quiescence
 
 A task remembers which scheduler should run its next activation, but it does
@@ -318,7 +307,6 @@ that diagnoses outstanding routed tasks and resource waiters.
 The unified debug and TBB tests establish the task-domain route. The next
 checkpoints should add:
 
-- process-level typed CUDA admission through the unified schedulers;
 - scheduler destruction diagnostics with outstanding suspended tasks;
 - task-registry diagnostics that identify the current scheduler/device domain;
 - a user-facing scheduler-migration awaiter when a concrete use case justifies
@@ -326,8 +314,6 @@ checkpoints should add:
 
 ## Open Choices
 
-- How a process-level scheduler service exposes typed initial CUDA task
-  admission.
 - Whether scheduler identity should be recorded separately for diagnostics.
 - How scheduler shutdown composes with the existing scoped CUDA resource
   runtime.

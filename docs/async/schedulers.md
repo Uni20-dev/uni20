@@ -1,9 +1,48 @@
 # Async Schedulers
 
-Schedulers answer one question: when a ready coroutine should run.
+Epochs determine when a task is ready. The scheduler runs each ready task on
+the appropriate thread and, for CUDA tasks, with the appropriate device selected.
 
-They do not define dependency legality; epochs do that. If a coroutine is not causally ready,
-it will still suspend regardless of scheduler choice.
+## Choosing a Scheduler
+
+| Workload | Deterministic, on the driving thread | Parallel, using oneTBB |
+|---|---|---|
+| Host tasks only | `DebugScheduler` (the process default) | `TbbScheduler`, or `TbbNumaScheduler` for per-NUMA-node placement |
+| Host and CUDA tasks, or CUDA tasks only | `DebugCudaScheduler` uses one runnable queue for both task types | `TbbCudaScheduler` uses one host arena and one arena per enrolled GPU |
+
+Choose once at application or test setup. Host work can use the default
+`DebugScheduler` even in a CUDA-enabled build. When any operation submits a
+`CudaTask`, including a child of an ordinary `AsyncTask`, install a CUDA-aware
+scheduler that accepts the device. The same instance runs the host work before
+and after the CUDA child. Debug scheduling controls coroutine order on the
+driving thread. CUDA kernels still run asynchronously on their streams.
+
+For example, `sum_host` on an async CUDA tensor returns a host scalar but
+submits a CUDA reduction. `cuda::initialize()` supplies the device resources.
+`ScopedScheduler` selects the scheduler used for submission and waiting.
+
+```cpp
+#include <uni20/async/debug_cuda_scheduler.hpp>
+#include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/linalg/async/reductions.hpp>
+#include <uni20/tensor/copy.hpp>
+
+int main()
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}});
+  uni20::async::DebugCudaScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+
+  uni20::Tensor<double, 1> host(2);
+  host[0] = 2;
+  host[1] = 3;
+  uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
+  auto sum = uni20::sum_host(input);
+  return sum.get_wait() == 5 ? 0 : 1;
+}
+```
+
+## Task Ownership
 
 A scheduler owns queued runnable activations, not every coroutine whose promise
 records that scheduler. Before admission, the typed host task (normally `AsyncTask`) or `CudaTask`
@@ -28,7 +67,8 @@ Most async code uses the global scheduler helpers from `debug_scheduler.hpp`:
 - `set_global_scheduler(...)`
 - `get_global_scheduler()`
 - `reset_global_scheduler()`
-- `schedule(task)` for any movable `HostTask`
+- `schedule(task)` for movable host tasks and, with a CUDA-aware scheduler,
+  `CudaTask` (`schedule(task, device)` binds a CUDA device at submission)
 - `ScopedScheduler`
 
 If you do not override it, the global scheduler defaults to an internal `DebugScheduler`.
@@ -94,16 +134,6 @@ progress path and TBB's resumable nested-wait path, including an arena with one
 participant. This is a composability guarantee, not the normal batch pattern:
 block-level batches should normally call immediate dense operations directly.
 
-## Choosing a Scheduler
-
-| Scheduler | Strength | Tradeoff | Typical use |
-|---|---|---|---|
-| `DebugScheduler` | deterministic, simple deadlock diagnostics | single-threaded | semantics tests, debugging |
-| `TbbScheduler` | parallel throughput | non-deterministic task interleaving | parallel CPU workloads |
-| `TbbNumaScheduler` | NUMA-aware dispatch over per-node TBB arenas | extra dispatch complexity | NUMA-sensitive workloads |
-| `DebugCudaScheduler` | deterministic unified host/multi-device execution | calling-thread only | CUDA semantics tests and bring-up |
-| `TbbCudaScheduler` | parallel unified host/multi-device execution | non-deterministic task interleaving | CPU work plus asynchronous CUDA submission and provider calls |
-
 ## DebugScheduler
 
 Execution model:
@@ -152,8 +182,6 @@ Wait/deadlock behavior:
   `TaskRegistry::dump()` and aborts with deadlock diagnostic
 - a wait whose wakeup depends on the waiting thread itself, or on work that has
   not been scheduled, still deadlocks; it blocks rather than aborting
-
-Use `DebugScheduler` as the first tool for dependency bugs.
 
 ## TbbScheduler
 
@@ -257,9 +285,9 @@ routing with the host schedulers.
   resubmits the task through the selected device arena
 - same-device nested tasks can transfer directly; cross-domain and cross-device
   continuations re-enter through the shared scheduler's routing hook
-- `run_all()` and `get_wait()` cover currently submitted host and CUDA
-  activations through the shared task group. They do not complete a coroutine
-  suspended on an external buffer, CUDA completion, or resource awaiter.
+- Use `get_wait()` on the result to wait for the whole dependency chain,
+  including a CUDA child that resumes after acquiring a resource. `run_all()`
+  can return while a task is suspended on an external event.
 
 Tasks running in a CUDA scheduler arena must not call `cudaSetDevice` directly.
 Cross-device work re-enters the scheduler through the target device arena; this
@@ -269,22 +297,13 @@ Debug builds verify the thread's current CUDA device before each oneTBB CUDA
 activation. Leaf kernel wrappers do not inspect coroutine promises; they check
 their CUDA API results and may validate stream and buffer device compatibility.
 
-An unbound nested task inherits its parent scheduler only within the same task
-domain. Crossing between host and CUDA requires explicit prior admission or
-route binding. CUDA task admission is not global yet. The process-wide CUDA
-runtime now provides canonical per-device resources, but installing or choosing
-an ordinary default scheduler remains a separate future policy.
+A child with no scheduler inherits its parent's scheduler if that scheduler
+accepts the child's task domain and device. When a host parent awaits a CUDA
+child, the scheduler queues the child for CUDA execution and later resumes the
+parent in the host domain. See [Nested Entry and Return](scheduler_migration.md#nested-entry-and-return).
 
-## Practical Guidance
-
-- start debugging with `DebugScheduler`
-- once semantics are stable, validate under `TbbScheduler`
-- use `TbbNumaScheduler` when NUMA topology materially affects performance
-- use `DebugCudaScheduler` to diagnose CUDA task ordering deterministically
-- use `TbbCudaScheduler` for parallel CUDA submission once device placement is explicit
-
-If behavior differs between debug and TBB schedulers, suspect missing dependency edges,
-missing releases, or lifetime bugs before suspecting scheduler implementation.
+If a workload gives different results under the debug and oneTBB schedulers,
+check its dependency edges, buffer releases, and object lifetimes.
 
 ## Related References
 

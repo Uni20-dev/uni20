@@ -30,13 +30,18 @@ then reader phase, then next epoch.
 using namespace uni20::async;
 ```
 
-For first experiments and most unit tests, use `DebugScheduler`.
-Normal application code can use the default global scheduler without `ScopedScheduler`.
+The host-only examples below use the process default, `DebugScheduler`.
+A test can install a local instance to get its own deterministic queue.
 
 ```cpp
 DebugScheduler sched;
 ScopedScheduler scoped(&sched);
 ```
+
+For an async operation that submits CUDA work, install `DebugCudaScheduler`
+or `TbbCudaScheduler` before submitting the operation. Both also run ordinary
+host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler)
+for a complete CUDA example.
 
 ## Async Expressions (Operator Overloads)
 

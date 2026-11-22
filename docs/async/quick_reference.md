@@ -187,11 +187,14 @@ Sink registration:
 
 ## Scheduler Choice
 
-| Scheduler | When to use |
-|---|---|
-| `DebugScheduler` | deterministic tests and semantics debugging |
-| `TbbScheduler` | general parallel execution |
-| `TbbNumaScheduler` | NUMA-aware execution |
+| Workload | Deterministic | Parallel |
+|---|---|---|
+| Host tasks only | `DebugScheduler` (default) | `TbbScheduler` or NUMA-aware `TbbNumaScheduler` |
+| Includes CUDA tasks | `DebugCudaScheduler` | `TbbCudaScheduler` |
+
+Choose for the whole operation, including nested tasks. Both CUDA schedulers
+also run host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler)
+for runtime and scheduler setup.
 
 ## TaskRegistry Debugging
 
@@ -310,6 +313,7 @@ Presentation controls also apply to terminal task-registry reports:
 
 | Symptom | Likely cause | First check |
 |---|---|---|
+| `scheduler does not accept task route` when a CUDA operation starts | the parent uses a host-only scheduler or the device is outside the scheduler's device set | check the installed scheduler and the input device |
 | `buffer_write_uninitialized` | requested mutable reference before construction | replace with proxy assignment (`co_await writer = value`) or proxy `emplace(...)` |
 | reader blocks forever | read/write dependency cycle or missing release | verify epoch ordering and `reader.release()` placement |
 | cancellation unexpectedly propagates | `or_cancel()` path used and no value present | inspect upstream writer and exception sink routing |
