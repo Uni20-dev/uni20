@@ -407,6 +407,44 @@ class EpochContext {
       std::lock_guard lock(mtx_);
       node_ = node;
     }
+
+    /// \brief Outcome of \ref diagnostic_reader_admit.
+    enum class DiagnosticReadAdmission
+    {
+      Admitted,     ///< A reader is held; release it with \ref diagnostic_reader_release.
+      Busy,         ///< The epoch's mutex was busy and the caller did not wait for it.
+      WriterActive, ///< A writer of this epoch holds the value.
+      NotReadable,  ///< The epoch is not in its reading phase.
+      OtherNode,    ///< The epoch belongs to another value.
+    };
+
+    /// \brief Admit a diagnostic reader of \p node's value, if this epoch is reading it.
+    /// \details Admits only in the Reading phase. This epoch's writers have finished, every earlier
+    ///          epoch has finished, and the next epoch cannot start until the reader is released, so
+    ///          no writer can change or destroy the value meanwhile. Like any reader, an admitted
+    ///          reader delays the next writer until it is released. Admission never waits for a
+    ///          writer, and the mutex is not held after it returns.
+    /// \param node Node whose value is to be read.
+    /// \param wait_for_lock Whether to wait for this epoch's mutex rather than give up if it is busy.
+    /// \return `Admitted`, which must be matched by \ref diagnostic_reader_release, or why not.
+    DiagnosticReadAdmission diagnostic_reader_admit(NodeInfo const* node, bool wait_for_lock) noexcept
+    {
+      std::unique_lock lock(mtx_, std::defer_lock);
+      if (wait_for_lock)
+        lock.lock();
+      else if (!lock.try_lock())
+        return DiagnosticReadAdmission::Busy;
+      if (node_ != node) return DiagnosticReadAdmission::OtherNode;
+      if (phase_ == Phase::Writing && writer_active_) return DiagnosticReadAdmission::WriterActive;
+      if (phase_ != Phase::Reading) return DiagnosticReadAdmission::NotReadable;
+      ++num_readers_;
+      return DiagnosticReadAdmission::Admitted;
+    }
+
+    /// \brief Release a reader admitted by \ref diagnostic_reader_admit.
+    /// \details As with any reader, releasing the last one can finish this epoch and start the next
+    ///          one on the calling thread, which can reschedule its writer.
+    void diagnostic_reader_release() noexcept { this->reader_release(); }
 #endif
 
   private:

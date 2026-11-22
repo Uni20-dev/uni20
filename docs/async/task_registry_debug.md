@@ -166,7 +166,48 @@ Shape-like objects that expose `mdspan().extents()` or `extents()` may also show
 objects omit the `value=...` line by default. Custom types can provide a one-line
 `uni20_async_debug_value(T const&)` overload in their own namespace to override
 the default. If it throws, the dump shows `value=(debug value threw: ...)` for that
-value and continues.
+value and continues. `state=expired` means the storage has since been released;
+see below.
+
+#### Reading live values
+
+A snapshot may run while the program is running: on the diagnostics service
+thread, at a scheduler progress point, or from another thread. It never keeps
+anything alive for history, and it never reads anything that may already be gone:
+
+- **Released values.** A value node outlives its value, for example in the await
+  history of a task. Once the storage has been released, the node keeps its edges
+  and shows `state=expired`.
+- **Values released during the snapshot.** While a snapshot reads an epoch or a
+  value, it holds a reference to it. If the program drops the last owner at that
+  moment, the epoch or value is destroyed when the snapshot finishes reading it,
+  on the snapshotting thread.
+- **Values being written.** A snapshot formats a value only after joining the
+  value's current epoch as a reader, and only while that epoch is in its reading
+  phase. Its writers have then finished, and the next writer waits for the
+  snapshot as it waits for any reader, for as long as the formatter runs. The
+  snapshot never waits for a writer. If it cannot join, the label shows
+  `value not read: <reason>` in place of the value, and the state and address are
+  still shown. The reasons are `writer active`, `epoch busy` (a best-effort
+  snapshot found the epoch's lock taken), `not in a reading phase`, and
+  `no live epoch`.
+
+No registry or epoch lock is held while a value's formatter runs, so a custom
+`uni20_async_debug_value` may use the synchronized accessors of an epoch it
+already holds, such as `EpochContext::node()`, even for the epoch the snapshot
+joined. It must only observe: it must not write or wait for async values, and a
+hook that waited for a writer of the value it is formatting would wait for
+itself. Nor may it walk an `Async` or its epoch queue: the program serializes
+queue-head operations, such as enrolling the next writer, on its own threads, and
+the snapshot does not take part in that.
+
+Writes that bypass the epochs are not synchronized with a live snapshot: through
+`Async<T>::value_ptr()`, a copied `storage()` handle, `unsafe_set()` or
+`unsafe_value_ref()`. Avoid them while snapshots may run, or expect a snapshot to
+race with them.
+
+A node created from a raw `T const*` pointer, rather than from async storage, has
+no lifetime guarantee. A snapshot shows only its identity and never formats it.
 
 Async values and coroutine tasks can be labelled explicitly for diagnostic output:
 

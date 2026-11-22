@@ -183,6 +183,13 @@ class TaskRegistryDebug {
     ///          read them. Pass `nullptr` to remove it. Only tests should set it.
     /// \param hook Function to call, or `nullptr`.
     static void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept;
+    /// \brief Reports whether a snapshot is reading a live value as a diagnostic reader.
+    /// \details Such a reader delays that value's next writer, as any reader does, but nothing is
+    ///          queued on a scheduler meanwhile. A scheduler that finds no runnable work and no
+    ///          external wait therefore treats this as a reason to look again rather than as a
+    ///          deadlock. A read that has ended has already published every wakeup it caused.
+    /// \return `true` while at least one such read is in progress.
+    static bool diagnostic_reads_in_progress() noexcept;
     /// \brief Diagnoses blocked tasks, missing writers, and dependency cycles in a graph snapshot.
     /// \param snapshot Structured graph snapshot to inspect.
     /// \return Diagnostic annotations for the snapshot.

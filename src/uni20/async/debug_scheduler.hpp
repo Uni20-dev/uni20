@@ -14,6 +14,7 @@
 #include <mutex>
 #include <numeric>
 #include <random>
+#include <thread>
 #include <uni20/common/display.hpp>
 #include <utility>
 #include <vector>
@@ -147,6 +148,11 @@ class DebugScheduler : public IAsyncScheduler {
     /// \param is_ready Predicate that reports target readiness.
     void help_while_waiting(const WaitPredicate& is_ready) override
     {
+      // Read before the readiness and queue checks below. A live snapshot's diagnostic reader
+      // delays the next writer of the value it reads without queuing anything here, so an empty
+      // queue then is not a deadlock. A read that has already ended published its wakeups first,
+      // so the checks below see them.
+      bool const diagnostic_read = TaskRegistry::diagnostic_reads_in_progress();
       if (is_ready())
       {
         return;
@@ -160,6 +166,13 @@ class DebugScheduler : public IAsyncScheduler {
         {
           if (external_waits_ == 0)
           {
+            if (diagnostic_read)
+            {
+              // Let the read finish, then return to the caller's readiness loop.
+              lock.unlock();
+              std::this_thread::yield();
+              return;
+            }
             deadlocked = true;
           }
           else

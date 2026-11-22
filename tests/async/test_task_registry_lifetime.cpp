@@ -1,11 +1,15 @@
 // Snapshots of the task registry while the program releases what they describe (issue #164).
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdint>
 #include <fmt/format.h>
 #include <gtest/gtest.h>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <uni20/async/async.hpp>
 #include <uni20/async/async_task.hpp>
 #include <uni20/async/buffers.hpp>
@@ -55,6 +59,13 @@ AsyncTask write_value(WriteBuffer<int> writer, int value)
   co_return;
 }
 
+// Holds the writer of `writer` active while it waits for `gate`.
+AsyncTask write_then_wait(WriteBuffer<int> writer, ReadBuffer<int> gate)
+{
+  co_await writer = 2;
+  static_cast<void>(co_await gate);
+}
+
 // Leaves an await record for `local` in the task's history, then suspends on `blocker`.
 AsyncTask await_a_value_that_is_then_released(ReadBuffer<int> blocker)
 {
@@ -85,6 +96,60 @@ std::string uni20_async_debug_value(ReleasedByItsOwnHook const&)
   // Still alive: the snapshot's observation holds the storage.
   return fmt::format("destroyed={}", ReleasedByItsOwnHook::destroyed);
 }
+
+/// A value whose debug hook asks an epoch it was given for that epoch's node.
+struct QueriesItsEpoch
+{
+    // Captured by the test before the snapshot. A hook must not read the queue head itself: the
+    // program serializes queue-head operations on its own threads, not with the snapshot.
+    inline static std::shared_ptr<EpochContext> epoch;
+};
+
+std::string uni20_async_debug_value(QueriesItsEpoch const&)
+{
+  // Locks the epoch the snapshot's reader was admitted to, so formatting must not hold its mutex.
+  if (!QueriesItsEpoch::epoch) return "no epoch";
+  return fmt::format("node={}", QueriesItsEpoch::epoch->node()->global_index());
+}
+
+/// A value whose debug hook stops until the test lets it go, holding the snapshot's reader.
+struct HeldByItsHook
+{
+    int value{0};
+
+    struct Gate
+    {
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool entered{false};
+        bool released{false};
+        // Only this thread's snapshot is held. Any other snapshot, such as the dump a scheduler
+        // writes before reporting a deadlock, formats the value without stopping.
+        std::thread::id holder{};
+    };
+    inline static Gate* gate = nullptr;
+};
+
+std::string uni20_async_debug_value(HeldByItsHook const& held)
+{
+  if (auto* gate = HeldByItsHook::gate; gate && gate->holder == std::this_thread::get_id())
+  {
+    std::unique_lock lock(gate->mutex);
+    gate->entered = true;
+    gate->changed.notify_all();
+    gate->changed.wait(lock, [gate] { return gate->released; });
+  }
+  return std::to_string(held.value);
+}
+
+namespace
+{
+AsyncTask write_held(WriteBuffer<HeldByItsHook> writer, int value)
+{
+  co_await writer = HeldByItsHook{value};
+  co_return;
+}
+} // namespace
 #endif
 
 // The snapshot lists the epoch under the registry lock, and the hook then drops the last owner of
@@ -213,6 +278,146 @@ TEST(TaskRegistryLifetimeTest, ValueReleasedByItsOwnHookIsDestroyedAfterTheObser
   ASSERT_NE(node, nullptr);
   EXPECT_EQ(node->state, "constructed");
   EXPECT_EQ(node->value, fmt::format("destroyed={}", destroyed_before));
+}
+
+// A writer that is active, here suspended on another value, may change the payload at any time, so
+// neither kind of snapshot formats it, and neither waits for the writer.
+TEST(TaskRegistryLifetimeTest, ValueHeldByAnActiveWriterIsNotRead)
+{
+  DebugScheduler sched;
+  Async<int> value(1);
+  Async<int> gate;
+  value.debug_name("held by a writer");
+  sched.schedule(write_then_wait(value.write(), gate.read()));
+  sched.run();
+
+  for (bool const best_effort : {false, true})
+  {
+    SCOPED_TRACE(best_effort ? "best effort" : "explicit");
+    auto const snapshot = take_snapshot(best_effort);
+    auto const node =
+        std::ranges::find(snapshot.data_nodes, "held by a writer", &uni20::TaskRegistryGraphDataNode::label);
+    ASSERT_NE(node, snapshot.data_nodes.end());
+    EXPECT_EQ(node->state, "constructed");
+    EXPECT_TRUE(node->value.empty());
+    EXPECT_EQ(node->value_unavailable, "writer active");
+    EXPECT_NE(TaskRegistry::graphviz_dot(snapshot).find("value not read: writer active"), std::string::npos);
+  }
+
+  sched.schedule(write_value(gate.write(), 0));
+  sched.run_all();
+  EXPECT_EQ(value.read().get_wait(sched), 2);
+}
+
+// An epoch that has not started says nothing about the epoch before it, whose writer may be
+// running. A pending successor therefore never admits a reader, whatever a snapshot saw of its
+// predecessor.
+TEST(TaskRegistryLifetimeTest, PendingSuccessorOfAnActiveWriterAdmitsNoReader)
+{
+  using Admission = EpochContext::DiagnosticReadAdmission;
+  DebugScheduler sched;
+  Async<int> value(1);
+  Async<int> gate;
+  auto const* node = value.queue().debug_node();
+  sched.schedule(write_then_wait(value.write(), gate.read()));
+  sched.run();
+  auto const writing = value.queue().latest();
+
+  auto pending_writer = value.write();
+  auto const pending = value.queue().latest();
+  ASSERT_NE(pending, writing);
+  EXPECT_EQ(pending->diagnostic_reader_admit(node, false), Admission::NotReadable);
+  EXPECT_EQ(pending->diagnostic_reader_admit(node, true), Admission::NotReadable);
+  EXPECT_EQ(writing->diagnostic_reader_admit(node, true), Admission::WriterActive);
+  EXPECT_EQ(writing->diagnostic_reader_admit(nullptr, true), Admission::OtherNode);
+
+  sched.schedule(write_value(std::move(pending_writer), 3));
+  sched.schedule(write_value(gate.write(), 0));
+  sched.run_all();
+  EXPECT_EQ(value.read().get_wait(sched), 3);
+}
+
+// The hook locks the epoch that the snapshot's reader was admitted to. Formatting runs with no
+// registry or epoch mutex held, so this neither deadlocks nor loses the text.
+TEST(TaskRegistryLifetimeTest, HookMayQueryTheEpochOfTheValueItFormats)
+{
+  Async<QueriesItsEpoch> value(QueriesItsEpoch{});
+  value.debug_name("queries its epoch");
+  QueriesItsEpoch::epoch = value.queue().latest();
+  for (bool const best_effort : {false, true})
+  {
+    SCOPED_TRACE(best_effort ? "best effort" : "explicit");
+    auto const snapshot = take_snapshot(best_effort);
+    auto const node =
+        std::ranges::find(snapshot.data_nodes, "queries its epoch", &uni20::TaskRegistryGraphDataNode::label);
+    ASSERT_NE(node, snapshot.data_nodes.end());
+    EXPECT_EQ(node->value, fmt::format("node={}", node->id));
+    EXPECT_TRUE(node->value_unavailable.empty());
+  }
+  QueriesItsEpoch::epoch.reset();
+}
+
+// While a snapshot on another thread holds a diagnostic reader on `held`, the next writer of
+// `held` waits for it without anything being queued on its scheduler. Waiting for the result
+// must then look again instead of reporting a deadlock, and once the read ends it must find the
+// writer that releasing the reader rescheduled. A scheduler with unrelated work is not held up at
+// all: it services its queue, and its run_all() returns while the read is still in progress.
+TEST(TaskRegistryLifetimeTest, SchedulersWaitForADiagnosticReadOnlyWhenItHoldsTheirWork)
+{
+  DebugScheduler sched;
+  Async<HeldByItsHook> held(HeldByItsHook{1});
+  held.debug_name("held by its hook");
+  HeldByItsHook::Gate gate;
+  HeldByItsHook::gate = &gate;
+
+  TaskRegistry::GraphSnapshot snapshot;
+  std::thread dumper([&] {
+    {
+      std::lock_guard lock(gate.mutex);
+      gate.holder = std::this_thread::get_id();
+    }
+    snapshot = TaskRegistry::snapshot();
+  });
+  {
+    std::unique_lock lock(gate.mutex);
+    gate.changed.wait(lock, [&] { return gate.entered; });
+  }
+  EXPECT_TRUE(TaskRegistry::diagnostic_reads_in_progress());
+
+  {
+    DebugScheduler independent;
+    Async<int> other;
+    independent.schedule(write_value(other.write(), 3));
+    independent.run_all();
+    EXPECT_EQ(other.read().get_wait(independent), 3);
+    EXPECT_TRUE(TaskRegistry::diagnostic_reads_in_progress());
+  }
+
+  // The writer suspends behind the snapshot's reader, leaving `sched` with nothing to run and no
+  // external wait: the branch where help_while_waiting() used to report a deadlock.
+  sched.schedule(write_held(held.write(), 2));
+  sched.run();
+  ASSERT_TRUE(sched.done());
+  auto result = held.read();
+  auto const is_ready = [&] { return result.await_ready(); };
+  ASSERT_FALSE(is_ready());
+  sched.help_while_waiting(is_ready);
+  EXPECT_FALSE(is_ready());
+
+  {
+    std::lock_guard lock(gate.mutex);
+    gate.released = true;
+    gate.changed.notify_all();
+  }
+  EXPECT_EQ(result.get_wait(sched).value, 2);
+
+  dumper.join();
+  HeldByItsHook::gate = nullptr;
+  EXPECT_FALSE(TaskRegistry::diagnostic_reads_in_progress());
+  auto const node =
+      std::ranges::find(snapshot.data_nodes, "held by its hook", &uni20::TaskRegistryGraphDataNode::label);
+  ASSERT_NE(node, snapshot.data_nodes.end());
+  EXPECT_EQ(node->value, "1");
 }
 #endif
 #endif

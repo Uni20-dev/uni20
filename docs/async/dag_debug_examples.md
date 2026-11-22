@@ -162,9 +162,10 @@ means the storage exists but does not currently hold a constructed `T` object.
 `state=invalid` means no storage control block was available. `state=expired` means
 the storage has since been released, for example a value that a task awaited earlier
 and that went out of scope: the node and its edges stay in the graph, but there is no
-value to show. The diagnostics never keep a value alive for its history. While a
-snapshot reads a value it holds the storage, so a value whose last owner goes at that
-moment is destroyed when the read finishes, on the snapshotting thread. Shape-like objects
+value to show. A value that a writer may be changing is not formatted: the label
+shows `value not read: writer active` or another reason instead. See
+[reading live values](task_registry_debug.md#reading-live-values) for what a
+snapshot taken while the program runs guarantees. Shape-like objects
 that expose `mdspan().extents()` or `extents()` may also show
 `value=shape=(...)`; built-in scalar values show their value. Other constructed
 objects omit the `value=...` line by default. Custom types can provide a one-line

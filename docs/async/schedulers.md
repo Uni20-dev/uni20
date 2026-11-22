@@ -150,6 +150,11 @@ Wait/deadlock behavior:
 - if the waiting condition is false, no runnable tasks remain, and no external
   wakeup is pending, the wait can never complete: runtime emits
   `TaskRegistry::dump()` and aborts with deadlock diagnostic
+- while a live snapshot on another thread is reading a value, it holds that
+  value's next writer back without queuing anything (see
+  [reading live values](task_registry_debug.md#reading-live-values)), so the
+  wait yields and looks again instead of reporting a deadlock; `run_all()` and
+  other schedulers are unaffected
 - a wait whose wakeup depends on the waiting thread itself, or on work that has
   not been scheduled, still deadlocks; it blocks rather than aborting
 

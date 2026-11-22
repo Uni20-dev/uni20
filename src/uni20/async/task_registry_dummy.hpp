@@ -156,6 +156,9 @@ class TaskRegistry {
     {
       static_cast<void>(epoch_context);
     }
+    /// \brief Reports diagnostic reads in progress; there are none in dummy mode.
+    /// \return `false`.
+    static constexpr bool diagnostic_reads_in_progress() noexcept { return false; }
     /// \brief No-op epoch-context destruction hook.
     /// \param epoch_context Epoch context pointer ignored in dummy mode.
     static constexpr void destroy_epoch_context(async::EpochContext const* epoch_context) noexcept
