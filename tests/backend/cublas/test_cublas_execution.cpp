@@ -79,7 +79,6 @@ template <class Tensor> class CudaMatrixView {
     [[nodiscard]] auto extents() const noexcept -> extents_type const& { return mapping_.extents(); }
     [[nodiscard]] auto extent(std::size_t axis) const noexcept { return mapping_.extents().extent(axis); }
     [[nodiscard]] auto mapping() const noexcept -> mapping_type const& { return mapping_; }
-    [[nodiscard]] std::size_t size() const noexcept { return mapping_.required_span_size(); }
 
   private:
     tensor_type* tensor_;
@@ -403,7 +402,7 @@ template <class Scalar> void check_column_major_gemm(int device)
 
 template <class Tensor> void upload_tensor(Tensor& tensor, std::span<uni20::tensor_element_t<Tensor> const> values)
 {
-  ASSERT_EQ(values.size(), tensor.size());
+  ASSERT_EQ(values.size(), tensor.storage().size());
   uni20::cuda::ScopedDevice device_scope(tensor.storage().device().ordinal());
   auto stream = tensor.storage().resources().streams().acquire();
   {
@@ -417,7 +416,7 @@ template <class Tensor> void upload_tensor(Tensor& tensor, std::span<uni20::tens
 
 template <class Tensor> auto download_tensor(Tensor const& tensor) -> std::vector<uni20::tensor_element_t<Tensor>>
 {
-  std::vector<uni20::tensor_element_t<Tensor>> values(tensor.size());
+  std::vector<uni20::tensor_element_t<Tensor>> values(tensor.storage().size());
   uni20::cuda::ScopedDevice device_scope(tensor.storage().device().ordinal());
   auto stream = tensor.storage().resources().streams().acquire();
   {

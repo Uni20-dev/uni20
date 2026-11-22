@@ -707,6 +707,12 @@ TEST(TensorTest, ScalarTensorAllocatesItsSoleElement)
   EXPECT_DOUBLE_EQ(const_scalar[], 3.5);
 }
 
+TEST(TensorTest, ZeroExtentHasNoLogicalElements)
+{
+  DenseMatrix<int> empty(3, 0);
+  EXPECT_EQ(empty.size(), 0);
+}
+
 TEST(BasicTensorTest, SupportsStaticMdspanExtents)
 {
   using fixed_extents = stdex::extents<index_t, 2, 3>;
@@ -746,6 +752,7 @@ TEST(TensorTest, CustomStridesAllocateFullSpan)
 
   EXPECT_EQ(tensor.mapping().stride(0), strides[0]);
   EXPECT_EQ(tensor.mapping().stride(1), strides[1]);
+  EXPECT_EQ(tensor.size(), 4);
   EXPECT_EQ(tensor.mapping().required_span_size(), 5);
   EXPECT_EQ(tensor.storage().size(), 5u);
 
@@ -777,7 +784,8 @@ TEST(TensorTest, AdoptedStorageMayRetainPaddingAndUnusedTail)
 
   EXPECT_EQ(tensor.mutable_handle(), original_storage);
   EXPECT_EQ(tensor.storage().size(), 8u);
-  EXPECT_EQ(tensor.size(), 5);
+  EXPECT_EQ(tensor.mapping().required_span_size(), 5);
+  EXPECT_EQ(tensor.size(), 4);
   EXPECT_EQ((tensor[0, 0]), 10);
   EXPECT_EQ((tensor[1, 0]), 11);
   EXPECT_EQ((tensor[0, 1]), 12);
