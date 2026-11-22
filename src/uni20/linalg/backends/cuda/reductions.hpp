@@ -82,33 +82,19 @@ reduction_partial_count(LoweredStridedElementwisePlan<OperandCount, reduction_ma
   return slice_count * reduction_blocks_per_slice(plan);
 }
 
-/// \brief Allocate the device workspace for reducing a lowered plan: its partials and the result.
-/// \details Call this before leasing the execution stream. A stream-ordered
-///          allocation leases a stream from the same pool, so allocating while
-///          holding a lease can wait for a stream that only this caller could
-///          return; with one stream per device it always would.
-template <class Partial, std::size_t OperandCount>
-[[nodiscard]] uni20::cuda::CudaBuffer<Partial>
-make_reduction_workspace(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan,
-                         uni20::cuda::DeviceResources& resources)
-{
-  return uni20::cuda::CudaBuffer<Partial>(resources, reduction_partial_count(plan) + 1);
-}
-
 /// \brief Reduce a lowered plan to one partial on `stream` and return it on the host.
 /// \details Each host-loop slice writes the same number of block partials into
-///          its own range of `workspace`; one combine launch then reduces every
+///          its own workspace range; one combine launch then reduces every
 ///          partial in index order. The stream is synchronized before return.
-/// \pre `workspace` came from `make_reduction_workspace` for `plan`.
 template <class Partial, std::size_t OperandCount, class EnqueueSlice, class EnqueueCombine>
 [[nodiscard]] Partial
 reduce_lowered_plan(LoweredStridedElementwisePlan<OperandCount, reduction_maximum_rank> const& plan,
-                    uni20::cuda::CudaBuffer<Partial>& workspace, uni20::cuda::Stream const& stream,
+                    uni20::cuda::DeviceResources& resources, uni20::cuda::Stream const& stream,
                     EnqueueSlice&& enqueue_slice, EnqueueCombine&& enqueue_combine)
 {
   unsigned int const blocks = reduction_blocks_per_slice(plan);
   std::size_t const partial_count = reduction_partial_count(plan);
-  CHECK(workspace.size() == partial_count + 1, workspace.size(), partial_count);
+  uni20::cuda::CudaBuffer<Partial> workspace(resources, partial_count + 1, stream);
 
   auto access = workspace.write_synchronized_with(stream);
   Partial* const partials = access.data();
@@ -132,21 +118,19 @@ reduce_lowered_plan(LoweredStridedElementwisePlan<OperandCount, reduction_maximu
 /// \brief Reduce one strided CUDA buffer to a host partial.
 template <class Partial, class Scalar, class InputMdspec, class EnqueueSlice, class EnqueueCombine>
 [[nodiscard]] Partial reduce_unary_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan,
-                                        InputMdspec const& input, EnqueueSlice enqueue_slice,
-                                        EnqueueCombine enqueue_combine)
+                                        InputMdspec const& input, uni20::cuda::Stream const& stream,
+                                        EnqueueSlice enqueue_slice, EnqueueCombine enqueue_combine)
 {
   static_assert(RawCudaReductionMdspec<InputMdspec, Scalar>);
   using real_type = uni20::make_real_t<Scalar>;
   require_reduction_range(input);
   auto const& descriptor = input.data_descriptor();
   auto& resources = descriptor.buffer().resources();
-  auto workspace = make_reduction_workspace<Partial>(plan, resources);
-  auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto access = descriptor.buffer().read_synchronized_with(stream);
   auto const* data = reinterpret_cast<real_type const*>(access.data() + descriptor.element_offset());
   auto const partial = reduce_lowered_plan<Partial>(
-      plan, workspace, stream,
+      plan, resources, stream,
       [&](auto const& kernel_plan, Partial* partials) {
         enqueue_slice(data, kernel_plan, partials, stream.native_handle(), stream.device());
       },
@@ -157,6 +141,13 @@ template <class Partial, class Scalar, class InputMdspec, class EnqueueSlice, cl
   return partial;
 }
 
+template <class InputMdspec>
+bool try_lower_unary_reduction(InputMdspec const& input, LoweredStridedElementwisePlan<1, reduction_maximum_rank>& plan)
+{
+  return try_lower_strided_elementwise_plan<reduction_maximum_rank>(
+      make_multi_iteration_plan(std::tuple{input.mapping()}), plan);
+}
+
 /// \brief Compute the Euclidean norm of `input` over a lowered plan of its mapping.
 /// \pre `plan` lowers `input.mapping()` and is not empty.
 template <class Scalar, class InputMdspec>
@@ -164,8 +155,9 @@ template <class Scalar, class InputMdspec>
 reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan, InputMdspec const& input)
 {
   using real_type = uni20::make_real_t<Scalar>;
+  auto stream = input.data_descriptor().buffer().resources().streams().acquire();
   auto const partial = reduce_unary_plan<NormPartial, Scalar>(
-      plan, input,
+      plan, input, stream,
       [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
         enqueue_norm_partials<real_type, reduction_components<Scalar>>(data, kernel_plan, partials, stream, device);
       },
@@ -182,37 +174,42 @@ template <class Scalar> [[nodiscard]] Scalar finish_sum(SumPartial partial)
     return static_cast<Scalar>(partial.real);
 }
 
-template <class Scalar, class InputMdspec> KernelAttempt try_reference_sum(Scalar& output, InputMdspec const& input)
+template <class Scalar, class InputMdspec>
+Scalar reference_sum_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan,
+                             InputMdspec const& input, uni20::cuda::Stream const& stream)
 {
-  LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
-  if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
-          make_multi_iteration_plan(std::tuple{input.mapping()}), plan))
-    return KernelAttempt::unsupported_layout;
-  if (plan.element_count() == 0)
-  {
-    output = Scalar{};
-    return KernelAttempt::success;
-  }
   auto const partial = reduce_unary_plan<SumPartial, Scalar>(
-      plan, input,
+      plan, input, stream,
       [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
         enqueue_sum_partials<uni20::make_real_t<Scalar>, reduction_components<Scalar>>(data, kernel_plan, partials,
                                                                                        stream, device);
       },
       enqueue_sum_combine);
-  output = finish_sum<Scalar>(partial);
+  return finish_sum<Scalar>(partial);
+}
+
+template <class Scalar, class InputMdspec> KernelAttempt try_reference_sum(Scalar& output, InputMdspec const& input)
+{
+  LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
+  if (!try_lower_unary_reduction(input, plan)) return KernelAttempt::unsupported_layout;
+  if (plan.element_count() == 0)
+  {
+    output = Scalar{};
+    return KernelAttempt::success;
+  }
+  auto stream = input.data_descriptor().buffer().resources().streams().acquire();
+  output = reference_sum_of_plan<Scalar>(plan, input, stream);
   return KernelAttempt::success;
 }
 
 template <class Scalar, class InputMdspec> KernelAttempt try_reference_maximum(Scalar& output, InputMdspec const& input)
 {
   LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
-  if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
-          make_multi_iteration_plan(std::tuple{input.mapping()}), plan))
-    return KernelAttempt::unsupported_layout;
+  if (!try_lower_unary_reduction(input, plan)) return KernelAttempt::unsupported_layout;
   ERROR_IF(plan.element_count() == 0, "maximum requires a nonempty tensor");
+  auto stream = input.data_descriptor().buffer().resources().streams().acquire();
   auto const partial = reduce_unary_plan<MaximumPartial, Scalar>(
-      plan, input,
+      plan, input, stream,
       [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
         enqueue_maximum_partials(data, kernel_plan, partials, stream, device);
       },
@@ -226,9 +223,7 @@ template <class Scalar, class InputMdspec>
 KernelAttempt try_reference_norm(uni20::make_real_t<Scalar>& output, InputMdspec const& input)
 {
   LoweredStridedElementwisePlan<1, reduction_maximum_rank> plan;
-  if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
-          make_multi_iteration_plan(std::tuple{input.mapping()}), plan))
-    return KernelAttempt::unsupported_layout;
+  if (!try_lower_unary_reduction(input, plan)) return KernelAttempt::unsupported_layout;
   output = plan.element_count() == 0 ? uni20::make_real_t<Scalar>{} : reference_norm_of_plan<Scalar>(plan, input);
   return KernelAttempt::success;
 }
@@ -250,7 +245,6 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   require_reduction_range(rhs);
 
   auto& resources = lhs_descriptor.buffer().resources();
-  auto workspace = make_reduction_workspace<SumPartial>(plan, resources);
   auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto lhs_access = lhs_descriptor.buffer().read_synchronized_with(stream);
@@ -258,7 +252,7 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   auto const* lhs_data = reinterpret_cast<real_type const*>(lhs_access.data() + lhs_descriptor.element_offset());
   auto const* rhs_data = reinterpret_cast<real_type const*>(rhs_access.data() + rhs_descriptor.element_offset());
   auto const partial = reduce_lowered_plan<SumPartial>(
-      plan, workspace, stream,
+      plan, resources, stream,
       [&](auto const& kernel_plan, SumPartial* partials) {
         enqueue_inner_product_partials<real_type, reduction_components<Scalar>>(
             lhs_data, rhs_data, kernel_plan, partials, stream.native_handle(), stream.device());

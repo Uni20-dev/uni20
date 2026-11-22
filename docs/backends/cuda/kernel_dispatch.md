@@ -103,6 +103,12 @@ admission. An async CUDA operation uses `co_dispatch_kernel` while holding its
 epoch buffers, so a backend-provided task can suspend on resource scarcity
 rather than occupying a scheduler participant.
 
+A full CUDA `sum_host` leases one stream for workspace allocation, kernels,
+and the final scalar transfer. The async entry point suspends if the pool is
+full. Once admitted, it passes that stream to the allocator and waits for the
+device-to-host copy before publishing the scalar. This works with a single
+stream even when other sums are queued.
+
 The channel should not be carried by an ad-hoc backend selector. The same
 storage-selected numerical backend remains applicable to both entry points;
 the ordinary backend adapter uses blocking admission, while coroutine dispatch

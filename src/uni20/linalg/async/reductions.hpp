@@ -11,7 +11,12 @@
 #include <uni20/async/debug_scheduler.hpp>
 #include <uni20/common/trace.hpp>
 #include <uni20/linalg/async/detail/output.hpp>
+#include <uni20/linalg/async/dispatch.hpp>
 #include <uni20/tensor/reductions.hpp>
+
+#if UNI20_BACKEND_CUDA
+#include <uni20/linalg/backends/cuda/reduction_task.hpp>
+#endif
 
 #include <concepts>
 #include <cstddef>
@@ -96,7 +101,11 @@ async::AsyncTask co_sum_host(BackendSelector const selector, async::WriteBuffer<
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  auto result = uni20::sum_host(selector, input_value);
+  constexpr auto rank = tensor_mdspec_t<InputTensor>::rank();
+  auto descriptor = mdspec_of(input_value);
+  tensor_element_t<InputTensor> result{};
+  co_await linalg::co_dispatch_kernel(
+      selector, linalg::sum_reduction_op<rank, rank>{.axes = linalg::all_reduction_axes<rank>()}, result, descriptor);
   storage.emplace(std::move(result));
   co_return;
 }

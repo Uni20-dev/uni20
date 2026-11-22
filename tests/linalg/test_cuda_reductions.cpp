@@ -1,4 +1,6 @@
+#include <uni20/async/debug_cuda_scheduler.hpp>
 #include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/linalg/async/reductions.hpp>
 #include <uni20/linalg/backends/cuda/reductions.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/copy_into.hpp>
@@ -166,6 +168,39 @@ TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
   uni20::MdspecTensorView<spec, spec, uni20::CudaStorage> view{descriptor, descriptor};
   EXPECT_EQ(uni20::sum_host(view), 5);
   EXPECT_EQ(uni20::maximum_host(view), 3);
+}
+
+TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)
+{
+  for (std::size_t capacity : {1U, 4U})
+  {
+    SCOPED_TRACE(capacity);
+    auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = capacity});
+    uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(0));
+    uni20::async::ScopedScheduler scoped(&scheduler);
+    uni20::Tensor<double, 1> host(2);
+    host[0] = 2;
+    host[1] = 3;
+    uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
+
+    std::vector<uni20::cuda::Stream> occupied;
+    for (std::size_t i = 0; i < capacity; ++i)
+      occupied.push_back(runtime.device_resources(0).streams().acquire());
+
+    auto first = uni20::sum_host(input);
+    auto second = uni20::sum_host(input);
+    auto first_reader = first.read();
+    auto second_reader = second.read();
+    scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
+    EXPECT_FALSE(first_reader.await_ready());
+    EXPECT_FALSE(second_reader.await_ready());
+    EXPECT_EQ(scheduler.external_waits(), 2U);
+
+    // One available lease must suffice for both sums, including workspace allocation.
+    occupied.pop_back();
+    EXPECT_EQ(first_reader.get_wait(scheduler), 5);
+    EXPECT_EQ(second_reader.get_wait(scheduler), 5);
+  }
 }
 
 TEST_F(CudaReductionTest, SignedMaximumReadsOnlyStridedElements)

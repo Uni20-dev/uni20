@@ -60,7 +60,9 @@ The same planner drives full `sum_host` for real and complex elements and
 `maximum_host` for real elements. The blocks combine their partials in a fixed
 order, and only the final reduction result is copied to host memory. The
 largest entry uses signed order and propagates NaNs. Both paths accept the
-positive-strided mappings of paired-axis diagonal views.
+positive-strided mappings of paired-axis diagonal views. The async sum in
+`reduction_task.hpp` awaits the execution stream and uses it for workspace
+allocation and the scalar transfer.
 
 Copy is the first one-input overwrite instantiation. `conjugate_inplace_op` is
 the first zero-input update instantiation: it reads and writes each output
