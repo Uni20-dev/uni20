@@ -1309,10 +1309,15 @@ class TaskRegistryImpl {
         }
         record.type = std::string(node->type());
         record.storage_address = node->storage_address() ? fmt::format("{}", node->storage_address()) : "(unknown)";
-        record.value_constructed = node->value_constructed();
-        record.state = std::string(node->value_state_label());
-        record.address = node->address() ? fmt::format("{}", node->address()) : "(unconstructed)";
-        record.value = node->value_text();
+        auto const observation = node->observe();
+        auto const state = observation.state();
+        record.value_constructed = state == uni20::async::NodeValueState::Constructed;
+        record.state = std::string(uni20::async::node_value_state_label(state));
+        if (observation.address())
+          record.address = fmt::format("{}", observation.address());
+        else
+          record.address = state == uni20::async::NodeValueState::Expired ? "(expired)" : "(unconstructed)";
+        record.value = observation.value_text();
         graph.data_nodes.push_back(std::move(record));
       }
 
