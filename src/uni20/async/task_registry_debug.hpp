@@ -82,6 +82,7 @@ class TaskRegistryDebug {
         /// process gives a signal to it once; it is not taken again after a stop.
         int signal_number{0};
         /// File whose every change of modification time asks for a dump; empty for none.
+        /// A relative path is resolved against the working directory when the service starts.
         /// The file is not removed, so each change reaches every process watching it.
         /// `%p` in the path becomes the process id and `%%` a single `%`.
         std::string request_file{};
