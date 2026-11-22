@@ -68,12 +68,23 @@ TEST(TensorReductionTest, DiagonalViewPreservesSurvivorOrderAndInterleavedStride
   EXPECT_EQ(reduced[2], 63.0);
 }
 
-TEST(TensorReductionTest, DiagonalViewChecksEachPairAndHandlesEmptyInputs)
+TEST(TensorReductionTest, DiagonalViewTakesTheSmallerExtentOfEachPair)
 {
-  uni20::Tensor<double, 4> mismatched(2, 3, 3, 1);
-  EXPECT_THROW(static_cast<void>(uni20::diagonal_view<0, 3, 1, 2>(mismatched)), std::invalid_argument);
+  uni20::Tensor<double, 4> input(2, 4, 3, 5);
+  auto view = uni20::diagonal_view<0, 3, 1, 2>(input);
+  ASSERT_EQ(view.extent(0), 2);
+  ASSERT_EQ(view.extent(1), 3);
+  for (uni20::index_type i = 0; i < 2; ++i)
+    for (uni20::index_type j = 0; j < 3; ++j)
+    {
+      view[i, j] = 1 + 3 * i + j;
+      EXPECT_EQ((input[i, j, j, i]), 1 + 3 * i + j);
+    }
+}
 
-  uni20::Tensor<double, 4> empty(0, 3, 3, 0);
+TEST(TensorReductionTest, RectangularDiagonalWithAZeroExtentIsEmpty)
+{
+  uni20::Tensor<double, 4> empty(2, 3, 4, 0);
   auto view = uni20::diagonal_view<0, 3, 1, 2>(empty);
   EXPECT_EQ(view.extent(0), 0);
   EXPECT_EQ(view.extent(1), 3);

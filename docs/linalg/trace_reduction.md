@@ -1,9 +1,14 @@
 # Trace As A Dense Reduction Primitive
 
 `diagonal_view<A, B, ...>(tensor)` ties each pair of axes together without
-copying elements. Each pair must have equal extents. Unpaired axes keep
-their original order, followed by one independent index per pair in the
-specified order.
+copying elements. Unpaired axes keep their original order, followed by one
+independent index per pair in the specified order. Each index runs from zero
+up to the smaller of its two extents, exclusive. A `3 × 5` matrix therefore
+has three diagonal entries. If either extent is zero, the diagonal is empty.
+
+A trace requires equal extents for each pair of contracted axes. The caller
+checks this before taking the diagonal and summing it. The examples below
+assume those checks have passed.
 
 ```cpp
 auto matrix_trace = uni20::sum_host(uni20::diagonal_view<0, 1>(matrix));

@@ -159,8 +159,8 @@ TEST_F(CudaReductionTest, PairedDiagonalSumTransfersOnlyTheScalar)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
   using scalar_type = uni20::cdouble;
-  uni20::RowMajorTensor<scalar_type, 4> host(2, 3, 3, 2);
-  // Large values off the torus diagonal reveal a mistaken stride or pair order.
+  uni20::RowMajorTensor<scalar_type, 4> host(4, 3, 5, 2);
+  // Large off-diagonal values reveal a mistaken stride or pair order.
   std::fill_n(host.storage().data(), host.size(), scalar_type{1000.0, -1000.0});
   for (index_type i = 0; i < 2; ++i)
     for (index_type j = 0; j < 3; ++j)
@@ -173,7 +173,7 @@ TEST_F(CudaReductionTest, PairedDiagonalSumTransfersOnlyTheScalar)
   EXPECT_EQ(uni20::sum_host(diagonal), expected);
   EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(host)), expected);
 
-  uni20::CudaTensor<scalar_type, 4> empty(runtime.device_resources(0), 2, 0, 0, 2);
+  uni20::CudaTensor<scalar_type, 4> empty(runtime.device_resources(0), 2, 0, 3, 2);
   EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(empty)), scalar_type{});
 }
 

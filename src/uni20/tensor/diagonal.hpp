@@ -17,11 +17,11 @@ namespace uni20
 {
 /// \brief Borrow a view on which each pair of axes shares one index.
 /// \details Unpaired axes retain their order, followed by one axis per pair.
+///          Each paired axis has the smaller of its two source extents.
 ///          The view preserves the source accessor, storage domain, and backend.
 ///          The tensor lvalue must outlive the view.
 /// \pre The source mapping is unique and has its origin at offset zero. Its
 ///      strides are positive on all axes with more than one entry.
-/// \throws std::invalid_argument If the extents of any pair differ.
 /// \tparam Axis A nonempty sequence of disjoint axis pairs.
 template <std::size_t... Axis, StridedTensorView Tensor>
   requires(std::is_lvalue_reference_v<Tensor &&> &&

@@ -9,6 +9,7 @@
 #include <uni20/core/compiler_attributes.hpp>
 #include <uni20/mdspan/mdspec.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <stdexcept>
@@ -142,8 +143,7 @@ template <std::size_t... Axis, StridedMdspecLike Span> auto diagonal_mdspec(Span
   {
     auto const first = pairs[i];
     auto const second = pairs[i + 1];
-    auto const extent = source.extent(first);
-    if (extent != source.extent(second)) throw std::invalid_argument("diagonal_view requires equal paired extents");
+    auto const extent = std::min(source.extent(first), source.extent(second));
     extents[out] = extent;
     // When both indices can be 1, their combined step is an addressable source offset.
     strides[out++] = !empty && extent > 1 ? stride(first) + stride(second) : index_type{1};
