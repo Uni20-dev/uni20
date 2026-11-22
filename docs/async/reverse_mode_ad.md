@@ -50,8 +50,8 @@ The explicit async forms are `x.backprop().get_wait()` and `x.grad.backprop().ge
 
 ## Scheduler Behavior for AD
 
-- Normal application code can rely on the default global scheduler.
-- `ScopedScheduler` is mainly for tests or temporary scheduler overrides.
+- AD expressions use the oneTBB scheduler the application installs once in `main()`.
+- Tests using AD expressions select the test scheduler with `ScopedScheduler` before building the expression.
 - Explicit `run_all()` is usually redundant; waiting on outputs/gradients drives execution.
 - `run_all()` is still useful with `DebugScheduler` for deterministic debugging.
 

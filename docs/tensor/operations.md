@@ -426,8 +426,9 @@ internally. Explicit outputs must have a distinct epoch queue from the input.
 Mutable async aliases are accepted as fixed-shape outputs and write through
 their bound descriptor.
 
-For async `sum_host` and `norm_host` on CUDA tensors, install `DebugCudaScheduler` or
-`TbbCudaScheduler` with the input device available before scheduling work.
+For async `sum_host` and `norm_host` on CUDA tensors, install `TbbCudaScheduler`
+with the input device enrolled. Use `DebugCudaScheduler` for single-threaded
+testing and debugging.
 See [Choosing a Scheduler](../async/schedulers.md#choosing-a-scheduler) for a
 complete `sum_host` example. Both reductions suspend while waiting
 for a stream (and a cuBLAS handle when used). The task waits for the scalar

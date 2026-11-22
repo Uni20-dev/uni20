@@ -25,23 +25,26 @@ then reader phase, then next epoch.
 ```cpp
 #include <uni20/async/async.hpp>
 #include <uni20/async/async_ops.hpp>
-#include <uni20/async/debug_scheduler.hpp>
+#include <uni20/async/debug_scheduler.hpp>  // set_global_scheduler
+#include <uni20/async/tbb_scheduler.hpp>
 
 using namespace uni20::async;
 ```
 
-The host-only examples below use the process default, `DebugScheduler`.
-A test can install a local instance to get its own deterministic queue.
+In `main()`, install one `TbbScheduler` before submitting any host work.
+The application uses this instance through shutdown.
 
 ```cpp
-DebugScheduler sched;
-ScopedScheduler scoped(&sched);
+TbbScheduler sched;
+set_global_scheduler(&sched);
 ```
 
-For an async operation that submits CUDA work, install `DebugCudaScheduler`
-or `TbbCudaScheduler` before submitting the operation. Both also run ordinary
-host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler)
-for a complete CUDA example.
+If the application also submits CUDA tasks, use one `TbbCudaScheduler` for
+the whole workload. For deterministic tests and debugging, use
+`DebugScheduler` for host work or `DebugCudaScheduler` for host and CUDA
+work. Tests can install a temporary `ScopedScheduler` or pass their scheduler
+explicitly to each submission and wait that accepts one.
+See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler) for a complete CUDA example.
 
 ## Async Expressions (Operator Overloads)
 
@@ -57,7 +60,6 @@ int b_value = b.get_wait(); // blocks until the scheduled work completes
 ```
 
 Operator kernels schedule work onto the global scheduler.
-If you need a non-default scheduler, use `ScopedScheduler` or `set_global_scheduler(...)`.
 If you only need completion and do not need the value, use `b.wait()` instead.
 
 ## First Complete Example

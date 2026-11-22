@@ -187,14 +187,16 @@ Sink registration:
 
 ## Scheduler Choice
 
-| Workload | Deterministic | Parallel |
+| Workload | Production (oneTBB) | Single-threaded testing and debugging |
 |---|---|---|
-| Host tasks only | `DebugScheduler` (default) | `TbbScheduler` or NUMA-aware `TbbNumaScheduler` |
-| Includes CUDA tasks | `DebugCudaScheduler` | `TbbCudaScheduler` |
+| Host tasks only | `TbbScheduler` or NUMA-aware `TbbNumaScheduler` | `DebugScheduler` |
+| Includes CUDA tasks | `TbbCudaScheduler` | `DebugCudaScheduler` |
 
-Choose for the whole operation, including nested tasks. Both CUDA schedulers
-also run host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler)
-for runtime and scheduler setup.
+Production applications install one scheduler in `main()` with
+`set_global_scheduler(&scheduler)` and keep it for the entire run.
+Tests use `ScopedScheduler` around APIs that submit globally, or supply the
+scheduler explicitly for each submission and wait. Both CUDA schedulers also
+run host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler).
 
 ## TaskRegistry Debugging
 

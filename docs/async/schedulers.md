@@ -5,13 +5,19 @@ the appropriate thread and, for CUDA tasks, with the appropriate device selected
 
 ## Choosing a Scheduler
 
-| Workload | Deterministic, on the driving thread | Parallel, using oneTBB |
-|---|---|---|
-| Host tasks only | `DebugScheduler` (the process default) | `TbbScheduler`, or `TbbNumaScheduler` for per-NUMA-node placement |
-| Host and CUDA tasks, or CUDA tasks only | `DebugCudaScheduler` uses one runnable queue for both task types | `TbbCudaScheduler` uses one host arena and one arena per enrolled GPU |
+In a production application, construct a oneTBB scheduler in `main()` and
+call `set_global_scheduler(&scheduler)` once, before submitting async work.
+Keep that same instance installed for the lifetime of the application's async
+work, including shutdown. Library operations use the installed scheduler.
+Use a single-threaded debug scheduler when a test or debugging session needs
+reproducible coroutine ordering.
 
-Choose once at application or test setup. Host work can use the default
-`DebugScheduler` even in a CUDA-enabled build. When any operation submits a
+| Workload | Production (oneTBB) | Deterministic testing and debugging |
+|---|---|---|
+| Host tasks only | `TbbScheduler`, or `TbbNumaScheduler` for per-NUMA-node placement | `DebugScheduler` |
+| Includes CUDA tasks | `TbbCudaScheduler` uses one host arena and one arena per enrolled GPU | `DebugCudaScheduler` uses one runnable queue for host and CUDA tasks |
+
+Choose for the whole workload. When any operation submits a
 `CudaTask`, including a child of an ordinary `AsyncTask`, install a CUDA-aware
 scheduler that accepts the device. The same instance runs the host work before
 and after the CUDA child. Debug scheduling controls coroutine order on the
@@ -19,10 +25,11 @@ driving thread. CUDA kernels still run asynchronously on their streams.
 
 For example, `sum_host` on an async CUDA tensor returns a host scalar but
 submits a CUDA reduction. `cuda::initialize()` supplies the device resources.
-`ScopedScheduler` selects the scheduler used for submission and waiting.
+The application installs one scheduler for both the host and CUDA tasks.
 
 ```cpp
-#include <uni20/async/debug_cuda_scheduler.hpp>
+#include <uni20/async/debug_scheduler.hpp>  // set_global_scheduler
+#include <uni20/async/tbb_cuda_scheduler.hpp>
 #include <uni20/backend/cuda/runtime.hpp>
 #include <uni20/linalg/async/reductions.hpp>
 #include <uni20/tensor/copy.hpp>
@@ -30,8 +37,8 @@ submits a CUDA reduction. `cuda::initialize()` supplies the device resources.
 int main()
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}});
-  uni20::async::DebugCudaScheduler scheduler;
-  uni20::async::ScopedScheduler scoped(&scheduler);
+  uni20::async::TbbCudaScheduler scheduler({runtime.device_resources(0).device()});
+  uni20::async::set_global_scheduler(&scheduler);
 
   uni20::Tensor<double, 1> host(2);
   host[0] = 2;
@@ -71,7 +78,8 @@ Most async code uses the global scheduler helpers from `debug_scheduler.hpp`:
   `CudaTask` (`schedule(task, device)` binds a CUDA device at submission)
 - `ScopedScheduler`
 
-If you do not override it, the global scheduler defaults to an internal `DebugScheduler`.
+Before an application installs a scheduler, the global helpers use an internal
+`DebugScheduler`. This fallback runs host coroutines on the driving thread.
 
 Host admission is constrained by the concrete task's `promise_type`: it must
 derive from `TaskPromiseBase` and declare `TaskDomain::host`. This accepts
@@ -90,12 +98,20 @@ binding, diagnostic events, pause handling and NUMA selection remain there.
 Accounting policies need no scheduler-specific overload. `TbbNumaScheduler`
 also accepts these task types in `schedule(task, numa_node)`.
 
-`ScopedScheduler` is the standard way to override scheduler context in tests.
-It changes the selected scheduler but does not own it or extend its lifetime.
-Any scheduler supplied to it must remain alive until all tasks routed through
-that scheduler have completed or can no longer resume. See
-[Lifetime and Quiescence](scheduler_migration.md#lifetime-and-quiescence) for
-the full contract, including stack-local test schedulers.
+### Selecting a scheduler in tests
+
+- For operations that use global submission, such as `sum_host(input)` or
+  `a + b` on async values, construct `ScopedScheduler scoped(&scheduler);`
+  before submitting the work. It restores the previous process-wide selection
+  on scope exit. Tests that override it must have exclusive use of that setting.
+- When the API accepts an explicit scheduler, use the test's scheduler for
+  each submission and wait, for example `scheduler.schedule(std::move(task))`
+  and `result.get_wait(scheduler)`. This leaves the process-wide selection
+  untouched. The argument to `get_wait` drives the wait. A task submitted
+  earlier keeps its scheduler.
+
+Finish or cancel the test's work before destroying its scheduler. An external
+wakeup can still resume a suspended task. See [Lifetime and Quiescence](scheduler_migration.md#lifetime-and-quiescence).
 
 ## Lightweight Task Batches
 
