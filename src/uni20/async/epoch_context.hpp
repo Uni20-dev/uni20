@@ -472,8 +472,10 @@ class EpochContext {
       // A proxy can explicitly release a writer while the parameter that registered
       // the sink still exists. Explicit read sinks can receive failures in Reading.
       if (requires_writer && writer_sink_retired_) return;
+      // An owning take can rethrow an already published producer failure.
+      if (eptr_) return;
       DEBUG_CHECK(phase_ <= Phase::Reading);
-      if (!eptr_) eptr_ = e;
+      eptr_ = std::move(e);
     }
 
     // void writer_set_cancel() noexcept

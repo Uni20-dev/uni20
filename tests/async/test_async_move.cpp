@@ -176,6 +176,29 @@ TEST(AsyncMoveTest, MovePropagatesProducerFailureWithOrWithoutAnOldValue)
   }
 }
 
+TEST(AsyncMoveTest, OwningTakeCanRethrowAFailureFromAFinishedSourceEpoch)
+{
+  struct ProducerFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+    (void)(co_await writer);
+    throw ProducerFailure{};
+  }(value.write()));
+
+  auto source = value.write();
+  auto destination = value.write();
+  schedule([](WriteBuffer<int> source, WriteBuffer<int> destination) static -> AsyncTask {
+    auto taken = co_await std::move(source).take();
+    ADD_FAILURE() << "take must rethrow the producer's failure";
+    co_await destination = taken + 1;
+  }(std::move(source), std::move(destination)));
+
+  EXPECT_THROW((void)value.get_wait(), ProducerFailure);
+}
+
 TEST(AsyncMoveTest, TakingAnUninitializedValueReportsTheAccessError)
 {
   DebugScheduler sched;
