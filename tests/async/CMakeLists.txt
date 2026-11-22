@@ -32,7 +32,7 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
       UNI20_DEBUG_DAG_FILE_PREFIX=startup
       $<TARGET_FILE:uni20_task_registry_signal_startup_test>
   )
-  set(request_file "${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup/request")
+  set(request_file "task_registry_request_startup/request")
   add_test(
     NAME TaskRegistryDebugTest.RequestFileEnvironmentStartsDiagnosticsServiceAtStartup
     COMMAND
@@ -41,7 +41,8 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
       UNI20_DEBUG_DAG_POLL_MS=10
       UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_request_startup
       UNI20_DEBUG_DAG_FILE_PREFIX=startup
-      $<TARGET_FILE:uni20_task_registry_signal_startup_test> "${request_file}"
+      $<TARGET_FILE:uni20_task_registry_signal_startup_test> "${CMAKE_CURRENT_BINARY_DIR}/${request_file}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 endif()
 

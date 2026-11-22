@@ -52,6 +52,8 @@ int main(int argc, char** argv)
   if (argc == 2)
   {
     std::filesystem::path const request_file(argv[1]);
+    // The watch started with a relative path. Touch the original file after changing directory.
+    std::filesystem::current_path(output_dir);
     if (std::filesystem::exists(request_file))
     {
       auto const previous = std::filesystem::last_write_time(request_file);

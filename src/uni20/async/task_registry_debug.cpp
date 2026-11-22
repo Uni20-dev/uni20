@@ -240,8 +240,9 @@ bool write_text_file(std::string const& path, std::string_view contents)
 
 // "%p" becomes this process's id and "%%" a single "%", so that one process
 // among several watching the same directory can be asked for a dump.
-std::string expand_request_file(std::string const& path)
+std::filesystem::path resolve_request_file(std::string const& path)
 {
+  if (path.empty()) return {};
   std::string expanded;
   for (std::size_t i = 0; i < path.size(); ++i)
   {
@@ -255,7 +256,7 @@ std::string expand_request_file(std::string const& path)
       expanded += path[i];
     }
   }
-  return expanded;
+  return std::filesystem::absolute(expanded);
 }
 
 // The request file is never removed: each change of its modification time asks
@@ -263,7 +264,7 @@ std::string expand_request_file(std::string const& path)
 // the file's absence, is the starting point, so an old file asks for nothing.
 class RequestFileWatch {
   public:
-    explicit RequestFileWatch(std::string const& path) : path_(expand_request_file(path)), seen_(this->stamp()) {}
+    explicit RequestFileWatch(std::string const& path) : path_(resolve_request_file(path)), seen_(this->stamp()) {}
 
     bool changed()
     {
@@ -283,7 +284,7 @@ class RequestFileWatch {
       return time;
     }
 
-    std::string path_;
+    std::filesystem::path path_;
     std::optional<std::filesystem::file_time_type> seen_;
 };
 
@@ -1686,6 +1687,9 @@ class DiagnosticServiceState {
       if (options.signal_number != 0 && !is_diagnostics_signal(options.signal_number)) return false;
       if (thread_.joinable()) return true;
 
+      // Resolve the watch and sample its starting timestamp before taking a signal or launching the worker.
+      RequestFileWatch request(options.request_file);
+
 #if defined(__linux__)
       // A handler rather than a blocked signal: the kernel may deliver a
       // process-directed signal to any thread, including ones that existed
@@ -1721,8 +1725,6 @@ class DiagnosticServiceState {
       }
       try
       {
-        // Read before start() returns, so that a change made after it asks for a dump.
-        RequestFileWatch request(options.request_file);
         thread_ = std::thread([this, options = std::move(options), request = std::move(request)]() mutable {
           this->run(options, request);
         });

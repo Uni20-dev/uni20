@@ -286,8 +286,10 @@ its own output options, rather than leaving it to a scheduler progress point.
 
 The service never removes the request file, so one file can serve several
 processes: `touch /tmp/uni20-dag/request` asks every process watching that path for a
-dump, and each later `touch` asks again. A file that already exists when the service
-starts asks for nothing until it changes. In the path, `%p` becomes the process id and
+dump, and each later `touch` asks again. The service resolves a relative request
+path against its working directory at startup, even if the file will be created
+later. A file that already exists when the service starts asks for nothing until
+it changes. In the path, `%p` becomes the process id and
 `%%` a single `%`, so with `request.%p` the command `touch /tmp/uni20-dag/request.12345`
 reaches process 12345 alone. On NFS a client may see the change only when its
 attribute cache expires, and on a filesystem that keeps whole-second times, two
