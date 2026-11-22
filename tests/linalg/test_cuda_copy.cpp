@@ -1010,8 +1010,10 @@ TEST_F(CudaCopyTest, SynchronousReshapeReadsAndWritesTheOriginalDeviceTensor)
     values[i] = i + 1;
   uni20::copy(flat, values);
 
-  auto transposed = uni20::permute<1, 0>(std::as_const(device));
-  auto matrix = uni20::reshape_view_right(transposed, 2, 3);
+  auto matrix = [&device] {
+    auto transposed = uni20::permute<1, 0>(std::as_const(device));
+    return uni20::reshape_view_right(transposed, 2, 3);
+  }();
   static_assert(std::is_const_v<typename decltype(matrix.mdspec())::element_type>);
   auto result = uni20::to_host(matrix);
   for (int row = 0; row < 2; ++row)

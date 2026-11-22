@@ -237,11 +237,12 @@ remains read-only. Generated tensors are layout-neutral and do not have a
 structural `reshape_view`; use owning `reshape` when a value-level reshape is
 required.
 
-For a CUDA tensor, `auto matrix = reshape_view(t, rows, cols);` borrows `t`
-and validates the requested shape immediately. Creating the view requires no
-device access or transfer. Operations such as `copy(matrix, source)` acquire
-the original storage when they execute. Keep the parent tensor alive while
-using the view.
+A synchronous reshape stores its read and write descriptors by value. For
+example, a helper can reshape a local permutation of a CUDA tensor and return
+the result. The local permutation can go out of scope as long as the underlying
+buffer remains valid. Construction validates the shape using metadata
+alone. Operations such as `copy(matrix, source)` acquire device access when
+they execute. Runtime-precision views retain the source's live precision binding.
 
 Repeated tensor-level reshapes preserve order through the result's static
 `layout_left` or `layout_right` type. No runtime provenance flag is required,
