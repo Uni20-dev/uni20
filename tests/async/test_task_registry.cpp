@@ -84,6 +84,7 @@ AsyncTask copy_value(ReadBuffer<int> reader, WriteBuffer<int> writer)
   co_return;
 }
 
+#if UNI20_DEBUG_DAG
 AsyncTask sum_all_values(ReadBuffer<int> lhs, ReadBuffer<int> rhs, WriteBuffer<int> writer)
 {
   auto [left, right] = co_await all(lhs, rhs);
@@ -125,6 +126,7 @@ std::string uni20_async_debug_value(ThrowingDebugValue const&)
 }
 
 std::string uni20_async_debug_value(NonStandardThrowingDebugValue const&) { throw 42; }
+#endif
 
 std::filesystem::path make_temp_dir(std::string_view name)
 {
@@ -917,12 +919,14 @@ TEST(TaskRegistryDebugTest, DiagnosticsServicePollsControlFile)
   std::filesystem::remove_all(dir);
 }
 
+#if UNI20_DEBUG_DAG
 namespace
 {
 // The diagnostics service writes a requested dump on its own thread, where an
 // exception from formatting a value would end the program.
 int service_dump_with_throwing_value_probe()
 {
+  TaskRegistry::stop_diagnostics_service();
   Async<ThrowingDebugValue> throwing(ThrowingDebugValue{});
   throwing.debug_name("throwing value");
   auto dir = make_temp_dir("uni20-dag-throwing-value-test");
@@ -949,6 +953,7 @@ TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceDumpSurvivesADebugValueHookTh
   GTEST_FLAG_SET(death_test_style, "threadsafe");
   EXPECT_EXIT({ std::_Exit(service_dump_with_throwing_value_probe()); }, ::testing::ExitedWithCode(0), "");
 }
+#endif
 
 #if defined(__linux__)
 TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
