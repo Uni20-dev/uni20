@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <limits>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace uni20
@@ -100,6 +101,11 @@ template <std::size_t OperandCount, std::size_t MaximumRank> struct multi_iterat
 
 namespace detail
 {
+
+template <class Mapping> constexpr auto mapping_origin(Mapping const& mapping)
+{
+  return std::apply(mapping, std::array<typename Mapping::index_type, Mapping::extents_type::rank()>{});
+}
 
 template <class Extents> constexpr bool has_zero_extent(Extents const& extents)
 {
@@ -203,19 +209,20 @@ template <typename Mapping> auto make_iteration_plan_with_offset(Mapping const& 
 {
   using size_type = typename Mapping::size_type;
   using index_type = typename Mapping::index_type;
+  using offset_type = std::common_type_t<index_type, decltype(detail::mapping_origin(mapping))>;
   static constexpr size_type Rank = Mapping::extents_type::rank();
 
   static_vector<extent_strides<1>, Rank> raw_plan;
   static_vector<extent_stride<size_type, index_type>, Rank> plan;
-  index_type offset = 0;
 
   if (detail::has_zero_extent(mapping.extents()))
   {
     // A retained zero extent gives zero iterations. An empty list of dimensions denotes a scalar.
     plan.emplace_back(size_type{0}, index_type{0});
-    return std::pair{plan, index_type{0}};
+    return std::pair{plan, offset_type{0}};
   }
 
+  offset_type offset = detail::mapping_origin(mapping);
   for (size_type i = 0; i < Rank; ++i)
   {
     size_type const extent = mapping.extents().extent(i);
@@ -288,16 +295,30 @@ template <typename... Mappings> auto make_multi_iteration_plan(std::tuple<Mappin
   std::apply([&](auto const&... mapping) { (check_extents(mapping), ...); }, mappings);
 
   multi_iteration_plan<N, Rank> plan;
+  if (detail::has_zero_extent(base_extents))
+  {
+    plan.dimensions.emplace_back(size_type{0}, std::array<index_type, N>{});
+    detail::finish_iteration_plan(plan);
+    return plan;
+  }
+
+  // Strides describe differences between offsets. Each operand may start at
+  // a different offset, which must fit the plan before normalizing the axes.
+  std::size_t operand = 0;
+  auto set_origin = [&](auto const& mapping) {
+    auto const origin = detail::mapping_origin(mapping);
+    if (!std::in_range<index_type>(origin)) return false;
+    plan.base_offsets[operand++] = static_cast<index_type>(origin);
+    return true;
+  };
+  if (!std::apply([&](auto const&... mapping) { return (set_origin(mapping) && ...); }, mappings))
+  {
+    plan.representable = false;
+    return plan;
+  }
 
   if constexpr (Rank > 0)
   {
-    if (detail::has_zero_extent(base_extents))
-    {
-      plan.dimensions.emplace_back(size_type{0}, std::array<index_type, N>{});
-      detail::finish_iteration_plan(plan);
-      return plan;
-    }
-
     for (size_type i = 0; i < Rank; ++i)
     {
       size_type const extent = base_extents.extent(i);

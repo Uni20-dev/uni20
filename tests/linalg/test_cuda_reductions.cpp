@@ -135,6 +135,39 @@ class CudaReductionTest : public ::testing::Test {
     int device_count_ = 0;
 };
 
+// Two logical elements at offsets 1 and 2 from the descriptor's origin.
+struct ShiftedLayout
+{
+    template <class Extents> struct mapping : stdex::layout_right::mapping<Extents>
+    {
+        static_assert(Extents::rank() == 1 && Extents::static_extent(0) == 2);
+        using layout_type = ShiftedLayout;
+        static constexpr bool is_always_exhaustive() noexcept { return false; }
+        static constexpr bool is_exhaustive() noexcept { return false; }
+        constexpr index_type operator()(index_type i) const noexcept { return 1 + i; }
+        constexpr index_type required_span_size() const noexcept { return 3; }
+    };
+};
+
+TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<double, 1> host(4);
+  host[0] = 200;
+  host[1] = 100;
+  host[2] = 2;
+  host[3] = 3;
+  auto const device = uni20::to_device(host, 0);
+  auto const base = device.mdspec();
+  using shape = stdex::extents<index_type, 2>;
+  using spec = uni20::mdspec<double const, shape, ShiftedLayout, typename decltype(base)::accessor_type,
+                             typename decltype(base)::data_descriptor_type>;
+  spec descriptor{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()};
+  uni20::MdspecTensorView<spec, spec, uni20::CudaStorage> view{descriptor, descriptor};
+  EXPECT_EQ(uni20::sum_host(view), 5);
+  EXPECT_EQ(uni20::maximum_host(view), 3);
+}
+
 TEST_F(CudaReductionTest, SignedMaximumReadsOnlyStridedElements)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
