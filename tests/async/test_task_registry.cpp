@@ -11,6 +11,7 @@
 #include <iterator>
 #include <limits>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
@@ -26,11 +27,13 @@
 #include <uni20/common/presentation.hpp>
 #include <uni20/config.hpp>
 #include <uni20/core/scalar_precision.hpp>
+#include <vector>
 
 #include "../common/env_var_guard.hpp"
 
 #if defined(__linux__)
 #include <signal.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 
@@ -1039,22 +1042,32 @@ int signal_to_earlier_thread_probe()
   return signal_dump_probe(SIGUSR1, [&bystander] { return ::pthread_kill(bystander.native_handle(), SIGUSR1); });
 }
 
-std::ptrdiff_t thread_count()
+std::set<pid_t> thread_ids()
 {
-  return std::distance(std::filesystem::directory_iterator("/proc/self/task"), std::filesystem::directory_iterator());
+  std::set<pid_t> ids;
+  for (auto const& entry : std::filesystem::directory_iterator("/proc/self/task"))
+    ids.insert(static_cast<pid_t>(std::stol(entry.path().filename().string())));
+  return ids;
 }
 
-// The only thread blocks the signal, as in a program started with it blocked,
-// and the service thread inherits that mask. Only the service thread can then
-// receive the signal.
+// The starter blocks the signal, as in a program started with it blocked, and
+// the service thread inherits that mask. The signal goes to the service thread
+// itself, so only that thread's own unblocking lets the dump happen, whatever
+// other threads exist, such as a BLAS library's worker pool.
 int signal_with_starter_blocking_it_probe()
 {
-  if (thread_count() != 1) return probe_failed("another thread could receive the signal");
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, SIGUSR1);
   if (::pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) return probe_failed("could not block the signal");
-  return signal_to_process_probe(SIGUSR1);
+  auto const before = thread_ids();
+  return signal_dump_probe(SIGUSR1, [&before] {
+    std::vector<pid_t> started;
+    for (pid_t id : thread_ids())
+      if (!before.contains(id)) started.push_back(id);
+    if (started.size() != 1) return probe_failed("could not identify the service thread");
+    return static_cast<int>(::syscall(SYS_tgkill, ::getpid(), started.front(), SIGUSR1));
+  });
 }
 
 void program_handler(int) {}
