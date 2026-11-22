@@ -71,7 +71,7 @@ TEST(TensorReductionTest, DiagonalViewPreservesSurvivorOrderAndInterleavedStride
 TEST(TensorReductionTest, DiagonalViewChecksEachPairAndHandlesEmptyInputs)
 {
   uni20::Tensor<double, 4> mismatched(2, 3, 3, 1);
-  EXPECT_THROW((uni20::diagonal_view<0, 3, 1, 2>(mismatched)), std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(uni20::diagonal_view<0, 3, 1, 2>(mismatched)), std::invalid_argument);
 
   uni20::Tensor<double, 4> empty(0, 3, 3, 0);
   auto view = uni20::diagonal_view<0, 3, 1, 2>(empty);
