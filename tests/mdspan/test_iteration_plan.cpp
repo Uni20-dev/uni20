@@ -278,7 +278,35 @@ TEST(MakeMultiIterationPlanTest, ZeroExtentProducesRetainedZeroDim)
   EXPECT_TRUE(plan.reachable_offsets[1].empty());
 }
 
-TEST(MakeMultiIterationPlanTest, OverflowingPrefixScansForALaterZeroExtent)
+TEST(IterationPlanTest, EmptyShapesDoNotQueryStrides)
+{
+  using extents_type = stdex::dextents<index_t, 2>;
+  using base_mapping = stdex::layout_left::mapping<extents_type>;
+  struct Mapping : base_mapping
+  {
+      using base_mapping::base_mapping;
+      index_t stride(std::size_t axis) const
+      {
+        ADD_FAILURE() << "Empty iteration queried stride on axis " << axis;
+        return base_mapping::stride(axis);
+      }
+  };
+
+  for (auto shape : {extents_type{3, 0}, extents_type{0, 3}})
+  {
+    Mapping mapping{shape};
+    auto [dimensions, offset] = make_iteration_plan_with_offset(mapping);
+    ASSERT_EQ(dimensions.size(), 1);
+    EXPECT_EQ(dimensions[0].extent, 0);
+    EXPECT_EQ(offset, 0);
+
+    auto plan = make_multi_iteration_plan(std::tuple{mapping, mapping});
+    EXPECT_TRUE(plan.representable);
+    EXPECT_TRUE(plan.empty());
+  }
+}
+
+TEST(MakeMultiIterationPlanTest, TrailingZeroMakesIterationEmptyAfterALargePrefix)
 {
   constexpr auto maximum = std::numeric_limits<index_t>::max();
   auto const extents = std::array<std::size_t, 3>{static_cast<std::size_t>(maximum), 2, 0};
