@@ -8,9 +8,12 @@
 #include <concepts>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 namespace uni20
 {
+
+struct layout_stride;
 
 namespace detail
 {
@@ -58,7 +61,7 @@ template <class Layout, class Extents, bool Left> class contiguous_mapping {
 
     /// \brief Construct a contiguous mapping for the given shape.
     /// \pre The product of the nonzero extents fits in `index_type`.
-    UNI20_HOST_DEVICE constexpr explicit contiguous_mapping(extents_type const& extents) noexcept : extents_(extents) {}
+    UNI20_HOST_DEVICE constexpr contiguous_mapping(extents_type const& extents) noexcept : extents_(extents) {}
 
     template <class OtherLayout, class OtherExtents, bool OtherLeft>
       requires(Left == OtherLeft || extents_type::rank() <= 1) &&
@@ -67,6 +70,22 @@ template <class Layout, class Extents, bool Left> class contiguous_mapping {
         contiguous_mapping(contiguous_mapping<OtherLayout, OtherExtents, OtherLeft> const& source) noexcept
         : contiguous_mapping(extents_type(source.extents()))
     {}
+
+    /// \brief Convert a strided mapping with the same strides as this contiguous layout.
+    /// \pre The shape and its nonzero extent product fit the destination index type.
+    /// \pre The source strides equal the destination's canonical strides.
+    template <class Mapping>
+      requires std::same_as<typename Mapping::layout_type, layout_stride> &&
+               std::same_as<Mapping, typename Mapping::layout_type::template mapping<typename Mapping::extents_type>> &&
+               std::constructible_from<extents_type, typename Mapping::extents_type const&>
+    UNI20_HOST_DEVICE constexpr explicit(extents_type::rank() != 0 ||
+                                         !std::is_convertible_v<typename Mapping::extents_type const&, extents_type>)
+        contiguous_mapping(Mapping const& source) noexcept
+        : contiguous_mapping(extents_type(source.extents()))
+    {
+      for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
+        assert(std::cmp_equal(+source.stride(axis), +this->stride(axis)));
+    }
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr extents_type const& extents() const noexcept { return extents_; }
 

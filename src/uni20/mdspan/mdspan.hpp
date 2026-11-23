@@ -367,7 +367,16 @@ template <class Element, class Extents>
 mdspan(Element*, Extents const&) -> mdspan<Element, Extents>;
 
 template <class Element, std::integral... Indices>
+  requires(sizeof...(Indices) > 0)
 mdspan(Element*, Indices...) -> mdspan<Element, dextents<std::ptrdiff_t, sizeof...(Indices)>>;
+
+template <class Array>
+  requires(std::rank_v<Array> == 1 && std::extent_v<Array> > 0)
+mdspan(Array&) -> mdspan<std::remove_extent_t<Array>, extents<std::ptrdiff_t, std::extent_v<Array>>>;
+
+template <class Pointer>
+  requires std::is_pointer_v<std::remove_reference_t<Pointer>>
+mdspan(Pointer&&) -> mdspan<std::remove_pointer_t<std::remove_reference_t<Pointer>>, extents<std::ptrdiff_t>>;
 
 template <class Element, class Index, std::size_t Count>
 mdspan(Element*, std::array<Index, Count> const&) -> mdspan<Element, dextents<std::ptrdiff_t, Count>>;
