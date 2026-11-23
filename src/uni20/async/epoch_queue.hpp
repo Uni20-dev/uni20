@@ -22,7 +22,7 @@ namespace uni20::async
 class EpochQueue {
   public:
     /// \brief Construct a queue with one initial epoch.
-    EpochQueue() : current_(std::make_shared<EpochContext>()) { TRACE_MODULE(ASYNC, "EpochQueue Constructor", this); }
+    EpochQueue() : current_(EpochContext::make()) { TRACE_MODULE(ASYNC, "EpochQueue Constructor", this); }
 
     /// \brief Queue identity is shared by handle, never copied.
     EpochQueue(EpochQueue const&) = delete;
@@ -56,7 +56,7 @@ class EpochQueue {
       TRACE_MODULE(ASYNC, "EpochQueue::create_write_context", this);
       if (current_->has_writer())
       {
-        std::shared_ptr<EpochContext> next = std::make_shared<EpochContext>();
+        std::shared_ptr<EpochContext> next = EpochContext::make_successor(*current_);
         current_->set_next_epoch(next);
         current_ = next;
       }
@@ -96,7 +96,7 @@ class EpochQueue {
 class ReverseEpochQueue {
   public:
     /// \brief Construct a reverse queue with one initial epoch.
-    ReverseEpochQueue() : first_(std::make_shared<EpochContext>())
+    ReverseEpochQueue() : first_(EpochContext::make())
     {
       TRACE("Constructing ReverseEpochQueue EpochContext", first_.get());
     }

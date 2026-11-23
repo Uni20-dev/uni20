@@ -14,6 +14,7 @@
 #include <mutex>
 #include <numeric>
 #include <random>
+#include <thread>
 #include <uni20/common/display.hpp>
 #include <utility>
 #include <vector>
@@ -147,8 +148,22 @@ class DebugScheduler : public IAsyncScheduler {
     /// \param is_ready Predicate that reports target readiness.
     void help_while_waiting(const WaitPredicate& is_ready) override
     {
+      // Read before the readiness and queue checks below. A live snapshot on another thread can hold
+      // back this wait's target without queuing anything here, and what it releases can make the
+      // target ready, or wake a task, without queuing anything either (see
+      // TaskRegistry::snapshots_in_progress()). So while a snapshot runs, an empty queue or a paused
+      // scheduler is neither a deadlock nor a reason to park. A snapshot that has already ended
+      // published its wakeups first, so the checks below see them.
+      bool const snapshot_running = TaskRegistry::snapshots_in_progress();
       if (is_ready())
       {
+        return;
+      }
+
+      if (Blocked_ && snapshot_running)
+      {
+        // Paused, so nothing runs here, but the snapshot may still release what the target needs.
+        std::this_thread::yield();
         return;
       }
 
@@ -158,6 +173,13 @@ class DebugScheduler : public IAsyncScheduler {
         std::unique_lock lock(mutex_);
         if (Handles_.empty())
         {
+          if (snapshot_running)
+          {
+            // Let the snapshot finish, then return to the caller's readiness loop.
+            lock.unlock();
+            std::this_thread::yield();
+            return;
+          }
           if (external_waits_ == 0)
           {
             deadlocked = true;

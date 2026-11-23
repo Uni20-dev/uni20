@@ -21,6 +21,7 @@
 #include <fmt/format.h>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 #if UNI20_HAS_STACKTRACE
@@ -595,12 +596,119 @@ struct EpochDebugInfo
 #endif
 };
 
+/// \brief Registry entry for a live epoch.
+/// \details Only a weak reference is kept, so registration never extends an epoch's lifetime.
+struct EpochRegistration
+{
+    std::weak_ptr<EpochContext> epoch{};
+    EpochDebugInfo info{};
+};
+
 struct EpochDotRecord
 {
-    EpochContext const* epoch{nullptr};
+    EpochContext* epoch{nullptr};
     EpochDebugInfo info{};
     EpochContext::DebugSnapshot snapshot{};
     bool snapshot_available{true};
+};
+
+#if UNI20_DEBUG_DAG
+/// \brief A diagnostic reader of one value's reading epoch, if one can be admitted.
+/// \details A snapshot formats a live value only while it holds one, so no writer can change or
+///          destroy the value meanwhile. The snapshot that creates it is counted as in progress
+///          for its whole run (see `SnapshotInProgress`), so this reader is too.
+class DiagnosticRead {
+  public:
+    DiagnosticRead(NodeInfo const* node, std::vector<EpochDotRecord> const& epochs, bool wait_for_lock) noexcept
+    {
+      using Admission = EpochContext::DiagnosticReadAdmission;
+      for (auto const& record : epochs)
+      {
+        // An epoch whose best-effort snapshot failed may still belong to this node; admission checks.
+        if (record.snapshot_available && record.snapshot.node != node) continue;
+        switch (record.epoch->diagnostic_reader_admit(node, wait_for_lock))
+        {
+          case Admission::Admitted:
+            epoch_ = record.epoch;
+            return;
+          case Admission::WriterActive:
+            refusal_ = Refusal::writer_active;
+            break;
+          case Admission::Busy:
+            refusal_ = std::max(refusal_, Refusal::epoch_busy);
+            break;
+          case Admission::NotReadable:
+            refusal_ = std::max(refusal_, Refusal::not_reading);
+            break;
+          case Admission::OtherNode:
+            break;
+        }
+      }
+    }
+
+    DiagnosticRead(DiagnosticRead const&) = delete;
+    DiagnosticRead& operator=(DiagnosticRead const&) = delete;
+
+    ~DiagnosticRead() { this->release_reader(); }
+
+    [[nodiscard]] bool admitted() const noexcept { return epoch_ != nullptr; }
+
+    [[nodiscard]] std::string_view refusal() const noexcept
+    {
+      switch (refusal_)
+      {
+        case Refusal::no_live_epoch:
+          return "no live epoch";
+        case Refusal::not_reading:
+          return "not in a reading phase";
+        case Refusal::epoch_busy:
+          return "epoch busy";
+        case Refusal::writer_active:
+          return "writer active";
+      }
+      return "no live epoch";
+    }
+
+    /// Release the reader, which may start the next epoch.
+    void release_reader() noexcept
+    {
+      if (epoch_) std::exchange(epoch_, nullptr)->diagnostic_reader_release();
+    }
+
+  private:
+    // Ordered by how much each explains a refusal; the most informative one is reported.
+    enum class Refusal
+    {
+      no_live_epoch,
+      not_reading,
+      epoch_busy,
+      writer_active,
+    };
+
+    EpochContext* epoch_{nullptr};
+    Refusal refusal_{Refusal::no_live_epoch};
+};
+#endif
+
+/// \brief Counts one snapshot as in progress for as long as it exists.
+/// \details See `TaskRegistry::snapshots_in_progress()`. A snapshot declares it first, so that the
+///          count covers everything the snapshot holds: diagnostic readers, value pins and epoch
+///          references. Releasing any of them can wake a waiting task, for example when the
+///          destructor of a payload or of an epoch's stored exception releases an async buffer.
+class SnapshotInProgress {
+  public:
+    explicit SnapshotInProgress(std::atomic<std::size_t>& count) noexcept : count_(count)
+    {
+      count_.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    SnapshotInProgress(SnapshotInProgress const&) = delete;
+    SnapshotInProgress& operator=(SnapshotInProgress const&) = delete;
+
+    ~SnapshotInProgress() { count_.fetch_sub(1, std::memory_order_seq_cst); }
+
+  private:
+    std::atomic<std::size_t>& count_;
 };
 
 std::string join_lines(std::vector<std::string> const& lines)
@@ -830,7 +938,10 @@ std::string render_graphviz(GraphSnapshot const& snapshot, GraphDiagnostics cons
   for (auto const& node : snapshot.data_nodes)
   {
     auto detail = fmt::format("storage={}\nstate={}", node.storage_address, node.state);
-    if (!node.value.empty()) detail += fmt::format("\nvalue={}", node.value);
+    if (!node.value.empty())
+      detail += fmt::format("\nvalue={}", node.value);
+    else if (!node.value_unavailable.empty())
+      detail += fmt::format("\nvalue not read: {}", node.value_unavailable);
     auto label = node.label.empty() ? fmt::format("data {}\n{}\n{}", node.id, node.type, detail)
                                     : fmt::format("{}\ndata {}\n{}\n{}", node.label, node.id, node.type, detail);
     if (contains_value(diagnostics.missing_writer_node_ids, node.id)) label += "\ndiagnostic: missing writer";
@@ -1178,17 +1289,18 @@ class TaskRegistryImpl {
         node_names_[node] = label;
     }
 
-    void register_epoch_context(EpochContext const* epoch_context)
+    void register_epoch_context(std::shared_ptr<EpochContext> const& epoch_context)
     {
       if (!epoch_context) return;
       std::lock_guard lock(mutex_);
-      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context);
+      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context.get());
       if (inserted)
       {
-        it->second.id = next_epoch_id_++;
-        it->second.creation_timestamp = std::chrono::system_clock::now();
+        it->second.epoch = epoch_context;
+        it->second.info.id = next_epoch_id_++;
+        it->second.info.creation_timestamp = std::chrono::system_clock::now();
 #if UNI20_HAS_STACKTRACE
-        it->second.creation_trace = std::stacktrace::current(2);
+        it->second.info.creation_trace = std::stacktrace::current(2);
 #endif
       }
     }
@@ -1225,9 +1337,14 @@ class TaskRegistryImpl {
 
     GraphSnapshot snapshot(bool best_effort)
     {
+      // First, so that it is destroyed after everything below that the snapshot holds.
+      SnapshotInProgress in_progress(snapshots_in_progress_);
       std::unordered_map<void*, TaskDebugInfo> tasks_copy;
       std::unordered_map<NodeInfo const*, std::string> node_names_copy;
-      std::vector<std::pair<EpochContext const*, EpochDebugInfo>> epoch_records;
+      // Strong references taken under the registry lock keep each listed epoch alive until this
+      // snapshot has read it. Declared outside the locked scope so that, on every path, they are
+      // released after the lock: the last release runs ~EpochContext, which takes the registry lock.
+      std::vector<std::pair<std::shared_ptr<EpochContext>, EpochDebugInfo>> epoch_records;
       StacktraceOptions stacktrace_options;
       {
         std::unique_lock<std::mutex> lock;
@@ -1246,18 +1363,20 @@ class TaskRegistryImpl {
         node_names_copy = node_names_;
         stacktrace_options = stacktrace_options_;
         epoch_records.reserve(epoch_contexts_.size());
-        for (auto const& [epoch, info] : epoch_contexts_)
+        for (auto const& [address, registration] : epoch_contexts_)
         {
-          if (!epoch) continue;
-          epoch_records.emplace_back(epoch, info);
+          // Empty once the epoch's count has reached zero: its destructor is waiting for this lock
+          // to unregister it.
+          if (auto epoch = registration.epoch.lock()) epoch_records.emplace_back(std::move(epoch), registration.info);
         }
       }
+      if (auto* hook = snapshot_unlock_hook_.load(std::memory_order_acquire)) hook();
 
       std::vector<EpochDotRecord> epochs;
       epochs.reserve(epoch_records.size());
       for (auto const& [epoch, info] : epoch_records)
       {
-        EpochDotRecord record{epoch, info, {}, true};
+        EpochDotRecord record{epoch.get(), info, {}, true};
         if (best_effort)
           record.snapshot_available = epoch->try_debug_snapshot(record.snapshot);
         else
@@ -1311,10 +1430,29 @@ class TaskRegistryImpl {
         }
         record.type = std::string(node->type());
         record.storage_address = node->storage_address() ? fmt::format("{}", node->storage_address()) : "(unknown)";
-        record.value_constructed = node->value_constructed();
-        record.state = std::string(node->value_state_label());
-        record.address = node->address() ? fmt::format("{}", node->address()) : "(unconstructed)";
-        record.value = node->value_text();
+#if UNI20_DEBUG_DAG
+        // Admitted before observing, so that the state read below is the one the reader protects.
+        // No registry or epoch mutex is held from here on, while the value's formatter runs.
+        DiagnosticRead read(node, epochs, !best_effort);
+#endif
+        {
+          auto const observation = node->observe();
+          auto const state = observation.state();
+          record.value_constructed = state == uni20::async::NodeValueState::Constructed;
+          record.state = std::string(uni20::async::node_value_state_label(state));
+          if (observation.address())
+            record.address = fmt::format("{}", observation.address());
+          else
+            record.address = state == uni20::async::NodeValueState::Expired ? "(expired)" : "(unconstructed)";
+#if UNI20_DEBUG_DAG
+          if (read.admitted())
+            record.value = observation.value_text();
+          else if (record.value_constructed)
+            record.value_unavailable = std::string(read.refusal());
+          // Let the next writer go before the observation's pin is released.
+          read.release_reader();
+#endif
+        }
         graph.data_nodes.push_back(std::move(record));
       }
 
@@ -1428,6 +1566,13 @@ class TaskRegistryImpl {
     GraphSnapshot snapshot() { return this->snapshot(false); }
 
     GraphSnapshot snapshot_best_effort() { return this->snapshot(true); }
+
+    bool snapshots_in_progress() const noexcept { return snapshots_in_progress_.load(std::memory_order_seq_cst) != 0; }
+
+    void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+    {
+      snapshot_unlock_hook_.store(hook, std::memory_order_release);
+    }
 
     std::string graphviz_dot(bool best_effort)
     {
@@ -1607,12 +1752,14 @@ class TaskRegistryImpl {
     std::mutex mutex_;
     TaskDebugInfoMap tasks_;
     std::unordered_map<NodeInfo const*, std::string> node_names_;
-    std::unordered_map<EpochContext const*, EpochDebugInfo> epoch_contexts_;
+    std::unordered_map<EpochContext const*, EpochRegistration> epoch_contexts_;
     StacktraceOptions stacktrace_options_{default_stacktrace_options()};
     CoroutineExceptionDiagnosticsOptions coroutine_exception_diagnostics_options_{
         default_coroutine_exception_diagnostics_options()};
     std::size_t next_task_id_{1};
     std::size_t next_epoch_id_{1};
+    std::atomic<void (*)()> snapshot_unlock_hook_{nullptr};
+    std::atomic<std::size_t> snapshots_in_progress_{0};
 };
 
 // Deliveries of the service's signal. The handler only increments it, so the
@@ -1880,7 +2027,7 @@ void TaskRegistry::name_async_value(async::NodeInfo const* node, std::string con
   TaskRegistryImpl::instance().name_async_value(node, label);
 }
 
-void TaskRegistry::register_epoch_context(async::EpochContext const* epoch_context)
+void TaskRegistry::register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context)
 {
   TaskRegistryImpl::instance().register_epoch_context(epoch_context);
 }
@@ -1924,6 +2071,13 @@ TaskRegistry::GraphSnapshot TaskRegistry::snapshot() { return TaskRegistryImpl::
 TaskRegistry::GraphSnapshot TaskRegistry::snapshot_best_effort()
 {
   return TaskRegistryImpl::instance().snapshot_best_effort();
+}
+
+bool TaskRegistry::snapshots_in_progress() noexcept { return TaskRegistryImpl::instance().snapshots_in_progress(); }
+
+void TaskRegistry::set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+{
+  TaskRegistryImpl::instance().set_snapshot_unlock_hook_for_testing(hook);
 }
 
 TaskRegistry::GraphDiagnostics TaskRegistry::diagnose_snapshot(GraphSnapshot const& snapshot)

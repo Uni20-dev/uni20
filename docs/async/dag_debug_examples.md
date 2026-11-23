@@ -159,7 +159,13 @@ you want to inspect the shape of a computation.
 For data nodes, `storage=0x...` is the `shared_storage<T>` control-block identity.
 `state=constructed` means a `T` object exists at snapshot time; `state=unconstructed`
 means the storage exists but does not currently hold a constructed `T` object.
-`state=invalid` means no storage control block was available. Shape-like objects
+`state=invalid` means no storage control block was available. `state=expired` means
+the storage has since been released, for example a value that a task awaited earlier
+and that went out of scope: the node and its edges stay in the graph, but there is no
+value to show. A value that a writer may be changing is not formatted: the label
+shows `value not read: writer active` or another reason instead. See
+[reading live values](task_registry_debug.md#reading-live-values) for what a
+snapshot taken while the program runs guarantees. Shape-like objects
 that expose `mdspan().extents()` or `extents()` may also show
 `value=shape=(...)`; built-in scalar values show their value. Other constructed
 objects omit the `value=...` line by default. Custom types can provide a one-line

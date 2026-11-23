@@ -56,7 +56,9 @@ template <typename T> class EpochContextWriter;
 /// (see `Phase transition rules` in code for exhaustive list).
 ///
 /// ### Ownership and Lifetime
-/// - EpochContexts are heap-allocated and shared via `std::shared_ptr`.
+/// - EpochContexts are created by `make()`, `make_successor()` or `make_previous()`, which share them
+///   via `std::shared_ptr` and register each one with the task registry once its identity is set.
+///   The registry holds only a weak reference.
 /// - Each epoch owns a reference to its successor (`next_epoch_`) if one is created.
 /// - The lifetime of an epoch is extended by:
 ///   - Outstanding readers or writers (RAII handles)
@@ -198,22 +200,60 @@ class EpochContext {
 #endif
     };
 
-    EpochContext() { TaskRegistry::register_epoch_context(this); }
+  private:
+    /// \brief Restricts construction to the factories below.
+    /// \details Each factory registers the epoch with the task registry only after its generation and
+    ///          debug node are set, so a snapshot never sees an epoch whose identity is still being written.
+    struct ConstructionKey
+    {
+        explicit ConstructionKey() = default;
+    };
 
-    /// Construct an EpochContext given an existing next epoch.
-    /// \note this is backwards propogation, the counter is initialized to next->counter_ - 1
-    explicit EpochContext(std::shared_ptr<EpochContext> next) : counter_(next->counter_ - 1), next_epoch_(next)
+  public:
+    /// \brief Construct an epoch; use \ref make, \ref make_successor or \ref make_previous instead.
+    EpochContext(ConstructionKey, int counter, std::shared_ptr<EpochContext> next, NodeInfo const* node)
+        : counter_(counter), next_epoch_(std::move(next))
     {
 #if UNI20_DEBUG_DAG
-      node_ = next ? next->node() : nullptr;
+      node_ = node;
+#else
+      static_cast<void>(node);
 #endif
-      TaskRegistry::register_epoch_context(this);
     }
 
-    /// Helper factory to construct the previous epoch in a reverse-mode chain
+    /// \brief Create the first epoch of a queue.
+    /// \return The new epoch, already registered for diagnostics.
+    static std::shared_ptr<EpochContext> make() { return registered(ConstructionKey{}, 0, nullptr, nullptr); }
+
+    /// \brief Create the epoch that will follow \p pred, to be passed to `pred.set_next_epoch()`.
+    /// \details The successor takes the next generation and the debug node of \p pred. Neither field of
+    ///          \p pred can change by now: the generation is set at construction, and the node by the
+    ///          `Async` constructor before its queue can append an epoch. Successors are created only by
+    ///          the externally serialized queue head, so this reads them without locking \p pred.
+    /// \param pred Current last epoch of the queue.
+    /// \return The new epoch, already registered for diagnostics.
+    static std::shared_ptr<EpochContext> make_successor(EpochContext const& pred)
+    {
+#if UNI20_DEBUG_DAG
+      NodeInfo const* const node = pred.node_;
+#else
+      NodeInfo const* const node = nullptr;
+#endif
+      return registered(ConstructionKey{}, pred.counter_ + 1, nullptr, node);
+    }
+
+    /// \brief Create the epoch that precedes \p next in a reverse-mode chain.
+    /// \param next Current first epoch of the reverse chain.
+    /// \return The new epoch, already registered for diagnostics, with \p next as its successor.
     static std::shared_ptr<EpochContext> make_previous(std::shared_ptr<EpochContext> next)
     {
-      return std::make_shared<EpochContext>(std::move(next));
+      int const counter = next->counter_ - 1;
+#if UNI20_DEBUG_DAG
+      NodeInfo const* const node = next->node();
+#else
+      NodeInfo const* const node = nullptr;
+#endif
+      return registered(ConstructionKey{}, counter, std::move(next), node);
     }
 
     ~EpochContext()
@@ -226,18 +266,17 @@ class EpochContext {
       TaskRegistry::destroy_epoch_context(this);
     }
 
-    /// Set the next EpochContext in the chain.
+    /// \brief Set the next EpochContext in the chain.
+    /// \param next Epoch created by \ref make_successor for this epoch.
     void set_next_epoch(std::shared_ptr<EpochContext> next)
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::set_next_epoch", this, next.get(), counter_);
       DEBUG_CHECK(!next_epoch_); // make sure that we haven't already set the next epoch pointer
       DEBUG_CHECK(phase_ <= Phase::Reading);
+      // The successor's identity was set before it was registered (make_successor), never here.
+      DEBUG_CHECK_EQUAL(next->counter_, counter_ + 1);
 
-      next->counter_ = counter_ + 1; // increment the epoch counter
-#if UNI20_DEBUG_DAG
-      next->node_ = node_;
-#endif
       next_epoch_ = std::move(next);
       if (phase_ == Phase::Reading && num_readers_ == 0) this->advance_finished_locked(std::move(lock));
     }
@@ -265,11 +304,15 @@ class EpochContext {
     // start executing the epoch, propogating the exception and cancellation state from a previous epoch
     void start(std::exception_ptr eptr)
     {
+      // Declared before the lock, so that a failure replaced below is destroyed only after this
+      // epoch's mutex is released: its destructor may release a buffer of this epoch.
+      std::exception_ptr replaced;
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start", this, counter_);
       DEBUG_CHECK(phase_ == Phase::Pending, this);
-      // A task may already have failed while waiting for this epoch to start.
-      if (eptr) eptr_ = std::move(eptr);
+      // A task may already have failed while waiting for this epoch to start; the inherited
+      // failure takes its place.
+      if (eptr) replaced = std::exchange(eptr_, std::move(eptr));
       this->advance_start_locked(std::move(lock));
     }
 
@@ -368,6 +411,46 @@ class EpochContext {
       std::lock_guard lock(mtx_);
       node_ = node;
     }
+
+    /// \brief Outcome of \ref diagnostic_reader_admit.
+    enum class DiagnosticReadAdmission
+    {
+      Admitted,     ///< A reader is held; release it with \ref diagnostic_reader_release.
+      Busy,         ///< The epoch's mutex was busy and the caller did not wait for it.
+      WriterActive, ///< A writer of this epoch holds the value.
+      NotReadable,  ///< The epoch is not in its reading phase.
+      OtherNode,    ///< The epoch belongs to another value.
+    };
+
+    /// \brief Admit a diagnostic reader of \p node's value, if this epoch is reading it.
+    /// \details Admits only in the Reading phase. This epoch's writers have finished, every earlier
+    ///          epoch has finished, and the next epoch cannot start until the reader is released, so
+    ///          no writer can change or destroy the value meanwhile. Like any reader, an admitted
+    ///          reader delays the next writer until it is released. That includes a writer already
+    ///          enrolled in a successor epoch: such values are often what a dump needs to show, so
+    ///          a successor does not prevent admission. Admission never waits for a writer, and
+    ///          the mutex is not held after it returns.
+    /// \param node Node whose value is to be read.
+    /// \param wait_for_lock Whether to wait for this epoch's mutex rather than give up if it is busy.
+    /// \return `Admitted`, which must be matched by \ref diagnostic_reader_release, or why not.
+    DiagnosticReadAdmission diagnostic_reader_admit(NodeInfo const* node, bool wait_for_lock) noexcept
+    {
+      std::unique_lock lock(mtx_, std::defer_lock);
+      if (wait_for_lock)
+        lock.lock();
+      else if (!lock.try_lock())
+        return DiagnosticReadAdmission::Busy;
+      if (node_ != node) return DiagnosticReadAdmission::OtherNode;
+      if (phase_ == Phase::Writing && writer_active_) return DiagnosticReadAdmission::WriterActive;
+      if (phase_ != Phase::Reading) return DiagnosticReadAdmission::NotReadable;
+      ++num_readers_;
+      return DiagnosticReadAdmission::Admitted;
+    }
+
+    /// \brief Release a reader admitted by \ref diagnostic_reader_admit.
+    /// \details As with any reader, releasing the last one can finish this epoch and start the next
+    ///          one on the calling thread, which can reschedule its writer.
+    void diagnostic_reader_release() noexcept { this->reader_release(); }
 #endif
 
   private:
@@ -754,6 +837,15 @@ class EpochContext {
 
     friend class EpochQueue;
     friend class ReverseEpochQueue;
+
+    /// \brief Construct a complete epoch, then publish it to the task registry.
+    static std::shared_ptr<EpochContext> registered(ConstructionKey key, int counter,
+                                                    std::shared_ptr<EpochContext> next, NodeInfo const* node)
+    {
+      auto epoch = std::make_shared<EpochContext>(key, counter, std::move(next), node);
+      TaskRegistry::register_epoch_context(epoch);
+      return epoch;
+    }
 
     // All of the data is protected by the mutex
     mutable std::mutex mtx_;
