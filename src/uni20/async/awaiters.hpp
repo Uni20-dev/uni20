@@ -388,7 +388,11 @@ template <typename T, typename Value> class WriteToAwaiter {
 
     auto await_suspend(BasicTask&& t) noexcept { return buffer_.await_suspend(std::move(t)); }
 
-    void await_resume() { buffer_.emplace_assert(std::move(value_)); }
+    /// \brief Write the value, as `co_await buffer = value` does.
+    /// \details Resumes through the buffer's own `await_resume()`. After a suspension, the epoch has
+    ///          already made this writer active, and only that path records it; asking the epoch
+    ///          again, as `emplace_assert()` does, would find the writer active and fail.
+    void await_resume() { buffer_.await_resume().emplace(std::move(value_)); }
 
   private:
     WriteBuffer<T> buffer_;
