@@ -91,11 +91,6 @@ template <std::size_t OperandCount, std::size_t MaximumRank> struct multi_iterat
 namespace detail
 {
 
-template <class Mapping> constexpr auto mapping_origin(Mapping const& mapping)
-{
-  return std::apply(mapping, std::array<typename Mapping::index_type, Mapping::extents_type::rank()>{});
-}
-
 template <class Extents> constexpr bool has_zero_extent(Extents const& extents)
 {
   for (std::size_t axis = 0; axis != Extents::rank(); ++axis)

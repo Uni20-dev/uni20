@@ -100,6 +100,41 @@ TEST(NativeMdspanTest, ContiguousIndexingUsesTheLayout)
   EXPECT_EQ((strided[0, 1]), 2);
 }
 
+TEST(NativeMdspanTest, ComparesStridedAndContiguousMappings)
+{
+  using ScalarStrided = uni20::layout_stride::mapping<ScalarShape>;
+  using ScalarLeft = uni20::layout_left::mapping<ScalarShape>;
+  using ScalarRight = uni20::layout_right::mapping<ScalarShape>;
+  static_assert(ScalarStrided{} == ScalarLeft{} && ScalarLeft{} == ScalarStrided{});
+  static_assert(ScalarStrided{} == ScalarRight{} && ScalarRight{} == ScalarStrided{});
+
+  using Left = uni20::layout_left::mapping<MatrixShape>;
+  using Right = uni20::layout_right::mapping<MatrixShape>;
+  using Strided = uni20::layout_stride::mapping<MatrixShape>;
+  constexpr Left left{MatrixShape{2, 3}};
+  constexpr Strided strided{left};
+  static_assert(strided == left && left == strided);
+  using UnsignedStrided = uni20::layout_stride::mapping<uni20::dextents<unsigned int, 2>>;
+  constexpr UnsignedStrided mixed_width{uni20::dextents<unsigned int, 2>{2, 3}, {1, 2}};
+  static_assert(strided == mixed_width && mixed_width == strided);
+  static_assert(strided != Right{left.extents()});
+  static_assert(strided != Left{MatrixShape{3, 2}});
+
+  struct ShiftedMapping : Left
+  {
+      using Left::Left;
+
+      constexpr int operator()(int i, int j) const noexcept { return 1 + Left::operator()(i, j); }
+      constexpr int required_span_size() const noexcept
+      {
+        return Left::required_span_size() == 0 ? 0 : 1 + Left::required_span_size();
+      }
+  };
+  static_assert(strided != ShiftedMapping{left.extents()});
+  constexpr Left empty{MatrixShape{0, 3}};
+  static_assert(Strided{empty} == ShiftedMapping{empty.extents()});
+}
+
 TEST(NativeMdspanTest, RankZeroHasAnObserverAndOneElement)
 {
   int data = 42;
