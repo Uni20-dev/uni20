@@ -26,6 +26,7 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     NAME TaskRegistryDebugTest.SignalEnvironmentStartsDiagnosticsServiceAtStartup
     COMMAND
       ${CMAKE_COMMAND} -E env
+      --unset=UNI20_DEBUG_DAG_REQUEST_FILE
       UNI20_DEBUG_DAG_SIGNAL=SIGUSR1
       UNI20_DEBUG_DAG_POLL_MS=10
       UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_signal_startup

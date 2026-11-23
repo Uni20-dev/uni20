@@ -77,10 +77,12 @@ class TaskRegistryDebug {
     struct DiagnosticsServiceOptions
     {
         GraphvizDumpOptions dump_options{};
+        /// Signal that asks for a dump on Linux: `SIGUSR1`, `SIGUSR2`, or 0 for none.
+        /// Reserve this signal for diagnostics, including in programs using
+        /// `sigwait()` or `signalfd()`. Each process can start a signal service once.
         int signal_number{0};
         std::string request_file{};
         int poll_interval_ms{250};
-        bool block_signal_in_calling_thread{true};
     };
 
     /// \brief Runtime controls for stacktrace formatting in debug output.
@@ -254,9 +256,13 @@ class TaskRegistryDebug {
     static bool start_diagnostics_service();
     /// \brief Starts the optional background DAG diagnostics service.
     /// \param options Signal/control-file and output configuration.
-    /// \return true if a service was started or was already running.
+    /// \return true if a service was started or was already running; false if
+    ///         `options.signal_number` is not 0, `SIGUSR1` or `SIGUSR2`, if the program
+    ///         already has a handler for it, or if a service with a signal has already
+    ///         run in this process.
     static bool start_diagnostics_service(DiagnosticsServiceOptions const& options);
     /// \brief Stops the background DAG diagnostics service if it is running.
+    /// A forked child skips shutdown of the parent's service.
     static void stop_diagnostics_service() noexcept;
     /// \brief Prints global task-registry diagnostics.
     static void dump();

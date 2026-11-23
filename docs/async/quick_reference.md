@@ -278,10 +278,15 @@ options.signal_number = SIGUSR1;
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
+Reserve an unused `SIGUSR1` or `SIGUSR2` for diagnostics. Uni20 detects installed
+handlers. If your program consumes a signal through `sigwait()` or `signalfd()`,
+choose a different signal for diagnostics.
+
 Alternatively, setting `UNI20_DEBUG_DAG_SIGNAL=SIGUSR1` before launching the
-program starts the service during program initialization. Uni20 blocks and
-consumes the signal with `sigtimedwait`; it does not run diagnostics from an
-asynchronous signal handler.
+program starts the service during program initialization. Uni20's signal handler
+only records the request, and the service thread writes the dump at its next poll;
+no diagnostics run in the handler. See [the task registry guide](task_registry_debug.md)
+for the details.
 
 Useful environment defaults:
 

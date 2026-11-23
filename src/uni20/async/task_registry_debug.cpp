@@ -10,9 +10,11 @@
 #include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fmt/chrono.h>
 #include <fmt/core.h>
@@ -307,6 +309,20 @@ std::size_t parse_stacktrace_frame_count(char const* raw_value, std::size_t fall
   return static_cast<std::size_t>(parsed);
 }
 
+// Only the two signals reserved for applications. The kernel raises a fault
+// signal such as SIGFPE at the faulting instruction, which traps again when a
+// handler returns, and the other signals belong to the program or its shell.
+bool is_diagnostics_signal(int signal) noexcept
+{
+#if defined(SIGUSR1) && defined(SIGUSR2)
+  return signal == SIGUSR1 || signal == SIGUSR2;
+#else
+  (void)signal;
+  return false;
+#endif
+}
+
+// 0 when the value asks for no signal, -1 when it names one the service does not accept.
 int parse_signal_number(char const* value) noexcept
 {
   if (!value || value[0] == '\0') return 0;
@@ -320,7 +336,8 @@ int parse_signal_number(char const* value) noexcept
 #if defined(SIGUSR2)
   if (signal == "USR2" || signal == "SIGUSR2") return SIGUSR2;
 #endif
-  return parse_positive_int(value, 0);
+  auto const number = parse_positive_int(value, -1);
+  return is_diagnostics_signal(number) ? number : -1;
 }
 
 GraphvizDumpOptions default_graphviz_dump_options()
@@ -1436,6 +1453,13 @@ class TaskRegistryImpl {
       return write_text_file(path, this->graphviz_dot_best_effort());
     }
 
+    /// \brief Write one DOT file now with `options`, for a dump the diagnostics service itself was asked for.
+    bool dump_graphviz_now(GraphvizDumpOptions const& options)
+    {
+      ensure_output_dir(options.output_dir);
+      return this->dump_graphviz_file_best_effort(default_dump_path(options));
+    }
+
     bool service_debug_requests(GraphvizDumpOptions const& options)
     {
       auto requests = pending_graphviz_dump_requests.exchange(0, std::memory_order_acq_rel);
@@ -1591,98 +1615,163 @@ class TaskRegistryImpl {
     std::size_t next_epoch_id_{1};
 };
 
+// Deliveries of the service's signal. The handler only increments it, so the
+// counter must be lock-free to be safe in a signal handler.
+std::atomic<unsigned> pending_signal_requests{0};
+static_assert(std::atomic<unsigned>::is_always_lock_free);
+
+#if defined(__linux__)
+using signal_action = struct sigaction;
+
+void record_diagnostics_signal(int) noexcept { pending_signal_requests.fetch_add(1, std::memory_order_relaxed); }
+
+// The program's own handler, which the service must not replace. SIG_DFL and
+// SIG_IGN are dispositions rather than handlers, even when an action keeps
+// SA_SIGINFO set; on Linux sa_handler and sa_sigaction share storage.
+bool has_handler(signal_action const& action) noexcept
+{
+  return action.sa_handler != SIG_DFL && action.sa_handler != SIG_IGN;
+}
+
+bool is_diagnostics_handler(signal_action const& action) noexcept
+{
+  return !(action.sa_flags & SA_SIGINFO) && action.sa_handler == record_diagnostics_signal;
+}
+#endif
+
 class DiagnosticServiceState {
   public:
     bool start(DiagnosticsServiceOptions options)
     {
-      std::lock_guard lock(mutex_);
+      std::lock_guard lifecycle(lifecycle_);
+      if (options.signal_number != 0 && !is_diagnostics_signal(options.signal_number)) return false;
       if (thread_.joinable()) return true;
 
 #if defined(__linux__)
-      if (options.signal_number > 0 && options.block_signal_in_calling_thread)
+      // A handler rather than a blocked signal: the kernel may deliver a
+      // process-directed signal to any thread, including ones that existed
+      // before the service started and so do not block it.
+      if (options.signal_number > 0)
       {
-        sigset_t set;
-        sigemptyset(&set);
-        sigaddset(&set, options.signal_number);
-        if (pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) return false;
+        // Once per process. A handler can still be running on another thread
+        // after stop() returns, and would count its delivery for a later service.
+        if (signal_taken_) return false;
+        // A signal the program handles itself, for example to checkpoint, stays its own.
+        signal_action current{};
+        if (sigaction(options.signal_number, nullptr, &current) != 0 || has_handler(current)) return false;
+        signal_action action{};
+        action.sa_handler = record_diagnostics_signal;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_RESTART;
+        if (sigaction(options.signal_number, &action, &previous_action_) != 0) return false;
+        if (has_handler(previous_action_)) // installed by another thread since the check
+        {
+          sigaction(options.signal_number, &previous_action_, nullptr);
+          return false;
+        }
+        signal_taken_ = true;
       }
 #else
       if (options.signal_number > 0) return false;
 #endif
 
-      stop_.store(false, std::memory_order_release);
+      start_pid_.store(current_process_id(), std::memory_order_relaxed);
       signal_number_ = options.signal_number;
-      thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
+      {
+        std::lock_guard lock(mutex_);
+        stop_ = false;
+      }
+      try
+      {
+        thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
+      }
+      catch (...)
+      {
+        this->restore_signal_action();
+        throw;
+      }
       return true;
     }
 
     void stop() noexcept
     {
-      std::thread thread;
-      int signal_number = 0;
+      // After fork(), the child has a copy of the locks and no service thread.
+      if (start_pid_.load(std::memory_order_relaxed) != current_process_id()) return;
+
+      // Held through the join and the restoration, so that a concurrent start()
+      // cannot reset the stopping thread's flag.
+      std::lock_guard lifecycle(lifecycle_);
+      if (!thread_.joinable()) return;
       {
         std::lock_guard lock(mutex_);
-        stop_.store(true, std::memory_order_release);
-        signal_number = signal_number_;
-        thread = std::move(thread_);
+        stop_ = true;
       }
-
-#if defined(__linux__)
-      if (thread.joinable() && signal_number > 0) pthread_kill(thread.native_handle(), signal_number);
-#endif
-      if (thread.joinable()) thread.join();
+      wake_.notify_all();
+      thread_.join();
+      this->restore_signal_action();
     }
 
     ~DiagnosticServiceState() { this->stop(); }
 
   private:
-    static bool wait_for_signal(int signal_number, int poll_interval_ms) noexcept
+    // Called with lifecycle_ held. A handler the program installed meanwhile is left in place.
+    void restore_signal_action() noexcept
     {
 #if defined(__linux__)
-      if (signal_number <= 0)
-      {
-        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-        return false;
-      }
-
-      sigset_t set;
-      sigemptyset(&set);
-      sigaddset(&set, signal_number);
-      pthread_sigmask(SIG_BLOCK, &set, nullptr);
-
-      timespec timeout{};
-      timeout.tv_sec = poll_interval_ms / 1000;
-      timeout.tv_nsec = static_cast<long>(poll_interval_ms % 1000) * 1000000L;
-
-      errno = 0;
-      auto const received = sigtimedwait(&set, nullptr, &timeout);
-      return received == signal_number;
-#else
-      static_cast<void>(signal_number);
-      std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-      return false;
+      signal_action current{};
+      if (signal_number_ > 0 && sigaction(signal_number_, nullptr, &current) == 0 && is_diagnostics_handler(current))
+        sigaction(signal_number_, &previous_action_, nullptr);
 #endif
+      signal_number_ = 0;
     }
 
     void run(DiagnosticsServiceOptions options)
     {
-      auto const poll_interval_ms = options.poll_interval_ms > 0 ? options.poll_interval_ms : 250;
+#if defined(__linux__)
+      // This thread inherits its starter's signal mask. Unblocking the signal here
+      // leaves it a receiver even when every other thread blocks it, as in a
+      // program started with the signal blocked.
+      if (options.signal_number > 0)
+      {
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, options.signal_number);
+        pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+      }
+#endif
+      auto const poll_interval =
+          std::chrono::milliseconds(options.poll_interval_ms > 0 ? options.poll_interval_ms : 250);
       ensure_output_dir(options.dump_options.output_dir);
 
-      while (!stop_.load(std::memory_order_acquire))
+      std::unique_lock lock(mutex_);
+      while (!wake_.wait_for(lock, poll_interval, [this] { return stop_; }))
       {
-        bool triggered = wait_for_signal(options.signal_number, poll_interval_ms);
-        if (stop_.load(std::memory_order_acquire)) break;
+        lock.unlock();
+        auto& registry = TaskRegistryImpl::instance();
+        bool triggered =
+            options.signal_number > 0 && pending_signal_requests.exchange(0, std::memory_order_relaxed) > 0;
         if (consume_request_file(options.request_file)) triggered = true;
-        if (triggered) pending_graphviz_dump_requests.fetch_add(1, std::memory_order_release);
-        TaskRegistryImpl::instance().service_debug_requests(options.dump_options);
+        // Written here with the service's own options: through the shared
+        // request counter, a scheduler progress point could take it first and
+        // write it under the scheduler's directory instead.
+        if (triggered) registry.dump_graphviz_now(options.dump_options);
+        registry.service_debug_requests(options.dump_options);
+        lock.lock();
       }
     }
 
-    std::mutex mutex_;
+    std::atomic<long> start_pid_{-1};
+    static_assert(decltype(start_pid_)::is_always_lock_free);
+    std::mutex lifecycle_; // start and stop: thread_, signal_number_, signal_taken_, previous_action_
+    std::mutex mutex_;     // stop_, with wake_
+    std::condition_variable wake_;
     std::thread thread_{};
-    std::atomic<bool> stop_{false};
+    bool stop_{false};
     int signal_number_{0};
+#if defined(__linux__)
+    bool signal_taken_{false};
+    signal_action previous_action_{};
+#endif
 };
 
 DiagnosticServiceState& diagnostic_service()
@@ -1706,15 +1795,22 @@ void initialize_task_registry_diagnostics_from_environment() noexcept
   try
   {
     auto options = default_diagnostics_service_options();
-    if (options.signal_number <= 0) return;
+    if (options.signal_number == 0) return;
 
     if (!diagnostic_service().start(std::move(options)))
     {
-      std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s\n",
+      std::fprintf(stderr,
+                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: reserve SIGUSR1 or "
+                   "SIGUSR2 for diagnostics with a default or ignored disposition\n",
                    configured_signal);
       return;
     }
     environment_diagnostics_service_started = true;
+  }
+  catch (std::exception const& e)
+  {
+    std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: %s\n",
+                 configured_signal, e.what());
   }
   catch (...)
   {
