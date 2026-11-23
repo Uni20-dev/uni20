@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -399,6 +400,43 @@ KernelAttempt try_kernel(CpuReferenceBackend, norm_op const&, Output& output, In
     detail::reference_norm(resolved_output, input_span);
     return KernelAttempt::success;
   });
+}
+
+/// \brief Report whether the CPU can return the signed maximum as a host scalar.
+template <class Output, uni20::HostReadableMdspec Input>
+consteval auto kernel_accepts_types(CpuReferenceBackend const&, maximum_op const&, Output&, Input&)
+{
+  using input_span = uni20::host_read_mdspan_t<Input>;
+  using scalar_type = typename input_span::value_type;
+  if constexpr (uni20::Real<scalar_type> && (!uni20::MdspecLike<Output>) &&
+                reduction_detail::output_is_supported<Output, scalar_type, 0>() &&
+                detail::reduction_value_is_readable<input_span>())
+    return kernel_types_yes;
+  else
+    return kernel_types_no;
+}
+
+/// \brief Return the largest real entry while honoring the input accessor.
+template <class Output, uni20::HostReadableMdspec Input>
+KernelAttempt try_kernel(CpuReferenceBackend, maximum_op const&, Output& output, Input& input)
+{
+  auto access = acquire_host_read_access_sync(input);
+  auto span = access.mdspan();
+  using span_type = decltype(span);
+  using scalar_type = typename span_type::value_type;
+  using state_type = std::optional<scalar_type>;
+  auto initialize = [] { return state_type{}; };
+  auto accumulate = [](state_type& state, auto&& element) {
+    auto value = static_cast<scalar_type>(element);
+    if (!state || uni20::math::isnan(value) || value > *state) state.emplace(std::move(value));
+  };
+  auto finalize = [](state_type& state) {
+    ERROR_IF(!state, "maximum requires a nonempty tensor");
+    return std::move(*state);
+  };
+  detail::reference_reduce_axes(output, all_reduction_axes<span_type::rank()>(), initialize, accumulate, finalize,
+                                span);
+  return KernelAttempt::success;
 }
 
 /// \brief Report eligibility for a host-accessible mdspec sum reduction.

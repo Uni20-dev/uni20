@@ -134,6 +134,28 @@ TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
   EXPECT_EQ(offset, 0);
 }
 
+TEST(IterationPlanTest, PreservesEachMappingOrigin)
+{
+  using shape = stdex::extents<std::uint8_t, 2>;
+  using base_mapping = stdex::layout_right::mapping<shape>;
+  struct Mapping : base_mapping
+  {
+      constexpr int operator()(std::uint8_t i) const { return 300 + i; }
+      constexpr int required_span_size() const { return 302; }
+      static constexpr bool is_always_exhaustive() { return false; }
+      static constexpr bool is_exhaustive() { return false; }
+  };
+  Mapping shifted;
+  auto [dimensions, offset] = make_iteration_plan_with_offset(shifted);
+  ASSERT_EQ(dimensions.size(), 1U);
+  EXPECT_EQ(offset, shifted(0));
+  auto plan = make_multi_iteration_plan(std::tuple{base_mapping{}, shifted});
+  EXPECT_TRUE(plan.representable);
+  EXPECT_EQ(plan.base_offsets[0], 0);
+  EXPECT_EQ(plan.base_offsets[1], shifted(0));
+  EXPECT_EQ(plan.reachable_offsets[1].maximum, shifted(1));
+}
+
 TEST(MakeMultiIterationPlanTest, SimpleMatchingLayouts)
 {
   auto output = make_mapping(std::array<std::size_t, 2>{10, 2}, std::array<index_t, 2>{2, 1});

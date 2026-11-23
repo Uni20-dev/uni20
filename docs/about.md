@@ -65,8 +65,9 @@ Async<Tensor> operands
   -> selected backend acquires execution-domain access
 ```
 
-For example, the implemented async matrix-product API can schedule an overwrite
-followed by an update on the same output timeline:
+With the application's `TbbScheduler` installed in `main()`, the async
+matrix-product API can schedule an overwrite followed by an update on the
+same output timeline.
 
 ```cpp
 #include <uni20/async/debug_scheduler.hpp>
@@ -74,9 +75,6 @@ followed by an update on the same output timeline:
 #include <uni20/tensor/tensor.hpp>
 
 using matrix_type = uni20::DenseMatrix<double>;
-
-uni20::async::DebugScheduler scheduler;
-uni20::async::ScopedScheduler use_scheduler(&scheduler);
 
 uni20::async::Async<matrix_type> lhs = make_lhs();
 uni20::async::Async<matrix_type> rhs = make_rhs();
@@ -86,7 +84,7 @@ uni20::async::Async<double> update_scale = 0.5;
 uni20::linalg::assign_product(output, lhs, rhs);
 uni20::linalg::add_product(output, lhs, rhs, update_scale);
 
-auto const& result = output.get_wait(scheduler);
+auto const& result = output.get_wait();
 ```
 
 The operation wrapper owns output construction and alias checks. The scheduler

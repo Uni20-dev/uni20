@@ -1,4 +1,7 @@
+#include <uni20/async/debug_cuda_scheduler.hpp>
 #include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/linalg/async/copy.hpp>
+#include <uni20/linalg/async/reductions.hpp>
 #include <uni20/linalg/backends/cuda/reductions.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/copy_into.hpp>
@@ -134,6 +137,217 @@ class CudaReductionTest : public ::testing::Test {
 
     int device_count_ = 0;
 };
+
+// Two logical elements at offsets 1 and 2 from the descriptor's origin.
+struct ShiftedLayout
+{
+    template <class Extents> struct mapping : stdex::layout_right::mapping<Extents>
+    {
+        static_assert(Extents::rank() == 1 && Extents::static_extent(0) == 2);
+        using layout_type = ShiftedLayout;
+        static constexpr bool is_always_exhaustive() noexcept { return false; }
+        static constexpr bool is_exhaustive() noexcept { return false; }
+        constexpr index_type operator()(index_type i) const noexcept { return 1 + i; }
+        constexpr index_type required_span_size() const noexcept { return 3; }
+    };
+};
+
+TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<double, 1> host(4);
+  host[0] = 200;
+  host[1] = 100;
+  host[2] = 2;
+  host[3] = 3;
+  auto const device = uni20::to_device(host, 0);
+  auto const base = device.mdspec();
+  using shape = stdex::extents<index_type, 2>;
+  using spec = uni20::mdspec<double const, shape, ShiftedLayout, typename decltype(base)::accessor_type,
+                             typename decltype(base)::data_descriptor_type>;
+  spec descriptor{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()};
+  uni20::MdspecTensorView<spec, spec, uni20::CudaStorage> view{descriptor, descriptor};
+  EXPECT_EQ(uni20::sum_host(view), 5);
+  EXPECT_EQ(uni20::maximum_host(view), 3);
+}
+
+TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)
+{
+  for (std::size_t capacity : {1U, 4U})
+  {
+    SCOPED_TRACE(capacity);
+    auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = capacity});
+    uni20::async::DebugCudaScheduler scheduler(uni20::cuda::Device::get(0));
+    uni20::async::ScopedScheduler scoped(&scheduler);
+    uni20::Tensor<double, 1> host(2);
+    host[0] = 2;
+    host[1] = 3;
+    uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
+
+    std::vector<uni20::cuda::Stream> occupied;
+    for (std::size_t i = 0; i < capacity; ++i)
+      occupied.push_back(runtime.device_resources(0).streams().acquire());
+
+    auto first = uni20::sum_host(input);
+    auto second = uni20::sum_host(input);
+    auto first_reader = first.read();
+    auto second_reader = second.read();
+    scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
+    EXPECT_FALSE(first_reader.await_ready());
+    EXPECT_FALSE(second_reader.await_ready());
+    EXPECT_EQ(scheduler.external_waits(), 2U);
+
+    // One available lease must suffice for both sums, including workspace allocation.
+    occupied.pop_back();
+    EXPECT_EQ(first_reader.get_wait(scheduler), 5);
+    EXPECT_EQ(second_reader.get_wait(scheduler), 5);
+  }
+}
+
+TEST_F(CudaReductionTest, FreshCopyAndHostReductionsSuspendOnOneStream)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::async::DebugCudaScheduler scheduler;
+  uni20::async::ScopedScheduler scoped(&scheduler);
+  uni20::Tensor<double, 1> host(2);
+  host[0] = 3;
+  host[1] = 4;
+  uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
+  uni20::async::Async<uni20::CudaTensor<double, 1>> output;
+  host[0] = 2;
+  host[1] = -1;
+  uni20::async::Async<uni20::CudaTensor<double, 1>> rhs = uni20::to_device(host, 0);
+  auto& pool = runtime.device_resources(0).streams();
+  auto held = pool.acquire();
+  auto sum = uni20::sum_host(input);
+  uni20::copy(output, input);
+#if UNI20_BACKEND_CUBLAS
+  auto norm = uni20::norm_host(uni20::linalg::CublasBackend{}, input);
+  auto dot = uni20::inner_product_host(uni20::linalg::CublasBackend{}, input, rhs);
+#else
+  auto norm = uni20::norm_host(input);
+  auto dot = uni20::inner_product_host(input, rhs);
+#endif
+  auto reference_norm = uni20::norm_host(uni20::linalg::CudaReferenceBackend{}, input);
+  auto reference_dot = uni20::inner_product_host(uni20::linalg::CudaReferenceBackend{}, input, rhs);
+
+  scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
+  EXPECT_EQ(scheduler.external_waits(), 6U);
+  held = {};
+  EXPECT_EQ(sum.get_wait(scheduler), 7);
+  EXPECT_EQ(norm.get_wait(scheduler), 5);
+  EXPECT_EQ(reference_norm.get_wait(scheduler), 5);
+  EXPECT_EQ(dot.get_wait(scheduler), 2);
+  EXPECT_EQ(reference_dot.get_wait(scheduler), 2);
+  auto copied = uni20::to_host(output.get_wait(scheduler));
+  EXPECT_EQ(copied[0], 3);
+  EXPECT_EQ(copied[1], 4);
+}
+
+TEST_F(CudaReductionTest, SignedMaximumReadsOnlyStridedElements)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<float, 2> host(2, 1030);
+  for (index_type i = 0; i < 1030; ++i)
+  {
+    host[0, i] = -8.0F;
+    host[1, i] = 100.0F;
+  }
+  host[0, 1029] = -2.0F;
+
+  auto device = uni20::to_device(host, 0);
+  auto first_row = cuda_strided_view(device, std::array<index_type, 1>{1030}, std::array<index_type, 1>{2});
+  EXPECT_EQ(uni20::maximum_host(first_row), -2.0F);
+
+  host[0, 775] = std::numeric_limits<float>::quiet_NaN();
+  uni20::copy(device, host);
+  EXPECT_TRUE(std::isnan(uni20::maximum_host(first_row)));
+}
+
+template <class Scalar> void expect_compensated_sum()
+{
+  using real_type = uni20::make_real_t<Scalar>;
+  constexpr index_type block = reference::reduction_threads;
+  constexpr index_type grid = block * reference::reduction_maximum_blocks;
+  uni20::Tensor<Scalar, 1> host(2 * grid + 4);
+  Scalar large{0x1p60};
+  Scalar unit{1};
+  if constexpr (uni20::is_complex_v<Scalar>)
+  {
+    large.imag(0x1p61);
+    unit.imag(-3);
+  }
+
+  // Three grid-stride loads by one thread.
+  host[3] = large;
+  host[grid + 3] = unit;
+  host[2 * grid + 3] = -large;
+  // Three lanes in one block. The first tree step pairs the large and small terms.
+  host[block] = large;
+  host[block + block / 2] = real_type{2} * unit;
+  host[block + block / 4] = -large;
+  // Three separate blocks, paired the same way in the final reduction.
+  host[2 * block] = large;
+  host[(2 + block / 2) * block] = real_type{4} * unit;
+  host[(2 + block / 4) * block] = -large;
+
+  auto const expected = real_type{7} * unit;
+  EXPECT_EQ(uni20::sum_host(host), expected);
+  auto device = uni20::to_device(host, 0);
+  EXPECT_EQ(uni20::sum_host(device), expected);
+}
+
+TEST_F(CudaReductionTest, SumRecoversCancellationWithinThreadsAndAcrossBlocks)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  expect_compensated_sum<float>();
+  expect_compensated_sum<double>();
+  expect_compensated_sum<uni20::cfloat>();
+  expect_compensated_sum<uni20::cdouble>();
+}
+
+TEST_F(CudaReductionTest, SumPreservesNonfiniteComponents)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  double const inf = std::numeric_limits<double>::infinity();
+  uni20::Tensor<uni20::cdouble, 1> host(3);
+  host[0] = {inf, -inf};
+  host[1] = {1, 2};
+  EXPECT_EQ(uni20::sum_host(uni20::to_device(host, 0)), (uni20::cdouble{inf, -inf}));
+
+  host[2] = {-inf, 3};
+  auto result = uni20::sum_host(uni20::to_device(host, 0));
+  EXPECT_TRUE(std::isnan(result.real()));
+  EXPECT_EQ(result.imag(), -inf);
+
+  host[0] = {1, std::numeric_limits<double>::quiet_NaN()};
+  host[2] = {4, 5};
+  result = uni20::sum_host(uni20::to_device(host, 0));
+  EXPECT_EQ(result.real(), 6);
+  EXPECT_TRUE(std::isnan(result.imag()));
+}
+
+TEST_F(CudaReductionTest, PairedDiagonalSumTransfersOnlyTheScalar)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  using scalar_type = uni20::cdouble;
+  uni20::RowMajorTensor<scalar_type, 4> host(4, 3, 5, 2);
+  // Large off-diagonal values reveal a mistaken stride or pair order.
+  std::fill_n(host.storage().data(), host.size(), scalar_type{1000.0, -1000.0});
+  for (index_type i = 0; i < 2; ++i)
+    for (index_type j = 0; j < 3; ++j)
+      host[i, j, j, i] = {static_cast<double>(3 * i + j + 1), static_cast<double>(i - j)};
+
+  auto device = uni20::to_device(host, 0);
+  auto diagonal = uni20::diagonal_view<0, 3, 1, 2>(std::as_const(device));
+  static_assert(!uni20::ImmediateTensorView<decltype(diagonal)>);
+  auto const expected = scalar_type{21.0, -3.0};
+  EXPECT_EQ(uni20::sum_host(diagonal), expected);
+  EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(host)), expected);
+
+  uni20::CudaTensor<scalar_type, 4> empty(runtime.device_resources(0), 2, 0, 3, 2);
+  EXPECT_EQ(uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(empty)), scalar_type{});
+}
 
 TEST(CudaReductionPartialTest, NormCombinesScaledRangesLikeReferenceBlas)
 {
@@ -334,8 +548,9 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   reference::LoweredStridedElementwisePlan<1, reference::reduction_maximum_rank> norm_64;
   norm_64.index_kind = reference::ElementwiseIndexKind::index_64;
   ASSERT_TRUE(reference::elementwise_plan_detail::try_lower(norm_source, norm_64.plan_64, 0));
-  EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs)),
-            bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs)));
+  auto stream = runtime.device_resources(0).streams().acquire();
+  EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs, stream)),
+            bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs, stream)));
 
   auto const product_source = uni20::make_multi_iteration_plan(std::tuple{lhs.mapping(), rhs.mapping()});
   reference::LoweredStridedElementwisePlan<2, reference::reduction_maximum_rank> product_32;
@@ -344,8 +559,8 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   reference::LoweredStridedElementwisePlan<2, reference::reduction_maximum_rank> product_64;
   product_64.index_kind = reference::ElementwiseIndexKind::index_64;
   ASSERT_TRUE(reference::elementwise_plan_detail::try_lower(product_source, product_64.plan_64, 0));
-  auto const narrow = reference::reference_inner_product_of_plan<uni20::cdouble>(product_32, lhs, rhs);
-  auto const wide = reference::reference_inner_product_of_plan<uni20::cdouble>(product_64, lhs, rhs);
+  auto const narrow = reference::reference_inner_product_of_plan<uni20::cdouble>(product_32, lhs, rhs, stream);
+  auto const wide = reference::reference_inner_product_of_plan<uni20::cdouble>(product_64, lhs, rhs, stream);
   EXPECT_EQ(bits(wide.real()), bits(narrow.real()));
   EXPECT_EQ(bits(wide.imag()), bits(narrow.imag()));
 }

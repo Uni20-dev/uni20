@@ -11,7 +11,15 @@
 #include <uni20/async/debug_scheduler.hpp>
 #include <uni20/common/trace.hpp>
 #include <uni20/linalg/async/detail/output.hpp>
+#include <uni20/linalg/async/dispatch.hpp>
 #include <uni20/tensor/reductions.hpp>
+
+#if UNI20_BACKEND_CUDA
+#include <uni20/linalg/backends/cuda/reduction_task.hpp>
+#endif
+#if UNI20_BACKEND_CUBLAS
+#include <uni20/linalg/backends/cublas/reduction_task.hpp>
+#endif
 
 #include <concepts>
 #include <cstddef>
@@ -96,7 +104,11 @@ async::AsyncTask co_sum_host(BackendSelector const selector, async::WriteBuffer<
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  auto result = uni20::sum_host(selector, input_value);
+  constexpr auto rank = tensor_mdspec_t<InputTensor>::rank();
+  auto descriptor = mdspec_of(input_value);
+  tensor_element_t<InputTensor> result{};
+  co_await linalg::co_dispatch_kernel(
+      selector, linalg::sum_reduction_op<rank, rank>{.axes = linalg::all_reduction_axes<rank>()}, result, descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -127,7 +139,11 @@ async::AsyncTask co_inner_product_host(BackendSelector const selector,
   auto const& lhs_value = std::get<1>(awaited);
   auto const& rhs_value = std::get<2>(awaited);
 
-  auto result = uni20::inner_product_host(selector, lhs_value, rhs_value);
+  require_reduction_extents(lhs_value, rhs_value);
+  tensor_element_t<LhsTensor> result{};
+  auto lhs_descriptor = mdspec_of(lhs_value);
+  auto rhs_descriptor = mdspec_of(rhs_value);
+  co_await linalg::co_dispatch_kernel(selector, linalg::inner_product_op{}, result, lhs_descriptor, rhs_descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -156,7 +172,9 @@ async::AsyncTask co_norm_host(BackendSelector const selector,
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
 
-  auto result = uni20::norm_host(selector, input_value);
+  make_real_t<tensor_element_t<InputTensor>> result{};
+  auto descriptor = mdspec_of(input_value);
+  co_await linalg::co_dispatch_kernel(selector, linalg::norm_op{}, result, descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -428,6 +446,7 @@ template <TensorView InputTensor, linalg::ReductionAxis FirstAxis, linalg::Reduc
 }
 
 /// \brief Return a nonblocking async host C++ scalar sum through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(BackendSelector selector, async::Async<InputTensor> const& input)
@@ -436,6 +455,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar sum using storage policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(async::Async<InputTensor> const& input)
@@ -491,6 +511,7 @@ template <TensorView LhsTensor, TensorView RhsTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar inner product through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView LhsTensor, TensorView RhsTensor>
   requires detail::CompatibleInnerProductTensors<LhsTensor, RhsTensor>
 [[nodiscard]] auto inner_product_host(BackendSelector selector, async::Async<LhsTensor> const& lhs,
@@ -500,6 +521,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView LhsTensor, T
 }
 
 /// \brief Return a nonblocking async host C++ scalar inner product using static Tensor policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView LhsTensor, TensorView RhsTensor>
   requires detail::CompatibleInnerProductTensors<LhsTensor, RhsTensor>
 [[nodiscard]] auto inner_product_host(async::Async<LhsTensor> const& lhs, async::Async<RhsTensor> const& rhs)
@@ -549,6 +571,7 @@ template <TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar norm through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto norm_host(BackendSelector selector, async::Async<InputTensor> const& input)
@@ -557,6 +580,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar norm using static Tensor policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto norm_host(async::Async<InputTensor> const& input)

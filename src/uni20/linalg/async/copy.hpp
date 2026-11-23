@@ -36,16 +36,24 @@ concept AsyncCopyTensors = AsyncTensorOutput<OutputTensor> && TensorView<InputTe
                            std::same_as<tensor_element_t<OutputTensor>, tensor_element_t<InputTensor>>;
 
 #if UNI20_BACKEND_CUDA
-template <cuda::BufferMdspec InputMdspan>
-[[nodiscard]] cuda::DeviceResources& cuda_copy_resources(InputMdspan const& input)
+// Release the allocation lease before copy dispatch chooses its own backend and stream.
+template <class Tensor>
+async::CudaTask co_allocate_copy_output(async::shared_storage<Tensor>& storage, tensor_extents_t<Tensor> extents,
+                                        cuda::DeviceResources& resources)
 {
-  return input.data_descriptor().buffer().resources();
+  co_await cuda::set_device(resources.device());
+  cuda::Stream stream;
+  if (!has_zero_extent(extents)) stream = co_await cuda::acquire_stream(resources.streams());
+  CudaStorage::StreamAllocation allocation{resources, stream};
+  if (storage.constructed())
+    storage->replace(uninitialized, extents, allocation);
+  else
+    storage.emplace(uninitialized, allocation, extents);
 }
 #endif
 
 template <AsyncTensorOutput OutputTensor, TensorView InputTensor>
-[[nodiscard]] OutputTensor& prepare_async_copy_output(async::shared_storage<OutputTensor>& storage,
-                                                      InputTensor const& input)
+OutputTensor& prepare_async_copy_output(async::shared_storage<OutputTensor>& storage, InputTensor const& input)
 {
   if (storage.constructed())
   {
@@ -66,8 +74,7 @@ template <AsyncTensorOutput OutputTensor, TensorView InputTensor>
   else if constexpr (std::same_as<tensor_storage_policy_t<OutputTensor>, CudaStorage> &&
                      cuda::BufferMdspec<tensor_mdspec_t<InputTensor>>)
   {
-    auto input_descriptor = mdspec_of(input);
-    return storage.emplace(uninitialized, cuda_copy_resources(input_descriptor), extents);
+    return storage.emplace(uninitialized, source_allocation_context(input), extents);
   }
 #endif
   else
@@ -97,8 +104,32 @@ async::AsyncTask co_copy(BackendSelector const selector, async::WriteBuffer<Outp
     auto awaited = co_await async::all(output_storage, input);
     auto& storage = std::get<0>(awaited);
     auto const& input_value = std::get<1>(awaited);
-    auto& output_value = prepare_async_copy_output(storage, input_value);
-    auto output_descriptor = mdspec_of(output_value);
+#if UNI20_BACKEND_CUDA
+    if constexpr (std::same_as<tensor_storage_policy_t<OutputTensor>, CudaStorage> &&
+                  requires(OutputTensor& out, tensor_extents_t<OutputTensor> extents,
+                           CudaStorage::StreamAllocation allocation) {
+                    { out.storage().resources() } -> std::same_as<cuda::DeviceResources&>;
+                    OutputTensor(uninitialized, allocation, extents);
+                    out.replace(uninitialized, extents, allocation);
+                  })
+    {
+      if (!storage.constructed() || !tensor_extents_equal(storage->extents(), input_value.extents()))
+      {
+        auto const extents = convert_tensor_extents<tensor_extents_t<OutputTensor>>(input_value.extents());
+        if (storage.constructed())
+          co_await co_allocate_copy_output(storage, extents, storage->storage().resources());
+        else if constexpr (cuda::BufferMdspec<tensor_mdspec_t<InputTensor>>)
+          co_await co_allocate_copy_output(storage, extents, source_allocation_context(input_value));
+        else if constexpr (std::constructible_from<OutputTensor, tensor_extents_t<OutputTensor> const&>)
+          co_await co_allocate_copy_output(storage, extents, cuda::device_resources());
+        else
+          throw async::buffer_write_uninitialized{};
+      }
+    }
+    else
+#endif
+      prepare_async_copy_output(storage, input_value);
+    auto output_descriptor = mdspec_of(*storage);
     auto input_descriptor = mdspec_of(input_value);
     co_await linalg::co_dispatch_kernel(selector, linalg::copy_op{}, output_descriptor, input_descriptor);
   }
@@ -145,6 +176,14 @@ async::AsyncTask co_make_tensor(BackendSelector const selector, async::WriteBuff
 }
 
 #if UNI20_BACKEND_CUDA
+template <class BackendSelector, class ResultTensor, TensorView InputTensor>
+  requires std::same_as<tensor_storage_policy_t<ResultTensor>, CudaStorage>
+async::AsyncTask co_make_tensor(BackendSelector selector, async::WriteBuffer<ResultTensor> output,
+                                async::ReadBuffer<InputTensor> input)
+{
+  return co_copy(std::move(selector), std::move(output), std::move(input));
+}
+
 template <TensorView InputTensor>
 using async_device_tensor_t = std::remove_cvref_t<decltype(uni20::to_device(std::declval<InputTensor const&>(),
                                                                             std::declval<cuda::DeviceResources&>()))>;
@@ -157,9 +196,9 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
   auto awaited = co_await async::all(output_storage, input);
   auto& storage = std::get<0>(awaited);
   auto const& input_value = std::get<1>(awaited);
-  ResultTensor result(uninitialized, *resources,
-                      convert_tensor_extents<typename ResultTensor::extents_type>(input_value.extents()));
-  auto output_descriptor = mdspec_of(result);
+  co_await co_allocate_copy_output(
+      storage, convert_tensor_extents<tensor_extents_t<ResultTensor>>(input_value.extents()), *resources);
+  auto output_descriptor = mdspec_of(*storage);
   auto input_descriptor = mdspec_of(input_value);
   // A CUDA input may be on another device; the CUDA copy list includes peer staging.
   if constexpr (std::same_as<tensor_storage_policy_t<InputTensor>, CudaStorage>)
@@ -169,7 +208,6 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
     co_await linalg::co_dispatch_kernel(
         linalg::cuda_host_transfer_selector<linalg::copy_op, ResultTensor, InputTensor>(), linalg::copy_op{},
         output_descriptor, input_descriptor);
-  storage.emplace(std::move(result));
   co_return;
 }
 #endif
@@ -181,9 +219,9 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
 ///          the destination buffer ledger then carries device completion. A
 ///          pageable host transfer runs its necessarily blocking CUDA call on
 ///          the scheduler task.
-/// \pre The output has a distinct epoch queue from the input. An unconstructed
-///      context-bound output can be prepared only when placement is available
-///      from the input descriptor.
+///          A fresh owning CUDA tensor inherits the CUDA source device or uses
+///          the runtime default for a host source. Resizing preserves its device.
+/// \pre The output has a distinct epoch queue from the input.
 template <class BackendSelector, class OutputTensor, class InputTensor>
   requires detail::AsyncCopyTensors<OutputTensor, InputTensor>
 void copy(BackendSelector selector, async::Async<OutputTensor>& output, async::Async<InputTensor> const& input)
