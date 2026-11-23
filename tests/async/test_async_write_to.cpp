@@ -48,6 +48,11 @@ TEST(AsyncWriteTest, WriteToAfterWaitingForTheGate)
   x_reader.release();
   y_reader.release();
   sched.run_all();
+  // The writers have released the gate, which they could not do without having recorded it.
+  // This also catches the old behaviour in Release builds, where the "immediately writable"
+  // check is compiled out.
+  EXPECT_FALSE(x.queue().latest()->debug_snapshot().writer_active);
+  EXPECT_FALSE(y.queue().latest()->debug_snapshot().writer_active);
   EXPECT_EQ(x.get_wait(sched), 2);
   EXPECT_EQ(y.get_wait(sched), 3);
 }

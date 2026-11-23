@@ -371,7 +371,9 @@ namespace detail
 ///
 /// \note Use this when you want to write a computed value directly into an Async<T>
 ///       in one expression. Especially useful when the WriteBuffer is a temporary.
-///       `co_await write_to(buffer, v)` is equivalent to `co_await buffer = std::move(v)`
+///       `co_await write_to(buffer, v)` waits and resumes like `co_await buffer`, then
+///       emplaces `v`. Unlike `co_await buffer = std::move(v)`, which assigns to a value
+///       that is already constructed, it destroys that value and constructs a new one.
 ///
 /// \warning The WriteBuffer must not be reused after passing to write_to. For named
 ///          buffers, prefer `write_to(buffer.transfer(), value)` to make that
@@ -388,10 +390,12 @@ template <typename T, typename Value> class WriteToAwaiter {
 
     auto await_suspend(BasicTask&& t) noexcept { return buffer_.await_suspend(std::move(t)); }
 
-    /// \brief Write the value, as `co_await buffer = value` does.
-    /// \details Resumes through the buffer's own `await_resume()`. After a suspension, the epoch has
-    ///          already made this writer active, and only that path records it; asking the epoch
-    ///          again, as `emplace_assert()` does, would find the writer active and fail.
+    /// \brief Resume as `co_await buffer` does, then emplace the value.
+    /// \details Resuming through the buffer's own `await_resume()` matters after a suspension:
+    ///          the epoch has already made this writer active, and only that path records it.
+    ///          Asking the epoch again, as `emplace_assert()` does, would find the writer active
+    ///          and fail. The value is emplaced, replacing a constructed value rather than
+    ///          assigning to it.
     void await_resume() { buffer_.await_resume().emplace(std::move(value_)); }
 
   private:
