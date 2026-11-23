@@ -6,7 +6,8 @@ Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 `stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
 note proposes Uni20's own `mdspan` class and layout mappings, keeping the
 standard extents. The goals are a stride observer that exists at every rank,
-well-defined signed offsets, and a reachable-offset range on every mapping.
+well-defined signed offsets, and a reachable-offset range for single-buffer
+mappings whose offsets directly address elements.
 Negative strides then become possible as an opt-in layout. `uni20::mdspec`,
 which Uni20 already owns, follows the same specification, as the mdspec
 section below describes.
@@ -123,11 +124,14 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    `mdspan` and in `mdspec`, with precondition `r < rank()`. At rank zero no axis meets it, so a
    call fails the precondition, while a loop over the axes compiles and never
    calls it.
-2. **Offsets have the accessor's type.** `mdspan` converts the mapping result to
-   `span_offset_t<Accessor>`, which is the accessor's `offset_type` when it
-   declares one and `size_t` otherwise. A standard accessor therefore still
-   requires nonnegative offsets. Every reachable offset must fit the paired
-   accessor. View construction establishes this once when the types alone
+2. **Both views expose the accessor's offset type.** Native `mdspan` and
+   `mdspec` declare `using offset_type = typename accessor_type::offset_type;`.
+   Generic code names `typename S::offset_type`. The accessor declares the
+   argument type for `access` and `offset`, and the mdspan passes the mapping
+   result in that type. The default accessor uses `std::ptrdiff_t`. A transform
+   that forwards the offset preserves its wrapped accessor's type, and a zip
+   accessor can take a tuple of offsets. Pairing a mapping with an accessor
+   establishes that every reachable offset fits whenever the types alone
    cannot guarantee it.
 3. **Single-buffer mappings with element offsets report `reachable_range()`**,
    the offsets that some valid index reaches. For nonnegative strides it is `[0, required_span_size() - 1]`,
@@ -163,9 +167,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    that admits both. Without that declaration a structural strided concept
    would accept the signed layout, since it is always strided. The same holds for composition:
    an `mdspan` or `mdspec` with `layout_signed_stride` requires a signed
-   `index_type` and an accessor whose `span_offset_t` is signed, so a signed
-   layout paired with `stdex::default_accessor`, or any accessor that falls back
-   to `size_t`, does not compile. Uni20's `index_type` is already
+   `index_type` and a signed `offset_type`. An accessor taking `size_t`
+   therefore cannot be paired with this layout. Uni20's `index_type` is already
    `std::ptrdiff_t` ([`core/types.hpp`](../../src/uni20/core/types.hpp)), and
    Tensor extents use it.
 6. **Empty mappings constrain their strides less.** The standard requires
@@ -277,15 +280,26 @@ tentatively on 2026-11-20: the signed layout is
 
 ## Conversions and Interop
 
-- **Supported views.** `MdspanLike` admits Uni20 views with mappings and
-  accessors whose semantics Uni20 supports. An external mdspan enters a Uni20
-  algorithm through explicit import. Initially import the standard left,
-  right and strided layouts with the default accessor. Add other combinations
-  when their offset and access semantics have a Uni20 implementation.
-- **Import.** Use Uni20's usual `std::ptrdiff_t` indices and physical offsets.
-  Smaller source index types are welcome. Before casting, check any extent,
-  stored stride, or reachable offset whose representability the source contract
-  does not guarantee. This includes unsigned-to-signed conversion of equal
+- **Foreign constructor.** `MdspanLike` admits Uni20 views with supported
+  mapping and accessor semantics. To borrow a foreign view's storage, write
+  `auto v = uni20::mdspan{foreign};`. This `explicit` constructor takes its
+  argument by const reference. It requires an immediate view with the standard
+  mdspan interface and a supported mapping and accessor, and excludes native
+  `MdspanLike` types. A foreign type may declare its own `offset_type` and
+  still qualify for import. Native views use their copy, move and converting
+  constructors. A deferred `mdspec` goes through acquisition to obtain a handle.
+- **Supported conversions.** Initially accept the standard and Kokkos
+  `layout_left`, `layout_right` and `layout_stride` mappings paired with
+  their default accessor. A deduction guide selects the corresponding Uni20
+  layout and default accessor, preserves the element type (including const)
+  and static extents, and uses Uni20's usual `std::ptrdiff_t` indices.
+  Construction preserves the handle and strides. An explicitly named target
+  must have compatible rank, extents and element qualifications. A pointer
+  handle alone says nothing about a custom accessor's semantics.
+- **Import checks.** Smaller source index types are welcome. Before casting,
+  check each extent, the product of the nonzero extents (rule 7), each stored
+  stride and the reachable offsets wherever the source contract leaves their
+  representability open. This includes unsigned-to-signed conversion of equal
   width and stored strides on singleton axes. A single element with stride 256
   needs one storage element, but retaining that stride in eight bits is
   impossible. Reject an unrepresentable conversion at import, including in
@@ -325,11 +339,10 @@ applies to it:
   With Uni20 layouts it exists at every rank with the precondition
   `r < rank()`, and `StridedMdspecLike` and `StridedMdspanLike` keep one
   definition.
-- **Offsets (rules 2 and 5).** For an mdspec type `S`, the existing spelling is
-  `span_offset_t<typename S::accessor_type>`. Today's `mdspec` has no nested
-  `offset_type`. A descriptor establishes that its mapping's reachable offsets
-  fit the accessor's offset type when it pairs the two. This requires only
-  metadata and can be done before acquiring a handle. For example,
+- **Offsets (rules 2 and 5).** `S::offset_type` names the accessor offset on
+  a deferred descriptor just as it does on an immediate view. Pairing the
+  mapping and accessor establishes representability before a handle is
+  acquired. For example,
   `layout_signed_stride` requires a signed accessor offset type in both
   `mdspec` and the resolved `mdspan`.
 - **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
@@ -357,14 +370,20 @@ Each phase is one pull request. PR #152 already addressed the zip layouts'
 conformance claims (rule 3).
 
 1. **Types.** The mappings, `default_accessor`, `mdspan`, `offset_range`,
-   conversions and `reachable_range()` on the Uni20 layouts; `mdspec` gains
-   `size()` and `empty()`. Conformance tests cover the standard behaviors Uni20
-   relies on, rank zero, signed accessor offsets, device compilation and the
-   agreement of `mdspec` with `mdspan`. Nothing else changes.
+   conversions (including the explicit foreign constructor and deduction guide)
+   and `reachable_range()` on the Uni20 layouts. Both views expose
+   `offset_type`, and `mdspec` gains `size()` and `empty()`. Conformance tests
+   cover rank zero, signed accessor offsets, device compilation and agreement
+   between the two views. Test
+   direct construction from a supported foreign view, preservation of const
+   and static extents, rejection of unsupported accessors, and native copying.
 2. **Producers.** `RowMajor` and `ColumnMajor` alias the Uni20 layouts; Tensor
    `mdspan()`, `mdspec` mapping types, storage policies and the CUDA accessors
    produce Uni20 types, and acquisition resolves an `mdspec` to a
    `uni20::mdspan`. The CUDA pointer accessors declare `std::ptrdiff_t` offsets.
+   Replace `span_offset_t` with the view's or accessor's nested type. Where
+   zip composes mappings, use each component mapping's result type. Remove
+   both the alias and its backing `span_offset_type` trait.
    The strided concepts require `stride()` at every rank. The layout comparisons
    use the Uni20 layouts. Buffer range checks, for Tensors and for
    descriptor acquisition, move to `reachable_range()`. Generic code calls the
