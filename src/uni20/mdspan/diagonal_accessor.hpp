@@ -279,10 +279,9 @@ diagonal_components(uni20::mdspan<ElementType, Extents, LayoutPolicy,
 {
   using index_type = ComponentIndex;
   using component_extents_type = stdex::dextents<index_type, 1>;
-  // Component views can run backwards. Keep this mapping until the native signed layout is available.
-  using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
-  using component_mdspan_type =
-      stdex::mdspan<ElementType, component_extents_type, stdex::layout_stride, uni20::default_accessor<ElementType>>;
+  using layout_type = std::conditional_t<std::signed_integral<index_type>, layout_signed_stride, layout_stride>;
+  using component_mapping_type = layout_type::template mapping<component_extents_type>;
+  using component_mdspan_type = uni20::mdspan<ElementType, component_extents_type, layout_type>;
   auto const count = detail::diagonal_component_extent(span.extents());
   if (!std::in_range<index_type>(count)) throw std::overflow_error("diagonal component count exceeds its index range");
   auto const extents = component_extents_type{count};
@@ -320,7 +319,7 @@ diagonal_components(uni20::mdspan<ElementType, Extents, LayoutPolicy,
 /// \param components Stored component view with `min(logical_extents)` entries.
 /// \return Full logical mdspan modelling `DiagonalMdspecLike`.
 template <class Extents, class Components>
-  requires RankedStridedMdspanLike<Components, 1> && DefaultAccessorMdspanLike<Components>
+  requires AffineMdspanLike<Components> && RankedMdspanLike<Components, 1> && DefaultAccessorMdspanLike<Components>
 [[nodiscard]] constexpr auto make_diagonal_mdspan(Extents logical_extents, Components const& components)
 {
   using component_type = std::remove_cvref_t<Components>;

@@ -1,4 +1,5 @@
 #include <uni20/mdspan/mdspec.hpp>
+#include <uni20/mdspan/reverse.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,6 +14,21 @@ namespace
 
 using MatrixShape = uni20::dextents<int, 2>;
 using ScalarShape = uni20::extents<int>;
+
+template <class Shape, class Accessor>
+concept SupportsSignedLayout = requires {
+  typename uni20::mdspan<int, Shape, uni20::layout_signed_stride, Accessor>;
+  typename uni20::mdspec<int, Shape, uni20::layout_signed_stride, Accessor, int>;
+};
+
+struct UnsignedOffsetAccessor : uni20::default_accessor<int>
+{
+    using offset_type = std::size_t;
+};
+
+static_assert(SupportsSignedLayout<MatrixShape, uni20::default_accessor<int>>);
+static_assert(!SupportsSignedLayout<uni20::dextents<unsigned, 2>, uni20::default_accessor<int>>);
+static_assert(!SupportsSignedLayout<MatrixShape, UnsignedOffsetAccessor>);
 
 template <class Span> constexpr auto axis_steps(Span const& span)
 {
@@ -187,6 +203,29 @@ TEST(NativeMdspanTest, EmptyMappingKeepsItsStrides)
   static_assert(strided.is_exhaustive() && strided.required_span_size() == 0);
   static_assert(strided.reachable_range().empty());
   static_assert(strided.strides() == std::array{1, 0, 0});
+}
+
+TEST(NativeMdspanTest, SignedMappingsBoundOffsetsOnBothSidesOfTheHandle)
+{
+  using layout = uni20::layout_signed_stride;
+  constexpr layout::mapping<MatrixShape> compact{MatrixShape{2, 3}, {-1, 2}};
+  static_assert(compact.is_unique() && compact.is_exhaustive());
+  static_assert(compact.reachable_range().minimum == -1 && compact.reachable_range().maximum == 4);
+  static_assert(compact(1, 2) == 3);
+
+  constexpr layout::mapping<MatrixShape> padded{MatrixShape{2, 3}, {-1, 4}};
+  static_assert(padded.reachable_range().maximum == 8 && !padded.is_exhaustive());
+  constexpr layout::mapping<MatrixShape> empty{MatrixShape{3, 0}, {-1, 4}};
+  static_assert(empty.reachable_range().empty() && empty.is_exhaustive());
+}
+
+TEST(NativeMdspanTest, ReverseRetainsAnEmptyHandleAndItsStrides)
+{
+  using shape = uni20::extents<int, 0, 3>;
+  constexpr uni20::mdspan<int, shape, uni20::layout_left> source{nullptr, shape{}};
+  constexpr auto reversed = uni20::reverse<1>(source);
+  static_assert(reversed.empty() && reversed.mapping().reachable_range().empty());
+  static_assert(reversed.data_handle() == nullptr && reversed.mapping().strides() == std::array{1, 0});
 }
 
 TEST(NativeMdspanTest, ImportBorrowsStorageAndPreservesStaticExtents)

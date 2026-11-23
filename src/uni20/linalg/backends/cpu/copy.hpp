@@ -90,8 +90,7 @@ KernelAttempt copy(OutputMdspan&& output, InputMdspan&& input)
       CHECK_EQUAL(output.extent(axis), input.extent(axis));
   }
 
-  if constexpr (uni20::MutableStridedMdspanLike<output_type> &&
-                uni20::StridedMdspanLike<std::remove_cvref_t<InputMdspan>>)
+  if constexpr (uni20::AffineMdspanLike<output_type> && uni20::AffineMdspanLike<std::remove_cvref_t<InputMdspan>>)
   {
     cpu::detail::transform_strided<false>(
         output, [](auto&& value) -> decltype(auto) { return std::forward<decltype(value)>(value); }, input);

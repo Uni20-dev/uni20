@@ -1,7 +1,8 @@
 # Uni20 mdspan and mdspec Design
 
-Status: Tensor producers and CUDA acquisition use the native views and
-nonnegative layouts. The migration to native extents and signed strides is ongoing.
+Tensor producers and CUDA acquisition use native views. CPU copy and
+elementwise transforms support native signed-stride views. Extents still use
+the Kokkos implementation.
 
 Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 `stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
@@ -37,14 +38,10 @@ Both now use `std::ptrdiff_t`. The diagonal and generated accessors retain
 their own offset types. Const, conjugating and transform adaptors inherit the
 wrapped accessor's offset type.
 
-Negative strides already occur. The iteration plan
-computes in `std::ptrdiff_t` and normalizes negative strides, and the diagonal
-component view keeps a signed stride, so a diagonal borrowed from another
-tensor may run backwards. That component view stores its stride in a
-`stdex::layout_stride` mapping and reads through Uni20's signed default
-accessor. The mapping still violates the standard layout's precondition and
-its span queries are unsuitable for signed strides. The native signed layout
-will replace it.
+The iteration plan computes in `std::ptrdiff_t` and normalizes negative
+strides. Diagonal component views with signed indices use
+`layout_signed_stride` and the signed default accessor, so a diagonal can
+borrow values in reverse order.
 
 **Control.** Owning the types lets every mapping and mdspan member be
 `UNI20_HOST_DEVICE`, report precondition failures through Uni20 diagnostics,
@@ -158,17 +155,11 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    `is_always_strided()` and a declared `stride(axis)`, with no rank-zero escape.
    Explicit import of a standard rank-zero mapping preserves the scalar shape
    without querying a stride.
-5. **Negative strides are a layout, not a runtime state.** Only
-   `layout_signed_stride` may have negative strides. An operation that cannot
-   handle them rejects the layout by type at compile time, so a reversed view
-   never reaches a backend that would decline it at run time and end the
-   program. Operations opt in one at a time. The strided concepts carry the
-   distinction: `layout_signed_stride` declares that its strides may be
-   negative, `StridedMdspanLike` and `StridedMdspecLike` reject a layout that
-   does, and an operation that opts in is constrained on a separate concept
-   that admits both. Without that declaration a structural strided concept
-   would accept the signed layout, since it is always strided. The same holds for composition:
-   an `mdspan` or `mdspec` with `layout_signed_stride` requires a signed
+5. **Signed strides have a dedicated layout.** `AffineMdspanLike` and
+   `AffineMdspecLike` admit `layout_signed_stride`.
+   `StridedMdspanLike` and `StridedMdspecLike` exclude it at compile time so that
+   consumers can require nonnegative strides. An `mdspan` or `mdspec` with
+   `layout_signed_stride` requires a signed
    `index_type` and a signed `offset_type`. An accessor taking `size_t`
    therefore cannot be paired with this layout. Uni20's `index_type` is already
    `std::ptrdiff_t` ([`core/types.hpp`](../../src/uni20/core/types.hpp)), and
@@ -247,29 +238,23 @@ standard is expected to:
 as NumPy does, so offsets below the handle are negative. `operator()` is
 `sum(index[k] * stride[k])`. `reachable_range()` is empty when an extent is
 zero. Otherwise it starts at `[0, 0]` and adds `(extent[k] - 1) * stride[k]` to
-the maximum for positive strides and to the minimum for negative ones. `is_unique()` and `is_exhaustive()` are evaluated on
-the absolute strides, which describe the same set of offsets shifted by
-`minimum`. `required_span_size()` is not provided; consumers use
-`reachable_range()`.
+the maximum for positive strides and to the minimum for negative ones. The
+constructor requires unique offsets, using increasing absolute stride order.
+A unique mapping is exhaustive when the number of elements equals the width
+of its inclusive reachable range. Consumers use `reachable_range()` for bounds.
 
-At first `layout_signed_stride` is view-only. A Tensor that owns storage keeps
-a nonnegative layout, and a signed layout appears only in a view of storage it
-does not own, so no allocation has to hold its logical origin away from its
-start. `reverse` of an axis moves the handle to that axis's last element and
-negates its stride, but only when the mapping is nonempty. An empty view keeps
-its handle, which may not point into any storage, so moving it would be
-undefined.
+`layout_signed_stride` is view-only. An owning Tensor uses a nonnegative
+layout. `reverse<Axis>(span)` borrows from a native pointer-backed span
+with a nonnegative layout and signed indices. For a nonempty view with more
+than one element along that axis, it moves the handle to the last element
+along the axis and negates the stride. Empty views and singleton axes
+retain the original handle and strides.
 
-Negative strides are useful in only a few cases, reversing the elements of an
-axis being the main one, and then only over operations where they are easy or
-cheap to support. Operations therefore accept `layout_signed_stride` as uses
-require, not in advance. The likely first are a one-axis `reverse` view and
-host `copy`. If any extent is zero, host copy produces a zero-element plan
-before normalizing any strides. Host elementwise transforms and reductions cost
-little, because the backend-neutral iteration plan already normalizes negative
-strides. CUDA plan lowering would rebase the descriptor to `minimum` when a use needs it. BLAS and
-LAPACK do not accept it: BLAS's negative-increment convention is different, and
-LAPACK leading dimensions must be positive.
+Host copy and elementwise transforms use the affine iteration plan to
+normalize negative strides. If any extent is zero, the plan returns before
+normalizing strides. Precompiled CUDA kernels and BLAS and LAPACK lowering
+require nonnegative layouts. BLAS's negative-increment convention and
+LAPACK's positive leading dimensions each require separate consideration.
 
 Uni20's C++ API keeps temporaries explicit, within reason: an operation that
 does not accept an operand's layout rejects it rather than copying it. Copies
@@ -432,16 +417,11 @@ conformance claims (rule 3).
    references, mostly mechanical. Interop tests import standard mdspans
    explicitly and exercise export failure for an unrepresentable mapping.
    Migrate tests that need negative strides together with the signed layout.
-4. **Signed strides.** `layout_signed_stride`, a `reverse` view, and support in
-   the operations its first use needs, host `copy` for example; other
-   operations follow as uses require them. The diagonal component view moves to
-   `layout_signed_stride`, ending its reliance on wrapped `size_t` offsets, and
-   the negative-stride test helpers move with it. The remaining code that
-   computes signed offsets through unsigned arithmetic is found and fixed here,
-   and composite producers, such as zip and transform views over a signed
-   span, and accessor lowering are checked to keep the signed declaration
-   visible to the concepts. Conformance tests include an empty mapping with
-   mixed signs.
+4. **Signed strides.** Add `layout_signed_stride` and `reverse`. Host copy
+   and elementwise transforms use the affine iteration plan. Diagonal component
+   views and negative-stride test helpers use the native layout. The tests
+   cover empty mappings with mixed strides and signed offsets through unary
+   transform and zip accessors.
 
 ## Relation to #148
 

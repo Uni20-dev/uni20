@@ -4,6 +4,7 @@
 #include <uni20/mdspan/generated_accessor.hpp>
 #include <uni20/mdspan/generated_layout.hpp>
 #include <uni20/mdspan/mdspan.hpp>
+#include <uni20/mdspan/reverse.hpp>
 #include <uni20/mdspan/transform_view.hpp>
 #include <uni20/mdspan/zip_layout.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
@@ -173,6 +174,13 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
   uni20::cuda::CudaPointerAccessor<uni20::cfloat> accessor;
   auto reference = accessor.access(value, 0);
   reference = uni20::cuda::CudaConjugate{}(reference);
+}
+
+[[maybe_unused]] __global__ void signed_stride_probe(double* output, double const* input)
+{
+  auto const reversed = uni20::reverse<1>(uni20::mdspan{input, 2, 3});
+  auto const bounds = reversed.mapping().reachable_range();
+  output[0] = reversed[std::array<int, 2>{0, 2}] + static_cast<double>(bounds.minimum);
 }
 
 } // namespace

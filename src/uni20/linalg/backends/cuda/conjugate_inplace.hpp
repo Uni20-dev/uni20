@@ -32,11 +32,11 @@ namespace detail::cuda_reference
 template <class Mdspec> using conjugate_scalar_t = std::remove_cv_t<typename std::remove_cvref_t<Mdspec>::element_type>;
 
 template <class Mdspec>
-concept SupportedConjugateMdspec = uni20::MutableMdspecLike<Mdspec> && is_raw_mutable_cuda_mdspec<Mdspec> &&
-                                   uni20::Scalar<conjugate_scalar_t<Mdspec>> &&
-                                   (uni20::has_trivial_conj<conjugate_scalar_t<Mdspec>> ||
-                                    ((std::remove_cvref_t<Mdspec>::rank() == 0 || uni20::StridedMdspecLike<Mdspec>) &&
-                                     supports_elementwise_conjugate<conjugate_scalar_t<Mdspec>>));
+concept SupportedConjugateMdspec =
+    uni20::MutableMdspecLike<Mdspec> && is_raw_mutable_cuda_mdspec<Mdspec> &&
+    uni20::Scalar<conjugate_scalar_t<Mdspec>> &&
+    (uni20::has_trivial_conj<conjugate_scalar_t<Mdspec>> ||
+     (uni20::StridedMdspecLike<Mdspec> && supports_elementwise_conjugate<conjugate_scalar_t<Mdspec>>));
 
 template <class Scalar> struct ConjugatePlan
 {
@@ -48,8 +48,7 @@ template <class Scalar> struct ConjugatePlan
     bool has_work = false;
 };
 
-template <uni20::MdspecLike Mdspec>
-  requires(std::remove_cvref_t<Mdspec>::rank() == 0 || uni20::StridedMdspecLike<Mdspec>)
+template <uni20::StridedMdspecLike Mdspec>
 [[nodiscard]] bool try_make_elementwise_conjugate_plan(Mdspec const& mdspec, LoweredElementwiseConjugatePlan& plan)
 {
   auto host_plan = make_multi_iteration_plan(std::tuple{mdspec.mapping()});

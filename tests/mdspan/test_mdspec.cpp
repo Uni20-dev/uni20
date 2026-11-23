@@ -48,10 +48,10 @@ struct StatefulAccessor
 };
 
 using extents_type = stdex::dextents<std::size_t, 2>;
-using mdspec_type = uni20::mdspec<int, extents_type, stdex::layout_stride, StatefulAccessor, RegionDescriptor>;
+using mdspec_type = uni20::mdspec<int, extents_type, uni20::layout_stride, StatefulAccessor, RegionDescriptor>;
 using move_only_mdspec_type =
-    uni20::mdspec<int, extents_type, stdex::layout_stride, StatefulAccessor, MoveOnlyDescriptor>;
-using immediate_span_type = stdex::mdspan<int, extents_type, stdex::layout_stride>;
+    uni20::mdspec<int, extents_type, uni20::layout_stride, StatefulAccessor, MoveOnlyDescriptor>;
+using immediate_span_type = uni20::mdspan<int, extents_type, uni20::layout_stride>;
 
 template <class Span>
 concept HasDataHandle = requires(Span const& span) { span.data_handle(); };
@@ -136,12 +136,12 @@ TEST(MdspecTest, LogicalSizeIgnoresPadding)
 
 TEST(MdspecTest, DistinguishesScalarAndZeroExtent)
 {
-  using scalar = uni20::mdspec<int, stdex::extents<int>, stdex::layout_right, StatefulAccessor, RegionDescriptor>;
+  using scalar = uni20::mdspec<int, stdex::extents<int>, uni20::layout_right, StatefulAccessor, RegionDescriptor>;
   constexpr scalar value{RegionDescriptor{}, scalar::mapping_type{}, {}};
   static_assert(value.size() == 1 && !value.empty());
 
   using shape = stdex::extents<int, 3, stdex::dynamic_extent>;
-  using spec = uni20::mdspec<int, shape, stdex::layout_right, StatefulAccessor, RegionDescriptor>;
+  using spec = uni20::mdspec<int, shape, uni20::layout_right, StatefulAccessor, RegionDescriptor>;
   constexpr spec zero{RegionDescriptor{}, spec::mapping_type{shape{0}}, {}};
   static_assert(zero.size() == 0 && zero.empty());
 }

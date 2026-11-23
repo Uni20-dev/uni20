@@ -403,38 +403,32 @@ concept MutableMdspecLike =
     MdspecLike<S> && (!std::is_const_v<typename detail::span_type_t<S>::element_type>) &&
     (MutableMdspanLike<S> || detail::AccessorReferenceAssignable<typename detail::span_type_t<S>::accessor_type>);
 
-/// \brief An mdspan-like type whose mapping is always strided and exposes stride observers.
-/// \tparam MDS The mdspan-like type under test.
-/// \ingroup mdspan_ext
-template <class MDS>
-concept StridedMdspanLike = MdspanLike<MDS> && detail::span_type_t<MDS>::is_always_strided() &&
-                            requires(detail::span_type_t<MDS> const& span, std::size_t axis) {
-                              {
-                                span.stride(axis)
-                              } -> std::convertible_to<typename detail::span_type_t<MDS>::index_type>;
-                              {
-                                span.mapping().stride(axis)
-                              } -> std::convertible_to<typename detail::span_type_t<MDS>::index_type>;
-                            };
-
-/// \concept MutableStridedMdspanLike
-/// \brief Mutable mdspan-like types whose layout reports they are always strided.
-/// \tparam MDS The mdspan-like type under test.
-/// \ingroup mdspan_ext
-template <class MDS>
-concept MutableStridedMdspanLike = MutableMdspanLike<MDS> && StridedMdspanLike<MDS>;
-
-/// \brief An mdspec-like type whose mapping exposes multidimensional strides.
-/// \tparam S The mdspec-like type under test.
-/// \ingroup mdspan_ext
+/// \brief An mdspec-like type that exposes strides, including signed strides.
 template <class S>
-concept StridedMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_strided() &&
-                            requires(detail::span_type_t<S> const& span, std::size_t axis) {
-                              { span.stride(axis) } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
-                              {
-                                span.mapping().stride(axis)
-                              } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
-                            };
+concept AffineMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_strided() &&
+                           requires(detail::span_type_t<S> const& span, std::size_t axis) {
+                             { span.stride(axis) } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
+                             {
+                               span.mapping().stride(axis)
+                             } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
+                           };
+
+/// \brief An immediate view that exposes strides, including signed strides.
+template <class S>
+concept AffineMdspanLike = MdspanLike<S> && AffineMdspecLike<S>;
+
+/// \brief A strided descriptor with a layout that supports nonnegative strides.
+template <class S>
+concept StridedMdspecLike =
+    AffineMdspecLike<S> && (!std::same_as<typename detail::span_type_t<S>::layout_type, layout_signed_stride>);
+
+/// \brief An immediate view with a layout that supports nonnegative strides.
+template <class S>
+concept StridedMdspanLike = MdspanLike<S> && StridedMdspecLike<S>;
+
+/// \brief An immediate nonnegative strided view that supports assignment.
+template <class S>
+concept MutableStridedMdspanLike = MutableMdspanLike<S> && StridedMdspanLike<S>;
 
 /// \concept MutableStridedMdspecLike
 /// \brief Mutable mdspec-like type whose mapping is always strided.

@@ -180,8 +180,8 @@ TEST(CpuTensorContractionTest, DeferredTensorOperandsUseHostLeases)
 TEST(CpuTensorContractionTest, ContractsRankTwoDiagonalComponentsOnEitherSide)
 {
   using component_extents_type = stdex::dextents<uni20::index_type, 1>;
-  using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
-  using component_mdspan_type = stdex::mdspan<double, component_extents_type, stdex::layout_stride>;
+  using component_mapping_type = uni20::layout_signed_stride::mapping<component_extents_type>;
+  using component_mdspan_type = uni20::mdspan<double, component_extents_type, uni20::layout_signed_stride>;
   using matrix_extents_type = stdex::dextents<uni20::index_type, 2>;
 
   std::array<double, 5> component_storage{2.0, 0.0, 3.0, 0.0, 4.0};
@@ -257,7 +257,7 @@ TEST(CpuTensorContractionTest, ContractsRankTwoDiagonalComponentsOnEitherSide)
         EXPECT_DOUBLE_EQ((dense_diagonal_product[row, column]), 0.0);
 
   std::array<double, 3> diagonal_output_storage{};
-  stdex::mdspan<double, component_extents_type> diagonal_output_components{diagonal_output_storage.data(), 3};
+  uni20::mdspan<double, component_extents_type> diagonal_output_components{diagonal_output_storage.data(), 3};
   auto diagonal_output = uni20::make_diagonal_mdspan(matrix_extents_type{3, 3}, diagonal_output_components);
   EXPECT_NO_FATAL_FAILURE({
     uni20::linalg::cpu::contract(diagonal_output, std::numeric_limits<double>::infinity(), square_diagonal,

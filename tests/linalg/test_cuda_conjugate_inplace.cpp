@@ -90,16 +90,18 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanSelects64BitReachableOffsets)
   EXPECT_EQ(plan.plan_64.offsets(1), (std::array<std::int64_t, 1>{static_cast<std::int64_t>(stride)}));
 }
 
-TEST(CudaConjugatePlanningTest, OneOperandPlanDeclinesNegativeStrides)
+TEST(CudaConjugatePlanningTest, NegativeStridesStayOutsideCudaLowering)
 {
-  using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<vector_extents_type>;
-  mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{-1}};
-  complex_type value{};
-  stdex::mdspan span{&value, mapping};
-  uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
+  using shape = uni20::dextents<uni20::index_type, 1>;
+  uni20::layout_signed_stride::mapping<shape> mapping{shape{2}, {-1}};
+  complex_type values[2]{};
+  uni20::mdspan span{values + 1, mapping};
+  static_assert(!uni20::StridedMdspecLike<decltype(span)>);
 
-  EXPECT_FALSE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));
+  using namespace uni20::linalg::detail::cuda_reference;
+  auto host_plan = uni20::make_multi_iteration_plan(std::tuple{span.mapping()});
+  LoweredElementwiseConjugatePlan plan;
+  EXPECT_FALSE(try_lower_strided_elementwise_plan<elementwise_conjugate_maximum_rank>(host_plan, plan));
 }
 
 TEST_F(CudaConjugateInplaceTest, ConjugatesComplexDoubleAndFloatStorage)

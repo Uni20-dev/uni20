@@ -140,8 +140,8 @@ template <bool ReadsOutput, class Operation, class OutputMdspan, class... InputM
 void reference_transform(Operation const& operation, OutputMdspan& output, InputMdspans&... inputs)
 {
   using output_type = std::remove_cvref_t<OutputMdspan>;
-  if constexpr (uni20::MutableStridedMdspanLike<output_type> &&
-                (uni20::StridedMdspanLike<std::remove_cvref_t<InputMdspans>> && ...))
+  if constexpr (uni20::AffineMdspanLike<output_type> &&
+                (uni20::AffineMdspanLike<std::remove_cvref_t<InputMdspans>> && ...))
   {
     if constexpr (ReadsOutput)
     {

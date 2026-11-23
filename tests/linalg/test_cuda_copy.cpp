@@ -489,12 +489,13 @@ TEST(CudaCopyPlanningTest, EmptyIterationLowersToAZeroRank32BitPayload)
 TEST(CudaCopyPlanningTest, ElementwisePlanDeclinesNegativeStridesUntilCudaRebasingIsDefined)
 {
   using extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_signed_stride::mapping<extents_type>;
   mapping_type output_mapping{extents_type{2}, std::array<uni20::index_type, 1>{-1}};
   mapping_type input_mapping{extents_type{2}, std::array<uni20::index_type, 1>{1}};
-  double value = 0;
-  stdex::mdspan output{&value, output_mapping};
-  stdex::mdspan input{&value, input_mapping};
+  double values[2]{};
+  uni20::mdspan output{values + 1, output_mapping};
+  uni20::mdspan input{values, input_mapping};
+  static_assert(!uni20::StridedMdspecLike<decltype(output)>);
   uni20::linalg::detail::cuda_reference::LoweredElementwiseCopyPlan plan;
 
   EXPECT_FALSE(uni20::linalg::detail::cuda_reference::try_make_elementwise_plan(output, input, plan));
