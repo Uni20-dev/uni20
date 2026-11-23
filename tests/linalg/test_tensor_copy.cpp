@@ -59,6 +59,17 @@ uni20::linalg::KernelAttempt try_kernel(MdspecOnlyCopyBackend const& backend, un
 }
 } // namespace
 
+TEST(TensorCopyTest, PlainCharMdspanIndex)
+{
+  using extents = stdex::extents<char, 2>;
+  std::array<double, 2> input{3.0, 4.0};
+  std::array<double, 2> output{};
+  stdex::mdspan<double const, extents> source{input.data()};
+  stdex::mdspan<double, extents> destination{output.data()};
+  uni20::copy(uni20::linalg::CpuReferenceBackend{}, destination, source);
+  EXPECT_EQ(output, input);
+}
+
 TEST(TensorCopyTest, CopyResizesOutputAndObservesLazyConjugation)
 {
   uni20::DenseMatrix<complex_type, uni20::RowMajor> input(2, 2);

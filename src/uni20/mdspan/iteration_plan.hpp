@@ -307,7 +307,8 @@ template <typename... Mappings> auto make_multi_iteration_plan(std::tuple<Mappin
   std::size_t operand = 0;
   auto set_origin = [&](auto const& mapping) {
     auto const origin = detail::mapping_origin(mapping);
-    if (!std::in_range<index_type>(origin)) return false;
+    // Integral promotion preserves the offset and admits plain char to std::in_range.
+    if (!std::in_range<index_type>(+origin)) return false;
     plan.base_offsets[operand++] = static_cast<index_type>(origin);
     return true;
   };
