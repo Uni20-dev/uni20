@@ -148,6 +148,13 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   output[0] = static_cast<double>(mapping(2, 1) + mapping.required_span_size() + mapping.stride(0));
 }
 
+using shape_descriptor = uni20::mdspec<double, extents_type, stdex::layout_left, cuda_output_accessor, int>;
+
+[[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
+{
+  *result = descriptor->empty() ? 0 : descriptor->size();
+}
+
 [[maybe_unused]] __global__ void conjugate_proxy_probe(uni20::cfloat* value)
 {
   uni20::cuda::CudaPointerAccessor<uni20::cfloat> accessor;

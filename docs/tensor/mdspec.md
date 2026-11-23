@@ -115,11 +115,12 @@ acquisition:
 - `element_type` and `value_type`;
 - `extents_type`, `index_type`, `size_type`, and `rank_type`;
 - `layout_type` and `mapping_type`;
-- `accessor_type`, `data_handle_type`, and `reference`;
+- `accessor_type`, `offset_type`, `data_handle_type`, and `reference`;
 - `data_descriptor_type`.
 
 The `data_handle_type` alias is known from the accessor even though no handle
-value is stored.
+value is stored. `offset_type` is the accessor's offset argument type. Accessors
+following the standard interface use `std::size_t` when they omit the alias.
 
 The available observers are:
 
@@ -127,10 +128,14 @@ The available observers are:
 |---|---|
 | Descriptor | mutable and const `data_descriptor()` |
 | Mapping and accessor | `mapping()`, `accessor()` |
-| Shape | `rank()`, `rank_dynamic()`, `static_extent(axis)`, `extents()`, `extent(axis)` |
+| Shape | `rank()`, `rank_dynamic()`, `static_extent(axis)`, `extents()`, `extent(axis)`, `size()`, `empty()` |
 | Mapping properties | `is_always_unique()`, `is_always_exhaustive()`, `is_always_strided()` |
 | Runtime mapping properties | `is_unique()`, `is_exhaustive()`, `is_strided()` |
 | Strides | `stride(axis)` when the mapping provides it |
+
+`size()` returns the product of the extents as `extents_type::size_type`.
+Padding contributes only to the mapping's storage span. A scalar descriptor
+has one element. A descriptor with any zero extent is empty.
 
 An unresolved `mdspec` intentionally does not expose:
 

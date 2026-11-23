@@ -354,8 +354,8 @@ applies to it:
 
 - **One vocabulary.** mdspec's template parameters, type aliases and observers
   are `uni20::mdspan`'s. It lacks `data_handle()` and `operator[]`, and adds
-  `data_descriptor_type` and `data_descriptor()`. It gains `size()` and
-  `empty()`, the two mdspan observers it lacks today.
+  `data_descriptor_type` and `data_descriptor()`. Its `size()` and `empty()`
+  inspect the logical extents before acquisition.
 - **Strides at every rank (rules 1 and 4).** `mdspec::stride(r)` today exists
   only where the mapping's does, so a rank-zero `layout_left` mdspec has none.
   With Uni20 layouts it exists at every rank with the precondition
