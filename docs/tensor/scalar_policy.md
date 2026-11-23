@@ -281,12 +281,18 @@ solvers or DMRG.
 
 CPU reference sums and inner products use compensated accumulation in the input
 scalar field. CPU reference norms use scaled sum-of-squares arithmetic in the
-associated real field. CUDA reference `sum_host` and `inner_product_host`
-accumulate each real and imaginary component with ordinary addition in
-`double`. Threads combine their partials in a fixed order, then the result is
-converted to the output type. Cancellation and intermediate overflow can
-therefore give different results on CPU and CUDA. cuBLAS inner products follow
-the provider's accumulation policy.
+associated real field.
+
+CUDA reference `sum_host` uses Neumaier compensation for each real and
+imaginary component. Each thread accumulates in `double`, and the fixed
+reduction tree carries the corrections through the final merge. The result
+is converted to the output type after adding the correction. CPU and CUDA
+can round differently because their accumulation order and, for single-precision
+inputs, their accumulator precision differ. Intermediate sums can still overflow.
+
+CUDA reference `inner_product_host` combines its partials with ordinary
+double-precision addition. cuBLAS inner products follow the provider's
+accumulation policy.
 
 Algorithms must choose their numerical accumulation method explicitly;
 Uni20 does not define a universal "next wider" scalar because no such type

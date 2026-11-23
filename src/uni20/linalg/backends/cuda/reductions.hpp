@@ -165,27 +165,24 @@ reference_norm_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> 
   return static_cast<real_type>(finish_norm(partial));
 }
 
-template <class Scalar> [[nodiscard]] Scalar finish_sum(SumPartial partial)
-{
-  using real_type = uni20::make_real_t<Scalar>;
-  if constexpr (uni20::is_complex_v<Scalar>)
-    return Scalar(static_cast<real_type>(partial.real), static_cast<real_type>(partial.imag));
-  else
-    return static_cast<Scalar>(partial.real);
-}
-
 template <class Scalar, class InputMdspec>
 Scalar reference_sum_of_plan(LoweredStridedElementwisePlan<1, reduction_maximum_rank> const& plan,
                              InputMdspec const& input, uni20::cuda::Stream const& stream)
 {
-  auto const partial = reduce_unary_plan<SumPartial, Scalar>(
+  using real_type = uni20::make_real_t<Scalar>;
+  constexpr auto components = reduction_components<Scalar>;
+  using partial_type = SumPartial<components>;
+  auto const partial = reduce_unary_plan<partial_type, Scalar>(
       plan, input, stream,
       [](auto data, auto const& kernel_plan, auto partials, auto stream, int device) {
-        enqueue_sum_partials<uni20::make_real_t<Scalar>, reduction_components<Scalar>>(data, kernel_plan, partials,
-                                                                                       stream, device);
+        enqueue_sum_partials<real_type, components>(data, kernel_plan, partials, stream, device);
       },
-      enqueue_sum_combine);
-  return finish_sum<Scalar>(partial);
+      enqueue_sum_combine<partial_type>);
+  auto const real = static_cast<real_type>(partial.components[0].value());
+  if constexpr (uni20::is_complex_v<Scalar>)
+    return Scalar(real, static_cast<real_type>(partial.components[1].value()));
+  else
+    return real;
 }
 
 template <class Scalar, class InputMdspec> KernelAttempt try_reference_sum(Scalar& output, InputMdspec const& input)
@@ -256,18 +253,21 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   auto rhs_access = rhs_descriptor.buffer().read_synchronized_with(stream);
   auto const* lhs_data = reinterpret_cast<real_type const*>(lhs_access.data() + lhs_descriptor.element_offset());
   auto const* rhs_data = reinterpret_cast<real_type const*>(rhs_access.data() + rhs_descriptor.element_offset());
-  auto const partial = reduce_lowered_plan<SumPartial>(
+  auto const partial = reduce_lowered_plan<InnerProductPartial>(
       plan, resources, stream,
-      [&](auto const& kernel_plan, SumPartial* partials) {
+      [&](auto const& kernel_plan, InnerProductPartial* partials) {
         enqueue_inner_product_partials<real_type, reduction_components<Scalar>>(
             lhs_data, rhs_data, kernel_plan, partials, stream.native_handle(), stream.device());
       },
-      [&](SumPartial const* partials, std::size_t count, SumPartial* result) {
+      [&](InnerProductPartial const* partials, std::size_t count, InnerProductPartial* result) {
         enqueue_sum_combine(partials, count, result, stream.native_handle(), stream.device());
       });
   lhs_access.release_after_synchronization();
   rhs_access.release_after_synchronization();
-  return finish_sum<Scalar>(partial);
+  if constexpr (uni20::is_complex_v<Scalar>)
+    return Scalar(static_cast<real_type>(partial.real), static_cast<real_type>(partial.imag));
+  else
+    return static_cast<Scalar>(partial.real);
 }
 
 template <class LhsMdspec, class RhsMdspec>
@@ -369,7 +369,7 @@ consteval auto kernel_accepts_types(CudaReferenceBackend const&, sum_reduction_o
 }
 
 /// \brief Return a strided CUDA sum as a host scalar.
-/// \details Each component uses ordinary double-precision addition in a fixed reduction tree.
+/// \details Each component uses Neumaier compensation in double precision throughout the fixed reduction tree.
 template <class Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input, std::size_t Rank>
 KernelAttempt try_kernel(CudaReferenceBackend, sum_reduction_op<Rank, Rank> const& operation, Scalar& output,
                          Input& input)
