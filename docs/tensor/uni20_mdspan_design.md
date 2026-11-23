@@ -1,6 +1,6 @@
 # Uni20 mdspan and mdspec Design
 
-Status: proposal, 2026-11-20. Nothing here is implemented yet.
+Status: Proposed implementation.
 
 Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 `stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
@@ -20,7 +20,7 @@ for `m.stride(r)` to be well-formed if `m.extents().rank()` is zero, even if
 `stride` with `extents_type::rank() > 0`; `layout_stride` does not. A
 constrained-away member cannot be named, even in a loop over the axes that never
 runs at rank zero. `std::mdspan::stride` is declared without a constraint but
-forwards to the mapping, so a `requires` check reports it present when calling
+forwards to the mapping, so a `requires` check reports it present, although calling
 it fails to compile. With the standard layouts, Uni20's strided concepts would
 need a rank-zero escape and generic code a free stride helper; pull request #148
 tried that and is superseded by this design.
@@ -55,7 +55,9 @@ and grow layouts the standard does not have.
 ### Non-goals
 
 - `submdspan`. Uni20 does not use it.
-- New extents. `std::extents` is adequate.
+- New extents semantics. Use standard extents when available and a fallback
+  with the same interface on older toolchains. [Issue #171](https://github.com/Uni20-dev/uni20/issues/171)
+  tracks selecting one implementation for the host and CUDA translation units.
 
 C++26's `layout_left_padded` and `layout_right_padded` are deferred. They
 encode a unit inner stride in the layout type, which may be useful for BLAS
@@ -98,7 +100,7 @@ All live in namespace `uni20`, in new headers under `src/uni20/mdspan/`.
 
 | Type | Definition |
 |---|---|
-| `extents`, `dextents`, `dynamic_extent` | Aliases of the standard ones. |
+| `extents`, `dextents`, `dynamic_extent` | Standard extents semantics. Use `std::dynamic_extent` from `<span>` in either configuration. |
 | `layout_left`, `layout_right`, `layout_stride` | Uni20 mappings with the standard semantics for nonnegative strides, plus the rules below. |
 | `layout_signed_stride` | A strided mapping whose strides may have either sign. |
 | `default_accessor<T>` | `offset_type` is `std::ptrdiff_t`; `access(p, i)` is `p[i]`, `offset(p, i)` is `p + i`. |
@@ -140,8 +142,9 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    `required_span_size()` remains for nonnegative layouts, as the standard's
    layout-mapping requirements need it. The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
-   buffer: the layouts in the Types table, with `default_accessor` or the CUDA
-   pointer accessors. The zip layouts are outside it. `StridedZipLayout` and
+   buffer. This includes paired-axis diagonal views and accessors that forward
+   the offset unchanged, such as conjugation over a CUDA pointer accessor.
+   The zip layouts are outside it. `StridedZipLayout` and
    `GeneralZipLayout` return one offset per span, so they are Uni20 mappings
    rather than conforming layout mappings, and they should not claim to be:
    they provide neither `required_span_size()` nor `reachable_range()`. They
@@ -170,7 +173,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    `index_type` and a signed `offset_type`. An accessor taking `size_t`
    therefore cannot be paired with this layout. Uni20's `index_type` is already
    `std::ptrdiff_t` ([`core/types.hpp`](../../src/uni20/core/types.hpp)), and
-   Tensor extents use it.
+   the default Tensor extents use it. Explicit Tensor extents can use another
+   index type.
 6. **Empty mappings constrain their strides less.** The standard requires
    `layout_stride` strides to be positive and to admit an axis order in which
    no two axes overlap, even when the mapping has no elements. Uni20's
@@ -187,6 +191,20 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    related proposal, is narrower: it relaxes positivity but keeps the axis-order
    condition at every nonzero rank, so it rejects strides `(1, 1, 1)` for
    extents `(0, 3, 4)`, which rule 6 accepts.
+
+   A paired-axis diagonal of a source satisfying LWG 4606 also fits Uni20
+   `layout_stride`. Order the surviving axes and pairs by their last varying
+   source axis in the source's physical stride order. A pair's stride is the
+   sum of its source strides. Its maximum offset contribution is at most the
+   sum of the original two contributions, since its extent is their minimum.
+   Each new stride therefore still exceeds the total contribution of the
+   preceding groups. For example, the diagonal of axes 0 and 1 of a
+   column-major `(2,2,3)` tensor has shape `(3,2)` and strides `(4,3)`.
+   The second axis contributes at most 3, so a step of 4 on the first suffices.
+   Use the native strided layout for these sources when migrating
+   `diagonal_view`. Today's `detail::DiagonalLayout` also serves custom
+   strided sources whose only guarantee is uniqueness. That guarantee alone
+   does not establish the LWG ordering.
 7. **The nonzero extents have a representable product.** The standard requires
    only the number of elements to be representable, which says nothing about an
    empty shape such as `(0, 2^32, 2^32)`, whose `layout_right` strides overflow.
@@ -314,10 +332,12 @@ tentatively on 2026-11-20: the signed layout is
   Element access can rely on the established representation. CUDA kernels
   may select a narrower execution plan during backend lowering.
 - **Export.** Explicit export preserves the mapping and accessor semantics.
-  Check the destination layout's preconditions before constructing it. For
-  example, C++23 `layout_stride` requires positive strides. A Uni20
-  mapping with a zero stride on an empty or singleton axis reports an export
-  failure for that destination. The same rule applies to negative strides.
+  Check the preconditions of the destination constructor. For example, the
+  C++23 `layout_stride` constructor taking an array of strides requires
+  positive strides and its prescribed axis order. A zero-stride empty mapping
+  can still be exported if a standard construction, such as the default
+  constructor, reproduces its extents and strides exactly. Reject the export
+  if the destination cannot represent the mapping.
 
 - **Device code.** Every member is `UNI20_HOST_DEVICE constexpr`.
   `tests/linalg/test_cuda_descriptor_compile.cu` gains Uni20 mdspan and mapping
@@ -348,16 +368,18 @@ applies to it:
   `layout_signed_stride` requires a signed accessor offset type in both
   `mdspec` and the resolved `mdspan`.
 - **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
-  `mapping().reachable_range()` against the buffer, for the mappings and
-  accessors rule 3 covers. Today
+  `mapping().reachable_range()` against the buffer for the mappings and
+  accessors rule 3 covers. Even for an empty range, validate the origin before
+  forming a displaced handle. The one-past origin is valid for an empty view. Today
   `validate_cuda_descriptor_range` in
   [`tensor/cuda_access.hpp`](../../src/uni20/tensor/cuda_access.hpp) checks
   `element_offset()` plus `required_span_size()`.
 - **Empty mappings and representable products (rules 6 and 7)** come with the
   mapping and need nothing separate.
-- **Resolution.** Acquisition combines the leased handle with `mapping()` and
-  `accessor()` into a `uni20::mdspan`, where `resolve_cuda_mdspan` now builds a
-  `stdex::mdspan`, and the leases' `.mdspan()` return that type.
+- **Resolution.** Acquisition combines the leased handle, the mapping and the
+  accessor for the acquired memory domain into a `uni20::mdspan`. For example,
+  CUDA's `resolve_cuda_mdspan` already lowers a conjugating accessor before
+  constructing the current `stdex::mdspan`.
 - **Concepts.** `MdspecLike` accepts a native `MdspanLike` as its immediate
   case. Passing a foreign mdspan to a descriptor-taking API goes through the
   same explicit import described above. Native immediate and deferred operands
@@ -435,8 +457,8 @@ recurs.
 
 ### Warnings in Public Headers
 
-Decided 2026-11-20 and proposed in #149, which has not merged: consumers embed
-uni20 as `SYSTEM`. uni20 exports its include directories without `SYSTEM`, so
+Since #149, consumers can embed Uni20 as `SYSTEM`. Uni20 exports its include
+directories without `SYSTEM`, so
 otherwise a consumer compiles these headers under its own warning flags, and a
 warning disabled only in uni20's targets can fail its `-Werror` build. GCC's
 `-Wtype-limits` reports `axis < rank` as always false when a generic lambda
