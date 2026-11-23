@@ -421,9 +421,10 @@ conformance claims (rule 3).
    Migrate tests that need negative strides together with the signed layout.
 4. **Signed strides.** Add `layout_signed_stride` and `reverse`. Host copy
    and elementwise transforms use the affine iteration plan. Diagonal component
-   views and negative-stride test helpers use the native layout. The tests
-   cover empty mappings with mixed strides and signed offsets through unary
-   transform and zip accessors.
+   views and negative-stride test helpers use the native layout. Zip with a
+   signed operand uses `GeneralZipLayout` to preserve each operand's mapping.
+   The tests cover empty mappings with mixed strides and signed offsets through
+   unary transform and zip accessors.
 
 ## Relation to #148
 

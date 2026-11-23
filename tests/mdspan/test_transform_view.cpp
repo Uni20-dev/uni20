@@ -122,10 +122,10 @@ TEST(TransformView1D, ThreeSpanWeighted)
 }
 
 //----------------------------------------------------------------------
-// 1D reversed + normal → not strided mapping
+// 1D forward and reversed inputs retain their own offsets
 //----------------------------------------------------------------------
 
-TEST(TransformView1D, MixedStrideNotStrided)
+TEST(TransformView1D, ForwardAndReversedInputsPreserveSignedOffsets)
 {
   std::vector<double> v(6);
   std::iota(v.begin(), v.end(), 1.0);
@@ -140,7 +140,7 @@ TEST(TransformView1D, MixedStrideNotStrided)
     EXPECT_DOUBLE_EQ(Z[i], v[i] + v[5 - i]);
   }
 
-  EXPECT_FALSE(Z.mapping().is_strided());
+  EXPECT_EQ(Z.mapping()(3), (std::tuple<index_t, index_t>{3, -3}));
 }
 
 //----------------------------------------------------------------------

@@ -109,15 +109,14 @@ TEST(ZipLayoutSelector, StridedMdspanPacksToStridedZipLayout)
   static_assert(std::is_same_v<Z, StridedZipLayout<2>>);
 }
 
-TEST(ZipLayoutSelector, MixedMdspanAlsoChoosesStridedZipLayout)
+TEST(ZipLayoutSelector, SignedOperandKeepsItsOwnMapping)
 {
   std::vector<double> v(4);
   auto A = make_mdspan_1d(v);
   auto R = make_reversed_1d(v);
 
-  // reversed_1d is still layout_stride → still StridedZipLayout<2>
   using Z = zip_layout_t<decltype(A), decltype(R)>;
-  static_assert(std::is_same_v<Z, StridedZipLayout<2>>);
+  static_assert(std::is_same_v<Z, GeneralZipLayout<decltype(A)::mapping_type, decltype(R)::mapping_type>>);
 }
 
 template <typename Mapping>
