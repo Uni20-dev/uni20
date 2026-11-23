@@ -204,7 +204,7 @@ TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)
   }
 }
 
-TEST_F(CudaReductionTest, FreshCopyAndHostNormsSuspendAlongsideASum)
+TEST_F(CudaReductionTest, FreshCopyAndHostReductionsSuspendOnOneStream)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
   uni20::async::DebugCudaScheduler scheduler;
@@ -214,23 +214,31 @@ TEST_F(CudaReductionTest, FreshCopyAndHostNormsSuspendAlongsideASum)
   host[1] = 4;
   uni20::async::Async<uni20::CudaTensor<double, 1>> input = uni20::to_device(host, 0);
   uni20::async::Async<uni20::CudaTensor<double, 1>> output;
+  host[0] = 2;
+  host[1] = -1;
+  uni20::async::Async<uni20::CudaTensor<double, 1>> rhs = uni20::to_device(host, 0);
   auto& pool = runtime.device_resources(0).streams();
   auto held = pool.acquire();
   auto sum = uni20::sum_host(input);
   uni20::copy(output, input);
 #if UNI20_BACKEND_CUBLAS
   auto norm = uni20::norm_host(uni20::linalg::CublasBackend{}, input);
+  auto dot = uni20::inner_product_host(uni20::linalg::CublasBackend{}, input, rhs);
 #else
   auto norm = uni20::norm_host(input);
+  auto dot = uni20::inner_product_host(input, rhs);
 #endif
   auto reference_norm = uni20::norm_host(uni20::linalg::CudaReferenceBackend{}, input);
+  auto reference_dot = uni20::inner_product_host(uni20::linalg::CudaReferenceBackend{}, input, rhs);
 
   scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
-  EXPECT_EQ(scheduler.external_waits(), 4U);
+  EXPECT_EQ(scheduler.external_waits(), 6U);
   held = {};
   EXPECT_EQ(sum.get_wait(scheduler), 7);
   EXPECT_EQ(norm.get_wait(scheduler), 5);
   EXPECT_EQ(reference_norm.get_wait(scheduler), 5);
+  EXPECT_EQ(dot.get_wait(scheduler), 2);
+  EXPECT_EQ(reference_dot.get_wait(scheduler), 2);
   auto copied = uni20::to_host(output.get_wait(scheduler));
   EXPECT_EQ(copied[0], 3);
   EXPECT_EQ(copied[1], 4);
@@ -477,11 +485,9 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   reference::LoweredStridedElementwisePlan<1, reference::reduction_maximum_rank> norm_64;
   norm_64.index_kind = reference::ElementwiseIndexKind::index_64;
   ASSERT_TRUE(reference::elementwise_plan_detail::try_lower(norm_source, norm_64.plan_64, 0));
-  {
-    auto stream = runtime.device_resources(0).streams().acquire();
-    EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs, stream)),
-              bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs, stream)));
-  }
+  auto stream = runtime.device_resources(0).streams().acquire();
+  EXPECT_EQ(bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_64, lhs, stream)),
+            bits(reference::reference_norm_of_plan<uni20::cdouble>(norm_32, lhs, stream)));
 
   auto const product_source = uni20::make_multi_iteration_plan(std::tuple{lhs.mapping(), rhs.mapping()});
   reference::LoweredStridedElementwisePlan<2, reference::reduction_maximum_rank> product_32;
@@ -490,8 +496,8 @@ TEST_F(CudaReductionTest, SixtyFourBitPlansGiveTheSameBitsAsThirtyTwoBitPlans)
   reference::LoweredStridedElementwisePlan<2, reference::reduction_maximum_rank> product_64;
   product_64.index_kind = reference::ElementwiseIndexKind::index_64;
   ASSERT_TRUE(reference::elementwise_plan_detail::try_lower(product_source, product_64.plan_64, 0));
-  auto const narrow = reference::reference_inner_product_of_plan<uni20::cdouble>(product_32, lhs, rhs);
-  auto const wide = reference::reference_inner_product_of_plan<uni20::cdouble>(product_64, lhs, rhs);
+  auto const narrow = reference::reference_inner_product_of_plan<uni20::cdouble>(product_32, lhs, rhs, stream);
+  auto const wide = reference::reference_inner_product_of_plan<uni20::cdouble>(product_64, lhs, rhs, stream);
   EXPECT_EQ(bits(wide.real()), bits(narrow.real()));
   EXPECT_EQ(bits(wide.imag()), bits(narrow.imag()));
 }

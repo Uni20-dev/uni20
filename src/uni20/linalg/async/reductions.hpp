@@ -139,7 +139,11 @@ async::AsyncTask co_inner_product_host(BackendSelector const selector,
   auto const& lhs_value = std::get<1>(awaited);
   auto const& rhs_value = std::get<2>(awaited);
 
-  auto result = uni20::inner_product_host(selector, lhs_value, rhs_value);
+  require_reduction_extents(lhs_value, rhs_value);
+  tensor_element_t<LhsTensor> result{};
+  auto lhs_descriptor = mdspec_of(lhs_value);
+  auto rhs_descriptor = mdspec_of(rhs_value);
+  co_await linalg::co_dispatch_kernel(selector, linalg::inner_product_op{}, result, lhs_descriptor, rhs_descriptor);
   storage.emplace(std::move(result));
   co_return;
 }
@@ -507,6 +511,7 @@ template <TensorView LhsTensor, TensorView RhsTensor>
 }
 
 /// \brief Return a nonblocking async host C++ scalar inner product through an explicit selector.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <linalg::KernelBackendSelector BackendSelector, TensorView LhsTensor, TensorView RhsTensor>
   requires detail::CompatibleInnerProductTensors<LhsTensor, RhsTensor>
 [[nodiscard]] auto inner_product_host(BackendSelector selector, async::Async<LhsTensor> const& lhs,
@@ -516,6 +521,7 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView LhsTensor, T
 }
 
 /// \brief Return a nonblocking async host C++ scalar inner product using static Tensor policy.
+/// \pre CUDA submission requires a CUDA-aware scheduler that accepts the input device.
 template <TensorView LhsTensor, TensorView RhsTensor>
   requires detail::CompatibleInnerProductTensors<LhsTensor, RhsTensor>
 [[nodiscard]] auto inner_product_host(async::Async<LhsTensor> const& lhs, async::Async<RhsTensor> const& rhs)

@@ -240,7 +240,7 @@ KernelAttempt try_reference_norm(uni20::make_real_t<Scalar>& output, InputMdspec
 template <class Scalar, class LhsMdspec, class RhsMdspec>
 [[nodiscard]] Scalar
 reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maximum_rank> const& plan,
-                                LhsMdspec const& lhs, RhsMdspec const& rhs)
+                                LhsMdspec const& lhs, RhsMdspec const& rhs, uni20::cuda::Stream const& stream)
 {
   static_assert(RawCudaReductionMdspec<LhsMdspec, Scalar>);
   static_assert(RawCudaReductionMdspec<RhsMdspec, Scalar>);
@@ -251,7 +251,6 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   require_reduction_range(rhs);
 
   auto& resources = lhs_descriptor.buffer().resources();
-  auto stream = resources.streams().acquire();
   uni20::cuda::ScopedDevice guard(stream.device());
   auto lhs_access = lhs_descriptor.buffer().read_synchronized_with(stream);
   auto rhs_access = rhs_descriptor.buffer().read_synchronized_with(stream);
@@ -271,25 +270,18 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   return finish_sum<Scalar>(partial);
 }
 
-/// \brief Compute `sum(conj(lhs) * rhs)` over any positive-strided layouts.
-template <class Scalar, class LhsMdspec, class RhsMdspec>
-KernelAttempt try_reference_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec const& rhs)
+template <class LhsMdspec, class RhsMdspec>
+KernelAttempt prepare_inner_product(LhsMdspec const& lhs, RhsMdspec const& rhs,
+                                    LoweredStridedElementwisePlan<2, reduction_maximum_rank>& plan)
 {
   for (std::size_t axis = 0; axis < std::remove_cvref_t<LhsMdspec>::rank(); ++axis)
     CHECK_EQUAL(lhs.extent(axis), rhs.extent(axis));
 
-  LoweredStridedElementwisePlan<2, reduction_maximum_rank> plan;
   if (!try_lower_strided_elementwise_plan<reduction_maximum_rank>(
           make_multi_iteration_plan(std::tuple{lhs.mapping(), rhs.mapping()}), plan))
     return KernelAttempt::unsupported_layout;
-  if (plan.element_count() == 0)
-  {
-    output = Scalar{};
-    return KernelAttempt::success;
-  }
-  if (lhs.data_descriptor().buffer().device() != rhs.data_descriptor().buffer().device())
+  if (plan.element_count() != 0 && lhs.data_descriptor().buffer().device() != rhs.data_descriptor().buffer().device())
     return KernelAttempt::incompatible_devices;
-  output = reference_inner_product_of_plan<Scalar>(plan, lhs, rhs);
   return KernelAttempt::success;
 }
 
@@ -326,7 +318,18 @@ template <class Output, uni20::MdspecLike LhsMdspec, uni20::MdspecLike RhsMdspec
                                                           typename std::remove_cvref_t<LhsMdspec>::value_type>
 KernelAttempt try_kernel(CudaReferenceBackend, inner_product_op const&, Output& output, LhsMdspec& lhs, RhsMdspec& rhs)
 {
-  return detail::cuda_reference::try_reference_inner_product(output, lhs, rhs);
+  namespace ref = detail::cuda_reference;
+  ref::LoweredStridedElementwisePlan<2, ref::reduction_maximum_rank> plan;
+  auto const attempt = ref::prepare_inner_product(lhs, rhs, plan);
+  if (!kernel_attempt_succeeded(attempt)) return attempt;
+  if (plan.element_count() == 0)
+    output = {};
+  else
+  {
+    auto stream = lhs.data_descriptor().buffer().resources().streams().acquire();
+    output = ref::reference_inner_product_of_plan<Output>(plan, lhs, rhs, stream);
+  }
+  return KernelAttempt::success;
 }
 
 /// \brief Report reference eligibility for a full CUDA norm returning a host scalar.
@@ -366,6 +369,7 @@ consteval auto kernel_accepts_types(CudaReferenceBackend const&, sum_reduction_o
 }
 
 /// \brief Return a strided CUDA sum as a host scalar.
+/// \details Each component uses ordinary double-precision addition in a fixed reduction tree.
 template <class Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Input, std::size_t Rank>
 KernelAttempt try_kernel(CudaReferenceBackend, sum_reduction_op<Rank, Rank> const& operation, Scalar& output,
                          Input& input)

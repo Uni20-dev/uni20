@@ -586,11 +586,13 @@ TEST_F(CudaCopyTest, AsyncCopyAllocationsSuspendAndPreservePlacement)
   auto materialized = uni20::make_tensor(input);
   auto uploaded = uni20::to_device(host, resources);
   uni20::copy(resized, host);
+  async_cuda_matrix_type fresh;
+  uni20::copy(fresh, host);
   scheduler.run_all(uni20::async::ExternalWaitPolicy::allow);
-  EXPECT_EQ(scheduler.external_waits(), 3U);
+  EXPECT_EQ(scheduler.external_waits(), 4U);
   held = {};
 
-  for (auto* output : {&materialized, &uploaded, &resized})
+  for (auto* output : {&materialized, &uploaded, &resized, &fresh})
   {
     auto const& value = output->get_wait(scheduler);
     EXPECT_EQ(value.storage().device().ordinal(), device);

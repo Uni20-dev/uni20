@@ -120,6 +120,8 @@ async::AsyncTask co_copy(BackendSelector const selector, async::WriteBuffer<Outp
           co_await co_allocate_copy_output(storage, extents, storage->storage().resources());
         else if constexpr (cuda::BufferMdspec<tensor_mdspec_t<InputTensor>>)
           co_await co_allocate_copy_output(storage, extents, source_allocation_context(input_value));
+        else if constexpr (std::constructible_from<OutputTensor, tensor_extents_t<OutputTensor> const&>)
+          co_await co_allocate_copy_output(storage, extents, cuda::device_resources());
         else
           throw async::buffer_write_uninitialized{};
       }
@@ -217,9 +219,9 @@ async::AsyncTask co_to_device(async::WriteBuffer<ResultTensor> output, async::Re
 ///          the destination buffer ledger then carries device completion. A
 ///          pageable host transfer runs its necessarily blocking CUDA call on
 ///          the scheduler task.
-/// \pre The output has a distinct epoch queue from the input. An unconstructed
-///      context-bound output can be prepared only when placement is available
-///      from the input descriptor.
+///          A fresh owning CUDA tensor inherits the CUDA source device or uses
+///          the runtime default for a host source. Resizing preserves its device.
+/// \pre The output has a distinct epoch queue from the input.
 template <class BackendSelector, class OutputTensor, class InputTensor>
   requires detail::AsyncCopyTensors<OutputTensor, InputTensor>
 void copy(BackendSelector selector, async::Async<OutputTensor>& output, async::Async<InputTensor> const& input)

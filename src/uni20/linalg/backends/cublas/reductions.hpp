@@ -60,18 +60,16 @@ template <class Mdspec> void require_reduction_descriptor_range(Mdspec const& sp
   CHECK(offset <= buffer_size && size <= buffer_size - offset, offset, size, buffer_size);
 }
 
-template <class Scalar, class LhsMdspec, class RhsMdspec>
-KernelAttempt try_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec const& rhs)
+template <class LhsMdspec, class RhsMdspec>
+KernelAttempt prepare_inner_product(LhsMdspec const& lhs, RhsMdspec const& rhs, int& count)
 {
-  static_assert(RawReadableCudaReductionMdspec<LhsMdspec, Scalar>);
-  static_assert(RawReadableCudaReductionMdspec<RhsMdspec, Scalar>);
   static_assert(std::remove_cvref_t<LhsMdspec>::rank() == std::remove_cvref_t<RhsMdspec>::rank());
   for (std::size_t axis = 0; axis < std::remove_cvref_t<LhsMdspec>::rank(); ++axis)
     CHECK_EQUAL(lhs.extent(axis), rhs.extent(axis));
 
   if (has_empty_index_space(lhs))
   {
-    output = Scalar{};
+    count = 0;
     return KernelAttempt::success;
   }
   if (!lhs.mapping().is_unique() || !lhs.mapping().is_exhaustive() || !rhs.mapping().is_unique() ||
@@ -91,14 +89,23 @@ KernelAttempt try_inner_product(Scalar& output, LhsMdspec const& lhs, RhsMdspec 
   require_reduction_descriptor_range(lhs, size);
   require_reduction_descriptor_range(rhs, size);
 
-  auto execution = uni20::cublas::execution_pool(lhs_descriptor.buffer().resources()).acquire();
+  count = static_cast<int>(size);
+  return KernelAttempt::success;
+}
+
+template <class LhsMdspec, class RhsMdspec>
+auto execute_inner_product(uni20::cublas::ExecutionLease& execution, LhsMdspec const& lhs, RhsMdspec const& rhs,
+                           int count)
+{
+  auto const& lhs_descriptor = lhs.data_descriptor();
+  auto const& rhs_descriptor = rhs.data_descriptor();
   auto lhs_access = lhs_descriptor.buffer().read_synchronized_with(execution.stream());
   auto rhs_access = rhs_descriptor.buffer().read_synchronized_with(execution.stream());
-  output = uni20::cublas::dotc(execution, static_cast<int>(size), lhs_access.data() + lhs_descriptor.element_offset(),
-                               rhs_access.data() + rhs_descriptor.element_offset());
+  auto result = uni20::cublas::dotc(execution, count, lhs_access.data() + lhs_descriptor.element_offset(),
+                                    rhs_access.data() + rhs_descriptor.element_offset());
   lhs_access.release_after_synchronization();
   rhs_access.release_after_synchronization();
-  return KernelAttempt::success;
+  return result;
 }
 
 template <class InputMdspec> KernelAttempt prepare_norm(InputMdspec const& input, int& count)
@@ -169,7 +176,17 @@ template <class Output, uni20::MdspecLike LhsMdspec, uni20::MdspecLike RhsMdspec
                                                                   typename std::remove_cvref_t<LhsMdspec>::value_type>
 KernelAttempt try_kernel(CublasBackend, inner_product_op const&, Output& output, LhsMdspec& lhs, RhsMdspec& rhs)
 {
-  return detail::cublas_backend::try_inner_product(output, lhs, rhs);
+  int count = 0;
+  auto const attempt = detail::cublas_backend::prepare_inner_product(lhs, rhs, count);
+  if (!kernel_attempt_succeeded(attempt)) return attempt;
+  if (count == 0)
+    output = {};
+  else
+  {
+    auto execution = uni20::cublas::execution_pool(lhs.data_descriptor().buffer().resources()).acquire();
+    output = detail::cublas_backend::execute_inner_product(execution, lhs, rhs, count);
+  }
+  return KernelAttempt::success;
 }
 
 /// \brief Report cuBLAS eligibility for a full CUDA norm returning a host scalar.

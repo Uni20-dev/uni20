@@ -44,6 +44,16 @@ auto make_unary_reduction_task(Output& output, Input& input) -> KernelTaskAttemp
   async::cuda_promise(task.handle()).bind_device(input.data_descriptor().buffer().device().ordinal());
   return KernelTaskAttempt<async::CudaTask>{std::move(task)};
 }
+
+template <class Scalar, class Lhs, class Rhs>
+async::CudaTask co_inner_product_submission(Scalar& output, Lhs const& lhs, Rhs const& rhs,
+                                            LoweredStridedElementwisePlan<2, reduction_maximum_rank> plan)
+{
+  auto& resources = lhs.data_descriptor().buffer().resources();
+  co_await uni20::cuda::set_device(resources.device());
+  auto stream = co_await uni20::cuda::acquire_stream(resources.streams());
+  output = reference_inner_product_of_plan<Scalar>(plan, lhs, rhs, stream);
+}
 } // namespace detail::cuda_reference
 
 /// \brief Submit a full CUDA sum once a stream becomes available on the input device.
@@ -61,5 +71,25 @@ auto try_make_kernel_task(CudaReferenceBackend, norm_op const&, uni20::make_real
                           Input& input)
 {
   return detail::cuda_reference::make_unary_reduction_task<norm_op>(output, input);
+}
+
+/// \brief Submit a reference inner product once a stream becomes available on the input device.
+template <class Scalar, detail::cuda_reference::RawCudaReductionMdspec<Scalar> Lhs,
+          detail::cuda_reference::RawCudaReductionMdspec<Scalar> Rhs>
+auto try_make_kernel_task(CudaReferenceBackend, inner_product_op const&, Scalar& output, Lhs& lhs,
+                          Rhs& rhs) -> KernelTaskAttempt<async::CudaTask>
+{
+  namespace ref = detail::cuda_reference;
+  ref::LoweredStridedElementwisePlan<2, ref::reduction_maximum_rank> plan;
+  auto const attempt = ref::prepare_inner_product(lhs, rhs, plan);
+  if (!kernel_attempt_succeeded(attempt)) return KernelTaskAttempt<async::CudaTask>{attempt};
+  if (plan.element_count() == 0)
+  {
+    output = {};
+    return KernelTaskAttempt<async::CudaTask>{KernelAttempt::success};
+  }
+  auto task = ref::co_inner_product_submission(output, lhs, rhs, std::move(plan));
+  async::cuda_promise(task.handle()).bind_device(lhs.data_descriptor().buffer().device().ordinal());
+  return KernelTaskAttempt<async::CudaTask>{std::move(task)};
 }
 } // namespace uni20::linalg
