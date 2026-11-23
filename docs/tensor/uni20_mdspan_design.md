@@ -129,8 +129,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    requires nonnegative offsets. Every reachable offset must fit the paired
    accessor. View construction establishes this once when the types alone
    cannot guarantee it.
-3. **Every mapping reports `reachable_range()`**, the offsets that some valid
-   index reaches. For nonnegative strides it is `[0, required_span_size() - 1]`,
+3. **Single-buffer mappings with element offsets report `reachable_range()`**,
+   the offsets that some valid index reaches. For nonnegative strides it is `[0, required_span_size() - 1]`,
    or empty when an extent is zero. Buffer validation compares the descriptor
    offset plus this range with the buffer, instead of `required_span_size()`.
    `required_span_size()` remains for nonnegative layouts, as the standard's
@@ -195,6 +195,13 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    algorithms can assume this invariant. An explicit import checks it when the
    source contract leaves it open. No LWG issue covers this for `layout_left`
    and `layout_right`.
+
+   An operation that derives a result shape establishes the same bound in the
+   destination's `index_type` before constructing its mapping. For example,
+   when a reduction writes into a narrower-index tensor, checking each retained
+   extent individually is insufficient. Their nonzero product must also fit.
+   A reduction retaining a subset of the axes in the same index type inherits
+   the product bound from its input.
 
    Every stride a mapping exposes, stored or derived, must fit its
    `index_type`, including on empty and singleton axes. An import checks this
@@ -281,7 +288,9 @@ tentatively on 2026-11-20: the signed layout is
   does not guarantee. This includes unsigned-to-signed conversion of equal
   width and stored strides on singleton axes. A single element with stride 256
   needs one storage element, but retaining that stride in eight bits is
-  impossible. Report a failed conversion at construction in release builds too.
+  impossible. Reject an unrepresentable conversion at import, including in
+  release builds. The resulting native mapping carries that guarantee through
+  subsequent Uni20 calls. Element access and kernel loops incur no import checks.
 - **Composition.** Each operand keeps its own physical offsets when views are
   combined. A factory that changes their representation must establish that
   both the strides and the reachable offsets fit. For example, strides 200
@@ -316,10 +325,13 @@ applies to it:
   With Uni20 layouts it exists at every rank with the precondition
   `r < rank()`, and `StridedMdspecLike` and `StridedMdspanLike` keep one
   definition.
-- **Offsets (rules 2 and 5).** The stored accessor fixes the offset type of the
-  mdspan an mdspec resolves to, so the composition rule applies before any
-  handle exists: an mdspec with `layout_signed_stride` and a `size_t`-offset
-  accessor does not compile.
+- **Offsets (rules 2 and 5).** For an mdspec type `S`, the existing spelling is
+  `span_offset_t<typename S::accessor_type>`. Today's `mdspec` has no nested
+  `offset_type`. A descriptor establishes that its mapping's reachable offsets
+  fit the accessor's offset type when it pairs the two. This requires only
+  metadata and can be done before acquiring a handle. For example,
+  `layout_signed_stride` requires a signed accessor offset type in both
+  `mdspec` and the resolved `mdspan`.
 - **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
   `mapping().reachable_range()` against the buffer, for the mappings and
   accessors rule 3 covers. Today
@@ -331,10 +343,10 @@ applies to it:
 - **Resolution.** Acquisition combines the leased handle with `mapping()` and
   `accessor()` into a `uni20::mdspan`, where `resolve_cuda_mdspan` now builds a
   `stdex::mdspan`, and the leases' `.mdspan()` return that type.
-- **Concepts.** `MdspecLike` already accepts every `MdspanLike`. With one
-  specification, a generic algorithm constrained on `StridedMdspecLike` sees
-  the same strides, offsets and ranges for an immediate input and for a
-  descriptor-backed one.
+- **Concepts.** `MdspecLike` accepts a native `MdspanLike` as its immediate
+  case. Passing a foreign mdspan to a descriptor-taking API goes through the
+  same explicit import described above. Native immediate and deferred operands
+  follow the same mapping rules, including rule 3's scope for range queries.
 
 A conformance test checks, for each Uni20 layout, that `mdspec` and `mdspan`
 expose the same observers with the same types and values.
@@ -366,6 +378,11 @@ conformance claims (rule 3).
    Test an empty permutation and a nonempty transpose from shape `(1,3)`,
    strides `(0,1)`, to shape `(3,1)`, strides `(1,0)`. The latter visits
    the same three values. Exercise both mdspan and mdspec.
+
+   Register the new default accessor for host access, `Tensor::data()` and
+   direct BLAS calls, including its const form. When BLAS probes an output
+   before allocation or resizing, pass its prospective mapping and accessor
+   as metadata. Construct the mdspan once the output has storage.
 3. **Tests and examples.** `stdex::` names become Uni20 names, about 620
    references, mostly mechanical. Interop tests import standard mdspans
    explicitly and exercise export failure for an unrepresentable mapping.
