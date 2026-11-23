@@ -304,11 +304,15 @@ class EpochContext {
     // start executing the epoch, propogating the exception and cancellation state from a previous epoch
     void start(std::exception_ptr eptr)
     {
+      // Declared before the lock, so that a failure replaced below is destroyed only after this
+      // epoch's mutex is released: its destructor may release a buffer of this epoch.
+      std::exception_ptr replaced;
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start", this, counter_);
       DEBUG_CHECK(phase_ == Phase::Pending, this);
-      // A task may already have failed while waiting for this epoch to start.
-      if (eptr) eptr_ = std::move(eptr);
+      // A task may already have failed while waiting for this epoch to start; the inherited
+      // failure takes its place.
+      if (eptr) replaced = std::exchange(eptr_, std::move(eptr));
       this->advance_start_locked(std::move(lock));
     }
 
