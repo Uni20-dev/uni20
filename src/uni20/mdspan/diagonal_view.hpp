@@ -58,10 +58,8 @@ struct DiagonalLayout
           return last_offset + 1;
         }
 
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range reachable_range() const noexcept
-        {
-          return nonnegative_offset_range(this->required_span_size());
-        }
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
+        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
 
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::is_convertible_v<Indices, index_type> && ...))

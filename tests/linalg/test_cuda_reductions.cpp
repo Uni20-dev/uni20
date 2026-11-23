@@ -149,7 +149,6 @@ struct ShiftedLayout
         static constexpr bool is_exhaustive() noexcept { return false; }
         constexpr index_type operator()(index_type i) const noexcept { return 1 + i; }
         constexpr index_type required_span_size() const noexcept { return 3; }
-        constexpr uni20::offset_range reachable_range() const noexcept { return {.minimum = 1, .maximum = 2}; }
     };
 };
 

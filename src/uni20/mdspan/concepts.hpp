@@ -420,7 +420,7 @@ concept AffineMdspanLike = MdspanLike<S> && AffineMdspecLike<S>;
 /// \brief A strided descriptor with a layout that supports nonnegative strides.
 template <class S>
 concept StridedMdspecLike =
-    AffineMdspecLike<S> && (!std::same_as<typename detail::span_type_t<S>::layout_type, layout_signed_stride>);
+    AffineMdspecLike<S> && detail::ZeroBaseOffsetMapping<typename detail::span_type_t<S>::mapping_type>;
 
 /// \brief An immediate view with a layout that supports nonnegative strides.
 template <class S>

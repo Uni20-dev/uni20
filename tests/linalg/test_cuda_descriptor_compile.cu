@@ -162,7 +162,7 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
   uni20::layout_stride::mapping<extents_type> const mapping{extents_type{3, 2}, {4, 3}};
   auto span = uni20::mdspan{output, mapping};
   std::array<int, 2> const last{2, 1};
-  span[last] = static_cast<double>(span.size() + span.mapping().reachable_range().maximum);
+  span[last] = static_cast<double>(span.size() + span.mapping().required_span_size() + span.mapping().base_offset());
 
   using scalar_shape = uni20::extents<uni20::index_type>;
   auto scalar = uni20::mdspan{output, uni20::layout_left::mapping<scalar_shape>{}};
@@ -179,8 +179,9 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 [[maybe_unused]] __global__ void signed_stride_probe(double* output, double const* input)
 {
   auto const reversed = uni20::reverse<1>(uni20::mdspan{input, 2, 3});
-  auto const bounds = reversed.mapping().reachable_range();
-  output[0] = reversed[std::array<int, 2>{0, 2}] + static_cast<double>(bounds.minimum);
+  auto const& mapping = reversed.mapping();
+  output[0] =
+      reversed[std::array<int, 2>{0, 2}] + static_cast<double>(mapping.base_offset() + mapping.required_span_size());
 }
 
 } // namespace

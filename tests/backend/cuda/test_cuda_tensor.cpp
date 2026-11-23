@@ -532,6 +532,31 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionResolvesPolicyFreePointerMdspans)
   EXPECT_EQ(output, input);
 }
 
+TEST_F(CudaTensorTest, SignedDescriptorAcquisitionPreservesTheLogicalOrigin)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  tensor_type const tensor(resources, 3, 3);
+  auto const source = tensor.mdspec();
+  auto const source_lease = uni20::acquire_cuda_read_access_sync(source);
+  auto const* allocation = source_lease.mdspan().data_handle();
+
+  using shape = uni20::dextents<uni20::index_type, 2>;
+  using layout = uni20::layout_signed_stride;
+  using spec = uni20::mdspec<double const, shape, layout, typename decltype(source)::accessor_type,
+                             typename decltype(source)::data_descriptor_type>;
+  spec const signed_view{source.data_descriptor().offset_by(6), layout::mapping<shape>{shape{3, 2}, {-3, 2}},
+                         source.accessor()};
+  auto const signed_lease = uni20::acquire_cuda_read_access_sync(signed_view);
+  EXPECT_EQ(signed_lease.mdspan().data_handle(), allocation + 6);
+  EXPECT_EQ(signed_lease.mdspan().mapping().required_span_size(), 9U);
+
+  spec const empty_view{source.data_descriptor().offset_by(9), layout::mapping<shape>{shape{0, 2}, {-3, 2}},
+                        source.accessor()};
+  auto const empty_lease = uni20::acquire_cuda_read_access_sync(empty_view);
+  EXPECT_EQ(empty_lease.mdspan().data_handle(), allocation + 9);
+  EXPECT_TRUE(empty_lease.mdspan().empty());
+}
+
 // The only stream returns to its pool from a CUDA host callback, so the task's
 // stream acquisition is woken from outside the scheduler. A wait must block for
 // that wakeup rather than report a deadlock.

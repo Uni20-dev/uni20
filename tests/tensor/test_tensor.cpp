@@ -26,6 +26,12 @@ using tensor_type = Tensor<int, 2, HostStorage>;
 using strided_tensor_type = StridedTensor<int, 2, HostStorage>;
 using scalar_tensor_type = ScalarTensor<double>;
 
+template <class Layout>
+concept SupportsOwningLayout = requires { typename Tensor<int, 2, HostStorage, Layout>; };
+
+static_assert(SupportsOwningLayout<layout_stride>);
+static_assert(!SupportsOwningLayout<layout_signed_stride>);
+
 static_assert(!HostStorage::storage_t<double>::initializes_elements);
 static_assert(!HostStorage::storage_t<uni20::complex<double>>::initializes_elements);
 static_assert(!std::equality_comparable<HostBuffer<int>>);

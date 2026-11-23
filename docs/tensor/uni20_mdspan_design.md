@@ -130,20 +130,20 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    accessor can take a tuple of offsets. Pairing a mapping with an accessor
    establishes that every reachable offset fits whenever the types alone
    cannot guarantee it.
-3. **Single-buffer mappings with element offsets report `reachable_range()`**,
-   the inclusive bounds on offsets reachable by valid indices.
-   For nonnegative strides it is `[0, required_span_size() - 1]`,
-   or empty when an extent is zero. Buffer validation compares the descriptor
-   offset plus this range with the buffer, instead of `required_span_size()`.
-   `required_span_size()` remains for nonnegative layouts, as the standard's
-   layout-mapping requirements need it. The rule covers a mapping that returns
+3. **Single-buffer mappings with element offsets describe their storage span.**
+   `required_span_size()` is the number of elements in that span, including
+   padding. `base_offset()` is the displacement from the start of that span to
+   the data handle. Both are zero for an empty mapping. The built-in
+   nonnegative layouts declare `is_base_offset_always_zero()`. A legacy mapping
+   exposing only `required_span_size()` describes a span starting at its handle.
+   The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
    buffer. This includes paired-axis diagonal views and accessors that forward
    the offset unchanged, such as conjugation over a CUDA pointer accessor.
    The zip layouts are outside it. `StridedZipLayout` and
    `GeneralZipLayout` return one offset per span, so they are Uni20 mappings
    rather than conforming layout mappings, and they should not claim to be:
-   they provide neither `required_span_size()` nor `reachable_range()`. They
+   they provide neither `required_span_size()` nor `base_offset()`. They
    work with the accessors and operations written for them, and anything that
    needs those queries, such as buffer validation or conversion to the
    standard, does not accept them. PR #152 removed the conformance claims and
@@ -157,8 +157,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    without querying a stride.
 5. **Signed strides have a dedicated layout.** `AffineMdspanLike` and
    `AffineMdspecLike` admit `layout_signed_stride`.
-   `StridedMdspanLike` and `StridedMdspecLike` exclude it at compile time so that
-   consumers can require nonnegative strides. An `mdspan` or `mdspec` with
+   `StridedMdspanLike` and `StridedMdspecLike` require a statically zero base
+   offset. An `mdspan` or `mdspec` with
    `layout_signed_stride` requires a signed
    `index_type` and a signed `offset_type`. An accessor taking `size_t`
    therefore cannot be paired with this layout. Uni20's `index_type` is already
@@ -236,15 +236,18 @@ standard is expected to:
 
 `layout_signed_stride` keeps the handle at the element with all indices zero,
 as NumPy does, so offsets below the handle are negative. `operator()` is
-`sum(index[k] * stride[k])`. `reachable_range()` is empty when an extent is
-zero. Otherwise it starts at `[0, 0]` and adds `(extent[k] - 1) * stride[k]` to
-the maximum for positive strides and to the minimum for negative ones. The
-constructor requires unique offsets, using increasing absolute stride order.
-A unique mapping is exhaustive when the number of elements equals the width
-of its inclusive reachable range. Consumers use `reachable_range()` for bounds.
+`sum(index[k] * stride[k])`. The lowest element offset is the sum of
+`(extent[k] - 1) * stride[k]` for axes with negative strides. Its magnitude is
+`base_offset()`. The width from the lowest through the highest element offset,
+inclusive, is `required_span_size()`. Both observers return `std::size_t`, so
+the span may be wider than the mapping's signed index range. An empty mapping
+returns zero for both queries, while a rank-zero mapping has base offset zero
+and span size one. The constructor requires unique offsets, using increasing
+absolute stride order. The mapping is exhaustive when the span size equals
+the logical element count.
 
-`layout_signed_stride` is view-only. An owning Tensor uses a nonnegative
-layout. `reverse<Axis>(span)` borrows from a native pointer-backed span
+`layout_signed_stride` is view-only. An owning Tensor requires a mapping
+whose storage span starts at the handle. `reverse<Axis>(span)` borrows from a native pointer-backed span
 with a nonnegative layout and signed indices. For a nonempty view with more
 than one element along that axis, it moves the handle to the last element
 along the axis and negates the stride. Empty views and singleton axes
@@ -351,14 +354,11 @@ applies to it:
   acquired. For example,
   `layout_signed_stride` requires a signed accessor offset type in both
   `mdspec` and the resolved `mdspan`.
-- **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
-  `mapping().reachable_range()` against the buffer for the mappings and
-  accessors rule 3 covers. Even for an empty range, validate the origin before
-  forming a displaced handle. The one-past origin is valid for an empty view.
-  `validate_cuda_descriptor_range` in
-  [`tensor/cuda_access.hpp`](../../src/uni20/tensor/cuda_access.hpp) checks
-  the reachable range on native mappings and uses the span size for legacy
-  mappings.
+- **Storage span (rule 3).** Acquisition validates the descriptor's logical
+  origin against the buffer. It subtracts `base_offset()` from the descriptor
+  offset to locate the span and checks that `required_span_size()` elements
+  fit from there. The acquired handle still addresses the descriptor's origin.
+  An empty view permits a one-past origin.
 - **Empty mappings and representable products (rules 6 and 7)** come with the
   mapping and need nothing separate.
 - **Resolution.** Acquisition combines the leased handle, the mapping and the
@@ -380,9 +380,10 @@ together as needed. [Issue #173](https://github.com/Uni20-dev/uni20/issues/173)
 tracks the implementation. PR #152 already addressed the zip layouts'
 conformance claims (rule 3).
 
-1. **Types.** The mappings, `default_accessor`, `mdspan`, `offset_range`,
-   conversions (including the explicit foreign constructor and deduction guide)
-   and `reachable_range()` on the Uni20 layouts. Both views expose
+1. **Types.** The mappings, `default_accessor`, `mdspan`, and conversions
+   (including the explicit foreign constructor and deduction guide).
+   Native layouts with element offsets expose `base_offset()` and
+   `required_span_size()`. Both views expose
    `offset_type`, and `mdspec` gains `size()` and `empty()`. Conformance tests
    cover rank zero, signed accessor offsets, device compilation and agreement
    between the two views. Test
@@ -396,8 +397,9 @@ conformance claims (rule 3).
    zip composes mappings, use each component mapping's result type. Remove
    both the alias and its backing `span_offset_type` trait.
    The strided concepts require `stride()` at every rank. The layout comparisons
-   use the Uni20 layouts. Buffer range checks, for Tensors and for
-   descriptor acquisition, move to `reachable_range()`. Generic code calls the
+   use the Uni20 layouts. Tensors allocate the storage span at a zero base
+   offset. Descriptor acquisition validates the span at its actual position
+   within the buffer. Generic code calls the
    member `stride()`, which exists at every rank, so no free stride helper is
    needed. Tests that assert a producer's exact layout type, in
    `test_cuda_copy.cpp` and `test_self_adjoint_eigh.cpp`, change with the

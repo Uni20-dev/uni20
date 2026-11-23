@@ -102,7 +102,7 @@ TEST(TensorReductionTest, DiagonalPreservesACustomUniqueStridePattern)
   auto view = uni20::detail::diagonal_mdspec<1, 2>(source);
   EXPECT_EQ(view.stride(0), 4);
   EXPECT_EQ(view.stride(1), 7);
-  EXPECT_EQ(view.mapping().reachable_range().maximum, 15);
+  EXPECT_EQ(view.mapping().required_span_size(), 16);
   view[2, 1] = 37;
   EXPECT_EQ(data[15], 37);
 }

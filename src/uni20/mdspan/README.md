@@ -12,7 +12,7 @@ supplies extents and supports interop.
 - `layouts.hpp`: native contiguous and nonnegative strided mappings.
 - `layout_signed_stride.hpp`: affine mappings with signed strides and reachable offset bounds.
 - `default_accessor.hpp`: pointer access with signed element offsets.
-- `offset_range.hpp`: inclusive physical offset bounds for mappings and iteration plans.
+- `offset_range.hpp`: inclusive physical offset bounds for iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
   a data descriptor for later handle acquisition.
 - `format.hpp`: `std::format` and `{fmt}` support for mdspan extents.
@@ -61,7 +61,9 @@ supplies extents and supports interop.
   metadata.
 - `AffineMdspanLike` and `AffineMdspecLike` require an always-strided mapping
   and stride observers. `StridedMdspanLike` and `StridedMdspecLike` additionally
-  exclude `layout_signed_stride` for consumers that require nonnegative strides.
+  require a statically zero base offset for consumers that need nonnegative
+  strides. The logical origin of `layout_signed_stride` may sit inside the
+  storage span, at `base_offset()` elements from its start.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for

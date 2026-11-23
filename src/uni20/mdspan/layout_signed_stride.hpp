@@ -5,7 +5,7 @@
 #include <array>
 #include <cassert>
 #include <concepts>
-#include <type_traits>
+#include <cstddef>
 
 namespace uni20
 {
@@ -30,6 +30,7 @@ struct layout_signed_stride
 
         /// \brief Construct a mapping with signed element strides.
         /// \pre The product of the nonzero extents and the reachable offsets fit in `index_type`.
+        /// \pre The width of the enclosing storage span fits in `std::size_t`.
         /// \pre For a nonempty shape, each varying axis in increasing absolute stride order
         ///      has an absolute stride greater than the total contribution of the preceding axes.
         UNI20_HOST_DEVICE constexpr mapping(extents_type const& extents,
@@ -49,22 +50,22 @@ struct layout_signed_stride
 
         [[nodiscard]] UNI20_HOST_DEVICE constexpr auto strides() const noexcept { return strides_; }
 
-        /// \brief Bound the element offsets relative to the logical origin.
-        /// \pre The reachable offsets fit in `std::ptrdiff_t`.
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range reachable_range() const noexcept
+        /// \brief Return the logical origin's displacement from the start of the storage span.
+        /// \details An empty mapping has base offset zero.
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept
         {
-          if (detail::mdspan_empty(extents_)) return {.minimum = 0, .maximum = -1};
-          offset_range range{};
-          for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
-          {
-            auto const delta = static_cast<std::ptrdiff_t>((extents_.extent(axis) - 1) * strides_[axis]);
-            if (delta < 0)
-              range.minimum += delta;
-            else
-              range.maximum += delta;
-          }
-          return range;
+          return this->compute_storage_span().base_offset;
         }
+
+        /// \brief Return the width of the enclosing storage span in elements, including padding.
+        /// \details An empty mapping has span size zero.
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t required_span_size() const noexcept
+        {
+          auto const span = this->compute_storage_span();
+          return span.base_offset + span.forward_size;
+        }
+
+        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return false; }
 
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::convertible_to<Indices, index_type> && ...))
@@ -88,17 +89,33 @@ struct layout_signed_stride
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_strided() const noexcept { return true; }
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept
         {
-          auto const range = this->reachable_range();
-          if (range.empty()) return true;
-          using unsigned_offset = std::make_unsigned_t<std::ptrdiff_t>;
-          // Subtract in the unsigned type so intervals crossing zero can use the full width.
-          auto const width = static_cast<unsigned_offset>(range.maximum) - static_cast<unsigned_offset>(range.minimum);
-          return width == static_cast<unsigned_offset>(detail::mdspan_size<size_type>(extents_)) - 1;
+          return this->required_span_size() == detail::mdspan_size<std::size_t>(extents_);
         }
 
         friend UNI20_HOST_DEVICE constexpr bool operator==(mapping const&, mapping const&) = default;
 
       private:
+        struct StorageSpan
+        {
+            std::size_t base_offset = 0;
+            std::size_t forward_size = 0;
+        };
+
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr StorageSpan compute_storage_span() const noexcept
+        {
+          if (detail::mdspan_empty(extents_)) return {};
+          StorageSpan span{.forward_size = 1};
+          for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
+          {
+            auto const delta = (extents_.extent(axis) - 1) * strides_[axis];
+            if (delta < 0)
+              span.base_offset += static_cast<std::size_t>(-(delta + 1)) + 1;
+            else
+              span.forward_size += static_cast<std::size_t>(delta);
+          }
+          return span;
+        }
+
         [[no_unique_address]] extents_type extents_{};
         std::array<index_type, extents_type::rank()> strides_{};
     };
