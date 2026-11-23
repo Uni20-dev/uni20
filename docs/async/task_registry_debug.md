@@ -181,7 +181,10 @@ anything alive for history, and it never reads anything that may already be gone
 - **Values released during the snapshot.** While a snapshot reads an epoch or a
   value, it holds a reference to it. If the program drops the last owner at that
   moment, the epoch or value is destroyed when the snapshot finishes reading it,
-  on the snapshotting thread.
+  on the snapshotting thread. Its destructor, or that of an exception the epoch
+  stores, may release async buffers and so wake waiting tasks. Until the snapshot
+  has released everything, `TaskRegistry::snapshots_in_progress()` reports it,
+  and `DebugScheduler` does not report a deadlock while it does.
 - **Values being written.** A snapshot formats a value only after joining the
   value's current epoch as a reader, and only while that epoch is in its reading
   phase. Its writers have then finished, and the next writer waits for the

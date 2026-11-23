@@ -47,17 +47,82 @@ TaskRegistry::GraphSnapshot take_snapshot(bool best_effort)
   return best_effort ? TaskRegistry::snapshot_best_effort() : TaskRegistry::snapshot();
 }
 
+AsyncTask write_value(WriteBuffer<int> writer, int value)
+{
+  co_await writer = value;
+  co_return;
+}
+
+void wait_until(std::mutex& mutex, std::condition_variable& changed, bool const& flag)
+{
+  std::unique_lock lock(mutex);
+  changed.wait(lock, [&] { return flag; });
+}
+
+void set_and_notify(std::mutex& mutex, std::condition_variable& changed, bool& flag)
+{
+  std::lock_guard lock(mutex);
+  flag = true;
+  changed.notify_all();
+}
+
+/// Owns a reader of another value. Its destructor, and the snapshot unlock hook below, stop on
+/// the snapshotting thread until the test lets them go.
+struct HoldsAReader
+{
+    ReadBuffer<int> reader;
+
+    struct Gates
+    {
+        std::mutex mutex;
+        std::condition_variable changed;
+        std::thread::id holder{};
+        bool in_hook{false};
+        bool hook_released{false};
+        bool in_destructor{false};
+        bool destructor_released{false};
+    };
+    inline static Gates* gates = nullptr;
+
+    explicit HoldsAReader(ReadBuffer<int> owned) : reader(std::move(owned)) {}
+
+    ~HoldsAReader()
+    {
+      if (auto* g = gates; g && g->holder == std::this_thread::get_id())
+      {
+        set_and_notify(g->mutex, g->changed, g->in_destructor);
+        wait_until(g->mutex, g->changed, g->destructor_released);
+      }
+    }
+};
+
+/// An exception that owns a reader of another value, so destroying it releases that reader.
+struct FailureHoldingAReader
+{
+    std::shared_ptr<HoldsAReader> holder;
+};
+
+AsyncTask fail_holding_a_reader(WriteBuffer<int> writer, ReadBuffer<int> reader)
+{
+  static_cast<void>(writer);
+  throw FailureHoldingAReader{std::make_shared<HoldsAReader>(std::move(reader))};
+  co_return;
+}
+
+void hold_snapshot_after_unlock()
+{
+  if (auto* g = HoldsAReader::gates; g && g->holder == std::this_thread::get_id())
+  {
+    set_and_notify(g->mutex, g->changed, g->in_hook);
+    wait_until(g->mutex, g->changed, g->hook_released);
+  }
+}
+
 #if UNI20_DEBUG_DAG
 uni20::TaskRegistryGraphDataNode const* find_data_node(TaskRegistry::GraphSnapshot const& snapshot, std::uint64_t id)
 {
   auto const node = std::ranges::find(snapshot.data_nodes, id, &uni20::TaskRegistryGraphDataNode::id);
   return node == snapshot.data_nodes.end() ? nullptr : &*node;
-}
-
-AsyncTask write_value(WriteBuffer<int> writer, int value)
-{
-  co_await writer = value;
-  co_return;
 }
 
 // Holds the writer of `writer` active while it waits for `gate`.
@@ -225,19 +290,6 @@ AsyncTask resume_after(ExternalWakeup wakeup, bool* resumed)
   *resumed = true;
   co_return;
 }
-
-void wait_until(std::mutex& mutex, std::condition_variable& changed, bool const& flag)
-{
-  std::unique_lock lock(mutex);
-  changed.wait(lock, [&] { return flag; });
-}
-
-void set_and_notify(std::mutex& mutex, std::condition_variable& changed, bool& flag)
-{
-  std::lock_guard lock(mutex);
-  flag = true;
-  changed.notify_all();
-}
 } // namespace
 #endif
 
@@ -270,6 +322,52 @@ TEST(TaskRegistryLifetimeTest, SnapshotReadsAnEpochReleasedAfterTheRegistryUnloc
     EXPECT_EQ(epoch->generation, 0);
     EXPECT_EQ(epoch->phase, "Reading");
   }
+}
+
+// The snapshot holds epoch references until it returns. Here one of them is the last owner of an
+// epoch that stores a task's exception, and the exception owns the reader that the waiting
+// thread's writer needs. Dropping the reference runs the exception's destructor on the
+// snapshotting thread, so the snapshot must still count as running at that point, or a waiting
+// scheduler with nothing queued would report a deadlock. This needs no DAG diagnostics.
+TEST(TaskRegistryLifetimeTest, SnapshotStaysCountedUntilItsEpochReferencesAreReleased)
+{
+  DebugScheduler sched;
+  Async<int> source(1);
+  std::optional<Async<int>> failed(std::in_place, 0);
+  sched.schedule(fail_holding_a_reader(failed->write(), source.read()));
+  sched.run_all();
+
+  HoldsAReader::Gates gates;
+  HoldsAReader::gates = &gates;
+  SnapshotUnlockHookGuard hook(&hold_snapshot_after_unlock);
+  std::thread dumper([&] {
+    {
+      std::lock_guard lock(gates.mutex);
+      gates.holder = std::this_thread::get_id();
+    }
+    static_cast<void>(TaskRegistry::snapshot());
+  });
+  wait_until(gates.mutex, gates.changed, gates.in_hook);
+
+  // Now only the snapshot's epoch references keep the exception, and its reader of `source`.
+  failed.reset();
+  sched.schedule(write_value(source.write(), 2));
+  sched.run();
+  ASSERT_TRUE(sched.done());
+
+  set_and_notify(gates.mutex, gates.changed, gates.hook_released);
+  wait_until(gates.mutex, gates.changed, gates.in_destructor);
+  EXPECT_TRUE(TaskRegistry::snapshots_in_progress());
+  auto result = source.read();
+  auto const is_ready = [&] { return result.await_ready(); };
+  ASSERT_FALSE(is_ready());
+  sched.help_while_waiting(is_ready);
+
+  set_and_notify(gates.mutex, gates.changed, gates.destructor_released);
+  EXPECT_EQ(result.get_wait(sched), 2);
+  dumper.join();
+  HoldsAReader::gates = nullptr;
+  EXPECT_FALSE(TaskRegistry::snapshots_in_progress());
 }
 
 #if UNI20_DEBUG_DAG
@@ -471,7 +569,7 @@ TEST(TaskRegistryLifetimeTest, SchedulersWaitForADiagnosticReadOnlyWhenItHoldsTh
     std::unique_lock lock(gate.mutex);
     gate.changed.wait(lock, [&] { return gate.entered; });
   }
-  EXPECT_TRUE(TaskRegistry::diagnostic_reads_in_progress());
+  EXPECT_TRUE(TaskRegistry::snapshots_in_progress());
 
   {
     DebugScheduler independent;
@@ -479,7 +577,7 @@ TEST(TaskRegistryLifetimeTest, SchedulersWaitForADiagnosticReadOnlyWhenItHoldsTh
     independent.schedule(write_value(other.write(), 3));
     independent.run_all();
     EXPECT_EQ(other.read().get_wait(independent), 3);
-    EXPECT_TRUE(TaskRegistry::diagnostic_reads_in_progress());
+    EXPECT_TRUE(TaskRegistry::snapshots_in_progress());
   }
 
   // The writer suspends behind the snapshot's reader, leaving `sched` with nothing to run and no
@@ -502,7 +600,7 @@ TEST(TaskRegistryLifetimeTest, SchedulersWaitForADiagnosticReadOnlyWhenItHoldsTh
 
   dumper.join();
   HeldByItsHook::gate = nullptr;
-  EXPECT_FALSE(TaskRegistry::diagnostic_reads_in_progress());
+  EXPECT_FALSE(TaskRegistry::snapshots_in_progress());
   auto const node =
       std::ranges::find(snapshot.data_nodes, "held by its hook", &uni20::TaskRegistryGraphDataNode::label);
   ASSERT_NE(node, snapshot.data_nodes.end());
@@ -594,7 +692,7 @@ TEST(TaskRegistryLifetimeTest, ReadStaysCountedUntilTheSnapshotReleasesThePayloa
 
   set_and_notify(gates.mutex, gates.changed, gates.hook_released);
   wait_until(gates.mutex, gates.changed, gates.in_destructor);
-  EXPECT_TRUE(TaskRegistry::diagnostic_reads_in_progress());
+  EXPECT_TRUE(TaskRegistry::snapshots_in_progress());
   auto result = source.read();
   auto const is_ready = [&] { return result.await_ready(); };
   ASSERT_FALSE(is_ready());
@@ -604,6 +702,41 @@ TEST(TaskRegistryLifetimeTest, ReadStaysCountedUntilTheSnapshotReleasesThePayloa
   EXPECT_EQ(result.get_wait(sched), 2);
   dumper.join();
   OwnsAReader::gates = nullptr;
+}
+
+// A paused scheduler runs nothing, so a wait that is not ready normally reports a deadlock. Here the
+// target needs no task: it becomes ready when the snapshot releases its reader, because the writer
+// enrolled meanwhile was released without writing. While the snapshot runs, the wait must look
+// again instead.
+TEST(TaskRegistryLifetimeTest, PausedSchedulerWaitsForASnapshotThatHoldsItsTarget)
+{
+  DebugScheduler sched;
+  sched.pause();
+  Async<HeldByItsHook> held(HeldByItsHook{1});
+  HeldByItsHook::Gate gate;
+  HeldByItsHook::gate = &gate;
+  std::thread dumper([&] {
+    {
+      std::lock_guard lock(gate.mutex);
+      gate.holder = std::this_thread::get_id();
+    }
+    static_cast<void>(TaskRegistry::snapshot());
+  });
+  wait_until(gate.mutex, gate.changed, gate.entered);
+
+  {
+    auto writer = held.write();
+  }
+  auto result = held.read();
+  auto const is_ready = [&] { return result.await_ready(); };
+  ASSERT_FALSE(is_ready());
+  sched.help_while_waiting(is_ready);
+
+  set_and_notify(gate.mutex, gate.changed, gate.released);
+  EXPECT_EQ(result.get_wait(sched).value, 1);
+  dumper.join();
+  HeldByItsHook::gate = nullptr;
+  sched.resume();
 }
 #endif
 #endif

@@ -150,12 +150,14 @@ Wait/deadlock behavior:
 - if the waiting condition is false, no runnable tasks remain, and no external
   wakeup is pending, the wait can never complete: runtime emits
   `TaskRegistry::dump()` and aborts with deadlock diagnostic
-- while a live snapshot on another thread is reading a value, it holds that
-  value's next writer back without queuing anything (see
-  [reading live values](task_registry_debug.md#reading-live-values)). A wait
-  whose queue is empty then yields and looks again, instead of parking or
-  reporting a deadlock, because the snapshot's release can reschedule the writer
-  or make the target ready directly
+- a live snapshot on another thread can hold back a wait's target without
+  queuing anything: it holds a value's next writer back while it reads the
+  value, and it keeps epochs and values alive while it runs (see
+  [reading live values](task_registry_debug.md#reading-live-values)). Releasing
+  any of these can reschedule a writer, make the target ready directly, or run a
+  destructor that releases an async buffer. So while a snapshot runs, a wait
+  whose queue is empty, or whose scheduler is paused, yields and looks again
+  instead of parking or reporting a deadlock
 - `run_all()` runs only what is runnable and is not a completion wait: a writer
   held back by a snapshot is rescheduled when the read ends, possibly after
   `run_all()` has returned. Wait for results with `get_wait()` before destroying

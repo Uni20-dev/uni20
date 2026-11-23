@@ -598,19 +598,13 @@ struct EpochDotRecord
 #if UNI20_DEBUG_DAG
 /// \brief A diagnostic reader of one value's reading epoch, if one can be admitted.
 /// \details A snapshot formats a live value only while it holds one, so no writer can change or
-///          destroy the value meanwhile. The read is counted as in progress, through
-///          `TaskRegistry::diagnostic_reads_in_progress()`, from before the reader can delay an
-///          epoch until this object is destroyed. The caller releases the reader, then the
-///          observation's pin, before that, so every wakeup either causes has been published by
-///          then, including any caused by the payload's destructor when the pin was the last owner.
+///          destroy the value meanwhile. The snapshot that creates it is counted as in progress
+///          for its whole run (see `SnapshotInProgress`), so this reader is too.
 class DiagnosticRead {
   public:
-    DiagnosticRead(std::atomic<std::size_t>& in_progress, NodeInfo const* node,
-                   std::vector<EpochDotRecord> const& epochs, bool wait_for_lock) noexcept
-        : in_progress_(&in_progress)
+    DiagnosticRead(NodeInfo const* node, std::vector<EpochDotRecord> const& epochs, bool wait_for_lock) noexcept
     {
       using Admission = EpochContext::DiagnosticReadAdmission;
-      in_progress_->fetch_add(1, std::memory_order_seq_cst);
       for (auto const& record : epochs)
       {
         // An epoch whose best-effort snapshot failed may still belong to this node; admission checks.
@@ -638,11 +632,7 @@ class DiagnosticRead {
     DiagnosticRead(DiagnosticRead const&) = delete;
     DiagnosticRead& operator=(DiagnosticRead const&) = delete;
 
-    ~DiagnosticRead()
-    {
-      this->release_reader();
-      in_progress_->fetch_sub(1, std::memory_order_seq_cst);
-    }
+    ~DiagnosticRead() { this->release_reader(); }
 
     [[nodiscard]] bool admitted() const noexcept { return epoch_ != nullptr; }
 
@@ -662,7 +652,7 @@ class DiagnosticRead {
       return "no live epoch";
     }
 
-    /// Release the reader, which may start the next epoch. The read stays counted until destruction.
+    /// Release the reader, which may start the next epoch.
     void release_reader() noexcept
     {
       if (epoch_) std::exchange(epoch_, nullptr)->diagnostic_reader_release();
@@ -678,11 +668,31 @@ class DiagnosticRead {
       writer_active,
     };
 
-    std::atomic<std::size_t>* in_progress_;
     EpochContext* epoch_{nullptr};
     Refusal refusal_{Refusal::no_live_epoch};
 };
 #endif
+
+/// \brief Counts one snapshot as in progress for as long as it exists.
+/// \details See `TaskRegistry::snapshots_in_progress()`. A snapshot declares it first, so that the
+///          count covers everything the snapshot holds: diagnostic readers, value pins and epoch
+///          references. Releasing any of them can wake a waiting task, for example when the
+///          destructor of a payload or of an epoch's stored exception releases an async buffer.
+class SnapshotInProgress {
+  public:
+    explicit SnapshotInProgress(std::atomic<std::size_t>& count) noexcept : count_(count)
+    {
+      count_.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    SnapshotInProgress(SnapshotInProgress const&) = delete;
+    SnapshotInProgress& operator=(SnapshotInProgress const&) = delete;
+
+    ~SnapshotInProgress() { count_.fetch_sub(1, std::memory_order_seq_cst); }
+
+  private:
+    std::atomic<std::size_t>& count_;
+};
 
 std::string join_lines(std::vector<std::string> const& lines)
 {
@@ -1310,6 +1320,8 @@ class TaskRegistryImpl {
 
     GraphSnapshot snapshot(bool best_effort)
     {
+      // First, so that it is destroyed after everything below that the snapshot holds.
+      SnapshotInProgress in_progress(snapshots_in_progress_);
       std::unordered_map<void*, TaskDebugInfo> tasks_copy;
       std::unordered_map<NodeInfo const*, std::string> node_names_copy;
       // Strong references taken under the registry lock keep each listed epoch alive until this
@@ -1404,7 +1416,7 @@ class TaskRegistryImpl {
 #if UNI20_DEBUG_DAG
         // Admitted before observing, so that the state read below is the one the reader protects.
         // No registry or epoch mutex is held from here on, while the value's formatter runs.
-        DiagnosticRead read(diagnostic_reads_, node, epochs, !best_effort);
+        DiagnosticRead read(node, epochs, !best_effort);
 #endif
         {
           auto const observation = node->observe();
@@ -1420,8 +1432,7 @@ class TaskRegistryImpl {
             record.value = observation.value_text();
           else if (record.value_constructed)
             record.value_unavailable = std::string(read.refusal());
-          // Let the next writer go before the observation's pin is released. The read is still
-          // counted while the pin goes, since its release can run the payload's destructor.
+          // Let the next writer go before the observation's pin is released.
           read.release_reader();
 #endif
         }
@@ -1539,10 +1550,7 @@ class TaskRegistryImpl {
 
     GraphSnapshot snapshot_best_effort() { return this->snapshot(true); }
 
-    bool diagnostic_reads_in_progress() const noexcept
-    {
-      return diagnostic_reads_.load(std::memory_order_seq_cst) != 0;
-    }
+    bool snapshots_in_progress() const noexcept { return snapshots_in_progress_.load(std::memory_order_seq_cst) != 0; }
 
     void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
     {
@@ -1727,7 +1735,7 @@ class TaskRegistryImpl {
     std::size_t next_task_id_{1};
     std::size_t next_epoch_id_{1};
     std::atomic<void (*)()> snapshot_unlock_hook_{nullptr};
-    std::atomic<std::size_t> diagnostic_reads_{0};
+    std::atomic<std::size_t> snapshots_in_progress_{0};
 };
 
 class DiagnosticServiceState {
@@ -1969,10 +1977,7 @@ TaskRegistry::GraphSnapshot TaskRegistry::snapshot_best_effort()
   return TaskRegistryImpl::instance().snapshot_best_effort();
 }
 
-bool TaskRegistry::diagnostic_reads_in_progress() noexcept
-{
-  return TaskRegistryImpl::instance().diagnostic_reads_in_progress();
-}
+bool TaskRegistry::snapshots_in_progress() noexcept { return TaskRegistryImpl::instance().snapshots_in_progress(); }
 
 void TaskRegistry::set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
 {
