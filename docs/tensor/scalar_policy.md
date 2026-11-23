@@ -279,9 +279,16 @@ unsupported requests, rather than silently narrowing. Native fp80 availability
 does not extend the supported precisions of the projected LAPACK-based Krylov
 solvers or DMRG.
 
-Reference sums and inner products use compensated accumulation in the input
-scalar field. Norms use scaled sum-of-squares arithmetic in the associated real
-field. Algorithms must choose their numerical accumulation method explicitly;
+CPU reference sums and inner products use compensated accumulation in the input
+scalar field. CPU reference norms use scaled sum-of-squares arithmetic in the
+associated real field. CUDA reference `sum_host` and `inner_product_host`
+accumulate each real and imaginary component with ordinary addition in
+`double`. Threads combine their partials in a fixed order, then the result is
+converted to the output type. Cancellation and intermediate overflow can
+therefore give different results on CPU and CUDA. cuBLAS inner products follow
+the provider's accumulation policy.
+
+Algorithms must choose their numerical accumulation method explicitly;
 Uni20 does not define a universal "next wider" scalar because no such type
 exists for the widest configured precision, and silent promotion would make
 result and performance behavior depend on the input dtype. Integer sums are not

@@ -181,10 +181,10 @@ work. Same-device nested tasks may transfer directly while already inside the
 correct arena. Cross-domain or cross-device continuations are enqueued through
 the shared scheduler and routed to their required arena.
 
-`run_all()` and `get_wait()` use the shared task group, so one call observes all
-currently admitted host and CUDA activations. They retain the same
-activation-quiescence meaning as `TbbScheduler`: a coroutine suspended on an
-external event may become runnable and submit a later activation.
+`run_all()` drains the shared task group across the host and CUDA arenas.
+It can return while a coroutine is waiting for a stream or another external
+event. `result.get_wait()` waits for the result epoch to become readable,
+including any work that resumes after the resource becomes available.
 
 Tests cover host, explicitly bound CUDA, and unbound CUDA admission through one
 scheduler; explicit migration between device arenas; synchronous waits that
