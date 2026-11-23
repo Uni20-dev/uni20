@@ -47,7 +47,7 @@ struct DiagonalLayout
           return strides_[axis];
         }
 
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr auto required_span_size() const noexcept -> index_type
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t required_span_size() const noexcept
         {
           for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
             if (extents_.extent(axis) == 0) return 0;
@@ -55,7 +55,7 @@ struct DiagonalLayout
           index_type last_offset = 0;
           for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
             last_offset += (extents_.extent(axis) - 1) * strides_[axis];
-          return last_offset + 1;
+          return static_cast<std::size_t>(last_offset) + 1;
         }
 
         [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
@@ -80,12 +80,7 @@ struct DiagonalLayout
 
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept
         {
-          auto const span_size = this->required_span_size();
-          if (span_size == 0) return true;
-          index_type count = 1;
-          for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
-            count *= extents_.extent(axis);
-          return span_size == count;
+          return this->required_span_size() == mdspan_size<std::size_t>(extents_);
         }
 
         friend UNI20_HOST_DEVICE constexpr bool operator==(mapping const&, mapping const&) = default;
