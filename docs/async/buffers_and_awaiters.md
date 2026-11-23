@@ -295,7 +295,7 @@ This is how unhandled exceptions are forwarded to downstream epochs.
 |---|---|
 | `all(a, b, ...)` | await all inputs and return tuple of results |
 | `try_await(x)` | non-blocking readiness probe |
-| `write_to(writer.transfer(), value)` | concise deferred write helper |
+| `write_to(writer.transfer(), value)` | concise deferred write helper; emplaces `value`, replacing a constructed value instead of assigning to it |
 
 `try_await(...)` never suspends. It probes the child awaiter's readiness once:
 an unavailable child produces an empty `optional`, while an available child
