@@ -152,9 +152,14 @@ Wait/deadlock behavior:
   `TaskRegistry::dump()` and aborts with deadlock diagnostic
 - while a live snapshot on another thread is reading a value, it holds that
   value's next writer back without queuing anything (see
-  [reading live values](task_registry_debug.md#reading-live-values)), so the
-  wait yields and looks again instead of reporting a deadlock; `run_all()` and
-  other schedulers are unaffected
+  [reading live values](task_registry_debug.md#reading-live-values)). A wait
+  whose queue is empty then yields and looks again, instead of parking or
+  reporting a deadlock, because the snapshot's release can reschedule the writer
+  or make the target ready directly
+- `run_all()` runs only what is runnable and is not a completion wait: a writer
+  held back by a snapshot is rescheduled when the read ends, possibly after
+  `run_all()` has returned. Wait for results with `get_wait()` before destroying
+  the scheduler
 - a wait whose wakeup depends on the waiting thread itself, or on work that has
   not been scheduled, still deadlocks; it blocks rather than aborting
 

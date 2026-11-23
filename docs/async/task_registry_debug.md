@@ -185,12 +185,14 @@ anything alive for history, and it never reads anything that may already be gone
 - **Values being written.** A snapshot formats a value only after joining the
   value's current epoch as a reader, and only while that epoch is in its reading
   phase. Its writers have then finished, and the next writer waits for the
-  snapshot as it waits for any reader, for as long as the formatter runs. The
-  snapshot never waits for a writer. If it cannot join, the label shows
-  `value not read: <reason>` in place of the value, and the state and address are
-  still shown. The reasons are `writer active`, `epoch busy` (a best-effort
-  snapshot found the epoch's lock taken), `not in a reading phase`, and
-  `no live epoch`.
+  snapshot as it waits for any reader, for as long as the formatter runs. When
+  the read ends, the snapshotting thread reschedules that writer, possibly after
+  a `run_all()` that found nothing runnable has returned; `get_wait()` on a
+  result waits for it. The snapshot never waits for a writer. If it cannot
+  join, the label shows `value not read: <reason>` in place of the value, and
+  the state and address are still shown. The reasons are `writer active`,
+  `epoch busy` (a best-effort snapshot found the epoch's lock taken),
+  `not in a reading phase`, and `no live epoch`.
 
 No registry or epoch lock is held while a value's formatter runs, so a custom
 `uni20_async_debug_value` may use the synchronized accessors of an epoch it

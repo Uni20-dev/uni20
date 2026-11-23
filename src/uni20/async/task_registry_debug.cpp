@@ -600,7 +600,9 @@ struct EpochDotRecord
 /// \details A snapshot formats a live value only while it holds one, so no writer can change or
 ///          destroy the value meanwhile. The read is counted as in progress, through
 ///          `TaskRegistry::diagnostic_reads_in_progress()`, from before the reader can delay an
-///          epoch until after releasing it has published every wakeup it causes.
+///          epoch until this object is destroyed. The caller releases the reader, then the
+///          observation's pin, before that, so every wakeup either causes has been published by
+///          then, including any caused by the payload's destructor when the pin was the last owner.
 class DiagnosticRead {
   public:
     DiagnosticRead(std::atomic<std::size_t>& in_progress, NodeInfo const* node,
@@ -636,7 +638,11 @@ class DiagnosticRead {
     DiagnosticRead(DiagnosticRead const&) = delete;
     DiagnosticRead& operator=(DiagnosticRead const&) = delete;
 
-    ~DiagnosticRead() { this->release(); }
+    ~DiagnosticRead()
+    {
+      this->release_reader();
+      in_progress_->fetch_sub(1, std::memory_order_seq_cst);
+    }
 
     [[nodiscard]] bool admitted() const noexcept { return epoch_ != nullptr; }
 
@@ -656,11 +662,10 @@ class DiagnosticRead {
       return "no live epoch";
     }
 
-    /// Release the reader, which may start the next epoch, then stop counting the read.
-    void release() noexcept
+    /// Release the reader, which may start the next epoch. The read stays counted until destruction.
+    void release_reader() noexcept
     {
       if (epoch_) std::exchange(epoch_, nullptr)->diagnostic_reader_release();
-      if (in_progress_) std::exchange(in_progress_, nullptr)->fetch_sub(1, std::memory_order_seq_cst);
     }
 
   private:
@@ -1415,8 +1420,9 @@ class TaskRegistryImpl {
             record.value = observation.value_text();
           else if (record.value_constructed)
             record.value_unavailable = std::string(read.refusal());
-          // Let the next writer go before the observation's pin is released.
-          read.release();
+          // Let the next writer go before the observation's pin is released. The read is still
+          // counted while the pin goes, since its release can run the payload's destructor.
+          read.release_reader();
 #endif
         }
         graph.data_nodes.push_back(std::move(record));

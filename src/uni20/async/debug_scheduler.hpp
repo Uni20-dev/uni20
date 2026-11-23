@@ -149,9 +149,10 @@ class DebugScheduler : public IAsyncScheduler {
     void help_while_waiting(const WaitPredicate& is_ready) override
     {
       // Read before the readiness and queue checks below. A live snapshot's diagnostic reader
-      // delays the next writer of the value it reads without queuing anything here, so an empty
-      // queue then is not a deadlock. A read that has already ended published its wakeups first,
-      // so the checks below see them.
+      // delays the next writer of the value it reads without queuing anything here, and its
+      // release can make the target ready without queuing anything either. So while a read is in
+      // progress, an empty queue is neither a deadlock nor a reason to park. A read that has
+      // already ended published its wakeups first, so the checks below see them.
       bool const diagnostic_read = TaskRegistry::diagnostic_reads_in_progress();
       if (is_ready())
       {
@@ -164,15 +165,15 @@ class DebugScheduler : public IAsyncScheduler {
         std::unique_lock lock(mutex_);
         if (Handles_.empty())
         {
+          if (diagnostic_read)
+          {
+            // Let the read finish, then return to the caller's readiness loop.
+            lock.unlock();
+            std::this_thread::yield();
+            return;
+          }
           if (external_waits_ == 0)
           {
-            if (diagnostic_read)
-            {
-              // Let the read finish, then return to the caller's readiness loop.
-              lock.unlock();
-              std::this_thread::yield();
-              return;
-            }
             deadlocked = true;
           }
           else
