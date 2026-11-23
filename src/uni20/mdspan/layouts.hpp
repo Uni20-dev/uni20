@@ -7,6 +7,7 @@
 #include <cassert>
 #include <concepts>
 #include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -17,6 +18,11 @@ struct layout_stride;
 
 namespace detail
 {
+
+template <class Mapping> [[nodiscard]] UNI20_HOST_DEVICE constexpr auto mapping_origin(Mapping const& mapping)
+{
+  return std::apply(mapping, std::array<typename Mapping::index_type, Mapping::extents_type::rank()>{});
+}
 
 template <class Extents> [[nodiscard]] UNI20_HOST_DEVICE constexpr bool mdspan_empty(Extents const& extents) noexcept
 {
@@ -168,9 +174,12 @@ struct layout_stride
 
         UNI20_HOST_DEVICE constexpr mapping() noexcept
         {
-          layout_right::mapping<extents_type> const contiguous{extents_};
-          for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
-            strides_[axis] = contiguous.stride(axis);
+          if constexpr (extents_type::rank() != 0)
+          {
+            layout_right::mapping<extents_type> const contiguous{extents_};
+            for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
+              strides_[axis] = contiguous.stride(axis);
+          }
         }
 
         /// \brief Construct a mapping with the given shape and element strides.
@@ -272,6 +281,24 @@ struct layout_stride
         }
 
         friend UNI20_HOST_DEVICE constexpr bool operator==(mapping const&, mapping const&) = default;
+
+        /// \brief Compare shape, strides and origin with another strided mapping.
+        template <class OtherMapping>
+          requires(OtherMapping::extents_type::rank() == extents_type::rank()) && (OtherMapping::is_always_strided()) &&
+                  requires(OtherMapping const& other) {
+                    { other.required_span_size() } -> std::same_as<typename OtherMapping::index_type>;
+                  }
+        friend UNI20_HOST_DEVICE constexpr bool operator==(mapping const& lhs, OtherMapping const& rhs) noexcept
+        {
+          if constexpr (extents_type::rank() != 0)
+          {
+            for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
+              if (!std::cmp_equal(+lhs.extents_.extent(axis), +rhs.extents().extent(axis)) ||
+                  !std::cmp_equal(+lhs.stride(axis), +rhs.stride(axis)))
+                return false;
+          }
+          return detail::mdspan_empty(lhs.extents_) || detail::mapping_origin(rhs) == 0;
+        }
 
       private:
         [[no_unique_address]] extents_type extents_{};
