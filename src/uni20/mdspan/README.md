@@ -1,13 +1,16 @@
 # src/uni20/mdspan
 
-This directory contains Uni20's mdspan-facing structural utilities. It works
-with the Kokkos reference mdspan implementation through `stdex::` and provides
-small helpers used by dense kernels and layout-aware algorithms.
+This directory contains Uni20's native views and layouts and the structural
+utilities used by dense kernels and layout-aware algorithms. Existing tensor
+producers use the Kokkos reference mdspan implementation through `stdex::`.
 
 ## Contents
 
-- `mdspan.hpp`: configured gateway to the Kokkos reference implementation in
-  namespace `stdex::`.
+- `mdspan.hpp`: native borrowed view and checked import from the standard
+  and Kokkos mdspans. It also includes the configured Kokkos implementation.
+- `layouts.hpp`: native contiguous and nonnegative strided mappings.
+- `default_accessor.hpp`: pointer access with signed element offsets.
+- `offset_range.hpp`: inclusive physical offset bounds for mappings and iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
   a data descriptor for later handle acquisition.
 - `format.hpp`: `std::format` and `{fmt}` support for mdspan extents.

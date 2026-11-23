@@ -36,6 +36,7 @@ class mdspec {
     using layout_type = LayoutPolicy;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = Accessor;
+    using offset_type = span_offset_t<accessor_type>;
     using data_descriptor_type = DataDescriptor;
     using data_handle_type = typename accessor_type::data_handle_type;
     using reference = typename accessor_type::reference;
@@ -86,11 +87,26 @@ class mdspec {
     [[nodiscard]] constexpr auto accessor() const noexcept -> accessor_type const& { return accessor_; }
 
     /// \brief Return the stored extents.
-    [[nodiscard]] constexpr auto extents() const noexcept -> extents_type const& { return mapping_.extents(); }
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr auto extents() const noexcept -> extents_type const&
+    {
+      return mapping_.extents();
+    }
 
     /// \brief Return the runtime extent of one axis.
     /// \param axis Axis whose extent is requested.
     [[nodiscard]] constexpr index_type extent(rank_type axis) const noexcept { return this->extents().extent(axis); }
+
+    /// \brief Return the logical number of elements, including one for a rank-zero descriptor.
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr size_type size() const noexcept
+    {
+      return detail::mdspan_size<size_type>(this->extents());
+    }
+
+    /// \brief Return whether any extent is zero.
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr bool empty() const noexcept
+    {
+      return detail::mdspan_empty(this->extents());
+    }
 
     /// \brief Report whether this mapping is unique.
     [[nodiscard]] constexpr bool is_unique() const noexcept { return mapping_.is_unique(); }

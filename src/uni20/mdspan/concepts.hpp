@@ -88,6 +88,9 @@ template <class Accessor, class Domain> inline constexpr bool enable_accessor_in
 template <class ElementType>
 inline constexpr bool enable_accessor_in_domain<stdex::default_accessor<ElementType>, host_access_domain> = true;
 
+template <class ElementType>
+inline constexpr bool enable_accessor_in_domain<default_accessor<ElementType>, host_access_domain> = true;
+
 /// \concept AccessorInDomain
 /// \brief Accessor policy explicitly valid in one execution domain.
 /// \tparam Accessor Accessor policy being tested.
@@ -163,7 +166,13 @@ constexpr stdex::default_accessor<T const> const_accessor(stdex::default_accesso
   return stdex::default_accessor<T const>();
 }
 
-/// \brief Trait that recognizes the standard mdspan default accessor.
+template <typename T>
+UNI20_HOST_DEVICE constexpr default_accessor<T const> const_accessor(default_accessor<T> accessor_policy)
+{
+  return accessor_policy;
+}
+
+/// \brief Trait that recognizes the Uni20 and Kokkos default accessors.
 /// \tparam Accessor Candidate accessor policy.
 /// \ingroup mdspan_ext
 template <class Accessor> struct is_default_accessor : std::false_type
@@ -175,17 +184,14 @@ template <class Accessor> struct is_default_accessor : std::false_type
 template <class ElementType> struct is_default_accessor<stdex::default_accessor<ElementType>> : std::true_type
 {};
 
-/// \brief True when an accessor is `stdex::default_accessor<T>`.
+template <class ElementType> struct is_default_accessor<default_accessor<ElementType>> : std::true_type
+{};
+
+/// \brief True for the Uni20 or Kokkos default accessor.
 /// \tparam Accessor Candidate accessor policy.
 /// \ingroup mdspan_ext
 template <class Accessor>
 inline constexpr bool is_default_accessor_v = is_default_accessor<std::remove_cvref_t<Accessor>>::value;
-
-// /// \brief const_accessor on const_default_accessor yields itself.
-// template <typename T> constexpr default_accessor<T const> const_accessor(default_accessor<T const> const&)
-// {
-//   return default_accessor<T const>();
-// }
 
 /// \brief Wrap any accessor whose reference is T& into a const adaptor.
 /// \tparam Acc A mutable accessor policy with reference equal to \c element_type&.

@@ -3,6 +3,7 @@
 #include <uni20/mdspan/diagonal_view.hpp>
 #include <uni20/mdspan/generated_accessor.hpp>
 #include <uni20/mdspan/generated_layout.hpp>
+#include <uni20/mdspan/mdspan.hpp>
 #include <uni20/mdspan/transform_view.hpp>
 #include <uni20/mdspan/zip_layout.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
@@ -146,6 +147,25 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   using layout_type = uni20::detail::DiagonalLayout;
   layout_type::mapping<extents_type> mapping(extents_type{3, 2}, {4, 3});
   output[0] = static_cast<double>(mapping(2, 1) + mapping.required_span_size() + mapping.stride(0));
+}
+
+using shape_descriptor = uni20::mdspec<double, extents_type, stdex::layout_left, cuda_output_accessor, int>;
+
+[[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
+{
+  *result = descriptor->empty() ? 0 : descriptor->size();
+}
+
+[[maybe_unused]] __global__ void native_mdspan_probe(double* output)
+{
+  uni20::layout_stride::mapping<extents_type> const mapping{extents_type{3, 2}, {4, 3}};
+  auto span = uni20::mdspan{output, mapping};
+  std::array<int, 2> const last{2, 1};
+  span[last] = static_cast<double>(span.size() + span.mapping().reachable_range().maximum);
+
+  using scalar_shape = uni20::extents<uni20::index_type>;
+  auto scalar = uni20::mdspan{output, uni20::layout_left::mapping<scalar_shape>{}};
+  scalar[std::array<int, 0>{}] = span[last];
 }
 
 [[maybe_unused]] __global__ void conjugate_proxy_probe(uni20::cfloat* value)
