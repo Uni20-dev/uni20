@@ -422,8 +422,10 @@ class EpochContext {
     /// \details Admits only in the Reading phase. This epoch's writers have finished, every earlier
     ///          epoch has finished, and the next epoch cannot start until the reader is released, so
     ///          no writer can change or destroy the value meanwhile. Like any reader, an admitted
-    ///          reader delays the next writer until it is released. Admission never waits for a
-    ///          writer, and the mutex is not held after it returns.
+    ///          reader delays the next writer until it is released. That includes a writer already
+    ///          enrolled in a successor epoch: such values are often what a dump needs to show, so
+    ///          a successor does not prevent admission. Admission never waits for a writer, and
+    ///          the mutex is not held after it returns.
     /// \param node Node whose value is to be read.
     /// \param wait_for_lock Whether to wait for this epoch's mutex rather than give up if it is busy.
     /// \return `Admitted`, which must be matched by \ref diagnostic_reader_release, or why not.

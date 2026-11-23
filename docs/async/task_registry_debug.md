@@ -193,6 +193,13 @@ anything alive for history, and it never reads anything that may already be gone
   the state and address are still shown. The reasons are `writer active`,
   `epoch busy` (a best-effort snapshot found the epoch's lock taken),
   `not in a reading phase`, and `no live epoch`.
+- **Writers already waiting.** A snapshot also joins an epoch whose next writer
+  is already queued behind its ordinary readers. If the snapshot is still
+  formatting when those readers finish, it extends that writer's wait, and
+  overlapping snapshots can extend it further. Each extension is bounded by one
+  formatting. Values with a waiting writer are often the ones a deadlock dump
+  needs to show, so the snapshot still reads them. If this delay ever matters,
+  admission could instead refuse an epoch that already has a successor.
 
 No registry or epoch lock is held while a value's formatter runs, so a custom
 `uni20_async_debug_value` may use the synchronized accessors of an epoch it
