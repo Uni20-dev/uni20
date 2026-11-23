@@ -22,6 +22,52 @@ template <class Span> constexpr auto axis_steps(Span const& span)
   return steps;
 }
 
+TEST(NativeMdspanTest, DeducesArrayExtentWithoutChangingPointerDeduction)
+{
+  int const data[]{1, 2, 3, 4, 5, 6};
+  auto array = uni20::mdspan{data};
+  static_assert(std::same_as<typename decltype(array)::element_type, int const>);
+  static_assert(decltype(array)::rank() == 1 && decltype(array)::static_extent(0) == 6);
+  EXPECT_EQ(array[5], 6);
+
+  auto const* pointer = data;
+  auto scalar = uni20::mdspan{pointer};
+  static_assert(decltype(scalar)::rank() == 0);
+  EXPECT_EQ(scalar[], 1);
+  EXPECT_EQ((uni20::mdspan{data, 2, 3}[1, 2]), 6);
+}
+
+TEST(NativeMdspanTest, ConvertsStridedMappingsWithCanonicalStrides)
+{
+  using Left = uni20::layout_left::mapping<MatrixShape>;
+  using Right = uni20::layout_right::mapping<MatrixShape>;
+  using Strided = uni20::layout_stride::mapping<MatrixShape>;
+  using ScalarStrided = uni20::layout_stride::mapping<ScalarShape>;
+  using OtherScalarStrided = uni20::layout_stride::mapping<uni20::extents<unsigned int>>;
+  using ScalarLeft = uni20::layout_left::mapping<ScalarShape>;
+  using ScalarRight = uni20::layout_right::mapping<ScalarShape>;
+  static_assert(std::is_convertible_v<ScalarStrided, ScalarLeft>);
+  static_assert(std::is_convertible_v<ScalarStrided, ScalarRight>);
+  static_assert(std::is_constructible_v<ScalarRight, OtherScalarStrided>);
+  static_assert(!std::is_convertible_v<OtherScalarStrided, ScalarRight>);
+  static_assert(!std::is_convertible_v<Strided, Left>);
+  static_assert(!std::is_convertible_v<Strided, Right>);
+
+  constexpr Left left = MatrixShape{2, 3};
+  constexpr Right right = MatrixShape{2, 3};
+  static_assert(Left{Strided{left}} == left);
+  static_assert(Right{Strided{right}} == right);
+
+  int values[6]{1, 2, 3, 4, 5, 6};
+  auto scalar_strided = uni20::mdspan{values, ScalarStrided{}};
+  uni20::mdspan<int, ScalarShape, uni20::layout_right> const scalar = scalar_strided;
+  EXPECT_EQ(scalar[], 1);
+
+  auto strided = uni20::mdspan{values, Strided{left}};
+  uni20::mdspan<int, MatrixShape, uni20::layout_left> const contiguous{strided};
+  EXPECT_EQ((contiguous[0, 1]), 3);
+}
+
 TEST(NativeMdspanTest, ContiguousIndexingUsesTheLayout)
 {
   int data[]{0, 1, 2, 3, 4, 5};
