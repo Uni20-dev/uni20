@@ -296,14 +296,16 @@ tentatively on 2026-11-20: the signed layout is
   Construction preserves the handle and strides. An explicitly named target
   must have compatible rank, extents and element qualifications. A pointer
   handle alone says nothing about a custom accessor's semantics.
-- **Import checks.** Smaller source index types are welcome. Before casting,
-  check each extent, the product of the nonzero extents (rule 7), each stored
-  stride and the reachable offsets wherever the source contract leaves their
-  representability open. This includes unsigned-to-signed conversion of equal
-  width and stored strides on singleton axes. A single element with stride 256
-  needs one storage element, but retaining that stride in eight bits is
-  impossible. Reject an unrepresentable conversion at import, including in
-  release builds. The resulting native mapping carries that guarantee through
+- **Import checks.** Establish the destination layout's preconditions before
+  narrowing. Check each extent, the product of the nonzero extents (rule 7),
+  stored strides (including on singleton axes) and reachable offsets wherever
+  the source contract leaves their representability open, including for
+  same-width unsigned-to-signed conversions. For nonnegative layouts the
+  required span size must also fit the destination `index_type`.
+  For example, a 16-bit source with extent 2 and stride 127 reaches offsets
+  0 and 127, but its required span size is 128. Import into an explicitly
+  requested `int8_t` mapping therefore fails. These checks apply in release
+  builds. The resulting native mapping carries that guarantee through
   subsequent Uni20 calls. Element access and kernel loops incur no import checks.
 - **Composition.** Each operand keeps its own physical offsets when views are
   combined. A factory that changes their representation must establish that
@@ -366,7 +368,9 @@ expose the same observers with the same types and values.
 
 ## Migration
 
-Each phase is one pull request. PR #152 already addressed the zip layouts'
+The steps below give a suggested order. Move producers and their callers
+together as needed. [Issue #173](https://github.com/Uni20-dev/uni20/issues/173)
+tracks the implementation. PR #152 already addressed the zip layouts'
 conformance claims (rule 3).
 
 1. **Types.** The mappings, `default_accessor`, `mdspan`, `offset_range`,
