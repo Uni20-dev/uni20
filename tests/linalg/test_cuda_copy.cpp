@@ -1052,8 +1052,7 @@ TEST_F(CudaCopyTest, SynchronousReshapeReadsAndWritesTheOriginalDeviceTensor)
 
 TEST_F(CudaCopyTest, PermutedViewsCopyBetweenHostAndDeviceWhenEmpty)
 {
-  // A permuted empty view has a layout_stride mapping that can report
-  // is_exhaustive() == false. Copying it moves nothing and must succeed.
+  // A permuted empty view can preserve zero strides. Copying it moves nothing.
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
   ErrorModeGuard const error_mode;
 

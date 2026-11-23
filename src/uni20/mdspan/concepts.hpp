@@ -154,7 +154,7 @@ inline constexpr bool enable_accessor_in_domain<const_accessor_adaptor<Accessor>
 // const_accessor overloads: build a read-only accessor from a mutable one.
 //
 
-/// \brief Wrap a default_accessor<T> into a const_default_accessor<T>.
+/// \brief Adapt the Kokkos default accessor to a read-only Uni20 accessor.
 /// \tparam T Element type accessed by the policy.
 /// \return A default accessor for \c T const.
 /// \ingroup mdspan_ext
@@ -163,6 +163,7 @@ template <typename T> constexpr default_accessor<T const> const_accessor(stdex::
   return {};
 }
 
+/// \brief Adapt the Uni20 default accessor to a read-only Uni20 accessor.
 template <typename T>
 UNI20_HOST_DEVICE constexpr default_accessor<T const> const_accessor(default_accessor<T> accessor_policy)
 {

@@ -35,8 +35,7 @@ concept RawReadableCudaReductionMdspec =
     std::same_as<typename std::remove_cvref_t<Mdspec>::element_type, Scalar const> &&
     std::same_as<typename std::remove_cvref_t<Mdspec>::accessor_type, uni20::cuda::CudaPointerAccessor<Scalar const>>;
 
-// An empty strided mapping can report is_exhaustive() == false (LWG 4266), so
-// emptiness is tested before the layout.
+// Detect empty shapes before checking the layout or acquiring storage.
 template <class Mdspec> [[nodiscard]] bool has_empty_index_space(Mdspec const& span)
 {
   for (std::size_t axis = 0; axis < std::remove_cvref_t<Mdspec>::rank(); ++axis)

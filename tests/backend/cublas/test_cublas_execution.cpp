@@ -1301,13 +1301,15 @@ TEST_F(CublasExecutionTest, TensorReductionsSupportSinglePrecisionScalars)
 
 TEST_F(CublasExecutionTest, PermutedEmptyTensorsReduceToZero)
 {
-  // A permuted empty view has a strided mapping that reports
-  // is_exhaustive() == false. Emptiness is decided before the layout.
+  // The permutation preserves zero strides. Both reductions return zero
+  // without acquiring any storage.
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(device_), .stream_count = 1});
   uni20::CudaTensor<double, 3> tensor(resources, 0, 3, 4);
   auto view = uni20::permute<0, 2, 1>(tensor);
   auto span = uni20::mdspec_of(std::as_const(view));
-  ASSERT_FALSE(span.mapping().is_exhaustive());
+  ASSERT_TRUE(span.empty());
+  EXPECT_TRUE(span.mapping().is_exhaustive());
+  EXPECT_EQ(span.mapping().strides(), (std::array<uni20::index_type, 3>{1, 0, 0}));
 
   double output = 17.0;
   EXPECT_EQ(uni20::linalg::try_kernel(uni20::linalg::CublasBackend{}, uni20::linalg::norm_op{}, output, span),
