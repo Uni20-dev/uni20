@@ -1,8 +1,9 @@
 # src/uni20/mdspan
 
 This directory contains Uni20's native views and layouts and the structural
-utilities used by dense kernels and layout-aware algorithms. Existing tensor
-producers use the Kokkos reference mdspan implementation through `stdex::`.
+utilities used by dense kernels and layout-aware algorithms. Tensor producers
+and CUDA acquisition use native mdspan types. The Kokkos implementation
+supplies extents and supports interop.
 
 ## Contents
 
@@ -73,7 +74,7 @@ producers use the Kokkos reference mdspan implementation through `stdex::`.
   non-singleton axis's stride. Generic iteration plans remove singleton axes
   before coalescing.
 - A pointer `data_handle_type` is not enough to prove direct memory semantics.
-  Backends that bypass `access(...)` must check for `stdex::default_accessor`
+  Backends that bypass `access(...)` must check for the default accessor
   or an explicitly lowerable accessor such as Uni20's `conjugated_accessor`.
 - Read-only accessor policies declare const `element_type`, including calculated
   accessors that return values. Ordinary `MutableMdspanLike` accessors also prove

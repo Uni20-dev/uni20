@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <array>
 #include <stdexcept>
-#include <vector>
 
 namespace
 {
@@ -74,7 +73,7 @@ TEST(TensorPermuteTest, ColumnAndRowMajorViewsAliasAndMaterialize)
 TEST(TensorPermuteTest, PaddedStridesAndStaticExtentsArePreserved)
 {
   using extents = stdex::extents<uni20::index_type, 2, stdex::dynamic_extent, 4>;
-  using tensor_type = uni20::BasicTensor<double, extents, uni20::HostStorage, stdex::layout_stride>;
+  using tensor_type = uni20::BasicTensor<double, extents, uni20::HostStorage, uni20::layout_stride>;
   tensor_type tensor(extents{3}, std::array<uni20::index_type, 3>{1, 5, 20});
   tensor[1, 2, 3] = 42;
   auto view = uni20::permute<2, 0, 1>(tensor);
@@ -158,76 +157,41 @@ TEST(TensorPermuteTest, ConstnessAndConjugatingAccessorArePreserved)
   EXPECT_EQ((packed[2, 1]), (uni20::complex<double>{4, -7}));
 }
 
-// layout_stride requires positive strides and an order of the axes in which
-// each stride is at least the previous stride times the previous extent. Zero
-// extents let that order revisit small strides, so this searches all orders.
-template <class Span> bool has_layout_stride_ordering(Span const& span)
+TEST(TensorPermuteTest, EmptyPermutationPreservesCanonicalZeroStrides)
 {
-  constexpr std::size_t rank = Span::rank();
-  static_assert(rank < 16);
-  for (std::size_t axis = 0; axis < rank; ++axis)
-    if (span.stride(axis) <= 0) return false;
-  if (rank <= 1) return true;
-  auto may_follow = [&](std::size_t previous, std::size_t next) {
-    auto const extent = span.extent(previous);
-    return extent == 0 || span.stride(previous) <= span.stride(next) / extent;
-  };
-  // reachable[mask * rank + last]: some order of the axes in mask ends at last.
-  std::vector<char> reachable((std::size_t{1} << rank) * rank, 0);
-  for (std::size_t axis = 0; axis < rank; ++axis)
-    reachable[(std::size_t{1} << axis) * rank + axis] = 1;
-  for (std::size_t mask = 1; mask < (std::size_t{1} << rank); ++mask)
-    for (std::size_t last = 0; last < rank; ++last)
-      if (reachable[mask * rank + last])
-        for (std::size_t next = 0; next < rank; ++next)
-          if (!(mask & (std::size_t{1} << next)) && may_follow(last, next))
-            reachable[(mask | (std::size_t{1} << next)) * rank + next] = 1;
-  std::size_t const full = (std::size_t{1} << rank) - 1;
-  for (std::size_t last = 0; last < rank; ++last)
-    if (reachable[full * rank + last]) return true;
-  return false;
+  uni20::Tensor<double, 3> tensor(0, 3, 4);
+  auto view = uni20::permute<1, 2, 0>(tensor);
+  EXPECT_EQ(view.extent(0), 3);
+  EXPECT_EQ(view.extent(1), 4);
+  EXPECT_EQ(view.extent(2), 0);
+  EXPECT_EQ(view.mdspan().mapping().strides(), (std::array<uni20::index_type, 3>{0, 0, 1}));
+  EXPECT_TRUE(view.mdspan().mapping().reachable_range().empty());
 }
 
-TEST(TensorPermuteTest, EmptyPermutationsChooseRepresentableStrides)
+TEST(TensorPermuteTest, NonemptyPermutationPreservesZeroSingletonStride)
 {
-  // Strides in output-axis order would need 65536 * 65536 here, which does not
-  // fit in unsigned int. Starting from the zero-extent axis restarts the product.
-  using extents_type = stdex::dextents<unsigned int, 3>;
-  stdex::mdspan<double, extents_type, stdex::layout_left> source(nullptr, extents_type{0, 65536, 65536});
-  auto view = uni20::permute<1, 2, 0>(source);
-  EXPECT_EQ(view.extent(0), 65536U);
-  EXPECT_EQ(view.extent(1), 65536U);
-  EXPECT_EQ(view.extent(2), 0U);
-  EXPECT_EQ(view.mapping().required_span_size(), 0U);
-  EXPECT_TRUE(has_layout_stride_ordering(view));
+  using extents = uni20::dextents<int, 2>;
+  using layout = uni20::layout_stride;
+  using accessor = uni20::default_accessor<int>;
+  layout::mapping<extents> const mapping{extents{1, 3}, {0, 1}};
+  std::array data{11, 22, 33};
+  auto view = uni20::permute<1, 0>(uni20::mdspan{data.data(), mapping});
+  EXPECT_EQ(view.mapping().strides(), (std::array{1, 0}));
+  for (int i = 0; i < 3; ++i)
+    EXPECT_EQ((view[i, 0]), data[i]);
 
-  auto const large = uni20::index_type{1} << 32;
-  uni20::Tensor<double, 3> tensor(0, large, large);
-  auto tensor_view = uni20::permute<1, 2, 0>(tensor);
-  EXPECT_EQ(tensor_view.extent(2), 0);
-  EXPECT_TRUE(has_layout_stride_ordering(tensor_view));
-
-  // When the nonzero extents multiply beyond the index type the permutation
-  // fails cleanly. No tensor with these nonzero extents could hold its elements.
-  using rank_four_extents = stdex::dextents<unsigned int, 4>;
-  stdex::mdspan<double, rank_four_extents, stdex::layout_left> rank_four(nullptr,
-                                                                         rank_four_extents{0, 65536, 65536, 65536});
-  EXPECT_THROW(static_cast<void>(uni20::permute<1, 0, 2, 3>(rank_four)), std::overflow_error);
-
-  // A row-major source's own strides after a zero extent overflow here; they
-  // are never read for an empty source.
-  uni20::RowMajorTensor<double, 3> row_major(0, large, large);
-  EXPECT_TRUE(has_layout_stride_ordering(uni20::permute<1, 2, 0>(row_major)));
+  using descriptor = uni20::mdspec<int, extents, layout, accessor, int>;
+  auto metadata = uni20::permute<1, 0>(descriptor{42, mapping, {}});
+  EXPECT_EQ(metadata.mapping(), view.mapping());
+  EXPECT_EQ(metadata.data_descriptor(), 42);
 }
 
 TEST(TensorPermuteTest, EmptyPermutedViewsReshape)
 {
-  // The positive strides chosen for an empty permutation need not form a
-  // canonical layout, and layout_stride then reports is_exhaustive() == false.
-  // An empty index space has nothing to order, so reshape accepts it.
+  // The permuted zero strides stay valid through reshape.
   uni20::Tensor<double, 3> tensor(0, 3, 4);
   auto view = uni20::permute<0, 2, 1>(tensor);
-  ASSERT_FALSE(view.mdspan().mapping().is_exhaustive());
+  EXPECT_TRUE(view.mdspan().mapping().is_exhaustive());
   EXPECT_EQ(uni20::reshape_view_right(view.mdspan(), 0).extent(0), 0);
   EXPECT_EQ(uni20::reshape_view_left(view.mdspan(), 4, 0).extent(1), 0);
 
@@ -263,7 +227,7 @@ TEST(TensorPermuteTest, IdentityScalarEmptyAndSingletonAxes)
   EXPECT_EQ(empty_cube_view.extent(2), 3);
   // Positive strides alone are insufficient: layout_stride also requires
   // a dimension ordering whose neighboring storage intervals do not overlap.
-  EXPECT_TRUE(has_layout_stride_ordering(empty_cube_view));
+  EXPECT_EQ(empty_cube_view.mdspan().mapping().strides(), (std::array<uni20::index_type, 3>{0, 1, 0}));
   uni20::Tensor<double, 3> tensor(2, 1, 3);
   tensor[1, 0, 2] = 8;
   auto singleton_view = uni20::permute<1, 2, 0>(tensor);

@@ -64,8 +64,8 @@ TEST(TensorCopyTest, PlainCharMdspanIndex)
   using extents = stdex::extents<char, 2>;
   std::array<double, 2> input{3.0, 4.0};
   std::array<double, 2> output{};
-  stdex::mdspan<double const, extents> source{input.data()};
-  stdex::mdspan<double, extents> destination{output.data()};
+  uni20::mdspan<double const, extents> source{input.data()};
+  uni20::mdspan<double, extents> destination{output.data()};
   uni20::copy(uni20::linalg::CpuReferenceBackend{}, destination, source);
   EXPECT_EQ(output, input);
 }

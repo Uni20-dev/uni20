@@ -151,9 +151,9 @@ TEST(DiagonalMdspecTest, ExposesAlignedOffsetAndSteppedComponents)
 {
   using original_extents_type = stdex::dextents<index_type, 2>;
   using view_extents_type = stdex::dextents<index_type, 2>;
-  using mapping_type = stdex::layout_stride::mapping<view_extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<view_extents_type>;
   using accessor_type = diagonal_accessor<double, original_extents_type>;
-  using view_type = stdex::mdspan<double, view_extents_type, stdex::layout_stride, accessor_type>;
+  using view_type = uni20::mdspan<double, view_extents_type, uni20::layout_stride, accessor_type>;
 
   std::array<double, 5> storage{2.0, 3.0, 5.0, 7.0, 11.0};
   auto const mapping = mapping_type{view_extents_type{2, 2}, std::array<index_type, 2>{10, 2}};

@@ -136,8 +136,8 @@ class StorageFreeTensorView {
   public:
     using storage_policy = HostStorage;
     using extents_type = extents_2d;
-    using mutable_mdspan_type = stdex::mdspan<int, extents_type>;
-    using const_mdspan_type = stdex::mdspan<int const, extents_type>;
+    using mutable_mdspan_type = uni20::mdspan<int, extents_type>;
+    using const_mdspan_type = uni20::mdspan<int const, extents_type>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
     StorageFreeTensorView(int* data, extents_type extents) : data_(data), extents_(extents) {}
@@ -170,9 +170,9 @@ struct PolicyFreeTensorView
       return backend_selector_type{linalg::CpuReferenceBackend{}};
     }
 
-    [[nodiscard]] auto mdspan() const noexcept -> stdex::mdspan<int const, extents_2d>
+    [[nodiscard]] auto mdspan() const noexcept -> uni20::mdspan<int const, extents_2d>
     {
-      return stdex::mdspan<int const, extents_2d>{data_, extents_};
+      return uni20::mdspan<int const, extents_2d>{data_, extents_};
     }
 
     [[nodiscard]] auto extents() const noexcept -> extents_2d const& { return extents_; }
@@ -200,9 +200,9 @@ struct HostPolicyTensorView : PolicyFreeTensorView
 struct MismatchedMutableRankTensorView
 {
     using storage_policy = HostStorage;
-    using const_mdspan_type = stdex::mdspan<int const, extents_2d>;
+    using const_mdspan_type = uni20::mdspan<int const, extents_2d>;
     using mutable_extents_type = stdex::dextents<index_t, 1>;
-    using mutable_mdspan_type = stdex::mdspan<int, mutable_extents_type>;
+    using mutable_mdspan_type = uni20::mdspan<int, mutable_extents_type>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
     [[nodiscard]] static auto backend_selector() noexcept -> backend_selector_type
@@ -234,7 +234,7 @@ struct MetadataDescriptor
 class DeferredStridedTensorView {
   public:
     using storage_policy = HostStorage;
-    using mdspan_type = uni20::mdspec<int const, extents_2d, stdex::layout_stride, stdex::default_accessor<int const>,
+    using mdspan_type = uni20::mdspec<int const, extents_2d, uni20::layout_stride, uni20::default_accessor<int const>,
                                       MetadataDescriptor>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
@@ -315,6 +315,7 @@ class ThrowingMoveTensorAccessState {
 struct ThrowingMoveAccessor
 {
     using offset_policy = ThrowingMoveAccessor;
+    using offset_type = std::size_t;
     using element_type = int const;
     using reference = element_type&;
     using data_handle_type = element_type*;
@@ -334,14 +335,14 @@ struct ThrowingMoveAccessor
     }
 };
 
-using throwing_move_mdspan = stdex::mdspan<int const, extents_2d, stdex::layout_left, ThrowingMoveAccessor>;
+using throwing_move_mdspan = uni20::mdspan<int const, extents_2d, uni20::layout_left, ThrowingMoveAccessor>;
 
 template <class Mdspan, class AccessState>
 concept CanFormReadMdspanLease = requires { typename read_mdspan_lease<Mdspan, AccessState>; };
 
 using access_test_selector = linalg::backend_list<linalg::CpuReferenceBackend>;
-using access_test_mutable_mdspan = stdex::mdspan<int, extents_2d>;
-using access_test_const_mdspan = stdex::mdspan<int const, extents_2d>;
+using access_test_mutable_mdspan = uni20::mdspan<int, extents_2d>;
+using access_test_const_mdspan = uni20::mdspan<int const, extents_2d>;
 using instrumented_read_mdspan_lease = read_mdspan_lease<access_test_const_mdspan, InstrumentedTensorAccessState>;
 using instrumented_write_mdspan_lease = write_mdspan_lease<access_test_mutable_mdspan, InstrumentedTensorAccessState>;
 using instrumented_read_tensor_lease =
@@ -380,7 +381,7 @@ concept CanBorrowReadFromRvalue = requires(T&& value) { acquire_host_read_access
 static_assert(std::same_as<tensor_type, BasicTensor<int, extents_2d, HostStorage, ColumnMajor>>);
 static_assert(std::same_as<tensor_type, ColumnMajorTensor<int, 2>>);
 static_assert(std::same_as<RowMajorTensor<int, 2>, Tensor<int, 2, HostStorage, RowMajor>>);
-static_assert(std::same_as<strided_tensor_type, Tensor<int, 2, HostStorage, stdex::layout_stride>>);
+static_assert(std::same_as<strided_tensor_type, Tensor<int, 2, HostStorage, uni20::layout_stride>>);
 static_assert(!std::constructible_from<tensor_type, extents_2d const&, std::array<index_t, 2> const&>);
 static_assert(std::constructible_from<strided_tensor_type, extents_2d const&, std::array<index_t, 2> const&>);
 static_assert(HasMutableData<tensor_type>);
@@ -507,7 +508,7 @@ static_assert(StridedTensorView<DeferredStridedTensorView>);
 static_assert(!ImmediateTensorView<DeferredStridedTensorView>);
 
 using row_major_matrix = DenseMatrix<int, RowMajor>;
-using strided_matrix = typename row_major_matrix::template rebind_layout_type<stdex::layout_stride>;
+using strided_matrix = typename row_major_matrix::template rebind_layout_type<uni20::layout_stride>;
 static_assert(std::same_as<strided_matrix, StridedTensor<int, 2>>);
 
 template <typename Span>

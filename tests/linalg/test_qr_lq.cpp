@@ -142,7 +142,7 @@ TEST(QrLqTest, DestructiveKernelsAcquireDeferredHostOperands)
   uni20::linalg::qr_factorization(uni20::linalg::LapackBackend{}, qr_q, qr_r, qr_work);
   auto qr_q_access = uni20::test::acquire_host_read_access_sync(qr_q);
   auto qr_r_access = uni20::test::acquire_host_read_access_sync(qr_r);
-  stdex::mdspan<double const, stdex::dextents<uni20::index_type, 2>, stdex::layout_left> qr_original_span(
+  uni20::mdspan<double const, stdex::dextents<uni20::index_type, 2>, uni20::layout_left> qr_original_span(
       qr_original.data(), 3, 2);
   expect_qr(qr_original_span, qr_q_access.mdspan(), qr_r_access.mdspan(), 1.0e-12);
 
@@ -157,7 +157,7 @@ TEST(QrLqTest, DestructiveKernelsAcquireDeferredHostOperands)
   uni20::linalg::lq_factorization(uni20::linalg::LapackBackend{}, lq_l, lq_q, lq_work);
   auto lq_l_access = uni20::test::acquire_host_read_access_sync(lq_l);
   auto lq_q_access = uni20::test::acquire_host_read_access_sync(lq_q);
-  stdex::mdspan<double const, stdex::dextents<uni20::index_type, 2>, stdex::layout_left> lq_original_span(
+  uni20::mdspan<double const, stdex::dextents<uni20::index_type, 2>, uni20::layout_left> lq_original_span(
       lq_original.data(), 2, 3);
   expect_lq(lq_original_span, lq_l_access.mdspan(), lq_q_access.mdspan(), 1.0e-12);
 }

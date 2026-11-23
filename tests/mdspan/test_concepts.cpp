@@ -71,16 +71,16 @@ concept HasConstAccess =
 static_assert(std::is_same_v<span_offset_t<AccessorWithOffset>, AccessorWithOffset::offset_type>);
 static_assert(std::is_same_v<span_offset_t<AccessorWithoutOffset>, std::size_t>);
 
-using MutableAccessor = AccessorWithoutOffset;
+using MutableAccessor = AccessorWithOffset;
 using ExpectedConstAccessor = const_accessor_adaptor<MutableAccessor>;
 static_assert(std::is_same_v<const_accessor_t<MutableAccessor>, ExpectedConstAccessor>);
 static_assert(std::is_same_v<const_accessor_t<ExpectedConstAccessor>, ExpectedConstAccessor>);
-static_assert(is_default_accessor_v<stdex::default_accessor<int>>);
-static_assert(is_default_accessor_v<stdex::default_accessor<int const>>);
+static_assert(is_default_accessor_v<uni20::default_accessor<int>>);
+static_assert(is_default_accessor_v<uni20::default_accessor<int const>>);
 static_assert(!is_default_accessor_v<MutableAccessor>);
-static_assert(HostAccessibleAccessor<stdex::default_accessor<int>>);
-static_assert(HostAccessibleAccessor<stdex::default_accessor<int const>>);
-static_assert(!CudaAccessibleAccessor<stdex::default_accessor<int>>);
+static_assert(HostAccessibleAccessor<uni20::default_accessor<int>>);
+static_assert(HostAccessibleAccessor<uni20::default_accessor<int const>>);
+static_assert(!CudaAccessibleAccessor<uni20::default_accessor<int>>);
 static_assert(!HostAccessibleAccessor<MutableAccessor>);
 static_assert(!CudaAccessibleAccessor<MutableAccessor>);
 
@@ -102,14 +102,14 @@ TEST(MdspanConcepts, ConstAccessorAdaptorYieldsConstReference)
 
 using DynamicExtent = stdex::extents<std::size_t, stdex::dynamic_extent>;
 using DynamicMatrixExtents = stdex::dextents<std::size_t, 2>;
-using StaticSpan = stdex::mdspan<int, stdex::extents<std::size_t, 2, 3>>;
-using ConstStaticSpan = stdex::mdspan<int const, stdex::extents<std::size_t, 2, 3>>;
-using StridedSpan = stdex::mdspan<int, DynamicExtent, stdex::layout_stride>;
-using ConstStridedSpan = stdex::mdspan<int const, DynamicExtent, stdex::layout_stride>;
-using StridedMatrixSpan = stdex::mdspan<int, DynamicMatrixExtents, stdex::layout_stride>;
-using ConstStridedMatrixSpan = stdex::mdspan<int const, DynamicMatrixExtents, stdex::layout_stride>;
-using CustomAccessorSpan = stdex::mdspan<int, DynamicMatrixExtents, stdex::layout_stride, MutableAccessor>;
-using StatefulSpan = stdex::mdspan<int, DynamicExtent, stdex::layout_right, StatefulAccessor>;
+using StaticSpan = uni20::mdspan<int, stdex::extents<std::size_t, 2, 3>>;
+using ConstStaticSpan = uni20::mdspan<int const, stdex::extents<std::size_t, 2, 3>>;
+using StridedSpan = uni20::mdspan<int, DynamicExtent, uni20::layout_stride>;
+using ConstStridedSpan = uni20::mdspan<int const, DynamicExtent, uni20::layout_stride>;
+using StridedMatrixSpan = uni20::mdspan<int, DynamicMatrixExtents, uni20::layout_stride>;
+using ConstStridedMatrixSpan = uni20::mdspan<int const, DynamicMatrixExtents, uni20::layout_stride>;
+using CustomAccessorSpan = uni20::mdspan<int, DynamicMatrixExtents, uni20::layout_stride, MutableAccessor>;
+using StatefulSpan = uni20::mdspan<int, DynamicExtent, uni20::layout_right, StatefulAccessor>;
 
 static_assert(HasConstAccess<StaticSpan, int, int>);
 static_assert(!HasConstAccess<StaticSpan, int>);

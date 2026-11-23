@@ -139,7 +139,7 @@ template <class Function, MdspanLike Span>
   using extents_type = typename Span::extents_type;
   using layout_type = typename Span::layout_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{
       span.data_handle(), span.mapping(), accessor_type(std::forward<Function>(function), span)};
 }
 
@@ -161,7 +161,7 @@ template <class Function, MdspanLike First, MdspanLike Second, MdspanLike... Res
   using element_type = typename accessor_type::element_type;
 
   auto extents = make_common_extents(first, second, rest...);
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{
       std::tuple{first.data_handle(), second.data_handle(), rest.data_handle()...},
       mapping_type{extents, first.mapping(), second.mapping(), rest.mapping()...},
       accessor_type(std::forward<Function>(function), first, second, rest...)};

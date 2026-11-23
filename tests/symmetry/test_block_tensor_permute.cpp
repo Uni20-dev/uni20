@@ -260,10 +260,10 @@ struct ParentBackedBlock
     OwnerDefault const* owner;
     mpreal* data;
 
-    auto mdspan() { return stdex::mdspan<mpreal, extents_type, stdex::layout_left>{data, extents_type{2, 3}}; }
+    auto mdspan() { return uni20::mdspan<mpreal, extents_type, uni20::layout_left>{data, extents_type{2, 3}}; }
     auto mdspan() const
     {
-      return stdex::mdspan<mpreal const, extents_type, stdex::layout_left>{data, extents_type{2, 3}};
+      return uni20::mdspan<mpreal const, extents_type, uni20::layout_left>{data, extents_type{2, 3}};
     }
     auto extents() const { return extents_type{2, 3}; }
     auto extent(std::size_t axis) const { return extents().extent(axis); }

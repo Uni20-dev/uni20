@@ -146,7 +146,7 @@ template <uni20::StridedTensorView Tensor, std::integral... Extents>
 template <uni20::MutableStridedTensorView Tensor, std::integral... Extents>
 [[nodiscard]] auto reshape_view_left(Async<Tensor>& tensor, Extents... requested_extents)
 {
-  using view_type = uni20::IndirectReshapedTensorView<Tensor, stdex::layout_left, std::remove_cvref_t<Extents>...>;
+  using view_type = uni20::IndirectReshapedTensorView<Tensor, uni20::layout_left, std::remove_cvref_t<Extents>...>;
   return make_async_alias_from_parent<view_type>(tensor, requested_extents...);
 }
 
@@ -155,7 +155,7 @@ template <uni20::StridedTensorView Tensor, std::integral... Extents>
 [[nodiscard]] auto reshape_view_left(Async<Tensor> const& tensor, Extents... requested_extents)
 {
   using view_type =
-      uni20::IndirectReshapedTensorView<Tensor const, stdex::layout_left, std::remove_cvref_t<Extents>...>;
+      uni20::IndirectReshapedTensorView<Tensor const, uni20::layout_left, std::remove_cvref_t<Extents>...>;
   return make_async_alias_from_parent<view_type>(tensor, requested_extents...);
 }
 
@@ -163,7 +163,7 @@ template <uni20::StridedTensorView Tensor, std::integral... Extents>
 template <uni20::MutableStridedTensorView Tensor, std::integral... Extents>
 [[nodiscard]] auto reshape_view_right(Async<Tensor>& tensor, Extents... requested_extents)
 {
-  using view_type = uni20::IndirectReshapedTensorView<Tensor, stdex::layout_right, std::remove_cvref_t<Extents>...>;
+  using view_type = uni20::IndirectReshapedTensorView<Tensor, uni20::layout_right, std::remove_cvref_t<Extents>...>;
   return make_async_alias_from_parent<view_type>(tensor, requested_extents...);
 }
 
@@ -172,7 +172,7 @@ template <uni20::StridedTensorView Tensor, std::integral... Extents>
 [[nodiscard]] auto reshape_view_right(Async<Tensor> const& tensor, Extents... requested_extents)
 {
   using view_type =
-      uni20::IndirectReshapedTensorView<Tensor const, stdex::layout_right, std::remove_cvref_t<Extents>...>;
+      uni20::IndirectReshapedTensorView<Tensor const, uni20::layout_right, std::remove_cvref_t<Extents>...>;
   return make_async_alias_from_parent<view_type>(tensor, requested_extents...);
 }
 

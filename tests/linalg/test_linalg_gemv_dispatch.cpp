@@ -56,7 +56,7 @@ template <class Scalar> class ValueTransformMatrixView {
     using value_type = std::remove_cv_t<Scalar>;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;
-    using base_mdspan_type = stdex::mdspan<value_type const, extents_type, stdex::layout_left>;
+    using base_mdspan_type = uni20::mdspan<value_type const, extents_type, uni20::layout_left>;
     using mdspan_type = decltype(uni20::transform_view(DoubleValue{}, std::declval<base_mdspan_type const&>()));
 
     ValueTransformMatrixView(value_type const* data, index_type rows, index_type cols)
@@ -153,9 +153,9 @@ TEST(LinalgGemvDispatchTest, NormalizedMdspansAreKernelDispatchOperands)
   std::vector<double> matrix_storage(4);
   std::vector<double> input_storage(2);
   std::vector<double> output_storage(2);
-  stdex::mdspan<double const, extents_2d, stdex::layout_left> matrix(matrix_storage.data(), 2, 2);
-  stdex::mdspan<double const, extents_1d, stdex::layout_left> input(input_storage.data(), 2);
-  stdex::mdspan<double, extents_1d, stdex::layout_left> output(output_storage.data(), 2);
+  uni20::mdspan<double const, extents_2d, uni20::layout_left> matrix(matrix_storage.data(), 2, 2);
+  uni20::mdspan<double const, extents_1d, uni20::layout_left> input(input_storage.data(), 2);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> output(output_storage.data(), 2);
   auto selector = host_backend_selector{uni20::linalg::BlasBackend{}, uni20::linalg::CpuReferenceBackend{}};
 
   auto candidates =

@@ -34,7 +34,7 @@ auto make_strided_mdspec(Tensor& tensor, std::size_t offset, extents_type extent
 {
   auto base = tensor.mdspec();
   using base_type = decltype(base);
-  using layout_type = stdex::layout_stride;
+  using layout_type = uni20::layout_stride;
   using mapping_type = layout_type::mapping<extents_type>;
   using result_type = uni20::mdspec<typename base_type::element_type, extents_type, layout_type,
                                     typename base_type::accessor_type, typename base_type::data_descriptor_type>;
@@ -59,10 +59,10 @@ class CudaConjugateInplaceTest : public ::testing::Test {
 
 TEST(CudaConjugatePlanningTest, OneOperandPlanCompactsAndDecodesPaddedStrides)
 {
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   mapping_type mapping{extents_type{2, 3}, std::array<uni20::index_type, 2>{1, 3}};
   complex_type value{};
-  stdex::mdspan span{&value, mapping};
+  uni20::mdspan span{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));
@@ -78,11 +78,11 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanCompactsAndDecodesPaddedStrides)
 TEST(CudaConjugatePlanningTest, OneOperandPlanSelects64BitReachableOffsets)
 {
   using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<vector_extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<vector_extents_type>;
   auto const stride = static_cast<uni20::index_type>(std::numeric_limits<std::int32_t>::max()) + 1;
   mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{stride}};
   complex_type value{};
-  stdex::mdspan span{&value, mapping};
+  uni20::mdspan span{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));

@@ -38,8 +38,8 @@ struct member_record
 template <class Function, class Span>
 concept CanMakeUnaryTransformView = requires(Function function, Span const& span) { transform_view(function, span); };
 
-using scalar_span = stdex::mdspan<double, stdex::dextents<index_type, 1>>;
-using member_span = stdex::mdspan<member_record, stdex::dextents<index_type, 1>>;
+using scalar_span = uni20::mdspan<double, stdex::dextents<index_type, 1>>;
+using member_span = uni20::mdspan<member_record, stdex::dextents<index_type, 1>>;
 
 static_assert(CanMakeUnaryTransformView<final_scale, scalar_span>);
 static_assert(!CanMakeUnaryTransformView<decltype(&member_record::value), member_span>);
@@ -240,9 +240,9 @@ TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
   std::array<int, 4> dense{1, 2, 3, 4};
   std::array<int, 301> padded{};
   std::iota(padded.begin(), padded.end(), 0);
-  stdex::mdspan<int, small_shape> a{dense.data(), small_shape{}};
-  stdex::layout_stride::mapping<wide_shape> mapping{wide_shape{}, std::array{200, 100}};
-  stdex::mdspan<int, wide_shape, stdex::layout_stride> b{padded.data(), mapping};
+  uni20::mdspan<int, small_shape> a{dense.data(), small_shape{}};
+  uni20::layout_stride::mapping<wide_shape> mapping{wide_shape{}, std::array{200, 100}};
+  uni20::mdspan<int, wide_shape, uni20::layout_stride> b{padded.data(), mapping};
 
   auto ab = transform_view(plus_n{}, a, b);
   auto ba = transform_view(plus_n{}, b, a);
@@ -262,8 +262,8 @@ TEST(TransformView1D, PromotesIndicesOnlyWhenNeeded)
   using signed_shape = stdex::extents<std::int32_t, 2>;
   using unsigned_shape = stdex::extents<std::uint32_t, 2>;
   std::array<int, 2> values{3, 7};
-  stdex::mdspan<int, signed_shape> a{values.data()};
-  stdex::mdspan<int, unsigned_shape> b{values.data()};
+  uni20::mdspan<int, signed_shape> a{values.data()};
+  uni20::mdspan<int, unsigned_shape> b{values.data()};
 
   auto same = transform_view(plus_n{}, a, a);
   auto mixed = transform_view(plus_n{}, a, b);
@@ -285,9 +285,9 @@ TEST(TransformView2D, PreservesChildMappingsWhenComposingMixedIndexTypes)
   using unsigned_shape = stdex::extents<std::uint64_t, 2, 2>;
   std::array<int, 4> dense{1, 2, 3, 4};
   std::array<int, 8> padded{10, 0, 20, 0, 30, 0, 40, 0};
-  stdex::mdspan<int, signed_shape> a{dense.data(), signed_shape{}};
-  stdex::layout_stride::mapping<unsigned_shape> mapping{unsigned_shape{}, std::array{4, 2}};
-  stdex::mdspan<int, unsigned_shape, stdex::layout_stride> b{padded.data(), mapping};
+  uni20::mdspan<int, signed_shape> a{dense.data(), signed_shape{}};
+  uni20::layout_stride::mapping<unsigned_shape> mapping{unsigned_shape{}, std::array{4, 2}};
+  uni20::mdspan<int, unsigned_shape, uni20::layout_stride> b{padded.data(), mapping};
 
   auto sum = transform_view(plus_n{}, a, b);
   static_assert(std::same_as<decltype(sum)::mapping_type::offset_type, std::tuple<std::int64_t, std::uint64_t>>);
@@ -299,7 +299,7 @@ TEST(TransformView2D, PreservesChildMappingsWhenComposingMixedIndexTypes)
 // A structural strided mapping with narrow coordinates can still return wider offsets.
 struct wide_offset_layout
 {
-    template <class Extents> struct mapping : stdex::layout_right::mapping<Extents>
+    template <class Extents> struct mapping : uni20::layout_right::mapping<Extents>
     {
         static_assert(Extents::rank() == 1 && Extents::static_extent(0) == 2);
         using layout_type = wide_offset_layout;
@@ -316,7 +316,7 @@ TEST(TransformView1D, PreservesWiderMappingOffsetsWithNarrowCoordinates)
   using shape = stdex::extents<std::uint8_t, 2>;
   std::array<int, 301> storage{};
   storage[300] = 23;
-  stdex::mdspan<int, shape, wide_offset_layout> input{storage.data(), wide_offset_layout::mapping<shape>{}};
+  uni20::mdspan<int, shape, wide_offset_layout> input{storage.data(), wide_offset_layout::mapping<shape>{}};
   auto sum = transform_view(plus_n{}, input, input);
   EXPECT_EQ(sum[1], 46);
 }

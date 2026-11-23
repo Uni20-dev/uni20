@@ -44,12 +44,12 @@ auto cuda_strided_view(Tensor& tensor, std::array<index_type, Rank> const& exten
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
   using extents_type = stdex::dextents<index_type, Rank>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type =
-      uni20::mdspec<typename mutable_base_type::element_type, extents_type, stdex::layout_stride,
+      uni20::mdspec<typename mutable_base_type::element_type, extents_type, uni20::layout_stride,
                     typename mutable_base_type::accessor_type, typename mutable_base_type::data_descriptor_type>;
   using const_type =
-      uni20::mdspec<typename const_base_type::element_type, extents_type, stdex::layout_stride,
+      uni20::mdspec<typename const_base_type::element_type, extents_type, uni20::layout_stride,
                     typename const_base_type::accessor_type, typename const_base_type::data_descriptor_type>;
   mapping_type const mapping(extents_type(extents), strides);
   return uni20::MdspecTensorView<mutable_type, const_type, uni20::CudaStorage>{
@@ -64,9 +64,9 @@ auto host_strided_view(Tensor& tensor, std::array<index_type, Rank> const& exten
 {
   using element_type = typename Tensor::value_type;
   using extents_type = stdex::dextents<index_type, Rank>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
-  using mutable_type = stdex::mdspan<element_type, extents_type, stdex::layout_stride>;
-  using const_type = stdex::mdspan<element_type const, extents_type, stdex::layout_stride>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
+  using mutable_type = uni20::mdspan<element_type, extents_type, uni20::layout_stride>;
+  using const_type = uni20::mdspan<element_type const, extents_type, uni20::layout_stride>;
   mapping_type const mapping(extents_type(extents), strides);
   element_type* data = tensor.mdspan().data_handle() + offset;
   return uni20::MdspecTensorView<mutable_type, const_type, uni20::HostStorage>{mutable_type{data, mapping},
@@ -141,7 +141,7 @@ class CudaReductionTest : public ::testing::Test {
 // Two logical elements at offsets 1 and 2 from the descriptor's origin.
 struct ShiftedLayout
 {
-    template <class Extents> struct mapping : stdex::layout_right::mapping<Extents>
+    template <class Extents> struct mapping : uni20::layout_right::mapping<Extents>
     {
         static_assert(Extents::rank() == 1 && Extents::static_extent(0) == 2);
         using layout_type = ShiftedLayout;
@@ -149,6 +149,7 @@ struct ShiftedLayout
         static constexpr bool is_exhaustive() noexcept { return false; }
         constexpr index_type operator()(index_type i) const noexcept { return 1 + i; }
         constexpr index_type required_span_size() const noexcept { return 3; }
+        constexpr uni20::offset_range reachable_range() const noexcept { return {.minimum = 1, .maximum = 2}; }
     };
 };
 
@@ -169,6 +170,24 @@ TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
   uni20::MdspecTensorView<spec, spec, uni20::CudaStorage> view{descriptor, descriptor};
   EXPECT_EQ(uni20::sum_host(view), 5);
   EXPECT_EQ(uni20::maximum_host(view), 3);
+}
+
+TEST_F(CudaReductionTest, CanonicalScalarSupportsTransfersAndHostReductions)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::ScalarTensor<double> host;
+  host[] = -7;
+  auto const device = uni20::to_device(host, 0);
+  static_assert(uni20::StridedMdspecLike<decltype(device.mdspec())>);
+  EXPECT_EQ(uni20::to_host(device)[], -7);
+  EXPECT_EQ(uni20::sum_host(device), -7);
+  EXPECT_EQ(uni20::maximum_host(device), -7);
+  EXPECT_EQ(uni20::norm_host(device), 7);
+  EXPECT_EQ(uni20::inner_product_host(device, device), 49);
+
+  uni20::CudaTensor<double, 0> copy(runtime.device_resources(0), uni20::extents<index_type>{});
+  uni20::copy(copy, device);
+  EXPECT_EQ(uni20::to_host(copy)[], -7);
 }
 
 TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)

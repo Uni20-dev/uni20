@@ -60,7 +60,7 @@ template <class Element, class Extents, class Layout, class Accessor, class Stor
 [[nodiscard]] auto
 acquire_host_read_access_sync(mdspec<Element, Extents, Layout, Accessor, HostStorageDescriptor<Storage>> const& span)
 {
-  using mdspan_type = stdex::mdspan<Element, Extents, Layout, Accessor>;
+  using mdspan_type = uni20::mdspan<Element, Extents, Layout, Accessor>;
   using lease_type = read_mdspan_lease<mdspan_type, HostAccessState>;
   return lease_type{
       HostAccessState{},
@@ -73,7 +73,7 @@ template <class Element, class Extents, class Layout, class Accessor, class Stor
 [[nodiscard]] auto
 acquire_host_write_access_sync(mdspec<Element, Extents, Layout, Accessor, HostStorageDescriptor<Storage>>& span)
 {
-  using mdspan_type = stdex::mdspan<Element, Extents, Layout, Accessor>;
+  using mdspan_type = uni20::mdspan<Element, Extents, Layout, Accessor>;
   using lease_type = write_mdspan_lease<mdspan_type, HostAccessState>;
   return lease_type{
       HostAccessState{},
@@ -81,7 +81,7 @@ acquire_host_write_access_sync(mdspec<Element, Extents, Layout, Accessor, HostSt
   };
 }
 
-template <class Element, std::size_t Rank, class Layout = stdex::layout_left> class DeferredHostTensor {
+template <class Element, std::size_t Rank, class Layout = uni20::layout_left> class DeferredHostTensor {
   public:
     using element_type = Element;
     using value_type = std::remove_cv_t<element_type>;
@@ -91,16 +91,16 @@ template <class Element, std::size_t Rank, class Layout = stdex::layout_left> cl
     using storage_type = std::vector<element_type>;
     using storage_policy = HostStorage;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
-    using mutable_accessor_type = stdex::default_accessor<element_type>;
-    using const_accessor_type = stdex::default_accessor<element_type const>;
+    using mutable_accessor_type = uni20::default_accessor<element_type>;
+    using const_accessor_type = uni20::default_accessor<element_type const>;
     using mutable_descriptor_type = HostStorageDescriptor<storage_type>;
     using const_descriptor_type = HostStorageDescriptor<storage_type const>;
     using mutable_mdspec_type =
         uni20::mdspec<element_type, extents_type, layout_type, mutable_accessor_type, mutable_descriptor_type>;
     using const_mdspec_type =
         uni20::mdspec<element_type const, extents_type, layout_type, const_accessor_type, const_descriptor_type>;
-    using mutable_mdspan_type = stdex::mdspan<element_type, extents_type, layout_type, mutable_accessor_type>;
-    using const_mdspan_type = stdex::mdspan<element_type const, extents_type, layout_type, const_accessor_type>;
+    using mutable_mdspan_type = uni20::mdspan<element_type, extents_type, layout_type, mutable_accessor_type>;
+    using const_mdspan_type = uni20::mdspan<element_type const, extents_type, layout_type, const_accessor_type>;
 
     explicit DeferredHostTensor(extents_type extents)
         : mapping_(std::move(extents)), storage_(static_cast<std::size_t>(mapping_.required_span_size()))

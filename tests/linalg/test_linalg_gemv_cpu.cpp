@@ -50,9 +50,9 @@ TEST(CpuGemvBackendTest, SkipsProductReadsWhenAlphaIsZero)
   std::vector<double> input_storage(2, nan);
   std::vector<double> output_storage{2.0, -3.0};
 
-  stdex::mdspan<double, extents_2d, stdex::layout_left> matrix(matrix_storage.data(), 2, 2);
-  stdex::mdspan<double, extents_1d, stdex::layout_left> input(input_storage.data(), 2);
-  stdex::mdspan<double, extents_1d, stdex::layout_left> output(output_storage.data(), 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> matrix(matrix_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> input(input_storage.data(), 2);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> output(output_storage.data(), 2);
 
   uni20::linalg::cpu::gemv(output, 0.0, matrix, input, 2.0);
   EXPECT_DOUBLE_EQ(output[0], 4.0);

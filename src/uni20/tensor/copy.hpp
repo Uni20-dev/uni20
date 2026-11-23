@@ -29,7 +29,7 @@ namespace uni20
 ///          through `to_host` or `copy(destination, source)`.
 template <class RequestedLayout = void, class BackendSelector, MdspanLike InputMdspan>
   requires detail::AccessDomainsCompatible<
-      stdex::default_accessor<std::remove_cv_t<typename std::remove_cvref_t<InputMdspan>::element_type> const>,
+      uni20::default_accessor<std::remove_cv_t<typename std::remove_cvref_t<InputMdspan>::element_type> const>,
       typename std::remove_cvref_t<InputMdspan>::accessor_type>
 [[nodiscard]] auto make_tensor(BackendSelector&& selector, InputMdspan&& input)
 {
@@ -86,7 +86,7 @@ namespace detail
 template <class InputTensor>
 concept HostReadableTensor =
     TensorView<std::remove_cvref_t<InputTensor>> &&
-    AccessDomainsCompatible<stdex::default_accessor<tensor_element_t<std::remove_cvref_t<InputTensor>> const>,
+    AccessDomainsCompatible<uni20::default_accessor<tensor_element_t<std::remove_cvref_t<InputTensor>> const>,
                             typename tensor_mdspec_t<std::remove_cvref_t<InputTensor>>::accessor_type>;
 
 /// \brief Materialize host work storage for an operation implemented only by host providers.

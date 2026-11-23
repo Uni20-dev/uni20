@@ -65,12 +65,12 @@ using cuda_vector_type = uni20::CudaTensor<double, 1>;
 using complex_cuda_conjugated_view = uni20::ConjugatedTensorView<complex_cuda_matrix_type>;
 using cuda_extents_type = stdex::dextents<uni20::index_type, 2>;
 using resolved_cuda_output_mdspan =
-    stdex::mdspan<double, cuda_extents_type, stdex::layout_left, uni20::cuda::CudaPointerAccessor<double>>;
+    uni20::mdspan<double, cuda_extents_type, uni20::layout_left, uni20::cuda::CudaPointerAccessor<double>>;
 using resolved_cuda_input_mdspan =
-    stdex::mdspan<double const, cuda_extents_type, stdex::layout_left, uni20::cuda::CudaPointerAccessor<double const>>;
+    uni20::mdspan<double const, cuda_extents_type, uni20::layout_left, uni20::cuda::CudaPointerAccessor<double const>>;
 using resolved_complex_cuda_output_mdspan =
-    stdex::mdspan<complex_type, cuda_extents_type, stdex::layout_left, uni20::cuda::CudaPointerAccessor<complex_type>>;
-using resolved_complex_cuda_input_mdspan = stdex::mdspan<complex_type const, cuda_extents_type, stdex::layout_left,
+    uni20::mdspan<complex_type, cuda_extents_type, uni20::layout_left, uni20::cuda::CudaPointerAccessor<complex_type>>;
+using resolved_complex_cuda_input_mdspan = uni20::mdspan<complex_type const, cuda_extents_type, uni20::layout_left,
                                                          uni20::cuda::CudaPointerAccessor<complex_type const>>;
 using conjugated_cuda_descriptor = decltype(std::declval<complex_cuda_conjugated_view const&>().mdspec());
 using conjugated_cuda_lease =
@@ -93,7 +93,7 @@ auto make_strided_matrix_mdspec(Tensor& tensor, std::size_t offset, std::array<u
 {
   auto base = tensor.mdspec();
   using base_type = decltype(base);
-  using layout_type = stdex::layout_stride;
+  using layout_type = uni20::layout_stride;
   using mapping_type = layout_type::mapping<cuda_extents_type>;
   using result_type = uni20::mdspec<typename base_type::element_type, cuda_extents_type, layout_type,
                                     typename base_type::accessor_type, typename base_type::data_descriptor_type>;
@@ -264,12 +264,12 @@ auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
   using extents_type = stdex::dextents<uni20::index_type, Rank>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type =
-      uni20::mdspec<typename mutable_base_type::element_type, extents_type, stdex::layout_stride,
+      uni20::mdspec<typename mutable_base_type::element_type, extents_type, uni20::layout_stride,
                     typename mutable_base_type::accessor_type, typename mutable_base_type::data_descriptor_type>;
   using const_type =
-      uni20::mdspec<typename const_base_type::element_type, extents_type, stdex::layout_stride,
+      uni20::mdspec<typename const_base_type::element_type, extents_type, uni20::layout_stride,
                     typename const_base_type::accessor_type, typename const_base_type::data_descriptor_type>;
   mapping_type const mapping(extents_type(extents), strides);
   return uni20::MdspecTensorView<mutable_type, const_type, uni20::CudaStorage>{
@@ -284,9 +284,9 @@ auto host_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
 {
   using element_type = typename Tensor::value_type;
   using extents_type = stdex::dextents<uni20::index_type, Rank>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
-  using mutable_type = stdex::mdspan<element_type, extents_type, stdex::layout_stride>;
-  using const_type = stdex::mdspan<element_type const, extents_type, stdex::layout_stride>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
+  using mutable_type = uni20::mdspan<element_type, extents_type, uni20::layout_stride>;
+  using const_type = uni20::mdspan<element_type const, extents_type, uni20::layout_stride>;
   mapping_type const mapping(extents_type(extents), strides);
   element_type* data = tensor.mdspan().data_handle();
   return uni20::MdspecTensorView<mutable_type, const_type, uni20::HostStorage>{mutable_type{data, mapping},
@@ -339,8 +339,8 @@ static_assert(!uni20::linalg::detail::cuda_reference::ElementwiseCopyWords<WideE
 // A rank-zero host-device copy is one element, which the reference backend always
 // moves; a conjugated rank-zero copy between devices still needs peer staging.
 // The rank-one controls show that each gate accepts these descriptor types.
-using rank_zero_host = uni20::Tensor<double, 0, uni20::HostStorage, stdex::layout_stride>;
-using rank_zero_cuda = uni20::CudaTensor<double, 0, stdex::layout_stride>;
+using rank_zero_host = uni20::Tensor<double, 0, uni20::HostStorage, uni20::layout_stride>;
+using rank_zero_cuda = uni20::CudaTensor<double, 0, uni20::layout_stride>;
 template <class Tensor>
 using output_mdspec_t = std::remove_cvref_t<decltype(uni20::mdspec_of(std::declval<Tensor&>()))>;
 template <class Tensor>
@@ -356,8 +356,8 @@ template <class Output, class Input>
 inline constexpr bool peer_staging_accepts =
     uni20::linalg::detail::cuda_staging::peer_staging_types_compatible<uni20::linalg::CudaReferenceBackend, Output,
                                                                        Input>();
-using rank_one_host = uni20::Tensor<double, 1, uni20::HostStorage, stdex::layout_stride>;
-using rank_one_cuda = uni20::CudaTensor<double, 1, stdex::layout_stride>;
+using rank_one_host = uni20::Tensor<double, 1, uni20::HostStorage, uni20::layout_stride>;
+using rank_one_cuda = uni20::CudaTensor<double, 1, uni20::layout_stride>;
 static_assert(host_staging_accepts<output_mdspec_t<rank_one_cuda>, input_mdspec_t<rank_one_host>>);
 static_assert(!host_staging_accepts<output_mdspec_t<rank_zero_cuda>, input_mdspec_t<rank_zero_host>>);
 static_assert(peer_staging_accepts<output_mdspec_t<rank_one_cuda>, input_mdspec_t<rank_one_cuda>>);
@@ -413,14 +413,14 @@ class CudaCopyTest : public ::testing::Test {
 
 TEST(CudaCopyPlanningTest, ElementwisePlanCompactsAndDecodesIndependentPaddedStrides)
 {
-  using mapping_type = stdex::layout_stride::mapping<cuda_extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<cuda_extents_type>;
   cuda_extents_type const extents{2, 3};
   std::array<uni20::index_type, 2> const output_strides{1, 3};
   std::array<uni20::index_type, 2> const input_strides{1, 2};
   double output_storage[8]{};
   double input_storage[6]{};
-  stdex::mdspan output{output_storage, mapping_type{extents, output_strides}};
-  stdex::mdspan input{input_storage, mapping_type{extents, input_strides}};
+  uni20::mdspan output{output_storage, mapping_type{extents, output_strides}};
+  uni20::mdspan input{input_storage, mapping_type{extents, input_strides}};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseCopyPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_plan(output, input, plan));
@@ -438,13 +438,13 @@ TEST(CudaCopyPlanningTest, ElementwisePlanCompactsAndDecodesIndependentPaddedStr
 TEST(CudaCopyPlanningTest, ElementwisePlanUses64BitOffsetsWhenAReachableOffsetExceeds32Bits)
 {
   using extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   auto const large_stride = static_cast<uni20::index_type>(std::numeric_limits<std::int32_t>::max()) + 1;
   mapping_type output_mapping{extents_type{2}, std::array<uni20::index_type, 1>{large_stride}};
   mapping_type input_mapping{extents_type{2}, std::array<uni20::index_type, 1>{1}};
   double value = 0;
-  stdex::mdspan output{&value, output_mapping};
-  stdex::mdspan input{&value, input_mapping};
+  uni20::mdspan output{&value, output_mapping};
+  uni20::mdspan input{&value, input_mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseCopyPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_plan(output, input, plan));
@@ -473,11 +473,11 @@ TEST(CudaCopyPlanningTest, LoweredPlanVisitsOnlyTheSelectedPayload)
 TEST(CudaCopyPlanningTest, EmptyIterationLowersToAZeroRank32BitPayload)
 {
   using extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   mapping_type mapping{extents_type{0}, std::array<uni20::index_type, 1>{1}};
   double value = 0;
-  stdex::mdspan output{&value, mapping};
-  stdex::mdspan input{&value, mapping};
+  uni20::mdspan output{&value, mapping};
+  uni20::mdspan input{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseCopyPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_plan(output, input, plan));
@@ -890,8 +890,8 @@ TEST_F(CudaCopyTest, SameDeviceCopyConvertsBetweenColumnMajorAndRowMajorMappings
 
   auto source_span = std::as_const(source).mdspec();
   auto row_major_base = row_major_storage.mdspec();
-  using row_major_mapping = stdex::layout_right::mapping<cuda_extents_type>;
-  auto row_major_output = remap_mdspec<stdex::layout_right>(row_major_base, row_major_mapping{cuda_extents_type{2, 3}});
+  using row_major_mapping = uni20::layout_right::mapping<cuda_extents_type>;
+  auto row_major_output = remap_mdspec<uni20::layout_right>(row_major_base, row_major_mapping{cuda_extents_type{2, 3}});
 
   auto preparation = uni20::linalg::detail::cuda_reference::prepare_copy(row_major_output, source_span);
   ASSERT_EQ(preparation.attempt, uni20::linalg::KernelAttempt::success);
@@ -907,7 +907,7 @@ TEST_F(CudaCopyTest, SameDeviceCopyConvertsBetweenColumnMajorAndRowMajorMappings
 
   auto row_major_input_base = std::as_const(row_major_storage).mdspec();
   auto row_major_input =
-      remap_mdspec<stdex::layout_right>(row_major_input_base, row_major_mapping{cuda_extents_type{2, 3}});
+      remap_mdspec<uni20::layout_right>(row_major_input_base, row_major_mapping{cuda_extents_type{2, 3}});
   auto roundtrip_output = roundtrip.mdspec();
   ASSERT_EQ(uni20::linalg::detail::cuda_reference::copy(roundtrip_output, row_major_input),
             uni20::linalg::KernelAttempt::success);
@@ -1005,7 +1005,7 @@ TEST_F(CudaCopyTest, RowMajorRoundTripPreservesLogicalOrder)
 
   auto result = uni20::to_host(uni20::to_device(host, 0));
 
-  static_assert(std::same_as<typename decltype(result)::layout_type, stdex::layout_right>);
+  static_assert(std::same_as<typename decltype(result)::layout_type, uni20::layout_right>);
   EXPECT_DOUBLE_EQ((result[0, 0]), 1.0);
   EXPECT_DOUBLE_EQ((result[0, 1]), 2.0);
   EXPECT_DOUBLE_EQ((result[0, 2]), 3.0);
@@ -1495,8 +1495,8 @@ TEST_F(CudaCopyTest, RankZeroStridedTransfersRoundTrip)
 TEST_F(CudaCopyTest, ConjugatedRankZeroCopiesStageBetweenDevices)
 {
   if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";
-  using complex_rank_zero_host = uni20::Tensor<complex_type, 0, uni20::HostStorage, stdex::layout_stride>;
-  using complex_rank_zero_cuda = uni20::CudaTensor<complex_type, 0, stdex::layout_stride>;
+  using complex_rank_zero_host = uni20::Tensor<complex_type, 0, uni20::HostStorage, uni20::layout_stride>;
+  using complex_rank_zero_cuda = uni20::CudaTensor<complex_type, 0, uni20::layout_stride>;
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
   complex_rank_zero_host host;
   host[] = complex_type{1.0, 2.0};

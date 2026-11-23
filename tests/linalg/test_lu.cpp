@@ -221,8 +221,8 @@ TEST(Lu, DirectDeclineAndStridedCpuFactors)
 {
   using E = stdex::dextents<std::size_t, 2>;
   double storage[12] = {0};
-  stdex::mdspan<double, E, stdex::layout_stride> a(
-      storage, stdex::layout_stride::mapping<E>(E(2, 2), std::array<std::size_t, 2>{5, 2}));
+  uni20::mdspan<double, E, uni20::layout_stride> a(
+      storage, uni20::layout_stride::mapping<E>(E(2, 2), std::array<std::size_t, 2>{5, 2}));
   a[0, 0] = 0;
   a[0, 1] = 2;
   a[1, 0] = 1;
@@ -242,8 +242,8 @@ TEST(Lu, DirectDeclineAndStridedCpuFactors)
             KernelAttempt::success);
   EXPECT_TRUE(info.succeeded());
   double rhs_data[4] = {4, 0, 7, 0};
-  stdex::mdspan<double, E, stdex::layout_stride> rhs(
-      rhs_data, stdex::layout_stride::mapping<E>(E(2, 1), std::array<std::size_t, 2>{2, 1}));
+  uni20::mdspan<double, E, uni20::layout_stride> rhs(
+      rhs_data, uni20::layout_stride::mapping<E>(E(2, 1), std::array<std::size_t, 2>{2, 1}));
   auto readonly = make_const_mdspan(a);
   EXPECT_EQ(try_kernel(CpuReferenceBackend{}, lu_solve_op{}, readonly, std::span<std::size_t const>(pivots), rhs, info),
             KernelAttempt::success);
@@ -306,7 +306,7 @@ TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
     S storage[27]{};
     for (auto strides : {std::array<std::size_t, 2>{2, 11}, std::array<std::size_t, 2>{11, 2}})
     {
-      stdex::mdspan<S, E, stdex::layout_stride> padded(storage, stdex::layout_stride::mapping<E>(E(3, 3), strides));
+      uni20::mdspan<S, E, uni20::layout_stride> padded(storage, uni20::layout_stride::mapping<E>(E(3, 3), strides));
       check(padded);
     }
   };

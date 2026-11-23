@@ -1151,7 +1151,7 @@ inline std::string formatRectangularContainerAsPresentationMatrix(const std::vec
   }
 
   using extents_type = stdex::extents<std::size_t, stdex::dynamic_extent, stdex::dynamic_extent>;
-  auto matrix = stdex::mdspan<std::string const, extents_type, stdex::layout_right>(flat.data(), elems.size(),
+  auto matrix = uni20::mdspan<std::string const, extents_type, uni20::layout_right>(flat.data(), elems.size(),
                                                                                     elems.front().size());
   auto options = opts.mdspan_format_policy();
   options.numeric = opts.numeric_format_policy();

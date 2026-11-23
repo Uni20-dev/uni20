@@ -54,6 +54,7 @@ TEST(TensorReductionTest, DiagonalViewPreservesSurvivorOrderAndInterleavedStride
   }
 
   auto view = uni20::diagonal_view<0, 1>(input);
+  static_assert(std::same_as<typename decltype(view.mdspan())::layout_type, uni20::layout_stride>);
   ASSERT_EQ(view.extent(0), 3);
   ASSERT_EQ(view.extent(1), 2);
   EXPECT_EQ(view.stride(0), 4);
@@ -90,6 +91,20 @@ TEST(TensorReductionTest, RectangularDiagonalWithAZeroExtentIsEmpty)
   EXPECT_EQ(view.extent(1), 3);
   EXPECT_EQ(view.mdspec().mapping().required_span_size(), 0);
   EXPECT_EQ(uni20::sum_host(view), 0.0);
+}
+
+TEST(TensorReductionTest, DiagonalPreservesACustomUniqueStridePattern)
+{
+  using shape = uni20::dextents<int, 3>;
+  using layout = uni20::detail::DiagonalLayout;
+  int data[16]{};
+  auto source = uni20::mdspan{data, layout::mapping<shape>{shape{3, 2, 2}, {4, 1, 6}}};
+  auto view = uni20::detail::diagonal_mdspec<1, 2>(source);
+  EXPECT_EQ(view.stride(0), 4);
+  EXPECT_EQ(view.stride(1), 7);
+  EXPECT_EQ(view.mapping().reachable_range().maximum, 15);
+  view[2, 1] = 37;
+  EXPECT_EQ(data[15], 37);
 }
 
 TEST(TensorReductionTest, InnerProductReturnsScalarTensorOrHostScalar)

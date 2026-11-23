@@ -142,7 +142,7 @@ An unresolved `mdspec` intentionally does not expose:
 - `data_handle()`;
 - multidimensional `operator[]`;
 - host or device dereference;
-- implicit conversion to `stdex::mdspan`;
+- implicit conversion to `mdspan`;
 - allocation, migration, synchronization, or access acquisition.
 
 It therefore does not model `MdspanLike`.
@@ -338,7 +338,7 @@ uni20::CudaAccessibleMdspec<Span>
 The accessor concepts classify accessor policies directly. The first mdspan
 pair requires a resolved `MdspanLike`; the second mdspan pair also accepts
 descriptor-backed `MdspecLike` metadata targeting that domain.
-`stdex::default_accessor<T>` is host-accessible.
+`uni20::default_accessor<T>` is host-accessible.
 `uni20::cuda::CudaPointerAccessor<T>` is CUDA-accessible. Const adaptation,
 conjugation, and elementwise transform accessors preserve the domains supported
 by their wrapped accessors.

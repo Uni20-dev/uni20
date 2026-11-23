@@ -124,7 +124,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 
@@ -157,7 +157,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 
@@ -189,7 +189,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 

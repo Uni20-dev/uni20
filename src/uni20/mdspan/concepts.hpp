@@ -156,14 +156,11 @@ inline constexpr bool enable_accessor_in_domain<const_accessor_adaptor<Accessor>
 
 /// \brief Wrap a default_accessor<T> into a const_default_accessor<T>.
 /// \tparam T Element type accessed by the policy.
-/// \param accessor_policy The accessor policy to upgrade.
 /// \return A default accessor for \c T const.
 /// \ingroup mdspan_ext
-template <typename T>
-constexpr stdex::default_accessor<T const> const_accessor(stdex::default_accessor<T> const& accessor_policy)
+template <typename T> constexpr default_accessor<T const> const_accessor(stdex::default_accessor<T> const&)
 {
-  (void)accessor_policy;
-  return stdex::default_accessor<T const>();
+  return {};
 }
 
 template <typename T>
@@ -380,7 +377,7 @@ template <MdspanLike Span> [[nodiscard]] constexpr auto make_const_mdspan(Span c
   auto accessor = const_accessor(span.accessor());
   using accessor_type = decltype(accessor);
   using span_type = std::remove_cvref_t<Span>;
-  using const_mdspan_type = stdex::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
+  using const_mdspan_type = uni20::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
                                           typename span_type::layout_type, accessor_type>;
   return const_mdspan_type{span.data_handle(), span.mapping(), std::move(accessor)};
 }
@@ -500,7 +497,7 @@ template <class MDS, std::size_t Rank>
 concept MutableRankedMdspanLike =
     MutableMdspanLike<std::remove_cvref_t<MDS>> && (std::remove_cvref_t<MDS>::rank() == Rank);
 
-/// \brief An mdspan-like type whose accessor is `stdex::default_accessor`.
+/// \brief An mdspan-like type with a default accessor.
 /// \tparam MDS The mdspan-like type under test.
 /// \ingroup mdspan_ext
 template <class MDS>

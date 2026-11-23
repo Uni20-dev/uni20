@@ -44,13 +44,13 @@ template <class Tensor> class CudaMatrixView {
     using storage_policy = typename tensor_type::storage_policy;
     using index_type = uni20::index_type;
     using extents_type = stdex::dextents<index_type, 2>;
-    using mapping_type = stdex::layout_stride::mapping<extents_type>;
+    using mapping_type = uni20::layout_stride::mapping<extents_type>;
     using accessor_type = typename tensor_type::device_accessor_type;
     using const_accessor_type = typename tensor_type::const_device_accessor_type;
     using descriptor_type = uni20::cuda::CudaBufferView<element_type>;
     using const_descriptor_type = uni20::cuda::CudaBufferView<element_type const>;
-    using mdspec_type = uni20::mdspec<element_type, extents_type, stdex::layout_stride, accessor_type, descriptor_type>;
-    using const_mdspec_type = uni20::mdspec<element_type const, extents_type, stdex::layout_stride, const_accessor_type,
+    using mdspec_type = uni20::mdspec<element_type, extents_type, uni20::layout_stride, accessor_type, descriptor_type>;
+    using const_mdspec_type = uni20::mdspec<element_type const, extents_type, uni20::layout_stride, const_accessor_type,
                                             const_descriptor_type>;
 
     CudaMatrixView(tensor_type& tensor, std::size_t offset, index_type rows, index_type cols,
@@ -137,6 +137,7 @@ template <class ElementType> struct UnrecognizedCudaAccessor
     using reference = uni20::cuda::CudaBufferView<element_type>;
     using data_handle_type = reference;
     using offset_policy = UnrecognizedCudaAccessor;
+    using offset_type = std::size_t;
 
     [[nodiscard]] constexpr reference access(data_handle_type handle, std::size_t offset) const noexcept
     {
@@ -150,13 +151,13 @@ template <class ElementType> struct UnrecognizedCudaAccessor
 };
 
 using cuda_test_extents = stdex::dextents<uni20::index_type, 2>;
-using writable_cuda_span = uni20::mdspec<double, cuda_test_extents, stdex::layout_left,
+using writable_cuda_span = uni20::mdspec<double, cuda_test_extents, uni20::layout_left,
                                          uni20::cuda::CudaPointerAccessor<double>, uni20::cuda::CudaBufferView<double>>;
 using readable_cuda_span =
-    uni20::mdspec<double const, cuda_test_extents, stdex::layout_left, uni20::cuda::CudaPointerAccessor<double const>,
+    uni20::mdspec<double const, cuda_test_extents, uni20::layout_left, uni20::cuda::CudaPointerAccessor<double const>,
                   uni20::cuda::CudaBufferView<double const>>;
 using unrecognized_cuda_span =
-    uni20::mdspec<double const, cuda_test_extents, stdex::layout_left, UnrecognizedCudaAccessor<double const>,
+    uni20::mdspec<double const, cuda_test_extents, uni20::layout_left, UnrecognizedCudaAccessor<double const>,
                   uni20::cuda::CudaBufferView<double const>>;
 
 template <class Input>
@@ -201,7 +202,7 @@ class CudaGemmPlatform {
     [[nodiscard]] auto make_strided_matrix(uni20::index_type rows, uni20::index_type cols,
                                            std::array<uni20::index_type, 2> strides)
     {
-      using matrix_type = uni20::Tensor<Scalar, 2, uni20::CudaStorage, stdex::layout_stride>;
+      using matrix_type = uni20::Tensor<Scalar, 2, uni20::CudaStorage, uni20::layout_stride>;
       using extents_type = typename matrix_type::extents_type;
       typename matrix_type::mapping_type mapping(extents_type{rows, cols}, strides);
       typename matrix_type::storage_type storage(resources_, mapping.required_span_size());

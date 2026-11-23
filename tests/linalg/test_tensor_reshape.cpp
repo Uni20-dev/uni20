@@ -26,8 +26,8 @@ using const_strided_matrix = uni20::ConstTensorView<strided_matrix>;
 using deferred_complex_matrix = uni20::test::DeferredHostTensor<uni20::complex<double>, 2>;
 using deferred_conjugated_matrix = decltype(uni20::conj(std::declval<deferred_complex_matrix&>()));
 using metadata_extents = stdex::dextents<uni20::index_type, 2>;
-using metadata_span = uni20::mdspec<double const, metadata_extents, stdex::layout_stride,
-                                    stdex::default_accessor<double const>, std::size_t>;
+using metadata_span = uni20::mdspec<double const, metadata_extents, uni20::layout_stride,
+                                    uni20::default_accessor<double const>, std::size_t>;
 
 static_assert(uni20::MutableRankedImmediateTensorView<mutable_reshape, 2>);
 static_assert(uni20::RankedImmediateTensorView<const_reshape, 2>);

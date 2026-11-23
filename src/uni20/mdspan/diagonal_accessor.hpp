@@ -274,13 +274,14 @@ template <class Mapping, std::size_t... Axis>
 template <class ElementType, class Extents, class LayoutPolicy, class AccessorExtents, class ComponentIndex>
   requires(Extents::rank() == AccessorExtents::rank())
 [[nodiscard]] constexpr auto
-diagonal_components(stdex::mdspan<ElementType, Extents, LayoutPolicy,
+diagonal_components(uni20::mdspan<ElementType, Extents, LayoutPolicy,
                                   diagonal_accessor<ElementType, AccessorExtents, ComponentIndex>> const& span)
 {
   using index_type = ComponentIndex;
   using component_extents_type = stdex::dextents<index_type, 1>;
   using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
-  using component_mdspan_type = stdex::mdspan<ElementType, component_extents_type, stdex::layout_stride>;
+  using component_mdspan_type =
+      stdex::mdspan<ElementType, component_extents_type, stdex::layout_stride, uni20::default_accessor<ElementType>>;
   auto const count = detail::diagonal_component_extent(span.extents());
   if (!std::in_range<index_type>(count)) throw std::overflow_error("diagonal component count exceeds its index range");
   auto const extents = component_extents_type{count};
@@ -336,7 +337,7 @@ template <class Extents, class Components>
   auto extents = detail::diagonal_logical_extents(logical_extents, count == 0);
   using extents_type = decltype(extents);
   using accessor_type = diagonal_accessor<element_type, extents_type, component_index>;
-  using result_type = stdex::mdspan<element_type, extents_type, GeneratedLayout, accessor_type>;
+  using result_type = uni20::mdspan<element_type, extents_type, GeneratedLayout, accessor_type>;
   return result_type{typename accessor_type::data_handle_type{components.data_handle(), 0},
                      typename result_type::mapping_type{extents},
                      accessor_type{extents, static_cast<component_index>(stride)}};
