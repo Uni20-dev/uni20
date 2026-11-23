@@ -8,6 +8,7 @@
 
 #include <uni20/common/static_vector.hpp>
 #include <uni20/mdspan/concepts.hpp>
+#include <uni20/mdspan/offset_range.hpp>
 #include <uni20/mdspan/strides.hpp>
 
 #include <algorithm>
@@ -65,18 +66,6 @@ template <typename ExtentT = std::size_t, typename StrideT = std::ptrdiff_t> str
     }
 };
 
-/// \brief Inclusive range of handle-relative offsets visited by an iteration plan.
-/// \details An empty range has `minimum > maximum`.
-/// \ingroup internal
-struct iteration_offset_range
-{
-    std::ptrdiff_t minimum = 0;
-    std::ptrdiff_t maximum = 0;
-
-    /// \brief Report whether the iteration visits no offsets.
-    [[nodiscard]] constexpr bool empty() const noexcept { return minimum > maximum; }
-};
-
 /// \brief Compact affine iteration plan shared by host and device backends.
 /// \tparam OperandCount Number of operands, with the writable output first.
 /// \tparam MaximumRank Maximum number of compact dimensions.
@@ -88,7 +77,7 @@ template <std::size_t OperandCount, std::size_t MaximumRank> struct multi_iterat
 
     static_vector<extent_strides<OperandCount>, MaximumRank> dimensions;
     std::array<std::ptrdiff_t, OperandCount> base_offsets{};
-    std::array<iteration_offset_range, OperandCount> reachable_offsets{};
+    std::array<offset_range, OperandCount> reachable_offsets{};
     std::size_t element_count = 1;
     bool representable = true;
 
@@ -157,7 +146,7 @@ void finish_iteration_plan(multi_iteration_plan<OperandCount, MaximumRank>& plan
   {
     plan.element_count = 0;
     for (auto& range : plan.reachable_offsets)
-      range = iteration_offset_range{.minimum = 0, .maximum = -1};
+      range = offset_range{.minimum = 0, .maximum = -1};
     return;
   }
 
@@ -194,7 +183,7 @@ void finish_iteration_plan(multi_iteration_plan<OperandCount, MaximumRank>& plan
         return;
       }
     }
-    plan.reachable_offsets[operand] = iteration_offset_range{.minimum = minimum, .maximum = maximum};
+    plan.reachable_offsets[operand] = offset_range{.minimum = minimum, .maximum = maximum};
   }
 }
 

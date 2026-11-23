@@ -1,6 +1,7 @@
 # Uni20 mdspan and mdspec Design
 
-Status: Proposed implementation.
+Status: Native nonnegative layouts and immediate views are available.
+Tensor producers still use Kokkos types.
 
 Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 `stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
@@ -136,7 +137,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    establishes that every reachable offset fits whenever the types alone
    cannot guarantee it.
 3. **Single-buffer mappings with element offsets report `reachable_range()`**,
-   the offsets that some valid index reaches. For nonnegative strides it is `[0, required_span_size() - 1]`,
+   the inclusive bounds on offsets reachable by valid indices.
+   For nonnegative strides it is `[0, required_span_size() - 1]`,
    or empty when an extent is zero. Buffer validation compares the descriptor
    offset plus this range with the buffer, instead of `required_span_size()`.
    `required_span_size()` remains for nonnegative layouts, as the standard's

@@ -99,18 +99,13 @@ class mdspec {
     /// \brief Return the logical number of elements, including one for a rank-zero descriptor.
     [[nodiscard]] UNI20_HOST_DEVICE constexpr size_type size() const noexcept
     {
-      size_type count = 1;
-      for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
-        count *= static_cast<size_type>(this->extents().extent(axis));
-      return count;
+      return detail::mdspan_size<size_type>(this->extents());
     }
 
     /// \brief Return whether any extent is zero.
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool empty() const noexcept
     {
-      for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
-        if (this->extents().extent(axis) == 0) return true;
-      return false;
+      return detail::mdspan_empty(this->extents());
     }
 
     /// \brief Report whether this mapping is unique.
