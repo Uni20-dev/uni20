@@ -39,17 +39,22 @@ template <class Pointer> [[nodiscard]] Pointer offset_cuda_pointer(Pointer point
   return pointer + offset;
 }
 
-template <class Mdspec> void validate_cuda_descriptor_range(Mdspec const& span)
+template <class Mapping, class Count>
+void validate_cuda_mapping_range(Mapping const& mapping, Count required, std::size_t offset, std::size_t buffer_size)
 {
-  auto const& descriptor = span.data_descriptor();
-  auto const offset = descriptor.element_offset();
-  auto const buffer_size = descriptor.buffer().size();
-  auto const base_offset = detail::mapping_base_offset(span.mapping());
+  auto const base_offset = detail::mapping_base_offset(mapping);
   CHECK(base_offset <= offset && offset <= buffer_size, base_offset, offset, buffer_size);
-  auto const required = +span.mapping().required_span_size();
   auto const span_start = offset - base_offset;
   CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - span_start), required,
         span_start, buffer_size);
+}
+
+template <class Mdspec> void validate_cuda_descriptor_range(Mdspec const& span)
+{
+  auto const& descriptor = span.data_descriptor();
+  auto const& mapping = span.mapping();
+  validate_cuda_mapping_range(mapping, +mapping.required_span_size(), descriptor.element_offset(),
+                              descriptor.buffer().size());
 }
 
 template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Mdspec const& span, Pointer pointer)

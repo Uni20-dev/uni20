@@ -3,6 +3,7 @@
 #include <uni20/linalg/backends/cuda/copy.hpp>
 #include <uni20/linalg/backends/cuda/transform.hpp>
 #include <uni20/linalg/elementwise_functions.hpp>
+#include <uni20/mdspan/layout_signed_stride.hpp>
 #include <uni20/tensor/conjugate_inplace.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/mdspec_tensor_view.hpp>
@@ -367,6 +368,50 @@ TEST_F(CudaTransformTest, FillsRealAndComplexStridedTensors)
       EXPECT_EQ((complex_result[row, column]), (uni20::cfloat{-1.0F, 3.0F}));
     }
   }
+}
+
+struct PaddedScalarLayout
+{
+    template <class Extents> struct mapping : uni20::layout_signed_stride::mapping<Extents>
+    {
+        static_assert(Extents::rank() == 0);
+        using layout_type = PaddedScalarLayout;
+
+        static constexpr std::size_t base_offset() noexcept { return 1; }
+        static constexpr std::size_t required_span_size() noexcept { return 2; }
+        static constexpr bool is_always_exhaustive() noexcept { return false; }
+        static constexpr bool is_exhaustive() noexcept { return false; }
+    };
+};
+
+TEST_F(CudaTransformTest, PaddedScalarSpanStartsBeforeTheLogicalOrigin)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  uni20::Tensor<double, 1> host(2);
+  host[0] = 43.0;
+  host[1] = -3.0;
+  auto storage = uni20::to_device(host, 0);
+
+  using scalar_shape = uni20::extents<uni20::index_type>;
+  auto padded_descriptor = [](auto const& base) {
+    using Base = std::remove_cvref_t<decltype(base)>;
+    using Spec = uni20::mdspec<typename Base::element_type, scalar_shape, PaddedScalarLayout,
+                              typename Base::accessor_type, typename Base::data_descriptor_type>;
+    return Spec{base.data_descriptor().offset_by(1), PaddedScalarLayout::mapping<scalar_shape>{}, base.accessor()};
+  };
+  auto writable = padded_descriptor(storage.mdspec());
+  auto readable = padded_descriptor(std::as_const(storage).mdspec());
+  uni20::MdspecTensorView<decltype(writable), decltype(readable), uni20::CudaStorage> padded{writable, readable};
+
+  uni20::linalg::CudaReferenceBackend backend;
+  uni20::fill(backend, padded, 7.0);
+  auto const filled = uni20::to_host(storage);
+  EXPECT_DOUBLE_EQ(filled[0], 43.0);
+  EXPECT_DOUBLE_EQ(filled[1], 7.0);
+
+  uni20::CudaTensor<double, 0> negated(runtime.device_resources(0), scalar_shape{});
+  uni20::assign_transform(backend, negated, uni20::linalg::negate{}, padded);
+  EXPECT_DOUBLE_EQ(uni20::to_host(negated)[], -7.0);
 }
 
 TEST_F(CudaTransformTest, UpdatesScaleAddAndAxpyInPlace)
