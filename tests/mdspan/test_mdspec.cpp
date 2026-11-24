@@ -48,10 +48,10 @@ struct StatefulAccessor
 };
 
 using extents_type = stdex::dextents<std::size_t, 2>;
-using mdspec_type = uni20::mdspec<int, extents_type, stdex::layout_stride, StatefulAccessor, RegionDescriptor>;
+using mdspec_type = uni20::mdspec<int, extents_type, uni20::layout_stride, StatefulAccessor, RegionDescriptor>;
 using move_only_mdspec_type =
-    uni20::mdspec<int, extents_type, stdex::layout_stride, StatefulAccessor, MoveOnlyDescriptor>;
-using immediate_span_type = stdex::mdspan<int, extents_type, stdex::layout_stride>;
+    uni20::mdspec<int, extents_type, uni20::layout_stride, StatefulAccessor, MoveOnlyDescriptor>;
+using immediate_span_type = uni20::mdspan<int, extents_type, uni20::layout_stride>;
 
 template <class Span>
 concept HasDataHandle = requires(Span const& span) { span.data_handle(); };
@@ -69,6 +69,7 @@ struct IndependentMdspecFacade
     using layout_type = typename mdspec_type::layout_type;
     using mapping_type = typename mdspec_type::mapping_type;
     using accessor_type = typename mdspec_type::accessor_type;
+    using offset_type = typename mdspec_type::offset_type;
     using data_handle_type = typename mdspec_type::data_handle_type;
     using data_descriptor_type = typename mdspec_type::data_descriptor_type;
     using reference = typename mdspec_type::reference;
@@ -126,22 +127,22 @@ static_assert(std::same_as<typename mdspec_type::offset_type, StatefulAccessor::
 TEST(MdspecTest, LogicalSizeIgnoresPadding)
 {
   using shape = stdex::extents<short, 2, stdex::dynamic_extent>;
-  using spec = uni20::mdspec<int, shape, stdex::layout_stride, stdex::default_accessor<int>, RegionDescriptor>;
+  using spec = uni20::mdspec<int, shape, uni20::layout_stride, uni20::default_accessor<int>, RegionDescriptor>;
   constexpr spec view{RegionDescriptor{}, spec::mapping_type{shape{3}, std::array{1, 5}}, {}};
   static_assert(std::same_as<decltype(view.size()), shape::size_type>);
-  static_assert(std::same_as<spec::offset_type, std::size_t>);
+  static_assert(std::same_as<spec::offset_type, std::ptrdiff_t>);
   static_assert(view.size() == 6 && !view.empty());
   EXPECT_EQ(view.mapping().required_span_size(), 12);
 }
 
 TEST(MdspecTest, DistinguishesScalarAndZeroExtent)
 {
-  using scalar = uni20::mdspec<int, stdex::extents<int>, stdex::layout_right, StatefulAccessor, RegionDescriptor>;
+  using scalar = uni20::mdspec<int, stdex::extents<int>, uni20::layout_right, StatefulAccessor, RegionDescriptor>;
   constexpr scalar value{RegionDescriptor{}, scalar::mapping_type{}, {}};
   static_assert(value.size() == 1 && !value.empty());
 
   using shape = stdex::extents<int, 3, stdex::dynamic_extent>;
-  using spec = uni20::mdspec<int, shape, stdex::layout_right, StatefulAccessor, RegionDescriptor>;
+  using spec = uni20::mdspec<int, shape, uni20::layout_right, StatefulAccessor, RegionDescriptor>;
   constexpr spec zero{RegionDescriptor{}, spec::mapping_type{shape{0}}, {}};
   static_assert(zero.size() == 0 && zero.empty());
 }

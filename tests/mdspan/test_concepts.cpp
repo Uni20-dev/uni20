@@ -68,8 +68,8 @@ concept HasConstAccess =
 
 } // namespace
 
-static_assert(std::is_same_v<span_offset_t<AccessorWithOffset>, AccessorWithOffset::offset_type>);
-static_assert(std::is_same_v<span_offset_t<AccessorWithoutOffset>, std::size_t>);
+static_assert(AccessorPolicy<AccessorWithOffset>);
+static_assert(!AccessorPolicy<AccessorWithoutOffset>);
 
 using MutableAccessor = AccessorWithOffset;
 using ExpectedConstAccessor = const_accessor_adaptor<MutableAccessor>;
@@ -137,6 +137,7 @@ struct SpanDescriptorWithoutSubscript
     using layout_type = typename storage_span::layout_type;
     using mapping_type = typename storage_span::mapping_type;
     using accessor_type = typename storage_span::accessor_type;
+    using offset_type = typename storage_span::offset_type;
     using data_handle_type = typename storage_span::data_handle_type;
     using reference = typename storage_span::reference;
 

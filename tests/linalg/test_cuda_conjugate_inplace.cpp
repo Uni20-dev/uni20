@@ -96,7 +96,7 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanDeclinesNegativeStrides)
   using mapping_type = stdex::layout_stride::mapping<vector_extents_type>;
   mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{-1}};
   complex_type value{};
-  stdex::mdspan span{&value, mapping};
+  uni20::mdspan span{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
 
   EXPECT_FALSE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));

@@ -1,6 +1,6 @@
 # Mdspan Example
 
-`mdspan_example.cpp` constructs rank-two and rank-three configured `stdex::mdspan`
+`mdspan_example.cpp` constructs rank-two and rank-three `uni20::mdspan`
 views and renders integer, real, and complex values with axis and numeric-format
 options.
 

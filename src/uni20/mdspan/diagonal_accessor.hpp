@@ -282,7 +282,7 @@ diagonal_components(uni20::mdspan<ElementType, Extents, LayoutPolicy,
   // Component views can run backwards. Keep this mapping until the native signed layout is available.
   using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
   using component_mdspan_type =
-      stdex::mdspan<ElementType, component_extents_type, stdex::layout_stride, uni20::default_accessor<ElementType>>;
+      uni20::mdspan<ElementType, component_extents_type, stdex::layout_stride>;
   auto const count = detail::diagonal_component_extent(span.extents());
   if (!std::in_range<index_type>(count)) throw std::overflow_error("diagonal component count exceeds its index range");
   auto const extents = component_extents_type{count};

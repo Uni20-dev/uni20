@@ -160,6 +160,10 @@ concrete `mdspec` class when a structural constraint is sufficient.
 2. an unresolved structural model exposing mdspan metadata plus
    `data_descriptor_type` and `data_descriptor()`.
 
+Both forms declare an `offset_type` that matches their accessor's
+`offset_type`. Import a supported standard or Kokkos view with
+`uni20::mdspan{view}` before passing it to a Uni20 operation.
+
 For Uni20's concrete `Tensor`, immediate accessibility takes precedence over
 descriptor availability. Its mutable and const `mdspec()` overloads
 therefore return ordinary mdspans whenever the corresponding writable or

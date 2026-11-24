@@ -39,9 +39,11 @@ supplies extents and supports interop.
 - This module should describe structure and layout, not ownership or backend
   dispatch policy. CPU execution of iteration plans belongs to the linalg CPU
   backend.
-- `MdspanLike` is the complete readable mdspan protocol used by leaf kernels: its
-  descriptor aliases must agree, it exposes rank and extent observers, and its
-  rank-dimensional `operator[]` returns the declared `reference` type.
+- `MdspanLike` is the readable view protocol used by leaf kernels. Its
+  descriptor aliases agree with the accessor, including `offset_type`. It exposes
+  rank and extent observers, and its rank-dimensional `operator[]` returns the
+  declared `reference` type. Import standard or Kokkos views with
+  `uni20::mdspan{view}`.
   `MutableMdspanLike` additionally proves assignment through that indexed result.
 - `MdspecLike` is the broader structural protocol for mdspan metadata whose
   data handle is either immediately present or available through a data

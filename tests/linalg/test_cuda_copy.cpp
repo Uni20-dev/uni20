@@ -493,8 +493,8 @@ TEST(CudaCopyPlanningTest, ElementwisePlanDeclinesNegativeStridesUntilCudaRebasi
   mapping_type output_mapping{extents_type{2}, std::array<uni20::index_type, 1>{-1}};
   mapping_type input_mapping{extents_type{2}, std::array<uni20::index_type, 1>{1}};
   double value = 0;
-  stdex::mdspan output{&value, output_mapping};
-  stdex::mdspan input{&value, input_mapping};
+  uni20::mdspan output{&value, output_mapping};
+  uni20::mdspan input{&value, input_mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseCopyPlan plan;
 
   EXPECT_FALSE(uni20::linalg::detail::cuda_reference::try_make_elementwise_plan(output, input, plan));

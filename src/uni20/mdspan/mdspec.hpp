@@ -36,7 +36,7 @@ class mdspec {
     using layout_type = LayoutPolicy;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = Accessor;
-    using offset_type = span_offset_t<accessor_type>;
+    using offset_type = typename accessor_type::offset_type;
     using data_descriptor_type = DataDescriptor;
     using data_handle_type = typename accessor_type::data_handle_type;
     using reference = typename accessor_type::reference;
