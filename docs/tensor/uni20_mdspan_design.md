@@ -29,14 +29,12 @@ tried that and is superseded by this design.
 
 **Offsets.** The standard accessor policy takes a `size_t` offset, and
 `layout_stride` requires positive strides. `required_span_size`,
-`is_exhaustive` and `is_unique` assume nonnegative strides. Uni20 has the
-mechanism for signed offsets: an accessor may declare its own `offset_type`
-(`span_offset_t` in [`mdspan/concepts.hpp`](../../src/uni20/mdspan/concepts.hpp)),
-and Kokkos passes the mapping's signed result to `access` unchanged. Before
-the migration, host tensors and CUDA pointer accessors took `std::size_t`.
-Both now use `std::ptrdiff_t`. The diagonal and generated accessors retain
-their own offset types. Const, conjugating and transform adaptors inherit the
-wrapped accessor's offset type.
+`is_exhaustive` and `is_unique` assume nonnegative strides. Each Uni20 accessor
+declares its own `offset_type`, and `mdspan` passes the mapped offset to `access`
+in that type. Host tensors and CUDA pointer accessors use `std::ptrdiff_t`.
+The diagonal and generated accessors retain their own offset types. Const,
+conjugating and unary transform adaptors inherit the wrapped accessor's offset
+type. Multi-operand transform accessors keep an offset type for each operand.
 
 The iteration plan computes in `std::ptrdiff_t` and normalizes negative
 strides. A diagonal can borrow values in reverse order through
@@ -398,9 +396,8 @@ conformance claims (rule 3).
    `mdspan()`, `mdspec` mapping types, storage policies and the CUDA accessors
    produce Uni20 types, and acquisition resolves an `mdspec` to a
    `uni20::mdspan`. The CUDA pointer accessors declare `std::ptrdiff_t` offsets.
-   Replace `span_offset_t` with the view's or accessor's nested type. Where
-   zip composes mappings, use each component mapping's result type. Remove
-   both the alias and its backing `span_offset_type` trait.
+   Use the view's or accessor's nested offset type. Where zip composes
+   mappings, use each component mapping's result type.
    The strided concepts require `stride()` at every rank. The layout comparisons
    use the Uni20 layouts. Tensors allocate the storage span at a zero base
    offset. Descriptor acquisition validates the span at its actual position
