@@ -55,6 +55,7 @@ TEST(DiagonalMdspecTest, PresentsStridedComponentsAsAFullLogicalTensor)
   static_assert(DiagonalMdspecLike<decltype(const_diagonal)>);
   static_assert(!MutableDiagonalMdspecLike<decltype(const_diagonal)>);
   auto const_components = diagonal_components(const_diagonal);
+  static_assert(std::same_as<decltype(const_components)::layout_type, layout_signed_stride>);
   static_assert(!MutableMdspecLike<decltype(const_components)>);
   EXPECT_DOUBLE_EQ(const_components[1], 25.0);
 }
@@ -84,13 +85,41 @@ TEST(DiagonalMdspecTest, PreservesPhysicalStridesWithNarrowLogicalIndices)
   EXPECT_EQ((diagonal[1, 1]), 23);
   auto recovered = diagonal_components(diagonal);
   static_assert(std::same_as<decltype(recovered)::index_type, int>);
+  static_assert(std::same_as<decltype(recovered)::layout_type, layout_stride>);
   auto const_components = diagonal_components(make_const_mdspan(diagonal));
   static_assert(std::same_as<decltype(const_components)::index_type, int>);
+  static_assert(std::same_as<decltype(const_components)::layout_type, layout_stride>);
   EXPECT_EQ(const_components[1], 23);
   EXPECT_EQ(recovered.stride(0), 256);
   recovered[1] = 37;
   EXPECT_EQ(storage[256], 37);
   EXPECT_EQ(storage[0], 11);
+}
+
+struct ShiftedSignedComponentLayout
+{
+    template <class Extents> struct mapping : layout_signed_stride::mapping<Extents>
+    {
+        using base_type = layout_signed_stride::mapping<Extents>;
+        using layout_type = ShiftedSignedComponentLayout;
+
+        constexpr mapping() noexcept : base_type(Extents{}, {-2}) {}
+        constexpr int operator()(int i) const noexcept { return 1 + base_type::operator()(i); }
+        constexpr std::size_t base_offset() const noexcept { return 1; }
+    };
+};
+
+TEST(DiagonalMdspecTest, BorrowsComponentsFromTheirMappedOrigin)
+{
+  using shape = uni20::extents<int, 2>;
+  using mapping = ShiftedSignedComponentLayout::mapping<shape>;
+  std::array<int, 4> storage{5, 10, 20, 30};
+  auto components = uni20::mdspan{storage.data() + 2, mapping{}};
+  auto diagonal = make_diagonal_mdspan(uni20::extents<int, 2, 2>{}, components);
+  auto recovered = diagonal_components(diagonal);
+  EXPECT_EQ(recovered.data_handle(), storage.data() + 3);
+  EXPECT_EQ((diagonal[0, 0]), 30);
+  EXPECT_EQ((diagonal[1, 1]), 10);
 }
 
 TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)

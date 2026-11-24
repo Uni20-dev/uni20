@@ -39,9 +39,9 @@ their own offset types. Const, conjugating and transform adaptors inherit the
 wrapped accessor's offset type.
 
 The iteration plan computes in `std::ptrdiff_t` and normalizes negative
-strides. Diagonal component views with signed indices use
-`layout_signed_stride` and the signed default accessor, so a diagonal can
-borrow values in reverse order.
+strides. A diagonal can borrow values in reverse order through
+`layout_signed_stride` and the signed default accessor. Forward component
+views keep `layout_stride`.
 
 **Control.** Owning the types lets every mapping and mdspan member be
 `UNI20_HOST_DEVICE`, report precondition failures through Uni20 diagnostics,
@@ -133,8 +133,10 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
 3. **Single-buffer mappings with element offsets describe their storage span.**
    `required_span_size()` is the number of elements in that span, including
    padding. `base_offset()` is the displacement from the start of that span to
-   the data handle. Both are zero for an empty mapping. The built-in
-   nonnegative layouts declare `is_base_offset_always_zero()`. A legacy mapping
+   the data handle. A native affine mapping returns zero for the all-zero
+   coordinate, so the handle addresses the logical origin. Both storage queries
+   return zero for an empty mapping. The built-in nonnegative layouts declare
+   `is_base_offset_always_zero()`. A legacy mapping
    exposing only `required_span_size()` describes a span starting at its handle.
    The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
@@ -151,14 +153,17 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
    diagonal is mapping offset 8 but component 2, and validating its buffer is
    left to the accessor.
-4. **Strided means strided.** `StridedMdspanLike` and `StridedMdspecLike` require
-   `is_always_strided()` and a declared `stride(axis)`, with no rank-zero escape.
+4. **Affine layouts expose a stride per axis.** `AffineMdspanLike` and
+   `AffineMdspecLike` require `is_always_strided()` and a declared
+   `stride(axis)` at every rank.
    Explicit import of a standard rank-zero mapping preserves the scalar shape
    without querying a stride.
 5. **Signed strides have a dedicated layout.** `AffineMdspanLike` and
    `AffineMdspecLike` admit `layout_signed_stride`.
-   `StridedMdspanLike` and `StridedMdspecLike` require a statically zero base
-   offset. An `mdspan` or `mdspec` with
+   `StridedMdspanLike` and `StridedMdspecLike` additionally require a statically
+   zero base offset. For native affine layouts, that describes nonnegative
+   element strides on the varying axes. Both layout families can have a signed
+   `index_type`. An `mdspan` or `mdspec` with
    `layout_signed_stride` requires a signed
    `index_type` and a signed `offset_type`. An accessor taking `size_t`
    therefore cannot be paired with this layout. Uni20's `index_type` is already
@@ -421,7 +426,8 @@ conformance claims (rule 3).
    Migrate tests that need negative strides together with the signed layout.
 4. **Signed strides.** Add `layout_signed_stride` and `reverse`. Host copy
    and elementwise transforms use the affine iteration plan. Diagonal component
-   views and negative-stride test helpers use the native layout. Zip with a
+   views use the source component layout's zero-base-offset guarantee to
+   choose between the nonnegative and signed layouts. Zip with a
    signed operand uses `GeneralZipLayout` to preserve each operand's mapping.
    The tests cover empty mappings with mixed strides and signed offsets through
    unary transform and zip accessors.

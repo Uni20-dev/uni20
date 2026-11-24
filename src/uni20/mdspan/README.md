@@ -10,7 +10,7 @@ supplies extents and supports interop.
 - `mdspan.hpp`: native borrowed view and checked import from the standard
   and Kokkos mdspans. It also includes the configured Kokkos implementation.
 - `layouts.hpp`: native contiguous and nonnegative strided mappings.
-- `layout_signed_stride.hpp`: affine mappings with signed strides and reachable offset bounds.
+- `layout_signed_stride.hpp`: affine mappings with signed strides and storage span queries.
 - `default_accessor.hpp`: pointer access with signed element offsets.
 - `offset_range.hpp`: inclusive physical offset bounds for iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
@@ -61,16 +61,15 @@ supplies extents and supports interop.
   metadata.
 - `AffineMdspanLike` and `AffineMdspecLike` require an always-strided mapping
   and stride observers. `StridedMdspanLike` and `StridedMdspecLike` additionally
-  require a statically zero base offset for consumers that need nonnegative
-  strides. The logical origin of `layout_signed_stride` may sit inside the
-  storage span, at `base_offset()` elements from its start.
+  require a statically zero base offset. A native affine mapping addresses
+  the logical origin at offset zero relative to its handle. That handle may
+  sit inside the storage span, at `base_offset()` elements from its start.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for
-  specialized kernels. The component view preserves its signed stride, so a
-  diagonal borrowed from another tensor need not be contiguous or forward
-  ordered. The initial `make_diagonal_mdspan` factory accepts a default-accessor
-  component mdspan and therefore produces a host-domain accessor. A future CUDA
+  specialized kernels. The component view preserves its stride and its
+  layout's zero-base-offset guarantee. The `make_diagonal_mdspan` factory
+  accepts a default-accessor component mdspan and produces a host-domain accessor. A future CUDA
   form must retain and propagate the CUDA component accessor rather than
   reclassifying a raw pointer-shaped handle.
 - An extent-one axis has no observable stride. Stride coalescing treats it as

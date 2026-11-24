@@ -403,7 +403,7 @@ concept MutableMdspecLike =
     MdspecLike<S> && (!std::is_const_v<typename detail::span_type_t<S>::element_type>) &&
     (MutableMdspanLike<S> || detail::AccessorReferenceAssignable<typename detail::span_type_t<S>::accessor_type>);
 
-/// \brief An mdspec-like type that exposes strides, including signed strides.
+/// \brief An affine mdspec-like type with a stride observer for each axis.
 template <class S>
 concept AffineMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_strided() &&
                            requires(detail::span_type_t<S> const& span, std::size_t axis) {
@@ -413,16 +413,16 @@ concept AffineMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_st
                              } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
                            };
 
-/// \brief An immediate view that exposes strides, including signed strides.
+/// \brief An immediate affine view with a stride observer for each axis.
 template <class S>
 concept AffineMdspanLike = MdspanLike<S> && AffineMdspecLike<S>;
 
-/// \brief A strided descriptor with a layout that supports nonnegative strides.
+/// \brief An affine descriptor whose mapping has a statically zero base offset.
 template <class S>
 concept StridedMdspecLike =
     AffineMdspecLike<S> && detail::ZeroBaseOffsetMapping<typename detail::span_type_t<S>::mapping_type>;
 
-/// \brief An immediate view with a layout that supports nonnegative strides.
+/// \brief An immediate affine view whose mapping has a statically zero base offset.
 template <class S>
 concept StridedMdspanLike = MdspanLike<S> && StridedMdspecLike<S>;
 

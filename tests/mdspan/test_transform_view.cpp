@@ -141,6 +141,9 @@ TEST(TransformView1D, ForwardAndReversedInputsPreserveSignedOffsets)
   }
 
   EXPECT_EQ(Z.mapping()(3), (std::tuple<index_t, index_t>{3, -3}));
+  EXPECT_FALSE(Z.is_strided());
+  EXPECT_FALSE(Z.is_exhaustive());
+  EXPECT_TRUE(Z.is_unique());
 }
 
 //----------------------------------------------------------------------
