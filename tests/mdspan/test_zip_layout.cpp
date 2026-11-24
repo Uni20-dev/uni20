@@ -73,8 +73,8 @@ TEST(StridedZipLayoutMapping1D, MergePrependAppend)
 
 TEST(GeneralZipLayoutMapping1D, DefaultStrides)
 {
-  using L1 = stdex::layout_stride;
-  using L2 = stdex::layout_stride;
+  using L1 = uni20::layout_stride;
+  using L2 = uni20::layout_stride;
   using extents_t = stdex::dextents<index_t, 1>;
   using Layout = GeneralZipLayout<L1::mapping<extents_t>, L2::mapping<extents_t>>;
 
@@ -127,11 +127,11 @@ TEST(ZipLayoutMapping, HasNoRequiredSpanSize)
 {
   using extents_t = stdex::dextents<index_t, 1>;
   using strided = StridedZipLayout<2>::mapping<extents_t>;
-  using child = stdex::layout_stride::mapping<extents_t>;
+  using child = uni20::layout_stride::mapping<extents_t>;
   using general = GeneralZipLayout<child, child>::mapping<extents_t>;
 
   // One offset per span has no single span size, so neither layout claims one.
   static_assert(!has_required_span_size<strided>);
   static_assert(!has_required_span_size<general>);
-  static_assert(has_required_span_size<stdex::layout_stride::mapping<extents_t>>);
+  static_assert(has_required_span_size<uni20::layout_stride::mapping<extents_t>>);
 }

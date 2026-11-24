@@ -47,12 +47,12 @@ TEST(TensorTransformTest, CpuReferenceDispatchSupportsVariadicMixedStridedMappin
   std::vector<double> rhs_storage(24, 0.0);
   std::vector<double> bias_storage(12, 0.0);
 
-  stdex::mdspan<double, extents_type, stdex::layout_right> output(output_storage.data(), 3, 4);
-  stdex::mdspan<double, extents_type, stdex::layout_left> lhs(lhs_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_right> output(output_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_left> lhs(lhs_storage.data(), 3, 4);
   auto rhs_mapping =
-      stdex::layout_stride::mapping<extents_type>(extents_type{3, 4}, std::array<uni20::index_type, 2>{8, 2});
-  stdex::mdspan<double, extents_type, stdex::layout_stride> rhs(rhs_storage.data(), rhs_mapping);
-  stdex::mdspan<double, extents_type, stdex::layout_right> bias(bias_storage.data(), 3, 4);
+      uni20::layout_stride::mapping<extents_type>(extents_type{3, 4}, std::array<uni20::index_type, 2>{8, 2});
+  uni20::mdspan<double, extents_type, uni20::layout_stride> rhs(rhs_storage.data(), rhs_mapping);
+  uni20::mdspan<double, extents_type, uni20::layout_right> bias(bias_storage.data(), 3, 4);
 
   for (uni20::index_type row = 0; row < 3; ++row)
     for (uni20::index_type column = 0; column < 4; ++column)

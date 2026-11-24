@@ -22,35 +22,10 @@
 namespace uni20
 {
 
-/// \brief Trait to pull an AccessorPolicy’s offset_type if present, or fall back to std::size_t otherwise.
-/// \note This is an extension to the standard mdspan AccessorPolicy.
-/// \ingroup mdspan_ext
-template <typename AP, typename = void> struct span_offset_type
-{
-    /// \brief The resulting offset type (std::size_t by default).
-    /// \ingroup mdspan_ext
-    using type = std::size_t;
-};
-
-/// \brief Partial specialization that uses an accessor policy’s declared offset_type.
-/// \tparam AP The accessor policy that provides offset_type.
-/// \ingroup mdspan_ext
-template <typename AP> struct span_offset_type<AP, std::void_t<typename AP::offset_type>>
-{
-    /// \brief The resulting offset type defined by the accessor policy.
-    /// \ingroup mdspan_ext
-    using type = typename AP::offset_type;
-};
-
-/// \brief Convenience alias for accessor_offset_type<AP>::type.
-/// \tparam AP The accessor policy to inspect.
-/// \ingroup mdspan_ext
-template <typename AP> using span_offset_t = typename span_offset_type<AP>::type;
-
 /// \concept AccessorPolicy
-/// \brief A model of the C++ mdspan AccessorPolicy named requirement.
+/// \brief An accessor policy for a Uni20 mdspan or mdspec.
 /// \details Requirements for \c AP:
-///          - nested types: element_type, data_handle_type, offset_policy, reference.
+///          - nested types: element_type, data_handle_type, offset_type, offset_policy, reference.
 ///          - \c offset(dh, off) returns a type convertible to
 ///            \c offset_policy::data_handle_type.
 ///          - \c access(dh, off) returns exactly \c AP::reference.
@@ -62,9 +37,10 @@ template <class AP>
 concept AccessorPolicy = requires {
   typename AP::element_type;
   typename AP::data_handle_type;
+  typename AP::offset_type;
   typename AP::offset_policy;
   typename AP::reference;
-} && requires(AP a, typename AP::data_handle_type dh, span_offset_t<AP> off) {
+} && requires(AP a, typename AP::data_handle_type dh, typename AP::offset_type off) {
   { a.offset(dh, off) } -> std::convertible_to<typename AP::offset_policy::data_handle_type>;
   { a.access(dh, off) } -> std::same_as<typename AP::reference>;
 };
@@ -84,10 +60,7 @@ struct cuda_access_domain
 /// \tparam Domain Execution-domain tag.
 template <class Accessor, class Domain> inline constexpr bool enable_accessor_in_domain = false;
 
-/// \brief Standard mdspan accessors are directly host-accessible.
-template <class ElementType>
-inline constexpr bool enable_accessor_in_domain<stdex::default_accessor<ElementType>, host_access_domain> = true;
-
+/// \brief The Uni20 default accessor is directly host-accessible.
 template <class ElementType>
 inline constexpr bool enable_accessor_in_domain<default_accessor<ElementType>, host_access_domain> = true;
 
@@ -127,7 +100,7 @@ class const_accessor_adaptor {
     using reference = element_type&;
     using data_handle_type = typename Accessor::data_handle_type;
     using offset_policy = const_accessor_adaptor;
-    using offset_type = span_offset_t<Accessor>;
+    using offset_type = typename Accessor::offset_type;
 
     UNI20_HOST_DEVICE constexpr const_accessor_adaptor(Accessor const& to_be_wrapped) : wrapped_{to_be_wrapped} {}
 
@@ -154,40 +127,23 @@ inline constexpr bool enable_accessor_in_domain<const_accessor_adaptor<Accessor>
 // const_accessor overloads: build a read-only accessor from a mutable one.
 //
 
-/// \brief Wrap a default_accessor<T> into a const_default_accessor<T>.
-/// \tparam T Element type accessed by the policy.
-/// \param accessor_policy The accessor policy to upgrade.
-/// \return A default accessor for \c T const.
-/// \ingroup mdspan_ext
-template <typename T>
-constexpr stdex::default_accessor<T const> const_accessor(stdex::default_accessor<T> const& accessor_policy)
-{
-  (void)accessor_policy;
-  return stdex::default_accessor<T const>();
-}
-
+/// \brief Adapt the Uni20 default accessor to a read-only Uni20 accessor.
 template <typename T>
 UNI20_HOST_DEVICE constexpr default_accessor<T const> const_accessor(default_accessor<T> accessor_policy)
 {
   return accessor_policy;
 }
 
-/// \brief Trait that recognizes the Uni20 and Kokkos default accessors.
+/// \brief Trait that recognizes the Uni20 default accessor.
 /// \tparam Accessor Candidate accessor policy.
 /// \ingroup mdspan_ext
 template <class Accessor> struct is_default_accessor : std::false_type
 {};
 
-/// \brief Specialization for `stdex::default_accessor<T>`.
-/// \tparam ElementType Element type of the default accessor.
-/// \ingroup mdspan_ext
-template <class ElementType> struct is_default_accessor<stdex::default_accessor<ElementType>> : std::true_type
-{};
-
 template <class ElementType> struct is_default_accessor<default_accessor<ElementType>> : std::true_type
 {};
 
-/// \brief True for the Uni20 or Kokkos default accessor.
+/// \brief True for the Uni20 default accessor.
 /// \tparam Accessor Candidate accessor policy.
 /// \ingroup mdspan_ext
 template <class Accessor>
@@ -256,6 +212,7 @@ concept SpanMetadata =
       typename span_type_t<S>::layout_type;
       typename span_type_t<S>::mapping_type;
       typename span_type_t<S>::accessor_type;
+      typename span_type_t<S>::offset_type;
       typename span_type_t<S>::data_handle_type;
       typename span_type_t<S>::reference;
       typename std::integral_constant<std::size_t, span_type_t<S>::rank()>;
@@ -269,6 +226,7 @@ concept SpanMetadata =
     std::same_as<typename span_type_t<S>::mapping_type,
                  typename span_type_t<S>::layout_type::template mapping<typename span_type_t<S>::extents_type>> &&
     std::same_as<typename span_type_t<S>::data_handle_type, typename span_type_t<S>::accessor_type::data_handle_type> &&
+    std::same_as<typename span_type_t<S>::offset_type, typename span_type_t<S>::accessor_type::offset_type> &&
     std::same_as<typename span_type_t<S>::reference, typename span_type_t<S>::accessor_type::reference> &&
     (span_type_t<S>::rank() == span_type_t<S>::extents_type::rank());
 
@@ -290,7 +248,8 @@ concept MdspecDescriptor = SpanMetadata<S> && requires(span_type_t<S> const& spa
 /// \details In addition to the standard mdspan descriptor aliases, a model
 ///          exposes its static rank, extents, mapping, accessor, data handle,
 ///          and an `operator[]` accepting one index per rank whose result is
-///          exactly `reference`.
+///          exactly `reference`. Its `offset_type` agrees with the accessor.
+///          Import a standard or Kokkos view with `uni20::mdspan{view}`.
 /// \tparam S The type being tested for MdspanLike requirements.
 /// \ingroup mdspan_ext
 template <class S>
@@ -344,7 +303,7 @@ concept MdspanIndexPack = MdspanLike<Span> && (sizeof...(Index) == span_type_t<S
 
 template <class Accessor>
 concept AccessorReferenceAssignable =
-    requires(Accessor const& accessor, typename Accessor::data_handle_type handle, span_offset_t<Accessor> offset,
+    requires(Accessor const& accessor, typename Accessor::data_handle_type handle, typename Accessor::offset_type offset,
              std::remove_const_t<typename Accessor::element_type> value) { accessor.access(handle, offset) = value; };
 
 } // namespace detail
@@ -380,7 +339,7 @@ template <MdspanLike Span> [[nodiscard]] constexpr auto make_const_mdspan(Span c
   auto accessor = const_accessor(span.accessor());
   using accessor_type = decltype(accessor);
   using span_type = std::remove_cvref_t<Span>;
-  using const_mdspan_type = stdex::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
+  using const_mdspan_type = uni20::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
                                           typename span_type::layout_type, accessor_type>;
   return const_mdspan_type{span.data_handle(), span.mapping(), std::move(accessor)};
 }
@@ -500,7 +459,7 @@ template <class MDS, std::size_t Rank>
 concept MutableRankedMdspanLike =
     MutableMdspanLike<std::remove_cvref_t<MDS>> && (std::remove_cvref_t<MDS>::rank() == Rank);
 
-/// \brief An mdspan-like type whose accessor is `stdex::default_accessor`.
+/// \brief An mdspan-like type with a default accessor.
 /// \tparam MDS The mdspan-like type under test.
 /// \ingroup mdspan_ext
 template <class MDS>

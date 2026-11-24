@@ -18,6 +18,7 @@
 #include <uni20/mdspan/iteration_plan.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
 #include <uni20/storage/cuda_storage.hpp>
+#include <uni20/tensor/cuda_access.hpp>
 
 #include <cuda_runtime_api.h>
 
@@ -49,18 +50,6 @@ concept RawCudaReductionMdspec =
     std::same_as<typename std::remove_cvref_t<Mdspec>::accessor_type, uni20::cuda::CudaPointerAccessor<Scalar const>>;
 
 template <class Scalar> inline constexpr std::size_t reduction_components = uni20::is_complex_v<Scalar> ? 2 : 1;
-
-/// \brief Check that every element a strided operand reaches lies inside its buffer.
-template <class Mdspec> void require_reduction_range(Mdspec const& span)
-{
-  auto const& descriptor = span.data_descriptor();
-  auto const required = span.mapping().required_span_size();
-  CHECK(std::cmp_greater_equal(required, 0), required);
-  auto const size = static_cast<std::size_t>(required);
-  auto const offset = descriptor.element_offset();
-  auto const buffer_size = descriptor.buffer().size();
-  CHECK(offset <= buffer_size && size <= buffer_size - offset, offset, size, buffer_size);
-}
 
 /// \brief Number of block partials one launch over a lowered plan's kernel payload writes.
 template <std::size_t OperandCount>
@@ -123,7 +112,7 @@ template <class Partial, class Scalar, class InputMdspec, class EnqueueSlice, cl
 {
   static_assert(RawCudaReductionMdspec<InputMdspec, Scalar>);
   using real_type = uni20::make_real_t<Scalar>;
-  require_reduction_range(input);
+  uni20::detail::validate_cuda_descriptor_range(input);
   auto const& descriptor = input.data_descriptor();
   auto& resources = descriptor.buffer().resources();
   uni20::cuda::ScopedDevice guard(stream.device());
@@ -244,8 +233,8 @@ reference_inner_product_of_plan(LoweredStridedElementwisePlan<2, reduction_maxim
   using real_type = uni20::make_real_t<Scalar>;
   auto const& lhs_descriptor = lhs.data_descriptor();
   auto const& rhs_descriptor = rhs.data_descriptor();
-  require_reduction_range(lhs);
-  require_reduction_range(rhs);
+  uni20::detail::validate_cuda_descriptor_range(lhs);
+  uni20::detail::validate_cuda_descriptor_range(rhs);
 
   auto& resources = lhs_descriptor.buffer().resources();
   uni20::cuda::ScopedDevice guard(stream.device());

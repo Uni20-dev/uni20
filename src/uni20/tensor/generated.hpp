@@ -86,7 +86,7 @@ template <Scalar ElementType, class Extents, class Generator> class GeneratedTen
     using layout_type = GeneratedLayout;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = generated_accessor<element_type, extents_type, generator_type>;
-    using mdspan_type = stdex::mdspan<element_type const, extents_type, layout_type, accessor_type>;
+    using mdspan_type = uni20::mdspan<element_type const, extents_type, layout_type, accessor_type>;
 
     /// \brief Construct from extents and compact generator state.
     constexpr GeneratedTensor(extents_type extents, generator_type generator)

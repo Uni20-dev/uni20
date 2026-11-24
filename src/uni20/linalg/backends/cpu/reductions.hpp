@@ -42,7 +42,7 @@ template <class Output> consteval bool reduction_output_is_column_major()
 {
   using output_type = std::remove_cvref_t<Output>;
   if constexpr (uni20::MdspanLike<output_type>)
-    return std::same_as<typename output_type::layout_type, stdex::layout_left>;
+    return std::same_as<typename output_type::layout_type, uni20::layout_left>;
   else
     return false;
 }
@@ -160,7 +160,7 @@ void reference_reduce_axes(Output& output, ReductionAxes<InputRank, ReducedRank>
   std::array<typename first_type::index_type, InputRank - ReducedRank> output_index{};
   std::array<typename first_type::index_type, InputRank> input_index{};
   constexpr bool output_column_major = reduction_output_is_column_major<Output>();
-  constexpr bool input_column_major = std::same_as<typename first_type::layout_type, stdex::layout_left>;
+  constexpr bool input_column_major = std::same_as<typename first_type::layout_type, uni20::layout_left>;
   auto initialize_operation = std::forward<Initialize>(initialize);
   auto accumulate_operation = std::forward<Accumulate>(accumulate);
   auto finalize_operation = std::forward<Finalize>(finalize);

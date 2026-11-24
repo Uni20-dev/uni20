@@ -199,7 +199,7 @@ template <class Mdspec> consteval bool can_offset_contraction_mdspec()
     using offset_accessor_type = typename accessor_type::offset_policy;
     return std::same_as<typename offset_accessor_type::element_type, typename span_type::element_type> &&
            std::constructible_from<offset_accessor_type, accessor_type const&>&&
-             requires(span_type & span, span_offset_t<accessor_type> offset)
+             requires(span_type & span, typename span_type::offset_type offset)
     {
       {span.accessor().offset(span.data_handle(), offset)}
           ->std::convertible_to<typename offset_accessor_type::data_handle_type>;
@@ -297,8 +297,8 @@ template <
 /// \brief Rank-two `layout_stride` mdspan type retaining a resolved operand accessor.
 template <uni20::MdspanLike Mdspan>
 using contraction_matrix_mdspan_t =
-    stdex::mdspan<typename std::remove_cvref_t<Mdspan>::element_type,
-                  stdex::dextents<typename std::remove_cvref_t<Mdspan>::index_type, 2>, stdex::layout_stride,
+    uni20::mdspan<typename std::remove_cvref_t<Mdspan>::element_type,
+                  stdex::dextents<typename std::remove_cvref_t<Mdspan>::index_type, 2>, uni20::layout_stride,
                   typename std::remove_cvref_t<Mdspan>::accessor_type>;
 
 namespace detail::contraction_strides
@@ -315,7 +315,7 @@ template <class Mdspec> struct ContractionMatrixMdspec<Mdspec, false>
 {
     using span_type = std::remove_cvref_t<Mdspec>;
     using type = uni20::mdspec<typename span_type::element_type, stdex::dextents<typename span_type::index_type, 2>,
-                               stdex::layout_stride, typename span_type::accessor_type,
+                               uni20::layout_stride, typename span_type::accessor_type,
                                typename span_type::data_descriptor_type>;
 };
 
@@ -325,8 +325,8 @@ template <class Mdspec> struct OffsetContractionMatrixMdspec<Mdspec, true>
 {
     using span_type = std::remove_cvref_t<Mdspec>;
     using accessor_type = typename span_type::accessor_type::offset_policy;
-    using type = stdex::mdspan<typename accessor_type::element_type, stdex::dextents<typename span_type::index_type, 2>,
-                               stdex::layout_stride, accessor_type>;
+    using type = uni20::mdspan<typename accessor_type::element_type, stdex::dextents<typename span_type::index_type, 2>,
+                               uni20::layout_stride, accessor_type>;
 };
 
 template <class Mdspec> struct OffsetContractionMatrixMdspec<Mdspec, false>
@@ -401,7 +401,7 @@ template <uni20::MdspecLike Mdspec>
   {
     using source_accessor_type = typename std::remove_cvref_t<Mdspec>::accessor_type;
     using offset_accessor_type = typename source_accessor_type::offset_policy;
-    auto const offset = static_cast<span_offset_t<source_accessor_type>>(element_offset);
+    auto const offset = static_cast<typename source_accessor_type::offset_type>(element_offset);
     return result_type{span.accessor().offset(span.data_handle(), offset), mapping,
                        offset_accessor_type{span.accessor()}};
   }

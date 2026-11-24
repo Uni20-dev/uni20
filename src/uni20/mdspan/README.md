@@ -1,8 +1,9 @@
 # src/uni20/mdspan
 
 This directory contains Uni20's native views and layouts and the structural
-utilities used by dense kernels and layout-aware algorithms. Existing tensor
-producers use the Kokkos reference mdspan implementation through `stdex::`.
+utilities used by dense kernels and layout-aware algorithms. Tensor producers
+and CUDA acquisition use native mdspan types. The Kokkos implementation
+supplies extents and supports interop.
 
 ## Contents
 
@@ -38,9 +39,11 @@ producers use the Kokkos reference mdspan implementation through `stdex::`.
 - This module should describe structure and layout, not ownership or backend
   dispatch policy. CPU execution of iteration plans belongs to the linalg CPU
   backend.
-- `MdspanLike` is the complete readable mdspan protocol used by leaf kernels: its
-  descriptor aliases must agree, it exposes rank and extent observers, and its
-  rank-dimensional `operator[]` returns the declared `reference` type.
+- `MdspanLike` is the readable view protocol used by leaf kernels. Its
+  descriptor aliases agree with the accessor, including `offset_type`. It exposes
+  rank and extent observers, and its rank-dimensional `operator[]` returns the
+  declared `reference` type. Import standard or Kokkos views with
+  `uni20::mdspan{view}`.
   `MutableMdspanLike` additionally proves assignment through that indexed result.
 - `MdspecLike` is the broader structural protocol for mdspan metadata whose
   data handle is either immediately present or available through a data
@@ -73,7 +76,7 @@ producers use the Kokkos reference mdspan implementation through `stdex::`.
   non-singleton axis's stride. Generic iteration plans remove singleton axes
   before coalescing.
 - A pointer `data_handle_type` is not enough to prove direct memory semantics.
-  Backends that bypass `access(...)` must check for `stdex::default_accessor`
+  Backends that bypass `access(...)` must check for the default accessor
   or an explicitly lowerable accessor such as Uni20's `conjugated_accessor`.
 - Read-only accessor policies declare const `element_type`, including calculated
   accessors that return values. Ordinary `MutableMdspanLike` accessors also prove

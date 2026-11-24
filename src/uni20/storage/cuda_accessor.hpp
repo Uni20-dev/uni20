@@ -30,7 +30,7 @@ class CudaComplexReference {
     using logical_type = uni20::complex<Real>;
     using execution_type = ::cuda::std::complex<Real>;
 
-    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::size_t offset) noexcept
+    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::ptrdiff_t offset) noexcept
         : components_(reinterpret_cast<Real*>(storage) + 2 * offset)
     {}
 
@@ -82,7 +82,7 @@ struct CudaPointerAccessor
     using data_handle_type = element_type*;
     using reference = element_type&;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -105,7 +105,7 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = CudaComplexReference<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -128,7 +128,7 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -173,7 +173,7 @@ struct CudaConjugatingPointerAccessor
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaConjugatingPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept

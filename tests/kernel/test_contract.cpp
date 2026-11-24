@@ -32,8 +32,8 @@ static void naive_matmul_2d(size_t M, size_t K, size_t N, double alpha, double c
 TEST(ContractKernelRankZero, ScalarOuterProduct)
 {
   using scalar_extents = stdex::extents<ptrdiff_t>;
-  using scalar_mapping = stdex::layout_stride::mapping<scalar_extents>;
-  using scalar_mdspan = stdex::mdspan<double, scalar_extents, stdex::layout_stride>;
+  using scalar_mapping = uni20::layout_stride::mapping<scalar_extents>;
+  using scalar_mdspan = uni20::mdspan<double, scalar_extents, uni20::layout_stride>;
 
   double a = 2.0;
   double b = 3.0;
@@ -115,7 +115,7 @@ TEST(ContractKernel2D, ReversedA)
   // build A as reversed 2×3
   using stdex2 = stdex::dextents<ptrdiff_t, 2>;
   auto mapA = make_mapping<2>(std::array{M, K}, std::array{-static_cast<ptrdiff_t>(K), -ptrdiff_t(1)});
-  stdex::mdspan<double, stdex2, stdex::layout_stride> A(av.data() + av.size() - 1, mapA);
+  uni20::mdspan<double, stdex2, uni20::layout_stride> A(av.data() + av.size() - 1, mapA);
 
   auto B = make_mdspan_2d(bv, K, N);
   auto C = make_mdspan_2d(cv, M, N);
@@ -150,8 +150,8 @@ TEST(ContractKernel3D, DoubleContraction)
   auto mapB = make_mapping<3>(std::array{J, Kdim, L},
                               std::array{static_cast<ptrdiff_t>(Kdim * L), static_cast<ptrdiff_t>(L), ptrdiff_t(1)});
   using stdex3 = stdex::dextents<ptrdiff_t, 3>;
-  stdex::mdspan<double, stdex3, stdex::layout_stride> A(va.data(), mapA);
-  stdex::mdspan<double, stdex3, stdex::layout_stride> B(vb.data(), mapB);
+  uni20::mdspan<double, stdex3, uni20::layout_stride> A(va.data(), mapA);
+  uni20::mdspan<double, stdex3, uni20::layout_stride> B(vb.data(), mapB);
 
   auto C = make_mdspan_2d(vc, I, J);
   std::array<std::pair<size_t, size_t>, 2> Kdims{{{1, 1}, {2, 2}}};
@@ -230,8 +230,8 @@ TEST(ContractKernel3D, AlphaBeta)
 TEST(ContractKernel2x2, AllLayoutCombinations)
 {
   using extents2d = stdex::extents<size_t, 2, 2>;
-  using mdspan2d_row = stdex::mdspan<double, extents2d, stdex::layout_right>;
-  using mdspan2d_col = stdex::mdspan<double, extents2d, stdex::layout_left>;
+  using mdspan2d_row = uni20::mdspan<double, extents2d, uni20::layout_right>;
+  using mdspan2d_col = uni20::mdspan<double, extents2d, uni20::layout_left>;
 
   // Buffers for A
   double a_row_buf[4] = {1, 2, 3, 4}; // row-major

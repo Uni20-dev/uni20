@@ -117,7 +117,7 @@ TEST(TensorPrecision, RealViewsFollowParentDefaults)
   auto p = Precision::bits(256), q = Precision::bits(80);
   DenseMatrix<mpreal> a(2, 3, p);
   auto const& c = conj(a);
-  IndirectReshapedTensorView<DenseMatrix<mpreal>, stdex::layout_left, int> r(a, 6);
+  IndirectReshapedTensorView<DenseMatrix<mpreal>, uni20::layout_left, int> r(a, 6);
   auto flat = [&a] {
     auto transposed = permute<1, 0>(a);
     return reshape_view_right(transposed, 6);

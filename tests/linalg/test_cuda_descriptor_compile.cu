@@ -21,9 +21,9 @@ namespace
 
 using extents_type = stdex::dextents<uni20::index_type, 2>;
 using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-using left_mapping = stdex::layout_left::mapping<extents_type>;
-using right_mapping = stdex::layout_right::mapping<extents_type>;
-using stride_mapping = stdex::layout_stride::mapping<extents_type>;
+using left_mapping = uni20::layout_left::mapping<extents_type>;
+using right_mapping = uni20::layout_right::mapping<extents_type>;
+using stride_mapping = uni20::layout_stride::mapping<extents_type>;
 using generated_mapping = uni20::GeneratedLayout::mapping<extents_type>;
 using strided_zip_mapping = uni20::StridedZipLayout<2>::mapping<extents_type>;
 using general_zip_mapping = uni20::GeneralZipLayout<generated_mapping, left_mapping>::mapping<extents_type>;
@@ -65,11 +65,11 @@ struct DeviceGeneratedValue
 
 using cuda_input_accessor = uni20::cuda::CudaPointerAccessor<double const>;
 using cuda_output_accessor = uni20::cuda::CudaPointerAccessor<double>;
-using cuda_input_span = stdex::mdspan<double const, vector_extents_type, stdex::layout_left, cuda_input_accessor>;
+using cuda_input_span = uni20::mdspan<double const, vector_extents_type, uni20::layout_left, cuda_input_accessor>;
 using unary_transform_span = decltype(uni20::transform_view(DeviceScale{}, std::declval<cuda_input_span const&>()));
 using binary_transform_span = decltype(uni20::transform_view(DeviceAdd{}, std::declval<cuda_input_span const&>(),
                                                              std::declval<cuda_input_span const&>()));
-using complex_cuda_input_span = stdex::mdspan<uni20::cfloat const, vector_extents_type, stdex::layout_left,
+using complex_cuda_input_span = uni20::mdspan<uni20::cfloat const, vector_extents_type, uni20::layout_left,
                                               uni20::cuda::CudaPointerAccessor<uni20::cfloat const>>;
 using complex_transform_span =
     decltype(uni20::transform_view(DeviceComplexScale{}, std::declval<complex_cuda_input_span const&>()));
@@ -149,7 +149,7 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   output[0] = static_cast<double>(mapping(2, 1) + mapping.required_span_size() + mapping.stride(0));
 }
 
-using shape_descriptor = uni20::mdspec<double, extents_type, stdex::layout_left, cuda_output_accessor, int>;
+using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left, cuda_output_accessor, int>;
 
 [[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
 {

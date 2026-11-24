@@ -77,8 +77,9 @@ This motivates two important dense tensor primitives:
 The CPU axis-reduction backend preserves logical surviving-axis order and
 respects the source accessor. The CUDA full-reduction backend lowers the
 diagonal strides through the same iteration planner as other strided
-reductions. Diagonal and survivor strides can interleave, so the view uses
-a mapping that supports these strides directly.
+reductions. Diagonals of Uni20 contiguous and strided sources use
+`uni20::layout_stride`, including when diagonal and survivor strides
+interleave. Other unique strided sources use the diagonal mapping.
 
 ## Layout Optimization
 

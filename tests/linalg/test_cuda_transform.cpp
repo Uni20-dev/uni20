@@ -41,7 +41,7 @@ auto make_strided_mdspec(Tensor& tensor, std::size_t offset, extents_type extent
 {
   auto base = tensor.mdspec();
   using base_type = decltype(base);
-  using layout_type = stdex::layout_stride;
+  using layout_type = uni20::layout_stride;
   using mapping_type = layout_type::mapping<extents_type>;
   using result_type = uni20::mdspec<typename base_type::element_type, extents_type, layout_type,
                                     typename base_type::accessor_type, typename base_type::data_descriptor_type>;
@@ -57,12 +57,12 @@ auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
   using view_extents = stdex::dextents<uni20::index_type, Rank>;
-  using mapping_type = stdex::layout_stride::mapping<view_extents>;
+  using mapping_type = uni20::layout_stride::mapping<view_extents>;
   using mutable_type =
-      uni20::mdspec<typename mutable_base_type::element_type, view_extents, stdex::layout_stride,
+      uni20::mdspec<typename mutable_base_type::element_type, view_extents, uni20::layout_stride,
                     typename mutable_base_type::accessor_type, typename mutable_base_type::data_descriptor_type>;
   using const_type =
-      uni20::mdspec<typename const_base_type::element_type, view_extents, stdex::layout_stride,
+      uni20::mdspec<typename const_base_type::element_type, view_extents, uni20::layout_stride,
                     typename const_base_type::accessor_type, typename const_base_type::data_descriptor_type>;
   mapping_type const mapping(view_extents(extents), strides);
   return uni20::MdspecTensorView<mutable_type, const_type, uni20::CudaStorage>{
@@ -133,13 +133,13 @@ class CudaTransformTest : public ::testing::Test {
 
 TEST(CudaTransformPlanningTest, UnaryPlanDecodesDifferentPaddedStrides)
 {
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   extents_type const extents{2, 3};
   mapping_type output_mapping{extents, std::array<uni20::index_type, 2>{1, 3}};
   mapping_type input_mapping{extents, std::array<uni20::index_type, 2>{4, 1}};
   double value = 0.0;
-  stdex::mdspan output{&value, output_mapping};
-  stdex::mdspan input{&value, input_mapping};
+  uni20::mdspan output{&value, output_mapping};
+  uni20::mdspan input{&value, input_mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseUnaryPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_transform_plan<
@@ -159,8 +159,8 @@ TEST(CudaTransformPlanningTest, RankZeroUnaryPlanVisitsOneElement)
   using scalar_extents = stdex::extents<uni20::index_type>;
   double output_value = 0.0;
   double input_value = 1.0;
-  stdex::mdspan<double, scalar_extents> output{&output_value};
-  stdex::mdspan<double const, scalar_extents> input{&input_value};
+  uni20::mdspan<double, scalar_extents> output{&output_value};
+  uni20::mdspan<double const, scalar_extents> input{&input_value};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseUnaryPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_transform_plan<
@@ -177,8 +177,8 @@ TEST(CudaTransformPlanningTest, DimensionsBeyondTheKernelRankBecomeHostLoops)
   extents_type const extents{2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
   double value = 0.0;
   // Column-major output from a row-major input: no two axes merge.
-  stdex::mdspan<double, extents_type, stdex::layout_left> output{&value, extents};
-  stdex::mdspan<double const, extents_type, stdex::layout_right> input{&value, extents};
+  uni20::mdspan<double, extents_type, uni20::layout_left> output{&value, extents};
+  uni20::mdspan<double const, extents_type, uni20::layout_right> input{&value, extents};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseUnaryPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_transform_plan<
@@ -209,15 +209,15 @@ TEST(CudaTransformPlanningTest, DimensionsBeyondTheKernelRankBecomeHostLoops)
 
 TEST(CudaTransformPlanningTest, BinaryPlanDecodesThreeIndependentMappings)
 {
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   extents_type const extents{2, 3};
   mapping_type output_mapping{extents, std::array<uni20::index_type, 2>{1, 3}};
   mapping_type lhs_mapping{extents, std::array<uni20::index_type, 2>{4, 1}};
   mapping_type rhs_mapping{extents, std::array<uni20::index_type, 2>{5, 2}};
   double value = 0.0;
-  stdex::mdspan output{&value, output_mapping};
-  stdex::mdspan lhs{&value, lhs_mapping};
-  stdex::mdspan rhs{&value, rhs_mapping};
+  uni20::mdspan output{&value, output_mapping};
+  uni20::mdspan lhs{&value, lhs_mapping};
+  uni20::mdspan rhs{&value, rhs_mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseBinaryPlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_transform_plan<

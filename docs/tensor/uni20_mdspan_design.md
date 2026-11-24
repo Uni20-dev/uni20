@@ -1,7 +1,7 @@
 # Uni20 mdspan and mdspec Design
 
-Status: Native nonnegative layouts and immediate views are available.
-Tensor producers still use Kokkos types.
+Status: Tensor producers and CUDA acquisition use the native views and
+nonnegative layouts. The migration to native extents and signed strides is ongoing.
 
 Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
 `stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
@@ -31,23 +31,20 @@ tried that and is superseded by this design.
 `is_exhaustive` and `is_unique` assume nonnegative strides. Uni20 has the
 mechanism for signed offsets: an accessor may declare its own `offset_type`
 (`span_offset_t` in [`mdspan/concepts.hpp`](../../src/uni20/mdspan/concepts.hpp)),
-and Kokkos passes the mapping's signed result to `access` unchanged. No in-tree
-accessor uses it for a signed type yet. The CUDA pointer accessors,
-`diagonal_accessor` and `generated_accessor` declare `std::size_t`, host
-tensors use `stdex::default_accessor`, and the const, conjugating and transform
-adaptors inherit their wrapped accessor's type; only test accessors declare
-`std::ptrdiff_t`.
+and Kokkos passes the mapping's signed result to `access` unchanged. Before
+the migration, host tensors and CUDA pointer accessors took `std::size_t`.
+Both now use `std::ptrdiff_t`. The diagonal and generated accessors retain
+their own offset types. Const, conjugating and transform adaptors inherit the
+wrapped accessor's offset type.
 
-Negative strides already occur, without a consistent rule. The iteration plan
+Negative strides already occur. The iteration plan
 computes in `std::ptrdiff_t` and normalizes negative strides, and the diagonal
 component view keeps a signed stride, so a diagonal borrowed from another
 tensor may run backwards. That component view stores its stride in a
-`stdex::layout_stride` mapping and reads through `stdex::default_accessor`, so a
-negative offset reaches `access` as a wrapped `size_t` and works only because
-the pointer arithmetic wraps back. That violates `layout_stride`'s precondition
-and is undefined behavior by the letter of the language, and the span queries
-give wrong answers for such a mapping. This design replaces the wrapping with
-declared signed offsets.
+`stdex::layout_stride` mapping and reads through Uni20's signed default
+accessor. The mapping still violates the standard layout's precondition and
+its span queries are unsuitable for signed strides. The native signed layout
+will replace it.
 
 **Control.** Owning the types lets every mapping and mdspan member be
 `UNI20_HOST_DEVICE`, report precondition failures through Uni20 diagnostics,
@@ -64,7 +61,7 @@ C++26's `layout_left_padded` and `layout_right_padded` are deferred. They
 encode a unit inner stride in the layout type, which may be useful for BLAS
 and LAPACK.
 
-## Current Use
+## Use Before the Migration
 
 Counts are occurrences over `src`, `tests` and `examples` on `main`
 (`33439da6`), from this command for each name:
@@ -372,16 +369,17 @@ applies to it:
 - **Reachable range (rule 3).** Acquisition checks the descriptor's offset plus
   `mapping().reachable_range()` against the buffer for the mappings and
   accessors rule 3 covers. Even for an empty range, validate the origin before
-  forming a displaced handle. The one-past origin is valid for an empty view. Today
+  forming a displaced handle. The one-past origin is valid for an empty view.
   `validate_cuda_descriptor_range` in
   [`tensor/cuda_access.hpp`](../../src/uni20/tensor/cuda_access.hpp) checks
-  `element_offset()` plus `required_span_size()`.
+  the reachable range on native mappings and uses the span size for legacy
+  mappings.
 - **Empty mappings and representable products (rules 6 and 7)** come with the
   mapping and need nothing separate.
 - **Resolution.** Acquisition combines the leased handle, the mapping and the
   accessor for the acquired memory domain into a `uni20::mdspan`. For example,
-  CUDA's `resolve_cuda_mdspan` already lowers a conjugating accessor before
-  constructing the current `stdex::mdspan`.
+  CUDA's `resolve_cuda_mdspan` lowers a conjugating accessor before
+  constructing the view.
 - **Concepts.** `MdspecLike` accepts a native `MdspanLike` as its immediate
   case. Passing a foreign mdspan to a descriptor-taking API goes through the
   same explicit import described above. Native immediate and deferred operands

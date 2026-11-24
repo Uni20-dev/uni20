@@ -19,8 +19,7 @@ namespace uni20
 {
 namespace detail
 {
-// A diagonal of a unique strided mapping stays unique. Its strides can interleave,
-// so they need not meet layout_stride's stride-ordering precondition.
+// A diagonal of a custom unique strided mapping can fall outside the native layout's stride-ordering rule.
 struct DiagonalLayout
 {
     template <class Extents> class mapping {
@@ -57,6 +56,11 @@ struct DiagonalLayout
           for (rank_type axis = 0; axis < extents_type::rank(); ++axis)
             last_offset += (extents_.extent(axis) - 1) * strides_[axis];
           return last_offset + 1;
+        }
+
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range reachable_range() const noexcept
+        {
+          return nonnegative_offset_range(this->required_span_size());
         }
 
         template <class... Indices>
@@ -149,17 +153,22 @@ template <std::size_t... Axis, StridedMdspecLike Span> auto diagonal_mdspec(Span
     strides[out++] = !empty && extent > 1 ? stride(first) + stride(second) : index_type{1};
   }
 
-  DiagonalLayout::mapping<extents_type> const mapping{extents_type(extents), strides};
+  using source_layout = typename Span::layout_type;
+  using layout_type =
+      std::conditional_t<std::same_as<source_layout, layout_left> || std::same_as<source_layout, layout_right> ||
+                             std::same_as<source_layout, layout_stride>,
+                         layout_stride, DiagonalLayout>;
+  typename layout_type::template mapping<extents_type> const mapping{extents_type(extents), strides};
   if constexpr (MdspanLike<Span>)
   {
-    return stdex::mdspan<element_type, extents_type, DiagonalLayout, accessor_type>{source.data_handle(), mapping,
-                                                                                    source.accessor()};
+    return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{source.data_handle(), mapping,
+                                                                                 source.accessor()};
   }
   else
   {
     using descriptor_type = typename Span::data_descriptor_type;
-    return mdspec<element_type, extents_type, DiagonalLayout, accessor_type, descriptor_type>{
-        source.data_descriptor(), mapping, source.accessor()};
+    return mdspec<element_type, extents_type, layout_type, accessor_type, descriptor_type>{source.data_descriptor(),
+                                                                                           mapping, source.accessor()};
   }
 }
 } // namespace detail

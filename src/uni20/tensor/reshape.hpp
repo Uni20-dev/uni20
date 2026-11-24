@@ -32,7 +32,7 @@ namespace detail
 
 template <class LayoutPolicy>
 concept CanonicalReshapeLayout =
-    std::same_as<LayoutPolicy, stdex::layout_left> || std::same_as<LayoutPolicy, stdex::layout_right>;
+    std::same_as<LayoutPolicy, uni20::layout_left> || std::same_as<LayoutPolicy, uni20::layout_right>;
 
 template <class Span>
 concept CanonicallyLaidOutMdspan =
@@ -121,7 +121,7 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span>
   // A scalar index space has no observable traversal-order distinction.
   if (logical_size == 1) return true;
 
-  if constexpr (std::same_as<LayoutPolicy, stdex::layout_left>)
+  if constexpr (std::same_as<LayoutPolicy, uni20::layout_left>)
     return has_column_major_contiguous_mapping(span);
   else
     return has_row_major_contiguous_mapping(span);
@@ -130,7 +130,7 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span>
 template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span>
 void require_canonical_contiguous_mapping(Span const& span)
 {
-  if constexpr (std::same_as<LayoutPolicy, stdex::layout_left>)
+  if constexpr (std::same_as<LayoutPolicy, uni20::layout_left>)
   {
     ERROR_IF(!has_canonical_contiguous_mapping<LayoutPolicy>(span),
              "reshape requires a unique, exhaustive, canonical column-major source mapping");
@@ -155,7 +155,7 @@ template <CanonicalReshapeLayout LayoutPolicy, StridedMdspecLike Span, std::inte
   using mapping_type = typename LayoutPolicy::template mapping<extents_type>;
   if constexpr (MdspanLike<source_type>)
   {
-    using result_type = stdex::mdspan<element_type, extents_type, LayoutPolicy, accessor_type>;
+    using result_type = uni20::mdspan<element_type, extents_type, LayoutPolicy, accessor_type>;
     return result_type{source.data_handle(), mapping_type{new_extents}, source.accessor()};
   }
   else
@@ -184,7 +184,7 @@ template <detail::CanonicallyLaidOutMdspan Span, std::integral... Extents>
 template <StridedMdspanLike Span, std::integral... Extents>
 [[nodiscard]] auto reshape_view_left(Span&& source, Extents... requested_extents)
 {
-  return detail::make_reshape_view<stdex::layout_left>(std::forward<Span>(source), requested_extents...);
+  return detail::make_reshape_view<uni20::layout_left>(std::forward<Span>(source), requested_extents...);
 }
 
 /// \brief Return a no-copy row-major reshape of a compatible strided mdspan.
@@ -193,7 +193,7 @@ template <StridedMdspanLike Span, std::integral... Extents>
 template <StridedMdspanLike Span, std::integral... Extents>
 [[nodiscard]] auto reshape_view_right(Span&& source, Extents... requested_extents)
 {
-  return detail::make_reshape_view<stdex::layout_right>(std::forward<Span>(source), requested_extents...);
+  return detail::make_reshape_view<uni20::layout_right>(std::forward<Span>(source), requested_extents...);
 }
 
 /// \brief Borrowed reshape with separate read and write descriptors stored by value.
@@ -365,7 +365,7 @@ template <StridedTensorView Tensor, std::integral... Extents>
   requires std::is_lvalue_reference_v<Tensor&&>
 [[nodiscard]] auto reshape_view_left(Tensor&& tensor, Extents... requested_extents)
 {
-  return detail::make_tensor_reshape_view<stdex::layout_left>(tensor, requested_extents...);
+  return detail::make_tensor_reshape_view<uni20::layout_left>(tensor, requested_extents...);
 }
 
 /// \brief Return a tensor-level no-copy row-major reshape of a strided source.
@@ -373,7 +373,7 @@ template <StridedTensorView Tensor, std::integral... Extents>
   requires std::is_lvalue_reference_v<Tensor&&>
 [[nodiscard]] auto reshape_view_right(Tensor&& tensor, Extents... requested_extents)
 {
-  return detail::make_tensor_reshape_view<stdex::layout_right>(tensor, requested_extents...);
+  return detail::make_tensor_reshape_view<uni20::layout_right>(tensor, requested_extents...);
 }
 
 /// \brief Change a canonical owning tensor's shape without reallocating storage.

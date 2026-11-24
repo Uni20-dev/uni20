@@ -90,6 +90,10 @@ TEST(NativeMdspanTest, ContiguousIndexingUsesTheLayout)
   static_assert(!uni20::MutableMdspanLike<decltype(const_view)>);
   EXPECT_EQ(const_view.data_handle(), data);
 
+  auto read_only = uni20::make_const_mdspan(right);
+  static_assert(std::same_as<decltype(read_only), decltype(const_view)>);
+  EXPECT_EQ((read_only[0, 1]), 1);
+
   using WideShape = uni20::dextents<std::ptrdiff_t, 2>;
   uni20::mdspan<int const, WideShape, uni20::layout_stride> strided = left;
   EXPECT_EQ(strided.mapping().strides(), (std::array<std::ptrdiff_t, 2>{1, 2}));

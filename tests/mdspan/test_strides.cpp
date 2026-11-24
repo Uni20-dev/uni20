@@ -236,9 +236,9 @@ TEST(MergeStridesRight, PartiallyMergesContiguousDimensions)
 TEST(StridesHelpers, StridesOverloadsReturnExpectedArrays)
 {
   using layout_right_extents = stdex::extents<std::size_t, 2, 3>;
-  using layout_right_base = stdex::mdspan<int, layout_right_extents, stdex::layout_right>;
+  using layout_right_base = uni20::mdspan<int, layout_right_extents, uni20::layout_right>;
   using layout_left_extents = stdex::extents<std::size_t, 2, 3>;
-  using layout_left_base = stdex::mdspan<int, layout_left_extents, stdex::layout_left>;
+  using layout_left_base = uni20::mdspan<int, layout_left_extents, uni20::layout_left>;
   std::array<int, 6> contiguous{};
   layout_right_base layout_right(contiguous.data());
   layout_left_base layout_left(contiguous.data());
@@ -252,10 +252,10 @@ TEST(StridesHelpers, StridesOverloadsReturnExpectedArrays)
   EXPECT_EQ(left_strides[1], 2);
 
   using dyn_extents = stdex::extents<std::size_t, stdex::dynamic_extent, stdex::dynamic_extent>;
-  using strided_base = stdex::mdspan<int, dyn_extents, stdex::layout_stride>;
+  using strided_base = uni20::mdspan<int, dyn_extents, uni20::layout_stride>;
   dyn_extents dynamic_shape{2, 3};
   std::array<std::ptrdiff_t, 2> custom{5, 1};
-  auto mapping = stdex::layout_stride::mapping<dyn_extents>(dynamic_shape, custom);
+  auto mapping = uni20::layout_stride::mapping<dyn_extents>(dynamic_shape, custom);
 
   std::array<int, 16> storage{};
   strided_base strided(storage.data(), mapping);
@@ -278,9 +278,9 @@ TEST(ExtractStrides, ContractsAndMergesGroups)
   std::array<double, 4 * 5 * 6> Bdata{};
   std::array<double, 2 * 3 * 5 * 6> Cdata{};
 
-  stdex::mdspan<double, AExtents> A(Adata.data());
-  stdex::mdspan<double, BExtents> B(Bdata.data());
-  stdex::mdspan<double, CExtents> C(Cdata.data());
+  uni20::mdspan<double, AExtents> A(Adata.data());
+  uni20::mdspan<double, BExtents> B(Bdata.data());
+  uni20::mdspan<double, CExtents> C(Cdata.data());
 
   std::array<std::pair<std::size_t, std::size_t>, 1> contract{{{2, 0}}};
 

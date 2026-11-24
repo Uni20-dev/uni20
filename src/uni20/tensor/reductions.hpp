@@ -98,7 +98,7 @@ void require_reduction_extents(Reference const& reference, Others const&... othe
 {
   constexpr std::size_t rank = tensor_mdspec_t<Reference>::rank();
   auto require_one = [&](auto const& other) {
-    for (std::size_t axis = 0; axis < rank; ++axis)
+    for (std::size_t axis = 0; axis != rank; ++axis)
       ERROR_IF(reference.extent(axis) != other.extent(axis), "reduction operands have different extents");
   };
   (require_one(others), ...);

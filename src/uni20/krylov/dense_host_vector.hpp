@@ -153,7 +153,7 @@ template <typename Scalar> class DenseHostVectorAlgebra {
     [[nodiscard]] static auto make_span(DenseHostVector<Scalar> const& vector)
     {
       using extents_type = stdex::dextents<uni20::index_type, 1>;
-      return stdex::mdspan<Scalar const, extents_type>(
+      return uni20::mdspan<Scalar const, extents_type>(
           vector.values.data(), extents_type{static_cast<uni20::index_type>(vector.values.size())});
     }
 

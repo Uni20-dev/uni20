@@ -44,13 +44,13 @@ template <class Tensor> class CudaMatrixView {
     using storage_policy = typename tensor_type::storage_policy;
     using index_type = uni20::index_type;
     using extents_type = stdex::dextents<index_type, 2>;
-    using mapping_type = stdex::layout_stride::mapping<extents_type>;
+    using mapping_type = uni20::layout_stride::mapping<extents_type>;
     using accessor_type = typename tensor_type::device_accessor_type;
     using const_accessor_type = typename tensor_type::const_device_accessor_type;
     using descriptor_type = uni20::cuda::CudaBufferView<element_type>;
     using const_descriptor_type = uni20::cuda::CudaBufferView<element_type const>;
-    using mdspec_type = uni20::mdspec<element_type, extents_type, stdex::layout_stride, accessor_type, descriptor_type>;
-    using const_mdspec_type = uni20::mdspec<element_type const, extents_type, stdex::layout_stride, const_accessor_type,
+    using mdspec_type = uni20::mdspec<element_type, extents_type, uni20::layout_stride, accessor_type, descriptor_type>;
+    using const_mdspec_type = uni20::mdspec<element_type const, extents_type, uni20::layout_stride, const_accessor_type,
                                             const_descriptor_type>;
 
     CudaMatrixView(tensor_type& tensor, std::size_t offset, index_type rows, index_type cols,
@@ -137,6 +137,7 @@ template <class ElementType> struct UnrecognizedCudaAccessor
     using reference = uni20::cuda::CudaBufferView<element_type>;
     using data_handle_type = reference;
     using offset_policy = UnrecognizedCudaAccessor;
+    using offset_type = std::size_t;
 
     [[nodiscard]] constexpr reference access(data_handle_type handle, std::size_t offset) const noexcept
     {
@@ -150,13 +151,13 @@ template <class ElementType> struct UnrecognizedCudaAccessor
 };
 
 using cuda_test_extents = stdex::dextents<uni20::index_type, 2>;
-using writable_cuda_span = uni20::mdspec<double, cuda_test_extents, stdex::layout_left,
+using writable_cuda_span = uni20::mdspec<double, cuda_test_extents, uni20::layout_left,
                                          uni20::cuda::CudaPointerAccessor<double>, uni20::cuda::CudaBufferView<double>>;
 using readable_cuda_span =
-    uni20::mdspec<double const, cuda_test_extents, stdex::layout_left, uni20::cuda::CudaPointerAccessor<double const>,
+    uni20::mdspec<double const, cuda_test_extents, uni20::layout_left, uni20::cuda::CudaPointerAccessor<double const>,
                   uni20::cuda::CudaBufferView<double const>>;
 using unrecognized_cuda_span =
-    uni20::mdspec<double const, cuda_test_extents, stdex::layout_left, UnrecognizedCudaAccessor<double const>,
+    uni20::mdspec<double const, cuda_test_extents, uni20::layout_left, UnrecognizedCudaAccessor<double const>,
                   uni20::cuda::CudaBufferView<double const>>;
 
 template <class Input>
@@ -201,7 +202,7 @@ class CudaGemmPlatform {
     [[nodiscard]] auto make_strided_matrix(uni20::index_type rows, uni20::index_type cols,
                                            std::array<uni20::index_type, 2> strides)
     {
-      using matrix_type = uni20::Tensor<Scalar, 2, uni20::CudaStorage, stdex::layout_stride>;
+      using matrix_type = uni20::Tensor<Scalar, 2, uni20::CudaStorage, uni20::layout_stride>;
       using extents_type = typename matrix_type::extents_type;
       typename matrix_type::mapping_type mapping(extents_type{rows, cols}, strides);
       typename matrix_type::storage_type storage(resources_, mapping.required_span_size());
@@ -1300,13 +1301,15 @@ TEST_F(CublasExecutionTest, TensorReductionsSupportSinglePrecisionScalars)
 
 TEST_F(CublasExecutionTest, PermutedEmptyTensorsReduceToZero)
 {
-  // A permuted empty view has a strided mapping that reports
-  // is_exhaustive() == false. Emptiness is decided before the layout.
+  // The permutation preserves zero strides. Both reductions return zero
+  // without acquiring any storage.
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(device_), .stream_count = 1});
   uni20::CudaTensor<double, 3> tensor(resources, 0, 3, 4);
   auto view = uni20::permute<0, 2, 1>(tensor);
   auto span = uni20::mdspec_of(std::as_const(view));
-  ASSERT_FALSE(span.mapping().is_exhaustive());
+  ASSERT_TRUE(span.empty());
+  EXPECT_TRUE(span.mapping().is_exhaustive());
+  EXPECT_EQ(span.mapping().strides(), (std::array<uni20::index_type, 3>{1, 0, 0}));
 
   double output = 17.0;
   EXPECT_EQ(uni20::linalg::try_kernel(uni20::linalg::CublasBackend{}, uni20::linalg::norm_op{}, output, span),

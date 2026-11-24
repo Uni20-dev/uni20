@@ -42,13 +42,22 @@ template <class Pointer> [[nodiscard]] Pointer offset_cuda_pointer(Pointer point
 template <class Mdspec> void validate_cuda_descriptor_range(Mdspec const& span)
 {
   auto const& descriptor = span.data_descriptor();
-  auto const required = span.mapping().required_span_size();
-  CHECK(std::cmp_greater_equal(required, 0), required);
-  CHECK(std::cmp_less_equal(required, descriptor.buffer().size()), required, descriptor.buffer().size());
-  auto const count = static_cast<std::size_t>(required);
   auto const offset = descriptor.element_offset();
-  CHECK(offset <= descriptor.buffer().size() && count <= descriptor.buffer().size() - offset, offset, count,
-        descriptor.buffer().size());
+  auto const buffer_size = descriptor.buffer().size();
+  CHECK(offset <= buffer_size, offset, buffer_size);
+  if constexpr (requires { span.mapping().reachable_range(); })
+  {
+    auto const range = span.mapping().reachable_range();
+    if (!range.empty())
+      CHECK(range.minimum >= 0 && std::cmp_less(range.maximum, buffer_size - offset), range.minimum, range.maximum,
+            offset, buffer_size);
+  }
+  else
+  {
+    auto const required = span.mapping().required_span_size();
+    CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - offset), required, offset,
+          buffer_size);
+  }
 }
 
 template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Mdspec const& span, Pointer pointer)
@@ -57,7 +66,7 @@ template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Md
   auto accessor = lower_cuda_accessor(span.accessor());
   using accessor_type = decltype(accessor);
   static_assert(std::same_as<typename accessor_type::element_type, typename span_type::element_type>);
-  using mdspan_type = stdex::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
+  using mdspan_type = uni20::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
                                     typename span_type::layout_type, accessor_type>;
   return mdspan_type{pointer, span.mapping(), std::move(accessor)};
 }

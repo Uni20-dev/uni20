@@ -57,7 +57,7 @@ TEST(TensorInitializationTest, StridedAndStaticExtentsInitializeOwnedElements)
     for (uni20::index_type j = 0; j < 3; ++j)
       EXPECT_EQ((matrix[i, j]), 0.0);
 
-  using static_type = uni20::Tensor<double, 2, uni20::HostStorage, stdex::layout_left, uni20::DefaultAccessorFactory,
+  using static_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::layout_left, uni20::DefaultAccessorFactory,
                                     stdex::extents<uni20::index_type, 2, 3>>;
   static_type fixed(static_type::extents_type{});
   EXPECT_EQ((fixed[1, 2]), 0.0);

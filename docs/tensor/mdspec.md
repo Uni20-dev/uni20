@@ -142,7 +142,7 @@ An unresolved `mdspec` intentionally does not expose:
 - `data_handle()`;
 - multidimensional `operator[]`;
 - host or device dereference;
-- implicit conversion to `stdex::mdspan`;
+- implicit conversion to `mdspan`;
 - allocation, migration, synchronization, or access acquisition.
 
 It therefore does not model `MdspanLike`.
@@ -159,6 +159,10 @@ concrete `mdspec` class when a structural constraint is sufficient.
 1. an ordinary `MdspanLike<S>`, as the immediate-handle case; or
 2. an unresolved structural model exposing mdspan metadata plus
    `data_descriptor_type` and `data_descriptor()`.
+
+Both forms declare an `offset_type` that matches their accessor's
+`offset_type`. Import a supported standard or Kokkos view with
+`uni20::mdspan{view}` before passing it to a Uni20 operation.
 
 For Uni20's concrete `Tensor`, immediate accessibility takes precedence over
 descriptor availability. Its mutable and const `mdspec()` overloads
@@ -338,7 +342,7 @@ uni20::CudaAccessibleMdspec<Span>
 The accessor concepts classify accessor policies directly. The first mdspan
 pair requires a resolved `MdspanLike`; the second mdspan pair also accepts
 descriptor-backed `MdspecLike` metadata targeting that domain.
-`stdex::default_accessor<T>` is host-accessible.
+`uni20::default_accessor<T>` is host-accessible.
 `uni20::cuda::CudaPointerAccessor<T>` is CUDA-accessible. Const adaptation,
 conjugation, and elementwise transform accessors preserve the domains supported
 by their wrapped accessors.

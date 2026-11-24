@@ -515,7 +515,7 @@ template <typename... Mappings> struct GeneralZipLayout
 };
 
 /// \brief Picks the right zip layout for a pack of mdspan types.
-/// \tparam Spans  Mdspan types (for example, stdex::mdspan<…>).
+/// \tparam Spans  Mdspan types (for example, uni20::mdspan<…>).
 /// \ingroup mdspan_ext
 template <typename... Spans> struct zip_layout_selector
 {

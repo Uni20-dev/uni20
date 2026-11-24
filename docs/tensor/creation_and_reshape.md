@@ -163,9 +163,9 @@ auto packed = Tensor(view);           // independent contiguous owner
 This first implementation supports zero-origin strided mappings representable
 by `layout_stride`, including canonical row/column-major and padded layouts.
 It permutes extents and strides without copying elements or acquiring storage
-access. Nonidentity permutations require a unique mapping and positive strides
-(empty sources receive valid positive strides); their result uses `layout_stride`. Identity
-permutations preserve the source layout type. Compile-time extents, accessor
+access. Nonidentity permutations use Uni20 `layout_stride` and require a unique
+mapping whose extents and strides satisfy that layout. They preserve the strides
+of empty and singleton axes. Identity permutations preserve the source layout type. Compile-time extents, accessor
 semantics, deferred storage descriptors, and backend selectors are retained.
 The mdspan/mdspec overload applies the same metadata operation below the tensor
 layer; BlockTensor uses that shared mapping helper for its dense blocks.
