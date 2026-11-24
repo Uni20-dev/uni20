@@ -7,6 +7,7 @@
 
 #include "deferred_host_tensor.hpp"
 
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <type_traits>
@@ -73,6 +74,24 @@ TEST(CpuGemvBackendTest, TensorOperandsAcceptExplicitSelector)
   uni20::linalg::gemv(uni20::linalg::CpuReferenceBackend{}, output, 1.0, matrix, input, 0.0);
   EXPECT_DOUBLE_EQ(output[0], 8.0);
   EXPECT_DOUBLE_EQ(output[1], 18.0);
+}
+
+// The contracted axis belongs to the inputs. A narrow output index type must not bound it (#170).
+TEST(CpuGemvBackendTest, ContractsBeyondTheOutputIndexRange)
+{
+  using narrow_extents = uni20::dextents<std::int16_t, 1>;
+  for (uni20::index_type const inner : {uni20::index_type{32767}, uni20::index_type{32768}})
+  {
+    std::vector<double> matrix_storage(static_cast<std::size_t>(inner), 1.0);
+    std::vector<double> input_storage(static_cast<std::size_t>(inner), 1.0);
+    std::vector<double> output_storage{-1.0};
+    uni20::mdspan<double const, extents_2d, uni20::layout_left> matrix(matrix_storage.data(), 1, inner);
+    uni20::mdspan<double const, extents_1d, uni20::layout_left> input(input_storage.data(), inner);
+    uni20::mdspan<double, narrow_extents, uni20::layout_left> output(output_storage.data(), 1);
+
+    uni20::linalg::cpu::gemv(output, 1.0, matrix, input, 0.0);
+    EXPECT_DOUBLE_EQ(output_storage[0], static_cast<double>(inner)) << "contracted extent " << inner;
+  }
 }
 
 TEST(CpuGemvBackendTest, DeferredTensorOperandsUseHostLeases)

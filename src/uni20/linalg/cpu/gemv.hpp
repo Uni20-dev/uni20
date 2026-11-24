@@ -25,10 +25,11 @@ concept GemvCompatible =
     std::same_as<std::remove_cv_t<typename std::remove_cvref_t<MatrixMdspan>::element_type>, Scalar> &&
     std::same_as<std::remove_cv_t<typename std::remove_cvref_t<InputMdspan>::element_type>, Scalar> &&
     requires(OutputMdspan& output, MatrixMdspan& matrix, InputMdspan& input,
-             typename std::remove_cvref_t<OutputMdspan>::index_type index, Scalar value) {
+             typename std::remove_cvref_t<OutputMdspan>::index_type index,
+             typename std::remove_cvref_t<InputMdspan>::index_type inner, Scalar value) {
       static_cast<Scalar>(output.operator[](index));
-      static_cast<Scalar>(matrix.operator[](index, index));
-      static_cast<Scalar>(input.operator[](index));
+      static_cast<Scalar>(matrix.operator[](index, inner));
+      static_cast<Scalar>(input.operator[](inner));
       output.operator[](index) = value;
       value += value * value;
       { value == Scalar{} } -> std::convertible_to<bool>;
@@ -41,19 +42,21 @@ void gemv(OutputMdspan&& output, Scalar alpha, MatrixMdspan&& matrix, InputMdspa
 {
   using output_type = std::remove_cvref_t<OutputMdspan>;
   using index_type = typename output_type::index_type;
+  // The contracted axis belongs to the inputs, so its bound uses their index type, not the output's.
+  using inner_index_type = typename std::remove_cvref_t<InputMdspan>::index_type;
 
   CHECK_EQUAL(matrix.extent(1), input.extent(0));
   CHECK_EQUAL(output.extent(0), matrix.extent(0));
 
   index_type const rows = static_cast<index_type>(output.extent(0));
-  index_type const inner = static_cast<index_type>(input.extent(0));
+  inner_index_type const inner = input.extent(0);
 
   for (index_type row = 0; row < rows; ++row)
   {
     Scalar product{};
     if (alpha != Scalar{})
     {
-      for (index_type col = 0; col < inner; ++col)
+      for (inner_index_type col = 0; col < inner; ++col)
       {
         product += static_cast<Scalar>(matrix[row, col]) * static_cast<Scalar>(input[col]);
       }
