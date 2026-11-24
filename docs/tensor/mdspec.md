@@ -617,6 +617,18 @@ static_assert(uni20::CudaWriteTensorLease<decltype(lease)>);
 launch_kernel(stream, lease.mdspan());
 ```
 
+CUDA acquisition checks the storage span before taking a buffer lease. The
+built-in pointer and conjugating accessors use the mapping's span. A custom
+accessor that preserves the mapping's element offsets can make the same
+guarantee by specializing `uni20::cuda::enable_mapping_storage_span<Accessor>`
+to `true`. A translating accessor can supply a const host member
+`cuda_storage_span(mapping, element_offset)` returning a
+`uni20::cuda::BufferStorageSpan` that covers all physical elements it can
+access. Both fields count elements, with `start` measured from the beginning of
+the buffer. The member must produce representable bounds or throw. Acquisition rejects
+accessors without either opt-in. Const and conjugating adaptors preserve the
+wrapped accessor's storage-span policy.
+
 Acquiring the stream is separate from acquiring tensor data. Once a stream is
 available, `acquire_cuda_write_access_async(tensor, stream)` installs predecessor
 waits through `CudaBuffer` and returns an immediately-ready task awaitable.

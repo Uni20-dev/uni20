@@ -19,6 +19,18 @@
 namespace uni20::cuda
 {
 
+/// \brief Physical span of elements within a CUDA buffer.
+struct BufferStorageSpan
+{
+    std::size_t start;
+    std::size_t size;
+};
+
+/// \brief Opt in to using a mapping's storage span when acquiring this accessor.
+/// \details Specialize to true only when the mapping's element offsets bound
+///          every read and write through the accessor.
+template <class Accessor> inline constexpr bool enable_mapping_storage_span = false;
+
 /// \brief Assignable CUDA execution proxy over one persistent complex value.
 /// \details Persistent storage remains `uni20::complex<Real>`. Device reads and
 ///          writes use `cuda::std::complex<Real>` without treating the two
@@ -219,3 +231,12 @@ template <class Real>
 inline constexpr bool enable_accessor_in_domain<cuda::CudaConjugatingPointerAccessor<Real>, cuda_access_domain> = true;
 
 } // namespace uni20
+
+namespace uni20::cuda
+{
+template <class ElementType>
+inline constexpr bool enable_mapping_storage_span<CudaPointerAccessor<ElementType>> = true;
+
+template <class Real>
+inline constexpr bool enable_mapping_storage_span<CudaConjugatingPointerAccessor<Real>> = true;
+} // namespace uni20::cuda

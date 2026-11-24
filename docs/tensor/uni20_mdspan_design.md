@@ -151,7 +151,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    the zip span-size query. A translating accessor is outside the rule too: `diagonal_accessor`
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
    diagonal is mapping offset 8 but component 2, and validating its buffer is
-   left to the accessor.
+   left to the accessor. [CUDA acquisition](mdspec.md#cuda-vertical-slice)
+   requires the accessor to opt into the mapping span or supply its own.
 4. **Affine layouts expose a stride per axis.** `AffineMdspanLike` and
    `AffineMdspecLike` require `is_always_strided()` and a declared
    `stride(axis)` at every rank.

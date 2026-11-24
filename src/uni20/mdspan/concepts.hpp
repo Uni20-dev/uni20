@@ -114,6 +114,9 @@ class const_accessor_adaptor {
       return wrapped_.offset(p, i);
     }
 
+    /// \brief Return the accessor whose storage and values are used.
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr Accessor const& wrapped_accessor() const& noexcept { return wrapped_; }
+
   private:
     Accessor wrapped_;
 };
