@@ -7,6 +7,7 @@
 #include <uni20/mdspan/iteration_plan.hpp>
 #include <uni20/mdspan/reverse.hpp>
 #include <uni20/mdspan/transform_view.hpp>
+#include <uni20/tensor/conjugate_inplace.hpp>
 #include <uni20/tensor/copy_into.hpp>
 #include <uni20/tensor/transform.hpp>
 
@@ -14,20 +15,20 @@ using namespace uni20;
 
 namespace
 {
-struct WriteProxy
+template <class Element> struct WriteProxy
 {
-    int* value;
+    Element* value;
 
-    operator int() const { return *value; }
-    void operator=(int replacement) && { *value = replacement; }
+    operator Element() const { return *value; }
+    void operator=(Element replacement) && { *value = replacement; }
 };
 
-struct NarrowProxyAccessor
+template <class Element> struct NarrowProxyAccessor
 {
-    using element_type = int;
-    using data_handle_type = int*;
+    using element_type = Element;
+    using data_handle_type = Element*;
     using offset_type = std::int16_t;
-    using reference = WriteProxy;
+    using reference = WriteProxy<Element>;
     using offset_policy = NarrowProxyAccessor;
 
     reference access(data_handle_type data, offset_type offset) const { return {data + offset}; }
@@ -36,15 +37,15 @@ struct NarrowProxyAccessor
 };
 } // namespace
 
-template <>
-inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor, uni20::host_access_domain> = true;
+template <class Element>
+inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor<Element>, uni20::host_access_domain> = true;
 
 TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
 {
   using shape = uni20::extents<int, 3>;
-  using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor>;
+  using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor<int>>;
   std::array<int, 3> storage{};
-  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}, NarrowProxyAccessor{}};
+  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}};
   int values[]{4, 9, 12};
   auto input = uni20::mdspan{values};
   auto backend = uni20::linalg::CpuReferenceBackend{};
@@ -55,6 +56,20 @@ TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
   EXPECT_EQ(storage, (std::array{13, 10, 5}));
   uni20::fill(backend, output, 41);
   EXPECT_EQ(storage, (std::array{41, 41, 41}));
+}
+
+TEST(CpuStridedTransformTest, ConjugatesSignedViewWithRvalueAssignableProxy)
+{
+  using shape = uni20::extents<int, 3>;
+  using value = uni20::complex<double>;
+  using span = uni20::mdspan<value, shape, uni20::layout_signed_stride, NarrowProxyAccessor<value>>;
+  std::array<value, 5> storage{{{1, 2}, {7, 8}, {3, 4}, {9, 10}, {5, 6}}};
+  span output{storage.data() + 4, span::mapping_type{shape{}, {-2}}};
+
+  uni20::conjugate_inplace(uni20::linalg::CpuReferenceBackend{}, output);
+
+  std::array<value, 5> const expected{{{1, -2}, {7, 8}, {3, -4}, {9, 10}, {5, -6}}};
+  EXPECT_EQ(storage, expected);
 }
 
 TEST(TransformInplace, MultiplyBy2_1DContiguous)
