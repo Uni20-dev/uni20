@@ -471,6 +471,10 @@ template <typename... Mappings> struct GeneralZipLayout
         /// \ingroup mdspan_ext
         UNI20_HOST_DEVICE static constexpr bool is_always_strided() noexcept { return false; }
 
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_unique() const noexcept { return is_always_unique(); }
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept { return is_always_exhaustive(); }
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_strided() const noexcept { return is_always_strided(); }
+
         /// \brief Construct child mappings.
         /// \param ext Common extents shared by every mapping.
         /// \param m   Child mappings stored within the layout.

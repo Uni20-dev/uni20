@@ -104,35 +104,16 @@ TEST(ContractKernel2D, ColumnMajorB)
       EXPECT_DOUBLE_EQ((C[i, j]), cref[i * N + j]);
 }
 
-// Test: reversed‐stride A
-TEST(ContractKernel2D, ReversedA)
-{
-  size_t M = 2, K = 3, N = 2;
-  std::vector<double> av(M * K), bv(K * N), cv(M * N, 0.0);
-  std::iota(av.begin(), av.end(), 1.0);
-  std::iota(bv.begin(), bv.end(), 10.0);
+template <class A, class B, class C>
+concept SupportsMatmul = requires(A lhs, B rhs, C output, std::array<std::pair<std::size_t, std::size_t>, 1> axes) {
+  uni20::kernel::contract(1.0, lhs, rhs, axes, 0.0, output);
+};
 
-  // build A as reversed 2×3
-  using stdex2 = stdex::dextents<ptrdiff_t, 2>;
-  auto mapA = make_mapping<2>(std::array{M, K}, std::array{-static_cast<ptrdiff_t>(K), -ptrdiff_t(1)});
-  uni20::mdspan<double, stdex2, uni20::layout_stride> A(av.data() + av.size() - 1, mapA);
-
-  auto B = make_mdspan_2d(bv, K, N);
-  auto C = make_mdspan_2d(cv, M, N);
-
-  std::array<std::pair<size_t, size_t>, 1> Kdims{{{1, 0}}};
-
-  contract(1.0, A, B, Kdims, 0.0, C);
-
-  // reference
-  std::vector<double> cref = cv;
-  naive_matmul_2d(M, K, N, 1.0, av.data() + av.size() - 1, -static_cast<ptrdiff_t>(K), -1, bv.data(), N, 1, 0.0,
-                  cref.data(), N, 1);
-
-  for (size_t i = 0; i < M; ++i)
-    for (size_t j = 0; j < N; ++j)
-      EXPECT_DOUBLE_EQ((C[i, j]), cref[i * N + j]);
-}
+using matrix_shape = uni20::extents<ptrdiff_t, 2, 2>;
+using forward_matrix = uni20::mdspan<double, matrix_shape>;
+using signed_matrix = uni20::mdspan<double, matrix_shape, uni20::layout_signed_stride>;
+static_assert(SupportsMatmul<forward_matrix, forward_matrix, forward_matrix>);
+static_assert(!SupportsMatmul<signed_matrix, forward_matrix, forward_matrix>);
 
 // Test: 3D double contraction → 2D
 TEST(ContractKernel3D, DoubleContraction)
@@ -145,13 +126,11 @@ TEST(ContractKernel3D, DoubleContraction)
     vb[i] = double(i + 100);
 
   // row-major A, B: strides {Kdim*L, L, 1}
-  auto mapA = make_mapping<3>(std::array{I, Kdim, L},
-                              std::array{static_cast<ptrdiff_t>(Kdim * L), static_cast<ptrdiff_t>(L), ptrdiff_t(1)});
-  auto mapB = make_mapping<3>(std::array{J, Kdim, L},
-                              std::array{static_cast<ptrdiff_t>(Kdim * L), static_cast<ptrdiff_t>(L), ptrdiff_t(1)});
-  using stdex3 = stdex::dextents<ptrdiff_t, 3>;
-  uni20::mdspan<double, stdex3, uni20::layout_stride> A(va.data(), mapA);
-  uni20::mdspan<double, stdex3, uni20::layout_stride> B(vb.data(), mapB);
+  using shape = uni20::dextents<ptrdiff_t, 3>;
+  using mapping = uni20::layout_stride::mapping<shape>;
+  std::array<ptrdiff_t, 3> const strides{Kdim * L, L, 1};
+  auto A = uni20::mdspan{va.data(), mapping{shape{I, Kdim, L}, strides}};
+  auto B = uni20::mdspan{vb.data(), mapping{shape{J, Kdim, L}, strides}};
 
   auto C = make_mdspan_2d(vc, I, J);
   std::array<std::pair<size_t, size_t>, 2> Kdims{{{1, 1}, {2, 2}}};

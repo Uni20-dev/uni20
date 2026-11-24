@@ -10,8 +10,9 @@ supplies extents and supports interop.
 - `mdspan.hpp`: native borrowed view and checked import from the standard
   and Kokkos mdspans. It also includes the configured Kokkos implementation.
 - `layouts.hpp`: native contiguous and nonnegative strided mappings.
+- `layout_signed_stride.hpp`: affine mappings with signed strides and storage span queries.
 - `default_accessor.hpp`: pointer access with signed element offsets.
-- `offset_range.hpp`: inclusive physical offset bounds for mappings and iteration plans.
+- `offset_range.hpp`: inclusive physical offset bounds for iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
   a data descriptor for later handle acquisition.
 - `format.hpp`: `std::format` and `{fmt}` support for mdspan extents.
@@ -26,6 +27,7 @@ supplies extents and supports interop.
 - `strides.hpp`: stride inspection and stride utility helpers.
 - `permute.hpp`: zero-copy axis permutations of strided mdspans and mdspecs,
   preserving static extents and accessor semantics.
+- `reverse.hpp`: zero-copy reversal of one axis in a native pointer-backed mdspan.
 - `iteration_plan.hpp`: backend-neutral compact affine iteration planning over
   one or more strided mappings, including element counts and reachable offset
   ranges.
@@ -59,16 +61,17 @@ supplies extents and supports interop.
   `MutableRankedStridedMdspanLike` requires an immediately usable mdspan, while
   `MutableRankedStridedMdspecLike` also accepts descriptor-backed
   metadata.
-- `StridedMdspanLike` refines `MdspanLike` by requiring an always-strided
-  mapping and both mdspan and mapping stride observers. It includes
-  `layout_left`, `layout_right`, and `layout_stride` mappings.
+- `AffineMdspanLike` and `AffineMdspecLike` require an always-strided mapping
+  and stride observers. `StridedMdspanLike` and `StridedMdspecLike` additionally
+  require a statically zero base offset. A native affine mapping addresses
+  the logical origin at offset zero relative to its handle. That handle may
+  sit inside the storage span, at `base_offset()` elements from its start.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for
-  specialized kernels. The component view preserves its signed stride, so a
-  diagonal borrowed from another tensor need not be contiguous or forward
-  ordered. The initial `make_diagonal_mdspan` factory accepts a default-accessor
-  component mdspan and therefore produces a host-domain accessor. A future CUDA
+  specialized kernels. The component view preserves its stride and its
+  layout's zero-base-offset guarantee. The `make_diagonal_mdspan` factory
+  accepts a default-accessor component mdspan and produces a host-domain accessor. A future CUDA
   form must retain and propagate the CUDA component accessor rather than
   reclassifying a raw pointer-shaped handle.
 - An extent-one axis has no observable stride. Stride coalescing treats it as

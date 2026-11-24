@@ -1,11 +1,11 @@
 #pragma once
 
 #include <uni20/core/compiler_attributes.hpp>
-#include <uni20/mdspan/offset_range.hpp>
 
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -48,12 +48,19 @@ template <class Extents> consteval bool has_static_zero_extent()
   return false;
 }
 
-template <class Index>
-[[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range nonnegative_offset_range(Index span_size) noexcept
+// Legacy mappings describe their required span starting at the handle.
+template <class Mapping>
+[[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t mapping_base_offset(Mapping const& mapping)
 {
-  if (span_size == 0) return {.minimum = 0, .maximum = -1};
-  return {.minimum = 0, .maximum = static_cast<std::ptrdiff_t>(span_size - 1)};
+  if constexpr (requires { mapping.base_offset(); })
+    return mapping.base_offset();
+  else
+    return 0;
 }
+
+template <class Mapping>
+concept ZeroBaseOffsetMapping = (!requires(Mapping const& mapping) { mapping.base_offset(); }) ||
+                                requires { requires Mapping::is_base_offset_always_zero(); };
 
 template <class Layout, class Extents, bool Left> class contiguous_mapping {
   public:
@@ -100,12 +107,8 @@ template <class Layout, class Extents, bool Left> class contiguous_mapping {
       return mdspan_size<index_type>(extents_);
     }
 
-    /// \brief Bound the mapping's element offsets.
-    /// \pre The highest reachable offset fits in `std::ptrdiff_t`.
-    [[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range reachable_range() const noexcept
-    {
-      return nonnegative_offset_range(this->required_span_size());
-    }
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
+    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
 
     /// \brief Return the element stride of an axis.
     /// \pre `axis < extents_type::rank()`.
@@ -248,12 +251,8 @@ struct layout_stride
           return span_size;
         }
 
-        /// \brief Bound the mapping's element offsets.
-        /// \pre The highest reachable offset fits in `std::ptrdiff_t`.
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr offset_range reachable_range() const noexcept
-        {
-          return detail::nonnegative_offset_range(this->required_span_size());
-        }
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
+        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
 
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::convertible_to<Indices, index_type> && ...))

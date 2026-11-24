@@ -143,6 +143,8 @@ using tensor_device_accessor_t = typename TensorDeviceAccessor<AccessorFactory, 
 } // namespace detail
 
 /// \brief General-purpose owning tensor with immediate or deferred mdspan metadata.
+/// \details The storage handle addresses the start of the allocation. The
+///          layout must have a statically zero base offset.
 /// \ingroup tensor
 /// \tparam ElementType Value type stored by the tensor.
 /// \tparam Rank Static rank of the tensor.
@@ -154,6 +156,7 @@ template <typename ElementType, std::size_t Rank, typename StoragePolicy = HostS
           typename LayoutPolicy = uni20::layout_left,
           typename AccessorFactory = detail::tensor_accessor_factory_t<StoragePolicy>,
           typename Extents = stdex::dextents<index_type, Rank>>
+  requires detail::ZeroBaseOffsetMapping<typename LayoutPolicy::template mapping<Extents>>
 class Tensor {
   public:
     static_assert(Rank == Extents::rank());

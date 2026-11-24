@@ -1,7 +1,7 @@
 #pragma once
 
 #include <array>
-#include <uni20/mdspan/mdspan.hpp>
+#include <uni20/mdspan/reverse.hpp>
 #include <vector>
 
 // Convenience typedefs
@@ -12,7 +12,7 @@ template <std::size_t N, typename index_type>
 auto make_mapping(std::array<std::size_t, N> const& extents, std::array<index_type, N> const& strides)
 {
   using extents_t = stdex::dextents<index_type, N>;
-  using mapping_t = uni20::layout_stride::mapping<extents_t>;
+  using mapping_t = uni20::layout_signed_stride::mapping<extents_t>;
 
   return mapping_t(extents_t(extents), strides);
 }
@@ -46,9 +46,7 @@ inline auto make_mdspan_2d(std::vector<double>& v, std::size_t R, std::size_t C,
 inline auto make_reversed_1d(std::vector<double>& v)
 {
   using extents_t = stdex::dextents<index_t, 1>;
-  std::array<std::ptrdiff_t, 1> strides{-1};
-  auto mapping = uni20::layout_stride::mapping<extents_t>(extents_t{v.size()}, strides);
-  return uni20::mdspan<double, extents_t, uni20::layout_stride>(v.data() + v.size() - 1, mapping);
+  return uni20::reverse<0>(uni20::mdspan{v.data(), extents_t{v.size()}});
 }
 
 /// \brief  Build a 3D row-major mdspan with layout_stride
@@ -95,6 +93,6 @@ inline auto make_mdspan_strided(std::vector<double>& v, std::array<std::size_t, 
                                 std::array<index_t, Rank> const& strides, std::ptrdiff_t offset = 0)
 {
   using extents_t = stdex::dextents<index_t, Rank>;
-  auto mapping = uni20::layout_stride::mapping<extents_t>(extents_t(extents), strides);
-  return uni20::mdspan<double, extents_t, uni20::layout_stride>(v.data() + offset, mapping);
+  auto mapping = uni20::layout_signed_stride::mapping<extents_t>(extents_t(extents), strides);
+  return uni20::mdspan<double, extents_t, uni20::layout_signed_stride>(v.data() + offset, mapping);
 }

@@ -27,7 +27,8 @@ namespace uni20
 /// \tparam Accessor Accessor policy stored for the eventual mdspan.
 /// \tparam DataDescriptor Descriptor identifying the region from which a handle can be acquired.
 template <class ElementType, class Extents, class LayoutPolicy, AccessorPolicy Accessor, class DataDescriptor>
-  requires std::same_as<ElementType, typename Accessor::element_type>
+  requires std::same_as<ElementType, typename Accessor::element_type> &&
+           detail::LayoutOffsetCompatible<LayoutPolicy, Extents, Accessor>
 class mdspec {
   public:
     using element_type = ElementType;

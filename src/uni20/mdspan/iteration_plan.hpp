@@ -184,68 +184,6 @@ void finish_iteration_plan(multi_iteration_plan<OperandCount, MaximumRank>& plan
 
 } // namespace detail
 
-/// \brief Construct a merged iteration plan and offset for a single mapping.
-/// \tparam Mapping Layout mapping type modelling the mdspan mapping interface.
-/// \param mapping Mapping used to compute strides and extents.
-/// \return Pair consisting of the merged plan and the starting offset adjustment.
-/// \ingroup internal
-template <typename Mapping> auto make_iteration_plan_with_offset(Mapping const& mapping)
-{
-  using size_type = typename Mapping::size_type;
-  using index_type = typename Mapping::index_type;
-  using offset_type = std::common_type_t<index_type, decltype(detail::mapping_origin(mapping))>;
-  static constexpr size_type Rank = Mapping::extents_type::rank();
-
-  static_vector<extent_strides<1>, Rank> raw_plan;
-  static_vector<extent_stride<size_type, index_type>, Rank> plan;
-
-  if (detail::has_zero_extent(mapping.extents()))
-  {
-    // A retained zero extent gives zero iterations. An empty list of dimensions denotes a scalar.
-    plan.emplace_back(size_type{0}, index_type{0});
-    return std::pair{plan, offset_type{0}};
-  }
-
-  offset_type offset = detail::mapping_origin(mapping);
-  for (size_type i = 0; i < Rank; ++i)
-  {
-    size_type const extent = mapping.extents().extent(i);
-
-    // A size-1 dimension spans index 0 only: it adds 0*stride to every offset
-    // and a factor of 1 to the element count, so it coalesces with anything by
-    // simply vanishing. Drop it here rather than leaving it to the arithmetic
-    // merge, whose merge_with_inner would otherwise adopt this dim's
-    // meaningless stride.
-    if (extent == 1) continue;
-
-    index_type stride = mapping.stride(i);
-    if (stride < 0)
-    {
-      offset += stride * static_cast<index_type>(extent - 1);
-      stride = -stride;
-    }
-
-    raw_plan.emplace_back(extent, std::array<index_type, 1>{stride});
-  }
-
-  // An empty plan denotes a single element at the base offset (rank-0 scalar):
-  // every dimension was size-1, or the mapping is rank-0, so there is exactly
-  // one element to visit.
-  if (raw_plan.empty()) return std::pair{plan, offset};
-
-  std::sort(raw_plan.begin(), raw_plan.end(),
-            [](auto const& lhs, auto const& rhs) { return std::abs(lhs.strides[0]) > std::abs(rhs.strides[0]); });
-
-  merge_strides_right(raw_plan);
-
-  for (auto const& dim : raw_plan)
-  {
-    plan.emplace_back(static_cast<size_type>(dim.extent), static_cast<index_type>(dim.strides[0]));
-  }
-
-  return std::pair{plan, offset};
-}
-
 /// \brief Build a merged iteration plan for multiple tensors sharing the same extents.
 /// \details The first mapping determines iteration order and negative-stride
 ///          normalization. Remaining mappings may have different layout and
@@ -360,6 +298,22 @@ template <typename... Mappings> auto make_multi_iteration_plan(std::tuple<Mappin
 
   detail::finish_iteration_plan(plan);
   return plan;
+}
+
+/// \brief Construct a merged iteration plan and offset for a single mapping.
+/// \tparam Mapping Layout mapping type modelling the mdspan mapping interface.
+/// \param mapping Mapping used to compute strides and extents.
+/// \return Pair consisting of the merged plan and the starting offset adjustment.
+/// \ingroup internal
+template <typename Mapping> auto make_iteration_plan_with_offset(Mapping const& mapping)
+{
+  auto const plan = make_multi_iteration_plan(std::tuple{mapping});
+  CHECK(plan.representable, "iteration plan exceeds host index range");
+
+  static_vector<extent_stride<>, Mapping::extents_type::rank()> dimensions;
+  for (auto const& dimension : plan.dimensions)
+    dimensions.emplace_back(static_cast<std::size_t>(dimension.extent), dimension.strides[0]);
+  return std::pair{dimensions, plan.base_offsets[0]};
 }
 
 } // namespace uni20

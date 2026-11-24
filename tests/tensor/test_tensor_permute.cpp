@@ -165,7 +165,7 @@ TEST(TensorPermuteTest, EmptyPermutationPreservesCanonicalZeroStrides)
   EXPECT_EQ(view.extent(1), 4);
   EXPECT_EQ(view.extent(2), 0);
   EXPECT_EQ(view.mdspan().mapping().strides(), (std::array<uni20::index_type, 3>{0, 0, 1}));
-  EXPECT_TRUE(view.mdspan().mapping().reachable_range().empty());
+  EXPECT_EQ(view.mdspan().mapping().required_span_size(), 0);
 }
 
 TEST(TensorPermuteTest, NonemptyPermutationPreservesZeroSingletonStride)

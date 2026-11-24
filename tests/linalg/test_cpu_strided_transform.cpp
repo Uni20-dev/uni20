@@ -1,12 +1,76 @@
 #include "../helpers.hpp"
 #include "gtest/gtest.h"
+#include <cstdint>
 #include <numeric>
 #include <stdexcept>
 #include <uni20/linalg/backend_selector.hpp>
 #include <uni20/mdspan/iteration_plan.hpp>
+#include <uni20/mdspan/reverse.hpp>
+#include <uni20/mdspan/transform_view.hpp>
+#include <uni20/tensor/conjugate_inplace.hpp>
+#include <uni20/tensor/copy_into.hpp>
 #include <uni20/tensor/transform.hpp>
 
 using namespace uni20;
+
+namespace
+{
+template <class Element> struct WriteProxy
+{
+    Element* value;
+
+    operator Element() const { return *value; }
+    void operator=(Element replacement) && { *value = replacement; }
+};
+
+template <class Element> struct NarrowProxyAccessor
+{
+    using element_type = Element;
+    using data_handle_type = Element*;
+    using offset_type = std::int16_t;
+    using reference = WriteProxy<Element>;
+    using offset_policy = NarrowProxyAccessor;
+
+    reference access(data_handle_type data, offset_type offset) const { return {data + offset}; }
+    reference access(data_handle_type, std::ptrdiff_t) const = delete;
+    data_handle_type offset(data_handle_type data, offset_type offset) const { return data + offset; }
+};
+} // namespace
+
+template <class Element>
+inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor<Element>, uni20::host_access_domain> = true;
+
+TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
+{
+  using shape = uni20::extents<int, 3>;
+  using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor<int>>;
+  std::array<int, 3> storage{};
+  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}};
+  int values[]{4, 9, 12};
+  auto input = uni20::mdspan{values};
+  auto backend = uni20::linalg::CpuReferenceBackend{};
+
+  uni20::copy(backend, output, input);
+  EXPECT_EQ(storage, (std::array{12, 9, 4}));
+  uni20::transform_inplace(backend, output, [](int value) { return value + 1; });
+  EXPECT_EQ(storage, (std::array{13, 10, 5}));
+  uni20::fill(backend, output, 41);
+  EXPECT_EQ(storage, (std::array{41, 41, 41}));
+}
+
+TEST(CpuStridedTransformTest, ConjugatesSignedViewWithRvalueAssignableProxy)
+{
+  using shape = uni20::extents<int, 3>;
+  using value = uni20::complex<double>;
+  using span = uni20::mdspan<value, shape, uni20::layout_signed_stride, NarrowProxyAccessor<value>>;
+  std::array<value, 5> storage{{{1, 2}, {7, 8}, {3, 4}, {9, 10}, {5, 6}}};
+  span output{storage.data() + 4, span::mapping_type{shape{}, {-2}}};
+
+  uni20::conjugate_inplace(uni20::linalg::CpuReferenceBackend{}, output);
+
+  std::array<value, 5> const expected{{{1, -2}, {7, 8}, {3, -4}, {9, 10}, {5, -6}}};
+  EXPECT_EQ(storage, expected);
+}
 
 TEST(TransformInplace, MultiplyBy2_1DContiguous)
 {
@@ -53,6 +117,37 @@ TEST(TransformInplace, Square_Reversed1D)
   {
     EXPECT_DOUBLE_EQ(v[i], std::pow(static_cast<double>(i + 1), 2));
   }
+}
+
+TEST(Transform, HostCopyAndLazyTransformsPreserveReversedOffsets)
+{
+  int values[]{1, 2, 3, 4, 5, 6};
+  auto input = uni20::mdspan{values, 2, 3};
+  auto reversed = uni20::reverse<1>(input);
+  static_assert(uni20::AffineMdspanLike<decltype(reversed)>);
+  static_assert(!uni20::StridedMdspanLike<decltype(reversed)>);
+  EXPECT_EQ(reversed.data_handle(), values + 2);
+  EXPECT_EQ(reversed.stride(1), -1);
+  EXPECT_EQ((reversed[1, 0]), 6);
+
+  std::array<int, 6> copied{};
+  auto output = uni20::mdspan{copied.data(), 2, 3};
+  uni20::copy(linalg::CpuReferenceBackend{}, output, reversed);
+  EXPECT_EQ(copied, (std::array{3, 2, 1, 6, 5, 4}));
+
+  auto unary = uni20::transform_view([](int x) { return 10 * x; }, reversed);
+  static_assert(!uni20::StridedMdspanLike<decltype(unary)>);
+  EXPECT_EQ((unary[0, 2]), 10);
+  auto binary = uni20::transform_view(std::minus<>{}, reversed, input);
+  EXPECT_EQ((binary[1, 2]), -2);
+}
+
+TEST(Transform, HostCopyOfAnEmptyReversedView)
+{
+  using shape = uni20::extents<index_t, 0, 3>;
+  uni20::mdspan<int, shape> output{nullptr};
+  auto reversed = uni20::reverse<1>(output);
+  EXPECT_NO_THROW(uni20::copy(linalg::CpuReferenceBackend{}, output, reversed));
 }
 
 TEST(TransformInplace, ScaleAndShiftMixedStrides)

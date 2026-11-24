@@ -44,20 +44,12 @@ template <class Mdspec> void validate_cuda_descriptor_range(Mdspec const& span)
   auto const& descriptor = span.data_descriptor();
   auto const offset = descriptor.element_offset();
   auto const buffer_size = descriptor.buffer().size();
-  CHECK(offset <= buffer_size, offset, buffer_size);
-  if constexpr (requires { span.mapping().reachable_range(); })
-  {
-    auto const range = span.mapping().reachable_range();
-    if (!range.empty())
-      CHECK(range.minimum >= 0 && std::cmp_less(range.maximum, buffer_size - offset), range.minimum, range.maximum,
-            offset, buffer_size);
-  }
-  else
-  {
-    auto const required = span.mapping().required_span_size();
-    CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - offset), required, offset,
-          buffer_size);
-  }
+  auto const base_offset = detail::mapping_base_offset(span.mapping());
+  CHECK(base_offset <= offset && offset <= buffer_size, base_offset, offset, buffer_size);
+  auto const required = +span.mapping().required_span_size();
+  auto const span_start = offset - base_offset;
+  CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - span_start), required,
+        span_start, buffer_size);
 }
 
 template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Mdspec const& span, Pointer pointer)

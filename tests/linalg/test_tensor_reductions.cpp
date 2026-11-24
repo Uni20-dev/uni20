@@ -9,6 +9,7 @@
 #include "deferred_host_tensor.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -102,9 +103,22 @@ TEST(TensorReductionTest, DiagonalPreservesACustomUniqueStridePattern)
   auto view = uni20::detail::diagonal_mdspec<1, 2>(source);
   EXPECT_EQ(view.stride(0), 4);
   EXPECT_EQ(view.stride(1), 7);
-  EXPECT_EQ(view.mapping().reachable_range().maximum, 15);
+  EXPECT_EQ(view.mapping().required_span_size(), 16);
   view[2, 1] = 37;
   EXPECT_EQ(data[15], 37);
+}
+
+TEST(TensorReductionTest, DiagonalStorageSpanCanExceedItsIndexRange)
+{
+  using shape = uni20::extents<std::int8_t, 2, 2>;
+  using layout = uni20::detail::DiagonalLayout;
+  int data[128]{};
+  auto source = uni20::mdspan{data, layout::mapping<shape>{shape{}, {64, 63}}};
+  auto view = uni20::detail::diagonal_mdspec<0, 1>(source);
+  EXPECT_EQ(view.mapping().base_offset(), 0U);
+  EXPECT_EQ(view.mapping().required_span_size(), 128U);
+  view[1] = 37;
+  EXPECT_EQ(data[127], 37);
 }
 
 TEST(TensorReductionTest, InnerProductReturnsScalarTensorOrHostScalar)

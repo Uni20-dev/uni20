@@ -42,15 +42,8 @@ namespace detail::looped_gemm_contraction_backend
 template <class GemmSelector, class OutputMdspec, class Scalar, class LhsMdspec, class RhsMdspec>
 consteval bool gemm_dispatch_types_compatible()
 {
-  using output_matrix = offset_contraction_matrix_mdspec_t<OutputMdspec>;
-  using lhs_matrix = offset_contraction_matrix_mdspec_t<LhsMdspec>;
-  using rhs_matrix = offset_contraction_matrix_mdspec_t<RhsMdspec>;
-  return requires(GemmSelector const& selector, OutputMdspec& output_source, LhsMdspec& lhs_source,
-                  RhsMdspec& rhs_source, ContractionMatrixProjection const& projection, uni20::index_type offset,
-                  output_matrix& output, Scalar alpha, lhs_matrix& lhs, rhs_matrix& rhs) {
-    { make_offset_contraction_matrix_mdspec(output_source, projection, offset) } -> std::same_as<output_matrix>;
-    { make_offset_contraction_matrix_mdspec(lhs_source, projection, offset) } -> std::same_as<lhs_matrix>;
-    { make_offset_contraction_matrix_mdspec(rhs_source, projection, offset) } -> std::same_as<rhs_matrix>;
+  return requires(GemmSelector const& selector, offset_contraction_matrix_mdspec_t<OutputMdspec>& output, Scalar alpha,
+                  offset_contraction_matrix_mdspec_t<LhsMdspec>& lhs, offset_contraction_matrix_mdspec_t<RhsMdspec>& rhs) {
     try_dispatch_kernel(selector, gemm_op{}, output, alpha, lhs, rhs, alpha);
   };
 }

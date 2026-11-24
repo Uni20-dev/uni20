@@ -1,4 +1,5 @@
 #include <uni20/mdspan/mdspec.hpp>
+#include <uni20/mdspan/reverse.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,6 +14,21 @@ namespace
 
 using MatrixShape = uni20::dextents<int, 2>;
 using ScalarShape = uni20::extents<int>;
+
+template <class Shape, class Accessor>
+concept SupportsSignedLayout = requires {
+  typename uni20::mdspan<int, Shape, uni20::layout_signed_stride, Accessor>;
+  typename uni20::mdspec<int, Shape, uni20::layout_signed_stride, Accessor, int>;
+};
+
+struct UnsignedOffsetAccessor : uni20::default_accessor<int>
+{
+    using offset_type = std::size_t;
+};
+
+static_assert(SupportsSignedLayout<MatrixShape, uni20::default_accessor<int>>);
+static_assert(!SupportsSignedLayout<uni20::dextents<unsigned, 2>, uni20::default_accessor<int>>);
+static_assert(!SupportsSignedLayout<MatrixShape, UnsignedOffsetAccessor>);
 
 template <class Span> constexpr auto axis_steps(Span const& span)
 {
@@ -81,7 +97,9 @@ TEST(NativeMdspanTest, ContiguousIndexingUsesTheLayout)
   EXPECT_EQ(right.stride(0), 3);
   EXPECT_EQ(left.stride(0), 1);
   EXPECT_EQ(right.size(), 6U);
-  EXPECT_EQ(right.mapping().reachable_range().maximum, 5);
+  static_assert(decltype(right)::mapping_type::is_base_offset_always_zero());
+  EXPECT_EQ(right.mapping().base_offset(), 0U);
+  EXPECT_EQ(right.mapping().required_span_size(), 6);
   EXPECT_EQ((uni20::mdspan{data, 2, 3}[1, 2]), 5);
   EXPECT_EQ((uni20::mdspan{data, std::array{2, 3}}[1, 2]), 5);
 
@@ -150,7 +168,8 @@ TEST(NativeMdspanTest, RankZeroHasAnObserverAndOneElement)
   EXPECT_EQ(view[], 42);
   EXPECT_EQ(view.size(), 1U);
   EXPECT_FALSE(view.empty());
-  EXPECT_EQ(view.mapping().reachable_range().maximum, 0);
+  EXPECT_EQ(view.mapping().base_offset(), 0U);
+  EXPECT_EQ(view.mapping().required_span_size(), 1);
 
   stdex::mdspan<int, ScalarShape, stdex::layout_stride> foreign{&data, {}};
   auto borrowed = uni20::mdspan{foreign};
@@ -167,7 +186,7 @@ TEST(NativeMdspanTest, InterleavedDiagonalStridesAndZeroSingletonStride)
   EXPECT_EQ(data[11], 42);
   EXPECT_EQ(view.size(), 6U);
   EXPECT_EQ(view.mapping().required_span_size(), 12);
-  EXPECT_EQ(view.mapping().reachable_range().maximum, 11);
+  EXPECT_EQ(view.mapping().base_offset(), 0U);
   EXPECT_FALSE(view.is_exhaustive());
 
   layout::mapping<MatrixShape> const singleton{MatrixShape{1, 3}, {0, 1}};
@@ -185,8 +204,42 @@ TEST(NativeMdspanTest, EmptyMappingKeepsItsStrides)
   static_assert(Strided::is_always_exhaustive());
   static_assert(view.empty() && view.size() == 0);
   static_assert(strided.is_exhaustive() && strided.required_span_size() == 0);
-  static_assert(strided.reachable_range().empty());
+  static_assert(strided.base_offset() == 0);
   static_assert(strided.strides() == std::array{1, 0, 0});
+}
+
+TEST(NativeMdspanTest, SignedMappingsDescribeStorageOnBothSidesOfTheHandle)
+{
+  using layout = uni20::layout_signed_stride;
+  constexpr layout::mapping<MatrixShape> compact{MatrixShape{2, 3}, {-1, 2}};
+  static_assert(!decltype(compact)::is_base_offset_always_zero());
+  static_assert(std::same_as<decltype(compact.base_offset()), std::size_t>);
+  static_assert(std::same_as<decltype(compact.required_span_size()), std::size_t>);
+  static_assert(compact.is_unique() && compact.is_exhaustive());
+  static_assert(compact.base_offset() == 1 && compact.required_span_size() == 6);
+  static_assert(compact(1, 2) == 3);
+
+  constexpr layout::mapping<MatrixShape> padded{MatrixShape{3, 2}, {-3, 2}};
+  static_assert(padded.base_offset() == 6 && padded.required_span_size() == 9);
+  static_assert(!padded.is_exhaustive());
+  constexpr layout::mapping<MatrixShape> empty{MatrixShape{3, 0}, {-1, 4}};
+  static_assert(empty.base_offset() == 0 && empty.required_span_size() == 0 && empty.is_exhaustive());
+  constexpr layout::mapping<ScalarShape> scalar{};
+  static_assert(scalar.base_offset() == 0 && scalar.required_span_size() == 1 && scalar.is_exhaustive());
+
+  using narrow_shape = uni20::extents<std::int8_t, 2, 2>;
+  constexpr layout::mapping<narrow_shape> wide_span{narrow_shape{}, {-128, 127}};
+  static_assert(wide_span.base_offset() == 128 && wide_span.required_span_size() == 256);
+}
+
+TEST(NativeMdspanTest, ReverseRetainsAnEmptyHandleAndItsStrides)
+{
+  using shape = uni20::extents<int, 0, 3>;
+  constexpr uni20::mdspan<int, shape, uni20::layout_left> source{nullptr, shape{}};
+  constexpr auto reversed = uni20::reverse<1>(source);
+  static_assert(reversed.empty());
+  static_assert(reversed.mapping().base_offset() == 0 && reversed.mapping().required_span_size() == 0);
+  static_assert(reversed.data_handle() == nullptr && reversed.mapping().strides() == std::array{1, 0});
 }
 
 TEST(NativeMdspanTest, ImportBorrowsStorageAndPreservesStaticExtents)

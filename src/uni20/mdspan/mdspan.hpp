@@ -15,7 +15,7 @@
 #include <mdspan/mdspan.hpp>
 
 #include <uni20/mdspan/default_accessor.hpp>
-#include <uni20/mdspan/layouts.hpp>
+#include <uni20/mdspan/layout_signed_stride.hpp>
 
 #include <array>
 #include <concepts>
@@ -174,7 +174,9 @@ template <class ToMapping, ForeignDefaultMdspan Span> constexpr ToMapping import
 /// \brief Non-owning multidimensional view with an accessor-defined offset type.
 /// \pre The mapping's reachable offsets are representable in the accessor's offset type.
 template <class Element, class Extents, class Layout = layout_right, class Accessor = default_accessor<Element>>
-  requires std::same_as<Element, typename Accessor::element_type> && requires { typename Accessor::offset_type; }
+  requires std::same_as<Element, typename Accessor::element_type> &&
+           detail::LayoutOffsetCompatible<Layout, Extents, Accessor> &&
+           requires { typename Accessor::offset_type; }
 class mdspan {
   public:
     using element_type = Element;
