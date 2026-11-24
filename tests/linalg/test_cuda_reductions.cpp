@@ -186,7 +186,25 @@ TEST_F(CudaReductionTest, CanonicalScalarSupportsTransfersAndHostReductions)
 
   uni20::CudaTensor<double, 0> copy(runtime.device_resources(0), uni20::extents<index_type>{});
   uni20::copy(copy, device);
-  EXPECT_EQ(uni20::to_host(copy)[], -7);
+  uni20::ScalarTensor<double> back;
+  uni20::copy(back, copy);
+  EXPECT_EQ(back[], -7);
+}
+
+TEST_F(CudaReductionTest, CanonicalComplexScalarReducesToHost)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  auto& resources = runtime.device_resources(0);
+  using complex_type = uni20::complex<double>;
+  uni20::ScalarTensor<complex_type> lhs;
+  uni20::ScalarTensor<complex_type> rhs;
+  lhs[] = complex_type{3.0, 4.0};
+  rhs[] = complex_type{2.0, -1.0};
+  auto const device_lhs = uni20::to_device(lhs, resources);
+  auto const device_rhs = uni20::to_device(rhs, resources);
+
+  EXPECT_DOUBLE_EQ(uni20::norm_host(device_lhs), 5.0);
+  EXPECT_EQ(uni20::inner_product_host(device_lhs, device_rhs), (complex_type{2.0, -11.0}));
 }
 
 TEST_F(CudaReductionTest, AsyncSumsSuspendUntilOneStreamIsAvailable)

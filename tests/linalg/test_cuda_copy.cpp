@@ -1480,6 +1480,36 @@ TEST_F(CudaCopyTest, WideElementsCopyInAnyLayout)
   expect_elements(uni20::to_host(column_major));
 }
 
+TEST_F(CudaCopyTest, CanonicalComplexScalarCopiesRoundTrip)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto& resources = runtime.device_resources(0);
+  using device_scalar = uni20::CudaTensor<complex_type, 0>;
+  uni20::ScalarTensor<complex_type> host;
+  host[] = complex_type{1.0, -2.0};
+  auto const source = uni20::to_device(host, resources);
+  device_scalar destination(uni20::uninitialized, resources, device_scalar::extents_type{});
+  uni20::copy(destination, source);
+
+  uni20::ScalarTensor<complex_type> back;
+  uni20::copy(back, destination);
+  EXPECT_EQ(back[], host[]);
+}
+
+TEST_F(CudaCopyTest, CanonicalScalarCopiesBetweenDevices)
+{
+  if (device_count_ < 2) GTEST_SKIP() << "peer-copy test requires two CUDA devices";
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0, 1}, .streams_per_device = 2});
+  using device_scalar = uni20::CudaTensor<double, 0>;
+  uni20::ScalarTensor<double> host;
+  host[] = 4.0;
+  auto const source = uni20::to_device(host, runtime.device_resources(0));
+  device_scalar destination(uni20::uninitialized, runtime.device_resources(1), device_scalar::extents_type{});
+  uni20::copy(destination, source);
+  EXPECT_EQ(destination.storage().device().ordinal(), 1);
+  EXPECT_EQ(uni20::to_host(destination)[], 4.0);
+}
+
 TEST_F(CudaCopyTest, RankZeroStridedTransfersRoundTrip)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
