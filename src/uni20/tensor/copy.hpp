@@ -20,7 +20,8 @@ namespace uni20
 {
 /// \brief Materialize a bare mdspan-like view as an inferred owning host tensor.
 /// \details The caller supplies a backend selector because a bare mdspan does
-///          not carry storage-domain policy. By default the output keeps the
+///          not carry storage-domain policy. Import foreign views with
+///          `uni20::mdspan{view}` before materializing them. By default the output keeps the
 ///          source's canonical layout type. Inputs without a canonical physical
 ///          layout use the default column-major `Tensor` layout. An explicit
 ///          `RequestedLayout` overrides either choice. The result has the

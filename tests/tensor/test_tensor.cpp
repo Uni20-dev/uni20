@@ -112,6 +112,7 @@ struct ReadOnlyImmediateStorage
 template <typename ElementType> struct PassthroughAccessor
 {
     using offset_policy = PassthroughAccessor;
+    using offset_type = std::size_t;
     using element_type = ElementType;
     using reference = element_type&;
     using data_handle_type = element_type*;
@@ -360,6 +361,16 @@ using instrumented_write_tensor_lease =
 using immediate_and_descriptor_tensor = Tensor<int, 2, ImmediateAndDescriptorStorage>;
 using read_only_tensor = Tensor<int, 2, ReadOnlyImmediateStorage>;
 using semantic_accessor_tensor = Tensor<int, 2, HostStorage, ColumnMajor, PassthroughAccessorFactory>;
+
+TEST(TensorTest, CustomAccessorResolvesWritableAndReadOnlySpans)
+{
+  semantic_accessor_tensor tensor(2, 2);
+  tensor.mdspan()[1, 0] = 7;
+  auto read_only = std::as_const(tensor).mdspan();
+  static_assert(!MutableMdspanLike<decltype(read_only)>);
+  EXPECT_EQ((read_only[1, 0]), 7);
+  EXPECT_EQ((tensor[1, 0]), 7);
+}
 
 using read_lease_type = decltype(acquire_host_read_access_sync(std::declval<tensor_type const&>()));
 using write_lease_type = decltype(acquire_host_write_access_sync(std::declval<tensor_type&>()));

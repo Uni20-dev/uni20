@@ -175,7 +175,8 @@ template <class ToMapping, ForeignDefaultMdspan Span> constexpr ToMapping import
 /// \pre The mapping's reachable offsets are representable in the accessor's offset type.
 template <class Element, class Extents, class Layout = layout_right, class Accessor = default_accessor<Element>>
   requires std::same_as<Element, typename Accessor::element_type> &&
-           detail::LayoutOffsetCompatible<Layout, Extents, Accessor>
+           detail::LayoutOffsetCompatible<Layout, Extents, Accessor> &&
+           requires { typename Accessor::offset_type; }
 class mdspan {
   public:
     using element_type = Element;

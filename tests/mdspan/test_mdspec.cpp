@@ -69,6 +69,7 @@ struct IndependentMdspecFacade
     using layout_type = typename mdspec_type::layout_type;
     using mapping_type = typename mdspec_type::mapping_type;
     using accessor_type = typename mdspec_type::accessor_type;
+    using offset_type = typename mdspec_type::offset_type;
     using data_handle_type = typename mdspec_type::data_handle_type;
     using data_descriptor_type = typename mdspec_type::data_descriptor_type;
     using reference = typename mdspec_type::reference;
@@ -126,10 +127,10 @@ static_assert(std::same_as<typename mdspec_type::offset_type, StatefulAccessor::
 TEST(MdspecTest, LogicalSizeIgnoresPadding)
 {
   using shape = stdex::extents<short, 2, stdex::dynamic_extent>;
-  using spec = uni20::mdspec<int, shape, stdex::layout_stride, stdex::default_accessor<int>, RegionDescriptor>;
+  using spec = uni20::mdspec<int, shape, uni20::layout_stride, uni20::default_accessor<int>, RegionDescriptor>;
   constexpr spec view{RegionDescriptor{}, spec::mapping_type{shape{3}, std::array{1, 5}}, {}};
   static_assert(std::same_as<decltype(view.size()), shape::size_type>);
-  static_assert(std::same_as<spec::offset_type, std::size_t>);
+  static_assert(std::same_as<spec::offset_type, std::ptrdiff_t>);
   static_assert(view.size() == 6 && !view.empty());
   EXPECT_EQ(view.mapping().required_span_size(), 12);
 }
