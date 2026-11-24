@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <tuple>
 
@@ -132,6 +133,17 @@ TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
   auto [plan, offset] = make_iteration_plan_with_offset(mapping);
   EXPECT_TRUE(plan.empty());
   EXPECT_EQ(offset, 0);
+}
+
+TEST(IterationPlanTest, NormalizesMinimumNarrowStrideWithoutNarrowing)
+{
+  using shape = uni20::extents<std::int8_t, 2>;
+  uni20::layout_signed_stride::mapping<shape> const mapping{shape{}, {-128}};
+  auto [dimensions, offset] = make_iteration_plan_with_offset(mapping);
+  ASSERT_EQ(dimensions.size(), 1U);
+  EXPECT_EQ(dimensions[0].extent, 2);
+  EXPECT_EQ(dimensions[0].stride, 128);
+  EXPECT_EQ(offset, -128);
 }
 
 TEST(IterationPlanTest, PreservesEachMappingOrigin)

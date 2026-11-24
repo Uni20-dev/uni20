@@ -1,4 +1,5 @@
 #include <uni20/mdspan/diagonal_accessor.hpp>
+#include <uni20/mdspan/diagonal_view.hpp>
 
 #include <gtest/gtest.h>
 
@@ -94,6 +95,17 @@ TEST(DiagonalMdspecTest, PreservesPhysicalStridesWithNarrowLogicalIndices)
   recovered[1] = 37;
   EXPECT_EQ(storage[256], 37);
   EXPECT_EQ(storage[0], 11);
+}
+
+TEST(DiagonalMdspecTest, RejectsComponentSpanThatCannotBeRecoveredInItsIndexType)
+{
+  using shape = uni20::extents<std::int8_t, 2, 2>;
+  using mapping = uni20::detail::DiagonalLayout::mapping<shape>;
+  int storage[128]{};
+  auto square = uni20::mdspan{storage, mapping{shape{}, {64, 63}}};
+  auto source = uni20::detail::diagonal_mdspec<0, 1>(square);
+  ASSERT_EQ(source.mapping().required_span_size(), 128U);
+  EXPECT_THROW(static_cast<void>(make_diagonal_mdspan(shape{}, source)), std::overflow_error);
 }
 
 struct ShiftedSignedComponentLayout

@@ -38,6 +38,22 @@ struct ReadAccessor : uni20::default_accessor<double const>
     using offset_policy = OffsetPolicyWithoutOffsetType;
 };
 
+struct MappingOffset
+{
+    int value;
+
+    explicit MappingOffset(int value_) : value(value_) {}
+    MappingOffset(std::ptrdiff_t) = delete;
+};
+
+struct ReadAccessorWithIntOffset : uni20::default_accessor<double const>
+{
+    using offset_type = MappingOffset;
+
+    reference access(data_handle_type data, offset_type offset) const { return data[offset.value]; }
+    data_handle_type offset(data_handle_type data, offset_type offset) const { return data + offset.value; }
+};
+
 [[nodiscard]] auto selected_backend(std::vector<uni20::linalg::dispatch_diagnostics::event> const& events,
                                     std::string_view operation) -> std::optional<std::string_view>
 {
@@ -76,6 +92,8 @@ try_normalized_contract(BackendSelector&& selector, OutputTensor& output, uni20:
 } // namespace
 
 template <> inline constexpr bool uni20::enable_accessor_in_domain<ReadAccessor, uni20::host_access_domain> = true;
+template <>
+inline constexpr bool uni20::enable_accessor_in_domain<ReadAccessorWithIntOffset, uni20::host_access_domain> = true;
 
 TEST(BlasTensorContractionTest, DefaultSelectorUsesDirectBackendAndOneBlasGemm)
 {
@@ -305,30 +323,34 @@ TEST(BlasTensorContractionTest, NonmergeableGroupDeclinesWithoutModifyingOutput)
         EXPECT_DOUBLE_EQ((output[i, j, n]), -7.0);
 }
 
-TEST(BlasTensorContractionTest, DefaultSelectorFallsBackWithNonNativeOffsetPolicy)
+TEST(BlasTensorContractionTest, DefaultSelectorFallsBackWhenOffsetProjectionIsUnsupported)
 {
-  using shape = uni20::dextents<uni20::index_type, 3>;
-  using span_type = uni20::mdspan<double const, shape, uni20::layout_stride, ReadAccessor>;
-  std::array<double, 9> const values{1, 2, 3, 4, 0, 5, 6, 7, 8};
-  span_type lhs_span{values.data(), span_type::mapping_type{shape{2, 2, 2}, {5, 2, 1}}, ReadAccessor{}};
-  uni20::MdspecTensorView<span_type, span_type, uni20::HostStorage> lhs{lhs_span, lhs_span};
-  uni20::RowMajorTensor<double, 2> rhs(2, 2);
-  uni20::RowMajorTensor<double, 3> output(2, 2, 2);
-  rhs[0, 0] = 2;
-  rhs[1, 1] = 3;
-  auto const axes = uni20::linalg::make_contraction_axes<3, 2>(
-      std::array<std::pair<std::size_t, std::size_t>, 1>{{{2, 0}}});
-  ASSERT_TRUE(uni20::linalg::try_make_looped_contraction_gemm_plan(output.mdspan(), lhs_span, rhs.mdspan(), axes));
+  auto check = []<class Accessor>() {
+    using shape = uni20::dextents<int, 3>;
+    using span_type = uni20::mdspan<double const, shape, uni20::layout_stride, Accessor>;
+    std::array<double, 9> const values{1, 2, 3, 4, 0, 5, 6, 7, 8};
+    span_type lhs_span{values.data(), typename span_type::mapping_type{shape{2, 2, 2}, {5, 2, 1}}, Accessor{}};
+    uni20::MdspecTensorView<span_type, span_type, uni20::HostStorage> lhs{lhs_span, lhs_span};
+    uni20::RowMajorTensor<double, 2> rhs(2, 2);
+    uni20::RowMajorTensor<double, 3> output(2, 2, 2);
+    rhs[0, 0] = 2;
+    rhs[1, 1] = 3;
+    auto const axes = uni20::linalg::make_contraction_axes<3, 2>(
+        std::array<std::pair<std::size_t, std::size_t>, 1>{{{2, 0}}});
+    ASSERT_TRUE(uni20::linalg::try_make_looped_contraction_gemm_plan(output.mdspan(), lhs_span, rhs.mdspan(), axes));
 
-  namespace diagnostics = uni20::linalg::dispatch_diagnostics;
-  std::vector<diagnostics::event> events;
-  diagnostics::scoped_sink capture([&](diagnostics::event const& event) { events.push_back(event); });
-  uni20::linalg::contract(output, 1.0, lhs, rhs, axes, 0.0);
+    namespace diagnostics = uni20::linalg::dispatch_diagnostics;
+    std::vector<diagnostics::event> events;
+    diagnostics::scoped_sink capture([&](diagnostics::event const& event) { events.push_back(event); });
+    uni20::linalg::contract(output, 1.0, lhs, rhs, axes, 0.0);
 
-  std::array<double, 8> const expected{2, 6, 6, 12, 10, 18, 14, 24};
-  for (std::size_t i = 0; i != expected.size(); ++i)
-    EXPECT_EQ(output.data()[i], expected[i]);
-  EXPECT_EQ(selected_backend(events, "contract"), "cpu_reference");
+    std::array<double, 8> const expected{2, 6, 6, 12, 10, 18, 14, 24};
+    for (std::size_t i = 0; i != expected.size(); ++i)
+      EXPECT_EQ(output.data()[i], expected[i]);
+    EXPECT_EQ(selected_backend(events, "contract"), "cpu_reference");
+  };
+  check.template operator()<ReadAccessor>();
+  check.template operator()<ReadAccessorWithIntOffset>();
 }
 
 TEST(BlasTensorContractionTest, SingletonAxisDoesNotForceLoopedContraction)

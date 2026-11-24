@@ -262,6 +262,19 @@ template <class Mapping, std::size_t... Axis>
   return mapping(((void)Axis, index_type{1})...) - mapping(((void)Axis, index_type{0})...);
 }
 
+template <class Layout, std::integral Index>
+constexpr void validate_diagonal_component_span(std::size_t count, Index stride)
+{
+  if constexpr (std::same_as<Layout, layout_stride> && std::signed_integral<Index>)
+    if (stride < 0) throw std::invalid_argument("negative diagonal component stride requires a signed-stride layout");
+  if (count == 0) return;
+
+  Index last_offset{};
+  if (__builtin_mul_overflow(count - 1, stride, &last_offset) ||
+      (std::same_as<Layout, layout_stride> && last_offset == std::numeric_limits<Index>::max()))
+    throw std::overflow_error("diagonal component span exceeds its index range");
+}
+
 } // namespace detail
 
 /// \brief Expose the physically stored values of a generalized-diagonal mdspan.
@@ -278,6 +291,7 @@ template <class Mapping, std::size_t... Axis>
 /// \return Rank-one strided mdspan over the stored diagonal components.
 /// \throws std::invalid_argument If the logical view does not begin on or
 ///         advance along the represented diagonal.
+/// \throws std::overflow_error If the component stride or span cannot be represented.
 template <class ElementType, class Extents, class LayoutPolicy, class AccessorExtents, class ComponentIndex,
           class ComponentLayout>
   requires(Extents::rank() == AccessorExtents::rank())
@@ -299,7 +313,9 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
     auto const origin = span.accessor().component_index(span.data_handle());
     if (!origin.present)
       throw std::invalid_argument("diagonal component view does not begin on the represented diagonal");
-    data += static_cast<index_type>(origin.index) * component_stride;
+    index_type origin_offset{};
+    if (__builtin_mul_overflow(origin.index, component_stride, &origin_offset))
+      throw std::overflow_error("diagonal component origin exceeds its index range");
     if (extents.extent(0) > 1)
     {
       auto const step = detail::diagonal_mapping_step(span.mapping(), std::make_index_sequence<Extents::rank()>{});
@@ -308,9 +324,12 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
       auto const next = span.accessor().component_index(span.data_handle(), static_cast<std::size_t>(step));
       if (!next.present || next.index < origin.index)
         throw std::invalid_argument("diagonal component view does not preserve the represented diagonal");
-      component_stride *= static_cast<index_type>(next.index - origin.index);
+      if (__builtin_mul_overflow(next.index - origin.index, component_stride, &component_stride))
+        throw std::overflow_error("diagonal component stride exceeds its index range");
     }
+    data += origin_offset;
   }
+  detail::validate_diagonal_component_span<ComponentLayout>(count, component_stride);
   auto const mapping = component_mapping_type{extents, std::array<index_type, 1>{component_stride}};
   return component_mdspan_type{data, mapping};
 }
@@ -322,7 +341,7 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
 ///          preserves the component layout's zero-base-offset guarantee.
 /// \throws std::invalid_argument If the component extent differs from the logical diagonal extent
 ///         or the component stride is negative for a forward component layout.
-/// \throws std::overflow_error If the logical size, component count, or stride exceeds its index range.
+/// \throws std::overflow_error If the logical size, component count, stride, or rebased span exceeds its index range.
 /// \tparam Components Default-accessor rank-one strided mdspan type.
 /// \param logical_extents Full logical tensor extents.
 /// \param components Stored component view with `min(logical_extents)` entries.
@@ -344,8 +363,8 @@ template <class Extents, class Components>
   auto const stride = components.mapping().stride(0);
   if (!std::in_range<component_index>(count) || !std::in_range<component_index>(stride))
     throw std::overflow_error("diagonal component count or stride exceeds its index range");
-  if constexpr (std::same_as<component_layout, layout_stride> && std::signed_integral<decltype(stride)>)
-    if (stride < 0) throw std::invalid_argument("negative diagonal component stride requires a signed-stride layout");
+  auto const component_stride = static_cast<component_index>(stride);
+  detail::validate_diagonal_component_span<component_layout>(static_cast<std::size_t>(count), component_stride);
 
   auto* data = components.data_handle();
   if (count != 0) data = components.accessor().offset(data, components.mapping()(0));
@@ -354,7 +373,7 @@ template <class Extents, class Components>
   using accessor_type = diagonal_accessor<element_type, extents_type, component_index, component_layout>;
   using result_type = uni20::mdspan<element_type, extents_type, GeneratedLayout, accessor_type>;
   return result_type{typename accessor_type::data_handle_type{data, 0}, typename result_type::mapping_type{extents},
-                     accessor_type{extents, static_cast<component_index>(stride)}};
+                     accessor_type{extents, component_stride}};
 }
 
 /// \brief Recover the stored value type from a writable diagonal proxy.

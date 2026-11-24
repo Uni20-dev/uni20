@@ -44,11 +44,9 @@ template <class OutputMdspan, class Function, class... InputMdspans> consteval b
   }
   else
   {
-    return (transform_value_is_readable<InputMdspans>() && ...) &&
-           std::invocable<Function const&, typename std::remove_cvref_t<InputMdspans>::value_type...>&&
-             requires(typename output_type::reference output, Function const& function)
-    {
-      output = std::invoke(function, std::declval<typename std::remove_cvref_t<InputMdspans>::value_type>()...);
+    return (transform_value_is_readable<InputMdspans>() && ...) && requires(Function const& function) {
+      std::declval<typename output_type::reference>() =
+          std::invoke(function, std::declval<typename std::remove_cvref_t<InputMdspans>::value_type>()...);
     };
   }
 }
@@ -65,13 +63,11 @@ template <class OutputMdspan, class Function, class... InputMdspans> consteval b
   else
   {
     return transform_value_is_readable<OutputMdspan>() && (transform_value_is_readable<InputMdspans>() && ...) &&
-           std::invocable<Function const&, typename output_type::value_type,
-                          typename std::remove_cvref_t<InputMdspans>::value_type...>&&
-             requires(typename output_type::reference output, Function const& function)
-    {
-      output = std::invoke(function, std::declval<typename output_type::value_type>(),
-                           std::declval<typename std::remove_cvref_t<InputMdspans>::value_type>()...);
-    };
+           requires(Function const& function) {
+             std::declval<typename output_type::reference>() =
+                 std::invoke(function, std::declval<typename output_type::value_type>(),
+                             std::declval<typename std::remove_cvref_t<InputMdspans>::value_type>()...);
+           };
   }
 }
 
@@ -106,13 +102,13 @@ void apply_transform_element(Operation const& operation, OutputMdspan& output, I
   if constexpr (ReadsOutput)
   {
     using output_value = typename std::remove_cvref_t<OutputMdspan>::value_type;
-    output_element = std::invoke(
+    std::forward<decltype(output_element)>(output_element) = std::invoke(
         operation.function, static_cast<output_value>(output_element),
         static_cast<typename std::remove_cvref_t<InputMdspans>::value_type>(transform_element(inputs, index, axes))...);
   }
   else
   {
-    output_element = std::invoke(
+    std::forward<decltype(output_element)>(output_element) = std::invoke(
         operation.function,
         static_cast<typename std::remove_cvref_t<InputMdspans>::value_type>(transform_element(inputs, index, axes))...);
   }

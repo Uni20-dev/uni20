@@ -198,10 +198,11 @@ template <class Mdspec> consteval bool can_offset_contraction_mdspec()
     using accessor_type = typename span_type::accessor_type;
     using offset_accessor_type = typename accessor_type::offset_policy;
     return uni20::AccessorPolicy<offset_accessor_type> &&
-           requires(span_type& span, typename span_type::offset_type offset) {
+           requires(span_type& span, uni20::index_type displacement) {
              requires std::same_as<typename offset_accessor_type::element_type, typename span_type::element_type>;
              requires std::constructible_from<offset_accessor_type, accessor_type const&>;
-             { span.accessor().offset(span.data_handle(), offset) }
+             { span.accessor().offset(span.data_handle(),
+                                      static_cast<typename span_type::offset_type>(displacement)) }
                  -> std::convertible_to<typename offset_accessor_type::data_handle_type>;
            };
   }

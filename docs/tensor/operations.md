@@ -162,9 +162,10 @@ standard integer type covers both ranges, the zip keeps each child mapping.
 `make_diagonal_mdspan` preserves the physical component mapping's index type
 and stride, including when `diagonal_components(view)` recovers the component
 view. The diagonal's logical mapping flattens coordinates into a separate wide
-index. Construction checks the component count and the representability of the
-logical size. For example, a 50,000 × 50,000 diagonal stores 50,000 components
-but its last logical offset is 2,499,999,999.
+index. Construction checks the component count, rebased component span and
+logical size before forming the view. It throws `std::overflow_error` if the
+chosen mapping cannot represent them. For example, a 50,000 × 50,000 diagonal
+stores 50,000 components but its last logical offset is 2,499,999,999.
 
 Materialization is explicit:
 

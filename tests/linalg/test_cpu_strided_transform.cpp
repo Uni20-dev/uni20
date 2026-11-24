@@ -1,5 +1,6 @@
 #include "../helpers.hpp"
 #include "gtest/gtest.h"
+#include <cstdint>
 #include <numeric>
 #include <stdexcept>
 #include <uni20/linalg/backend_selector.hpp>
@@ -10,6 +11,51 @@
 #include <uni20/tensor/transform.hpp>
 
 using namespace uni20;
+
+namespace
+{
+struct WriteProxy
+{
+    int* value;
+
+    operator int() const { return *value; }
+    void operator=(int replacement) && { *value = replacement; }
+};
+
+struct NarrowProxyAccessor
+{
+    using element_type = int;
+    using data_handle_type = int*;
+    using offset_type = std::int16_t;
+    using reference = WriteProxy;
+    using offset_policy = NarrowProxyAccessor;
+
+    reference access(data_handle_type data, offset_type offset) const { return {data + offset}; }
+    reference access(data_handle_type, std::ptrdiff_t) const = delete;
+    data_handle_type offset(data_handle_type data, offset_type offset) const { return data + offset; }
+};
+} // namespace
+
+template <>
+inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor, uni20::host_access_domain> = true;
+
+TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
+{
+  using shape = uni20::extents<int, 3>;
+  using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor>;
+  std::array<int, 3> storage{};
+  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}, NarrowProxyAccessor{}};
+  int values[]{4, 9, 12};
+  auto input = uni20::mdspan{values};
+  auto backend = uni20::linalg::CpuReferenceBackend{};
+
+  uni20::copy(backend, output, input);
+  EXPECT_EQ(storage, (std::array{12, 9, 4}));
+  uni20::transform_inplace(backend, output, [](int value) { return value + 1; });
+  EXPECT_EQ(storage, (std::array{13, 10, 5}));
+  uni20::fill(backend, output, 41);
+  EXPECT_EQ(storage, (std::array{41, 41, 41}));
+}
 
 TEST(TransformInplace, MultiplyBy2_1DContiguous)
 {
