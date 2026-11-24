@@ -137,8 +137,8 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    return zero for an empty mapping. The built-in nonnegative layouts declare
    `is_base_offset_always_zero()`. Both `mdspan` and `mdspec` expose this
    compile-time mapping property when the mapping has `required_span_size()`.
-   A legacy mapping
-   exposing only `required_span_size()` describes a span starting at its handle.
+   A legacy mapping exposing only `required_span_size()` describes a span
+   starting at its handle.
    The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
    buffer. This includes paired-axis diagonal views and accessors that forward
@@ -153,8 +153,7 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    the zip span-size query. A translating accessor is outside the rule too: `diagonal_accessor`
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
    diagonal is mapping offset 8 but component 2, and validating its buffer is
-   left to the accessor. [CUDA acquisition](mdspec.md#cuda-vertical-slice)
-   requires the accessor to opt into the mapping span or supply its own.
+   left to the accessor.
 4. **Affine layouts expose a stride per axis.** `AffineMdspanLike` and
    `AffineMdspecLike` require `is_always_strided()` and a declared
    `stride(axis)` at every rank.
@@ -360,10 +359,12 @@ applies to it:
   `layout_signed_stride` requires a signed accessor offset type in both
   `mdspec` and the resolved `mdspan`.
 - **Storage span (rule 3).** Acquisition validates the descriptor's logical
-  origin against the buffer. It subtracts `base_offset()` from the descriptor
-  offset to locate the span and checks that `required_span_size()` elements
-  fit from there. The acquired handle still addresses the descriptor's origin.
-  An empty view permits a one-past origin.
+  origin against the buffer. [CUDA acquisition](mdspec.md#cuda-vertical-slice)
+  requires the accessor to opt into the mapping span or supply its own. When
+  using the mapping span, acquisition subtracts `base_offset()` from the
+  descriptor offset and checks that `required_span_size()` elements fit from
+  there. The acquired handle still addresses the descriptor's origin. An empty
+  view permits a one-past origin.
 - **Empty mappings and representable products (rules 6 and 7)** come with the
   mapping and need nothing separate.
 - **Resolution.** Acquisition combines the leased handle, the mapping and the
