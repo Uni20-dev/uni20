@@ -190,10 +190,14 @@ class mdspan {
     {}
 
     /// \brief Borrow the storage using the supplied mapping and accessor.
+    /// \throws std::invalid_argument On the host, if `mapping` is always strided, nonempty, and maps the
+    ///         all-zero coordinate to a nonzero offset. Uni20's own layouts never do.
     UNI20_HOST_DEVICE constexpr mdspan(data_handle_type handle, mapping_type const& mapping,
                                        accessor_type const& accessor)
         : handle_(std::move(handle)), mapping_(mapping), accessor_(accessor)
-    {}
+    {
+      detail::require_zero_strided_origin<layout_type>(mapping_);
+    }
 
     UNI20_HOST_DEVICE constexpr mdspan(data_handle_type handle, mapping_type const& mapping)
       requires std::default_initializable<accessor_type>

@@ -152,9 +152,21 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
    diagonal is mapping offset 8 but component 2, and validating its buffer is
    left to the accessor.
-4. **Affine layouts expose a stride per axis.** `AffineMdspanLike` and
-   `AffineMdspecLike` require `is_always_strided()` and a declared
-   `stride(axis)` at every rank.
+4. **Affine layouts expose a stride per axis and have a zero origin.**
+   `AffineMdspanLike` and `AffineMdspecLike` require `is_always_strided()`
+   and a declared `stride(axis)` at every rank. An always-strided mapping in a
+   Uni20 view maps the all-zero coordinate to offset zero. An offset that moves
+   the view belongs in its data handle, as with `std::layout_stride` and
+   `submdspan`. The standard's strided-mapping requirement constrains only the
+   differences between neighbouring coordinates, so it admits
+   `m(i) = c + Σ iₖsₖ` with `c ≠ 0`. In `std::mdspan` that is the only way to
+   express a negative stride. Uni20 uses `layout_signed_stride` instead, and
+   code that works from the handle and the strides, such as `StridedZipLayout`
+   and `diagonal_components`, would drop `c`. Uni20's own layouts have a zero
+   origin by construction. Forming an `mdspan` or `mdspec` with any other
+   always-strided layout checks a nonempty mapping on the host and throws
+   `std::invalid_argument` for a nonzero origin
+   ([#179](https://github.com/Uni20-dev/uni20/issues/179)).
    Explicit import of a standard rank-zero mapping preserves the scalar shape
    without querying a stride.
 5. **Signed strides have a dedicated layout.** `AffineMdspanLike` and

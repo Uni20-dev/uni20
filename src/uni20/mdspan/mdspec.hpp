@@ -49,9 +49,13 @@ class mdspec {
     /// \param descriptor Descriptor used by later access acquisition.
     /// \param mapping Mapping installed in the eventual mdspan.
     /// \param accessor Accessor installed in the eventual mdspan.
+    /// \throws std::invalid_argument If `mapping` is always strided, nonempty, and maps the all-zero
+    ///         coordinate to a nonzero offset. Uni20's own layouts never do.
     constexpr explicit mdspec(data_descriptor_type descriptor, mapping_type mapping, accessor_type accessor)
         : descriptor_(std::move(descriptor)), mapping_(std::move(mapping)), accessor_(std::move(accessor))
-    {}
+    {
+      detail::require_zero_strided_origin<layout_type>(mapping_);
+    }
 
     /// \brief Return the static rank.
     [[nodiscard]] static constexpr rank_type rank() noexcept { return extents_type::rank(); }

@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -152,7 +153,9 @@ struct ShiftedLayout
     };
 };
 
-TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
+// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179), so a shifted
+// origin cannot reach the reduction. The descriptor offset alone moves the view.
+TEST_F(CudaReductionTest, AddsTheDescriptorOffsetAndRejectsAShiftedOrigin)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
   uni20::Tensor<double, 1> host(4);
@@ -163,9 +166,15 @@ TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
   auto const device = uni20::to_device(host, 0);
   auto const base = device.mdspec();
   using shape = uni20::extents<index_type, 2>;
-  using spec = uni20::mdspec<double const, shape, ShiftedLayout, typename decltype(base)::accessor_type,
-                             typename decltype(base)::data_descriptor_type>;
-  spec descriptor{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()};
+  using accessor_type = typename decltype(base)::accessor_type;
+  using descriptor_type = typename decltype(base)::data_descriptor_type;
+
+  using shifted_spec = uni20::mdspec<double const, shape, ShiftedLayout, accessor_type, descriptor_type>;
+  EXPECT_THROW((shifted_spec{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()}),
+               std::invalid_argument);
+
+  using spec = uni20::mdspec<double const, shape, uni20::layout_right, accessor_type, descriptor_type>;
+  spec descriptor{base.data_descriptor().offset_by(2), uni20::layout_right::mapping<shape>{}, base.accessor()};
   uni20::MdspecTensorView<spec, spec, uni20::CudaStorage> view{descriptor, descriptor};
   EXPECT_EQ(uni20::sum_host(view), 5);
   EXPECT_EQ(uni20::maximum_host(view), 3);

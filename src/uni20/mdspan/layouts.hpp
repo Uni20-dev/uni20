@@ -7,6 +7,7 @@
 #include <concepts>
 #include <cstddef>
 #include <span>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -29,6 +30,30 @@ template <class Extents> [[nodiscard]] UNI20_HOST_DEVICE constexpr bool mdspan_e
   for (std::size_t axis = 0; axis != Extents::rank(); ++axis)
     if (extents.extent(axis) == 0) return true;
   return false;
+}
+
+/// \brief True for Uni20 layouts whose strided mappings map the all-zero coordinate to offset zero by construction.
+/// \details Keyed on the layout policy rather than the mapping, so a mapping derived from a Uni20 mapping
+///          under its own layout policy is still checked.
+template <class Layout> inline constexpr bool zero_origin_layout = false;
+
+/// \brief Enforce the Uni20 rule that an always-strided mapping maps the all-zero coordinate to offset zero.
+/// \details The standard's strided-mapping requirement constrains only differences between neighbouring
+///          coordinates, so it admits `m(i) = c + sum(i_k * s_k)` with `c != 0`. Uni20 does not: consumers that
+///          work from the data handle and the strides would drop `c`. Offsets that move a view belong in its
+///          data handle, as with `std::layout_stride`. Layouts listed in `zero_origin_layout` skip the check.
+///          An empty mapping has no coordinate to evaluate. Device code does not check.
+/// \throws std::invalid_argument If a nonempty always-strided mapping maps the all-zero coordinate elsewhere.
+template <class Layout, class Mapping>
+UNI20_HOST_DEVICE constexpr void require_zero_strided_origin(Mapping const& mapping)
+{
+#if !defined(__CUDA_ARCH__)
+  if constexpr (!zero_origin_layout<Layout> && requires { requires Mapping::is_always_strided(); })
+  {
+    if (!mdspan_empty(mapping.extents()) && mapping_origin(mapping) != 0)
+      throw std::invalid_argument("a strided Uni20 mapping must map the all-zero coordinate to offset zero");
+  }
+#endif
 }
 
 template <class Size, class Extents>
@@ -304,5 +329,12 @@ struct layout_stride
         std::array<index_type, extents_type::rank()> strides_{};
     };
 };
+
+namespace detail
+{
+template <> inline constexpr bool zero_origin_layout<layout_left> = true;
+template <> inline constexpr bool zero_origin_layout<layout_right> = true;
+template <> inline constexpr bool zero_origin_layout<layout_stride> = true;
+} // namespace detail
 
 } // namespace uni20

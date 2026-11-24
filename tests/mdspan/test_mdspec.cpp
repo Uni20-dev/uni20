@@ -5,6 +5,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -200,6 +201,29 @@ TEST(MdspecTest, MaterializesStridesWithoutADataHandle)
   mdspec_type const span{RegionDescriptor{}, mdspec_type::mapping_type{extents, expected}, StatefulAccessor{}};
 
   EXPECT_EQ(uni20::strides(span), expected);
+}
+
+struct ShiftedOriginLayout
+{
+    template <class Extents> struct mapping : uni20::layout_stride::mapping<Extents>
+    {
+        using base_type = uni20::layout_stride::mapping<Extents>;
+        using layout_type = ShiftedOriginLayout;
+        using base_type::base_type;
+
+        template <class... Indices> constexpr typename Extents::index_type operator()(Indices... indices) const noexcept
+        {
+          return 1 + base_type::operator()(indices...);
+        }
+    };
+};
+
+// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179).
+TEST(MdspecTest, RejectsAStridedMappingWithAShiftedOrigin)
+{
+  using shifted_type = uni20::mdspec<int, extents_type, ShiftedOriginLayout, StatefulAccessor, RegionDescriptor>;
+  auto const mapping = ShiftedOriginLayout::mapping<extents_type>{extents_type{2, 3}, std::array<std::size_t, 2>{3, 1}};
+  EXPECT_THROW((shifted_type{RegionDescriptor{}, mapping, StatefulAccessor{}}), std::invalid_argument);
 }
 
 } // namespace
