@@ -156,6 +156,7 @@ template <class Scalar> class NonStridedMdspan {
     using layout_type = uni20::layout_left;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = uni20::default_accessor<element_type>;
+    using offset_type = typename accessor_type::offset_type;
     using data_handle_type = typename accessor_type::data_handle_type;
     using reference = typename accessor_type::reference;
     using index_type = typename extents_type::index_type;
