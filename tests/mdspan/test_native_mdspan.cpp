@@ -183,6 +183,8 @@ TEST(NativeMdspanTest, RankZeroHasAnObserverAndOneElement)
 
   static_assert(uni20::StridedMdspanLike<decltype(view)>);
   static_assert(uni20::StridedMdspecLike<decltype(descriptor)>);
+  static_assert(decltype(view)::is_base_offset_always_zero());
+  static_assert(decltype(descriptor)::is_base_offset_always_zero());
   static_assert(uni20::layout_stride::mapping<ScalarShape>::is_always_exhaustive());
   EXPECT_EQ(axis_steps(view), 0);
   EXPECT_EQ(axis_steps(descriptor), 0);
@@ -234,6 +236,10 @@ TEST(NativeMdspanTest, EmptyMappingKeepsItsStrides)
 TEST(NativeMdspanTest, SignedMappingsDescribeStorageOnBothSidesOfTheHandle)
 {
   using layout = uni20::layout_signed_stride;
+  using Span = uni20::mdspan<int, MatrixShape, layout>;
+  using Spec = uni20::mdspec<int, MatrixShape, layout, uni20::default_accessor<int>, int>;
+  static_assert(!Span::is_base_offset_always_zero());
+  static_assert(!Spec::is_base_offset_always_zero());
   constexpr layout::mapping<MatrixShape> compact{MatrixShape{2, 3}, {-1, 2}};
   static_assert(!decltype(compact)::is_base_offset_always_zero());
   static_assert(std::same_as<decltype(compact.base_offset()), std::size_t>);

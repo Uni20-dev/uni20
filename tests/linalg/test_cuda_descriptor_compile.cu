@@ -162,6 +162,7 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 
 [[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
 {
+  static_assert(shape_descriptor::is_base_offset_always_zero());
   *result = descriptor->empty() ? 0 : descriptor->size();
 }
 
@@ -169,6 +170,7 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 {
   uni20::layout_stride::mapping<extents_type> const mapping{extents_type{3, 2}, {4, 3}};
   auto span = uni20::mdspan{output, mapping};
+  static_assert(decltype(span)::is_base_offset_always_zero());
   std::array<int, 2> const last{2, 1};
   span[last] = static_cast<double>(span.size() + span.mapping().required_span_size() + span.mapping().base_offset());
 

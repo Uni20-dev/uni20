@@ -135,7 +135,9 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    the data handle. A native affine mapping returns zero for the all-zero
    coordinate, so the handle addresses the logical origin. Both storage queries
    return zero for an empty mapping. The built-in nonnegative layouts declare
-   `is_base_offset_always_zero()`. A legacy mapping
+   `is_base_offset_always_zero()`. Both `mdspan` and `mdspec` expose this
+   compile-time mapping property when the mapping has `required_span_size()`.
+   A legacy mapping
    exposing only `required_span_size()` describes a span starting at its handle.
    The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
