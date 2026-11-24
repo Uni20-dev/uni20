@@ -21,7 +21,7 @@ namespace
 {
 
 using index_t = index_type;
-using extents_2d = stdex::dextents<index_t, 2>;
+using extents_2d = uni20::dextents<index_t, 2>;
 using tensor_type = Tensor<int, 2, HostStorage>;
 using strided_tensor_type = StridedTensor<int, 2, HostStorage>;
 using scalar_tensor_type = ScalarTensor<double>;
@@ -208,7 +208,7 @@ struct MismatchedMutableRankTensorView
 {
     using storage_policy = HostStorage;
     using const_mdspan_type = uni20::mdspan<int const, extents_2d>;
-    using mutable_extents_type = stdex::dextents<index_t, 1>;
+    using mutable_extents_type = uni20::dextents<index_t, 1>;
     using mutable_mdspan_type = uni20::mdspan<int, mutable_extents_type>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
@@ -733,7 +733,7 @@ TEST(TensorTest, ZeroExtentHasNoLogicalElements)
 
 TEST(BasicTensorTest, SupportsStaticMdspanExtents)
 {
-  using fixed_extents = stdex::extents<index_t, 2, 3>;
+  using fixed_extents = uni20::extents<index_t, 2, 3>;
   BasicTensor<int, fixed_extents> tensor(fixed_extents{});
 
   static_assert(decltype(tensor)::rank() == 2);

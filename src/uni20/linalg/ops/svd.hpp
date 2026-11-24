@@ -32,8 +32,8 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using svd_value_extents = stdex::dextents<uni20::index_type, 1>;
-using svd_matrix_extents = stdex::dextents<uni20::index_type, 2>;
+using svd_value_extents = uni20::dextents<uni20::index_type, 1>;
+using svd_matrix_extents = uni20::dextents<uni20::index_type, 2>;
 
 template <uni20::MutableRankedTensorView<1> SingularValueTensor, uni20::MutableRankedTensorView<2> LeftTensor,
           uni20::MutableRankedTensorView<2> RightAdjointTensor, uni20::MutableRankedTensorView<2> MatrixTensor>

@@ -140,9 +140,9 @@ pre-populate the CMake FetchContent sources instead.
   rather than an uninitialized-memory warning: a warning should mean either a
   required field was omitted or the aggregate should spell out its default.
 * Use `constexpr`, `consteval`, and concepts from C++23 wherever they simplify code or improve correctness.
-* Use Uni20’s native `mdspan` and layout types. The Kokkos implementation, in
-  namespace `stdex::`, supplies extents during the migration.
-* Uni20 uses square brackets `[]` for multi-dimensional indexing of tensors. **Do not** define `MDSPAN_USE_PAREN_OPERATOR`, use `[]` instead. This may mean adding brackets when code like `[a,b]` is used in a macro invocation, especially in TRACE and gtest macros.
+* Use Uni20’s `mdspan`, layout and extents names. CMake selects the extents
+  implementation for the whole build.
+* Uni20 uses square brackets `[]` for multi-dimensional indexing of tensors. This may mean adding brackets when code like `[a,b]` is used in a macro invocation, especially in TRACE and gtest macros.
 * Spell complex scalar types as `uni20::complex<T>` in Uni20 code, tests,
   examples, and docs. Native real types retain `std::complex<T>` identity;
   `complex<mpreal>` selects the MPC-backed owning scalar when enabled. Deduce
@@ -287,7 +287,7 @@ DMRG calculations.
   shallow-const descriptors must not make `TensorView const&` writable.
 * Direct provider calls such as BLAS/LAPACK may bypass the accessor and read the
   storage through raw pointers only when the accessor is known to be
-  `uni20::default_accessor<T>`, the imported Kokkos default policy, or when the wrapper explicitly understands and
+  `uni20::default_accessor<T>` or when the wrapper understands and
   lowers the accessor semantics, for example Uni20's conjugating accessor into a
   BLAS transpose/conjugation flag.
 * Treat custom accessors, transform accessors, scaling accessors, zip accessors,

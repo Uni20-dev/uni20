@@ -53,7 +53,7 @@ constexpr auto permute_mdspec_impl(Span source, std::index_sequence<I...>)
   {
     using index_type = typename Span::index_type;
     using source_extents_type = typename Span::extents_type;
-    using extents_type = stdex::extents<index_type, source_extents_type::static_extent(Permutation[I])...>;
+    using extents_type = uni20::extents<index_type, source_extents_type::static_extent(Permutation[I])...>;
     using mapping_type = layout_stride::mapping<extents_type>;
     using element_type = typename Span::element_type;
     using accessor_type = typename Span::accessor_type;

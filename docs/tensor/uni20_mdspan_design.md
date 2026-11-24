@@ -1,18 +1,19 @@
 # Uni20 mdspan and mdspec Design
 
-Tensor producers and CUDA acquisition use native views. CPU copy and
-elementwise transforms support native signed-stride views. Extents still use
-the Kokkos implementation.
+Tensor producers and CUDA acquisition use Uni20 views. CPU copy and
+elementwise transforms support native signed-stride views.
+[`mdspan/extents.hpp`](../../src/uni20/mdspan/extents.hpp) supplies
+`uni20::extents` and `uni20::dextents`. CMake selects the standard-library
+types when the host compiler can use them. A CUDA build also requires a device
+compilation of mixed static and dynamic extents before selecting them.
+Otherwise the entire build uses Uni20's fallback, so C++ and CUDA translation
+units agree on the types of tensors and descriptors.
+Both choices use signed or unsigned integer index types, including signed and
+unsigned char.
 
-Uni20 uses the Kokkos reference implementation of `std::mdspan`, included as
-`stdex` through [`mdspan/mdspan.hpp`](../../src/uni20/mdspan/mdspan.hpp). This
-note proposes Uni20's own `mdspan` class and layout mappings, keeping the
-standard extents. The goals are a stride observer that exists at every rank,
-well-defined signed offsets, and a reachable-offset range for single-buffer
-mappings whose offsets directly address elements.
-Negative strides then become possible as an opt-in layout. `uni20::mdspec`,
-which Uni20 already owns, follows the same specification, as the mdspec
-section below describes.
+Uni20 owns its views and mappings to provide stride observers at every rank,
+signed offsets, and storage-span queries. `uni20::mdspec` uses the same
+mapping and accessor vocabulary before the data handle is acquired.
 
 ## Why Not the Standard Types
 
@@ -62,7 +63,7 @@ Counts are occurrences over `src`, `tests` and `examples` on `main`
 (`33439da6`), from this command for each name:
 
 ```sh
-git grep -ohP 'stdex::NAME\b(?!_)' main -- src tests examples | wc -l
+git grep -ohP 'stdex::NAME\b(?!_)' 33439da6 -- src tests examples | wc -l
 ```
 
 | Name | Uses |
@@ -76,7 +77,7 @@ git grep -ohP 'stdex::NAME\b(?!_)' main -- src tests examples | wc -l
 | `stdex::default_accessor` | 34 |
 | `stdex::dynamic_extent` | 18 |
 
-Fifteen files in `src` name `stdex::mdspan`; those are where the type crosses
+Fifteen files in that revision of `src` name `stdex::mdspan`; those are where the type crosses
 public APIs. `RowMajor` and `ColumnMajor` in
 [`tensor/tensor.hpp`](../../src/uni20/tensor/tensor.hpp) alias the standard
 layouts, and 13 lines in `src` compare a layout type with `stdex::layout_left`,
@@ -296,7 +297,7 @@ tentatively on 2026-11-20: the signed layout is
   `MdspanLike` types. A foreign type may declare its own `offset_type` and
   still qualify for import. Native views use their copy, move and converting
   constructors. A deferred `mdspec` goes through acquisition to obtain a handle.
-- **Supported conversions.** Initially accept the standard and Kokkos
+- **Supported conversions.** Import standard
   `layout_left`, `layout_right` and `layout_stride` mappings paired with
   their default accessor. A deduction guide selects the corresponding Uni20
   layout and default accessor, preserves the element type (including const)
@@ -417,10 +418,9 @@ conformance claims (rule 3).
    direct BLAS calls, including its const form. When BLAS probes an output
    before allocation or resizing, pass its prospective mapping and accessor
    as metadata. Construct the mdspan once the output has storage.
-3. **Tests and examples.** `stdex::` names become Uni20 names, about 620
-   references, mostly mechanical. Interop tests import standard mdspans
-   explicitly and exercise export failure for an unrepresentable mapping.
-   Migrate tests that need negative strides together with the signed layout.
+3. **Tests and examples.** Producers, tests and examples use Uni20 names.
+   GCC 13 exercises fallback extents. The GCC 16 CI job exercises standard
+   extents and explicit import, including rejection of unrepresentable views.
 4. **Signed strides.** Add `layout_signed_stride` and `reverse`. Host copy
    and elementwise transforms use the affine iteration plan. Diagonal component
    views use the source component layout's zero-base-offset guarantee to

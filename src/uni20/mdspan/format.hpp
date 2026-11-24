@@ -13,13 +13,14 @@
 #include <cstddef>
 #include <format>
 
+#if !UNI20_USE_STD_EXTENTS
 /// \brief Formatter specialization that prints extents in a human-readable form.
-template <class IndexType, std::size_t... Extents> struct std::formatter<stdex::extents<IndexType, Extents...>>
+template <class IndexType, std::size_t... Extents> struct std::formatter<uni20::extents<IndexType, Extents...>>
 {
     constexpr auto parse(format_parse_context& context) { return context.begin(); }
 
     template <class FormatContext>
-    auto format(stdex::extents<IndexType, Extents...> const& extents, FormatContext& context) const
+    auto format(uni20::extents<IndexType, Extents...> const& extents, FormatContext& context) const
     {
       auto output = context.out();
       output = fmt::format_to(output, "extents(");
@@ -32,16 +33,18 @@ template <class IndexType, std::size_t... Extents> struct std::formatter<stdex::
     }
 };
 
+#endif
+
 namespace fmt
 {
 
 /// \brief Formatter specialization that prints mdspan extents as a comma-separated list.
-template <class IndexType, std::size_t... StaticExtents> struct formatter<stdex::extents<IndexType, StaticExtents...>>
+template <class IndexType, std::size_t... StaticExtents> struct formatter<uni20::extents<IndexType, StaticExtents...>>
 {
     constexpr auto parse(format_parse_context& context) { return context.begin(); }
 
     template <class FormatContext>
-    constexpr auto format(stdex::extents<IndexType, StaticExtents...> const& extents, FormatContext& context) const
+    constexpr auto format(uni20::extents<IndexType, StaticExtents...> const& extents, FormatContext& context) const
     {
       auto output = context.out();
       *output++ = '[';

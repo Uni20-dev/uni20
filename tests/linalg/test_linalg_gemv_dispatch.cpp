@@ -15,8 +15,8 @@
 
 namespace
 {
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 
 struct DoubleValue
 {

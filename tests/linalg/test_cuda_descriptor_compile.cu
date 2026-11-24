@@ -20,8 +20,16 @@
 namespace
 {
 
-using extents_type = stdex::dextents<uni20::index_type, 2>;
-using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
+using extents_type = uni20::dextents<uni20::index_type, 2>;
+using vector_extents_type = uni20::dextents<uni20::index_type, 1>;
+using mixed_extents_type = uni20::extents<uni20::index_type, 2, uni20::dynamic_extent>;
+static_assert(mixed_extents_type{3}.extent(1) == 3);
+
+[[maybe_unused]] __global__ void read_mixed_extents(mixed_extents_type shape, uni20::index_type* output)
+{
+  *output = shape.extent(1);
+}
+
 using left_mapping = uni20::layout_left::mapping<extents_type>;
 using right_mapping = uni20::layout_right::mapping<extents_type>;
 using stride_mapping = uni20::layout_stride::mapping<extents_type>;

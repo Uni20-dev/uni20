@@ -11,8 +11,8 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
 using backend_selector_type = uni20::linalg::backend_list<uni20::linalg::CpuReferenceBackend>;
 using dense_mdspan = uni20::mdspan<double, extents_2d, uni20::layout_left>;
 using dense_const_mdspan = uni20::mdspan<double const, extents_2d, uni20::layout_left>;
@@ -87,7 +87,7 @@ class NonConvertibleReadMatrixView {
 class NonConvertibleReadVectorView {
   public:
     using storage_policy = uni20::HostStorage;
-    using extents_type = stdex::dextents<uni20::index_type, 1>;
+    using extents_type = uni20::dextents<uni20::index_type, 1>;
     using index_type = typename extents_type::index_type;
     using mdspan_type = uni20::mdspan<double const, extents_type, uni20::layout_left, NonConvertibleReadAccessor>;
 

@@ -13,7 +13,7 @@
 
 namespace
 {
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
 
 template <class Scalar> using left_mdspan = uni20::mdspan<Scalar, extents_1d, uni20::layout_left>;
 

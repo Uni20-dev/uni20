@@ -399,7 +399,7 @@ void reshape_inplace(TensorType& tensor, Extents... requested_extents)
 /// \details Passing an lvalue copies its allocation; passing an rvalue transfers
 ///          it. The source's compile-time canonical layout is preserved.
 template <class TensorType, std::integral... Extents>
-  requires detail::StorageTransferReshapableTensor<TensorType, stdex::dextents<index_type, sizeof...(Extents)>>
+  requires detail::StorageTransferReshapableTensor<TensorType, uni20::dextents<index_type, sizeof...(Extents)>>
 [[nodiscard]] auto reshape(TensorType tensor, Extents... requested_extents)
 {
   auto const source_size = detail::checked_element_count(tensor.extents());

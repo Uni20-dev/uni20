@@ -43,7 +43,7 @@ template <class Tensor> class CudaMatrixView {
     using element_type = typename tensor_type::element_type;
     using storage_policy = typename tensor_type::storage_policy;
     using index_type = uni20::index_type;
-    using extents_type = stdex::dextents<index_type, 2>;
+    using extents_type = uni20::dextents<index_type, 2>;
     using mapping_type = uni20::layout_stride::mapping<extents_type>;
     using accessor_type = typename tensor_type::device_accessor_type;
     using const_accessor_type = typename tensor_type::const_device_accessor_type;
@@ -150,7 +150,7 @@ template <class ElementType> struct UnrecognizedCudaAccessor
     }
 };
 
-using cuda_test_extents = stdex::dextents<uni20::index_type, 2>;
+using cuda_test_extents = uni20::dextents<uni20::index_type, 2>;
 using writable_cuda_span = uni20::mdspec<double, cuda_test_extents, uni20::layout_left,
                                          uni20::cuda::CudaPointerAccessor<double>, uni20::cuda::CudaBufferView<double>>;
 using readable_cuda_span =

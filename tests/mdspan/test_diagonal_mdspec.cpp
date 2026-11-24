@@ -16,10 +16,10 @@ using namespace uni20;
 
 TEST(DiagonalMdspecTest, PresentsStridedComponentsAsAFullLogicalTensor)
 {
-  using component_extents_type = stdex::dextents<index_type, 1>;
+  using component_extents_type = uni20::dextents<index_type, 1>;
   using component_mapping_type = uni20::layout_signed_stride::mapping<component_extents_type>;
   using component_mdspan_type = uni20::mdspan<double, component_extents_type, uni20::layout_signed_stride>;
-  using logical_extents_type = stdex::dextents<index_type, 2>;
+  using logical_extents_type = uni20::dextents<index_type, 2>;
 
   std::array<double, 6> storage{10.0, 0.0, 20.0, 0.0, 30.0, 0.0};
   auto const component_mapping = component_mapping_type{component_extents_type{3}, std::array<index_type, 1>{-2}};
@@ -63,8 +63,8 @@ TEST(DiagonalMdspecTest, PresentsStridedComponentsAsAFullLogicalTensor)
 
 TEST(DiagonalMdspecTest, RejectsTheWrongNumberOfComponents)
 {
-  using component_extents_type = stdex::dextents<index_type, 1>;
-  using logical_extents_type = stdex::dextents<index_type, 3>;
+  using component_extents_type = uni20::dextents<index_type, 1>;
+  using logical_extents_type = uni20::dextents<index_type, 3>;
   std::array<double, 1> storage{};
   uni20::mdspan<double, component_extents_type> components{storage.data(), component_extents_type{1}};
 
@@ -74,8 +74,8 @@ TEST(DiagonalMdspecTest, RejectsTheWrongNumberOfComponents)
 
 TEST(DiagonalMdspecTest, PreservesPhysicalStridesWithNarrowLogicalIndices)
 {
-  using logical_shape = stdex::extents<std::uint8_t, 2, 2>;
-  using component_shape = stdex::extents<int, 2>;
+  using logical_shape = uni20::extents<std::uint8_t, 2, 2>;
+  using component_shape = uni20::extents<int, 2>;
   std::array<int, 257> storage{};
   storage[0] = 11;
   storage[256] = 23;
@@ -138,8 +138,8 @@ TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)
 {
   std::array<int, 17> storage{};
   storage.back() = 53;
-  uni20::mdspan<int, stdex::extents<int, 17>> components{storage.data()};
-  auto diagonal = make_diagonal_mdspan(stdex::extents<std::uint8_t, 17, 17>{}, components);
+  uni20::mdspan<int, uni20::extents<int, 17>> components{storage.data()};
+  auto diagonal = make_diagonal_mdspan(uni20::extents<std::uint8_t, 17, 17>{}, components);
   EXPECT_EQ((diagonal[16, 16]), 53);
   EXPECT_EQ((diagonal[16, 15]), 0);
 }
@@ -147,14 +147,14 @@ TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)
 TEST(DiagonalMdspecTest, ComparesComponentCountsBeforeNarrowing)
 {
   std::array<int, 258> storage{};
-  uni20::mdspan<int, stdex::extents<int, 258>> components{storage.data()};
-  using logical_shape = stdex::extents<std::uint8_t, 2, 2>;
+  uni20::mdspan<int, uni20::extents<int, 258>> components{storage.data()};
+  using logical_shape = uni20::extents<std::uint8_t, 2, 2>;
   EXPECT_THROW((void)make_diagonal_mdspan(logical_shape{}, components), std::invalid_argument);
 }
 
 TEST(DiagonalMdspecTest, PreservesFullUnsignedSingletonComponentStride)
 {
-  using shape = stdex::extents<std::size_t, 1>;
+  using shape = uni20::extents<std::size_t, 1>;
   int storage = 42;
   uni20::layout_stride::mapping<shape> mapping{shape{}, std::array{std::numeric_limits<std::size_t>::max()}};
   uni20::mdspan<int, shape, uni20::layout_stride> components{&storage, mapping};
@@ -167,10 +167,10 @@ TEST(DiagonalMdspecTest, PreservesFullUnsignedSingletonComponentStride)
 TEST(DiagonalMdspecTest, LargeLogicalOffsetWith32BitComponents)
 {
   constexpr std::int32_t count = 50000;
-  using logical_shape = stdex::extents<std::int32_t, count, count>;
+  using logical_shape = uni20::extents<std::int32_t, count, count>;
   std::vector<int> values(count);
   values.back() = 31;
-  uni20::mdspan<int, stdex::extents<std::int32_t, count>> components{values.data()};
+  uni20::mdspan<int, uni20::extents<std::int32_t, count>> components{values.data()};
   auto diagonal = make_diagonal_mdspan(logical_shape{}, components);
   EXPECT_EQ(diagonal.mapping()(count - 1, count - 1), 2499999999LL);
   EXPECT_EQ((diagonal[count - 1, count - 1]), 31);
@@ -179,21 +179,21 @@ TEST(DiagonalMdspecTest, LargeLogicalOffsetWith32BitComponents)
 
 TEST(DiagonalMdspecTest, ChecksFlattenedLogicalSizeAtConstruction)
 {
-  using shape = stdex::dextents<std::ptrdiff_t, 3>;
+  using shape = uni20::dextents<std::ptrdiff_t, 3>;
   auto const large = std::numeric_limits<std::ptrdiff_t>::max();
   int value = 7;
-  uni20::mdspan<int, stdex::extents<int, 1>> one{&value};
+  uni20::mdspan<int, uni20::extents<int, 1>> one{&value};
   EXPECT_THROW((void)make_diagonal_mdspan(shape{large, 2, 1}, one), std::overflow_error);
 
-  uni20::mdspan<int, stdex::extents<int, 0>> empty{&value};
+  uni20::mdspan<int, uni20::extents<int, 0>> empty{&value};
   auto diagonal = make_diagonal_mdspan(shape{large, 2, 0}, empty);
   EXPECT_EQ(diagonal.mapping().required_span_size(), 0);
 }
 
 TEST(DiagonalMdspecTest, ExposesAlignedOffsetAndSteppedComponents)
 {
-  using original_extents_type = stdex::dextents<index_type, 2>;
-  using view_extents_type = stdex::dextents<index_type, 2>;
+  using original_extents_type = uni20::dextents<index_type, 2>;
+  using view_extents_type = uni20::dextents<index_type, 2>;
   using mapping_type = uni20::layout_stride::mapping<view_extents_type>;
   using accessor_type = diagonal_accessor<double, original_extents_type>;
   using view_type = uni20::mdspan<double, view_extents_type, uni20::layout_stride, accessor_type>;

@@ -31,7 +31,7 @@ static void naive_matmul_2d(size_t M, size_t K, size_t N, double alpha, double c
 
 TEST(ContractKernelRankZero, ScalarOuterProduct)
 {
-  using scalar_extents = stdex::extents<ptrdiff_t>;
+  using scalar_extents = uni20::extents<ptrdiff_t>;
   using scalar_mapping = uni20::layout_stride::mapping<scalar_extents>;
   using scalar_mdspan = uni20::mdspan<double, scalar_extents, uni20::layout_stride>;
 
@@ -208,7 +208,7 @@ TEST(ContractKernel3D, AlphaBeta)
 /// logical matrices with different stride mappings.
 TEST(ContractKernel2x2, AllLayoutCombinations)
 {
-  using extents2d = stdex::extents<size_t, 2, 2>;
+  using extents2d = uni20::extents<size_t, 2, 2>;
   using mdspan2d_row = uni20::mdspan<double, extents2d, uni20::layout_right>;
   using mdspan2d_col = uni20::mdspan<double, extents2d, uni20::layout_left>;
 

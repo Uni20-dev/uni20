@@ -429,7 +429,7 @@ template <typename T, std::size_t DenseBlockOrder, class LeafStorage>
 struct PackedBlockViewTraits<T, DenseBlockOrder, LeafStorage, true>
 {
     using buffer_type = packed_storage_t<LeafStorage, T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
     using accessor_factory_type = tensor_accessor_factory_t<LeafStorage>;
     using accessor_type = typename accessor_factory_type::template accessor_t<T>;
@@ -466,7 +466,7 @@ template <typename T, std::size_t DenseBlockOrder, class LeafStorage>
 struct PackedBlockViewTraits<T, DenseBlockOrder, LeafStorage, false>
 {
     using buffer_type = packed_storage_t<LeafStorage, T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
     using accessor_factory_type = tensor_accessor_factory_t<LeafStorage>;
     using accessor_type = tensor_device_accessor_t<accessor_factory_type, T>;
@@ -703,13 +703,13 @@ class PackedDiagonalBlockStorageData {
   public:
     using key_type = BlockKey<KeyCoordinateCount>;
     using buffer_type = typename LeafStorage::template storage_t<T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename GeneratedLayout::template mapping<extents_type>;
     using accessor_type = diagonal_accessor<T, extents_type>;
     using const_accessor_type = diagonal_accessor<T const, extents_type>;
     using mutable_mdspan_type = uni20::mdspan<T, extents_type, GeneratedLayout, accessor_type>;
     using const_mdspan_type = uni20::mdspan<T const, extents_type, GeneratedLayout, const_accessor_type>;
-    using component_extents_type = stdex::dextents<index_type, 1>;
+    using component_extents_type = uni20::dextents<index_type, 1>;
     using component_mapping_type = uni20::layout_stride::mapping<component_extents_type>;
     using mutable_components_type = uni20::mdspan<T, component_extents_type, uni20::layout_stride>;
     using const_components_type = uni20::mdspan<T const, component_extents_type, uni20::layout_stride>;
@@ -850,7 +850,7 @@ class AsyncSeparateSparseBlockStorageData {
     using key_type = BlockKey<KeyCoordinateCount>;
     using block_value_type = ColumnMajorTensor<T, DenseBlockOrder, LeafStorage>;
     using async_block_type = async::Async<block_value_type>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
     using accessor_type = uni20::default_accessor<T>;
     using const_accessor_type = uni20::default_accessor<T const>;

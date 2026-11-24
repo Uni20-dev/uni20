@@ -6,14 +6,7 @@
  * \brief Native borrowed multidimensional views and checked foreign import.
  */
 
-#include <uni20/config.hpp>
-
-#ifndef MDSPAN_IMPL_STANDARD_NAMESPACE
-#error "cmake configuration error: mdspan namespace is not defined"
-#endif
-
-#include <mdspan/mdspan.hpp>
-
+#include <uni20/mdspan/extents.hpp>
 #include <uni20/mdspan/default_accessor.hpp>
 #include <uni20/mdspan/layout_signed_stride.hpp>
 
@@ -33,36 +26,37 @@
 namespace uni20
 {
 
-using std::dynamic_extent;
-using stdex::dextents;
-using stdex::extents;
-
 namespace detail
 {
 
-template <class Layout> constexpr auto import_layout()
+template <class Layout> struct foreign_layout
 {
-  if constexpr (std::same_as<Layout, stdex::layout_left>
-#ifdef __cpp_lib_mdspan
-                || std::same_as<Layout, std::layout_left>
-#endif
-  )
-    return layout_left{};
-  else if constexpr (std::same_as<Layout, stdex::layout_right>
-#ifdef __cpp_lib_mdspan
-                     || std::same_as<Layout, std::layout_right>
-#endif
-  )
-    return layout_right{};
-  else if constexpr (std::same_as<Layout, stdex::layout_stride>
-#ifdef __cpp_lib_mdspan
-                     || std::same_as<Layout, std::layout_stride>
-#endif
-  )
-    return layout_stride{};
-}
+    using type = void;
+};
 
-template <class Span> using imported_layout_t = decltype(import_layout<typename Span::layout_type>());
+template <class Accessor> inline constexpr bool is_foreign_default_accessor = false;
+
+#ifdef __cpp_lib_mdspan
+template <> struct foreign_layout<std::layout_left>
+{
+    using type = layout_left;
+};
+
+template <> struct foreign_layout<std::layout_right>
+{
+    using type = layout_right;
+};
+
+template <> struct foreign_layout<std::layout_stride>
+{
+    using type = layout_stride;
+};
+
+template <class Element>
+inline constexpr bool is_foreign_default_accessor<std::default_accessor<Element>> = true;
+#endif
+
+template <class Span> using imported_layout_t = typename foreign_layout<typename Span::layout_type>::type;
 
 template <class Span>
 concept ForeignDefaultMdspan = requires(Span const& source) {
@@ -72,11 +66,8 @@ concept ForeignDefaultMdspan = requires(Span const& source) {
   requires(!std::same_as<imported_layout_t<Span>, void>);
   requires std::same_as<typename Span::mapping_type,
                         typename Span::layout_type::template mapping<typename Span::extents_type>>;
-  requires(std::same_as<typename Span::accessor_type, stdex::default_accessor<typename Span::element_type>>
-#ifdef __cpp_lib_mdspan
-           || std::same_as<typename Span::accessor_type, std::default_accessor<typename Span::element_type>>
-#endif
-  );
+  requires is_foreign_default_accessor<typename Span::accessor_type>;
+  requires std::same_as<typename Span::accessor_type::element_type, typename Span::element_type>;
   { source.mapping() } -> std::same_as<typename Span::mapping_type const&>;
   { source.accessor() } -> std::same_as<typename Span::accessor_type const&>;
   { source.data_handle() } -> std::same_as<typename Span::element_type* const&>;
@@ -252,7 +243,7 @@ class mdspan {
                  accessor_type(source.accessor()))
     {}
 
-    /// \brief Borrow a standard or Kokkos view after checking the destination representation.
+    /// \brief Borrow a standard mdspan after checking the destination representation.
     /// \throws std::overflow_error If an extent, stride or span size would be narrowed out of range.
     /// \throws std::invalid_argument If a runtime extent disagrees with a static destination extent.
     template <detail::ForeignDefaultMdspan Span>

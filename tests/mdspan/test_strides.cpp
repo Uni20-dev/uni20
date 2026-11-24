@@ -235,9 +235,9 @@ TEST(MergeStridesRight, PartiallyMergesContiguousDimensions)
 
 TEST(StridesHelpers, StridesOverloadsReturnExpectedArrays)
 {
-  using layout_right_extents = stdex::extents<std::size_t, 2, 3>;
+  using layout_right_extents = uni20::extents<std::size_t, 2, 3>;
   using layout_right_base = uni20::mdspan<int, layout_right_extents, uni20::layout_right>;
-  using layout_left_extents = stdex::extents<std::size_t, 2, 3>;
+  using layout_left_extents = uni20::extents<std::size_t, 2, 3>;
   using layout_left_base = uni20::mdspan<int, layout_left_extents, uni20::layout_left>;
   std::array<int, 6> contiguous{};
   layout_right_base layout_right(contiguous.data());
@@ -251,7 +251,7 @@ TEST(StridesHelpers, StridesOverloadsReturnExpectedArrays)
   EXPECT_EQ(left_strides[0], 1);
   EXPECT_EQ(left_strides[1], 2);
 
-  using dyn_extents = stdex::extents<std::size_t, stdex::dynamic_extent, stdex::dynamic_extent>;
+  using dyn_extents = uni20::extents<std::size_t, uni20::dynamic_extent, uni20::dynamic_extent>;
   using strided_base = uni20::mdspan<int, dyn_extents, uni20::layout_stride>;
   dyn_extents dynamic_shape{2, 3};
   std::array<std::ptrdiff_t, 2> custom{5, 1};
@@ -270,9 +270,9 @@ TEST(StridesHelpers, StridesOverloadsReturnExpectedArrays)
 
 TEST(ExtractStrides, ContractsAndMergesGroups)
 {
-  using AExtents = stdex::extents<std::size_t, 2, 3, 4>;
-  using BExtents = stdex::extents<std::size_t, 4, 5, 6>;
-  using CExtents = stdex::extents<std::size_t, 2, 3, 5, 6>;
+  using AExtents = uni20::extents<std::size_t, 2, 3, 4>;
+  using BExtents = uni20::extents<std::size_t, 4, 5, 6>;
+  using CExtents = uni20::extents<std::size_t, 2, 3, 5, 6>;
 
   std::array<double, 2 * 3 * 4> Adata{};
   std::array<double, 4 * 5 * 6> Bdata{};

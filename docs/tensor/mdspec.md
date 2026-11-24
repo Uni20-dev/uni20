@@ -161,7 +161,7 @@ concrete `mdspec` class when a structural constraint is sufficient.
    `data_descriptor_type` and `data_descriptor()`.
 
 Both forms declare an `offset_type` that matches their accessor's
-`offset_type`. Import a supported standard or Kokkos view with
+`offset_type`. Import a supported standard mdspan with
 `uni20::mdspan{view}` before passing it to a Uni20 operation.
 
 For Uni20's concrete `Tensor`, immediate accessibility takes precedence over

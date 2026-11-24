@@ -395,7 +395,7 @@ TEST(TraceFormatting, MdspanValuesUsePresentationTensorArt)
 {
   auto opts = make_test_options();
   std::array<int, 6> data{1, 20, 300, 4000, 5, 60};
-  uni20::mdspan<int, stdex::extents<std::size_t, 2, 3>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 3>> matrix(data.data());
 
   EXPECT_EQ(trace::formatValue(matrix, opts), "shape=(2, 3)\n"
                                               "\xE2\x8E\xA1    1 20 300 \xE2\x8E\xA4\n"
@@ -408,7 +408,7 @@ TEST(TraceFormatting, MdspanRealAndComplexValuesUseTracePrecision)
   opts.fp_precision_float64 = 2;
 
   std::array<double, 4> real_data{1.0, 2.5, 10.25, -3.0};
-  uni20::mdspan<double, stdex::extents<std::size_t, 2, 2>> real_matrix(real_data.data());
+  uni20::mdspan<double, uni20::extents<std::size_t, 2, 2>> real_matrix(real_data.data());
 
   EXPECT_EQ(trace::formatValue(real_matrix, opts), "shape=(2, 2)\n"
                                                    "\xE2\x8E\xA1  1.00  2.50 \xE2\x8E\xA4\n"
@@ -417,7 +417,7 @@ TEST(TraceFormatting, MdspanRealAndComplexValuesUseTracePrecision)
   opts.fp_precision_float64 = 1;
   std::array<uni20::complex<double>, 2> complex_data{uni20::complex<double>{1.0, -2.5},
                                                      uni20::complex<double>{0.0, 3.0}};
-  uni20::mdspan<uni20::complex<double>, stdex::extents<std::size_t, 2>> complex_vector(complex_data.data());
+  uni20::mdspan<uni20::complex<double>, uni20::extents<std::size_t, 2>> complex_vector(complex_data.data());
 
   EXPECT_EQ(trace::formatValue(complex_vector, opts), "shape=(2)\n[ 1.0-2.5i 0.0+3.0i ]");
 }
@@ -431,7 +431,7 @@ TEST(TraceFormatting, MdspanValuesCanSelectPresentationMatrixAxes)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  uni20::mdspan<int, stdex::extents<std::size_t, 2, 3, 2>> tensor(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 3, 2>> tensor(data.data());
 
   EXPECT_EQ(trace::formatValue(tensor, opts), "shape=(2, 3, 2)\n"
                                               "slice [:, 0, :]\n"
@@ -466,7 +466,7 @@ TEST(TraceFormatting, NormalMdspanPreviewFitsTerminalWidthWithoutDump)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  uni20::mdspan<int, stdex::extents<std::size_t, 4, 5>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 4, 5>> matrix(data.data());
   auto text = trace::formatParameterListTextForContext("matrix", opts, trace::trace_format_context::normal, matrix);
   auto const rendered = opts.render(text);
 
@@ -516,7 +516,7 @@ TEST(TraceFormatting, FatalMdspanPreviewWritesFullDump)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  uni20::mdspan<int, stdex::extents<std::size_t, 4, 5>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 4, 5>> matrix(data.data());
   auto text = trace::formatParameterListTextForContext("matrix", opts, trace::trace_format_context::fatal, matrix);
   auto const rendered = opts.render(text);
 
@@ -550,7 +550,7 @@ TEST(TraceFormatting, MdspanPreviewHighlightsNonFiniteScalarsWhenColorEnabled)
 
   std::array<double, 4> data{1.0, std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
                              std::numeric_limits<double>::quiet_NaN()};
-  uni20::mdspan<double, stdex::extents<std::size_t, 2, 2>> matrix(data.data());
+  uni20::mdspan<double, uni20::extents<std::size_t, 2, 2>> matrix(data.data());
 
   auto plain_opts = make_test_options();
   plain_opts.set_color_output(uni20::presentation::color_mode::never);

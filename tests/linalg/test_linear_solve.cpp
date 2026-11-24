@@ -448,7 +448,7 @@ namespace
 
 TEST(RecoverableSolveDispatchTest, MutableProxyAccessorIsRespected)
 {
-  using Span = uni20::mdspan<double, stdex::dextents<uni20::index_type, 2>, uni20::layout_left, NegatingAccessor>;
+  using Span = uni20::mdspan<double, uni20::dextents<uni20::index_type, 2>, uni20::layout_left, NegatingAccessor>;
   double a_storage[]{3, 1, 1, 2}, b_storage[]{9, 8};
   Span a(a_storage, 2, 2), b(b_storage, 2, 1);
   SolveInfo info{.status = SolveStatus::singular, .pivot = 99};

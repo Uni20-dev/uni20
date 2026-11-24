@@ -266,7 +266,7 @@ writeability. Direct BLAS/LAPACK wrappers may bypass `access(...)` for
 explicitly lowers. The BLAS adapter also accepts readable inputs that use
 Uni20's `conjugated_accessor` over a default accessor. Writable outputs and
 LAPACK update operands require the Uni20 default accessor. Import a supported
-standard or Kokkos view with `uni20::mdspan{view}` before passing it to a wrapper.
+standard mdspan with `uni20::mdspan{view}` before passing it to a wrapper.
 
 ### Aliasing Contract
 

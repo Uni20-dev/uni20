@@ -78,6 +78,38 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  standard-mdspan:
+    name: GCC 16 standard mdspan interop
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0
+
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y cmake ninja-build libopenblas-dev liblapack-dev libgtest-dev
+
+      - name: Configure standard extents
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DUNI20_BUILD_COMBINED_TESTS=OFF -DUNI20_BUILD_BENCH=OFF \
+            -DUNI20_BUILD_PYTHON=OFF -DUNI20_BUILD_EXAMPLES=OFF -DUNI20_BUILD_ASM=OFF \
+            -DUNI20_BLAS_VENDOR=OpenBLAS
+          grep -qx '#define UNI20_USE_STD_EXTENTS 1' build/src/uni20/config.hpp
+
+      - name: Build and test std::mdspan import
+        run: |
+          cmake --build build --parallel 2 --target uni20_mdspan_tests uni20_linalg_tests
+          ctest --test-dir build --output-on-failure --no-tests=error \
+            -R 'NativeMdspanTest\.Import|TensorCopyTest\.ExplicitForeignImport'
+
   ubuntu-release:
     name: Ubuntu Release
     runs-on: ubuntu-24.04

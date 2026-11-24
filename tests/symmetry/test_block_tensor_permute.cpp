@@ -254,7 +254,7 @@ struct ParentBackedBlock
 {
     using storage_policy = HostStorage;
     using element_type = mpreal;
-    using extents_type = stdex::dextents<index_type, 2>;
+    using extents_type = uni20::dextents<index_type, 2>;
     using borrowed_tensor_view_tag = void;
 
     OwnerDefault const* owner;

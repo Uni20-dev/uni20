@@ -88,18 +88,18 @@ int main()
   fmt::print("{}\n\n", demo::width_ruler(std::min<std::size_t>(terminal_width, 120)));
 
   std::array<int, 8> vector_data{0, 1, 1, 2, 3, 5, 8, 13};
-  uni20::mdspan<int, stdex::extents<std::size_t, 8>> vector(vector_data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 8>> vector(vector_data.data());
   print_full("rank-1 vector, exhaustive", vector, terminal_policy);
 
   std::array<int, 12> matrix_data{};
   for (std::size_t i = 0; i < matrix_data.size(); ++i)
     matrix_data[i] = static_cast<int>(10 * (i / 4) + (i % 4));
 
-  uni20::mdspan<int, stdex::extents<std::size_t, 3, 4>> matrix(matrix_data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 3, 4>> matrix(matrix_data.data());
   print_full("rank-2 matrix, exhaustive", matrix, terminal_policy);
 
   std::array<std::string, 6> label_data{"alpha", "beta", "gamma", "delta", "epsilon", "zeta"};
-  uni20::mdspan<std::string, stdex::extents<std::size_t, 2, 3>> labels(label_data.data());
+  uni20::mdspan<std::string, uni20::extents<std::size_t, 2, 3>> labels(label_data.data());
   print_custom("rank-2 string labels, custom formatter", labels, terminal_policy,
                [](std::string const& value) { return value; });
 
@@ -107,7 +107,7 @@ int main()
   for (std::size_t i = 0; i < rank3_data.size(); ++i)
     rank3_data[i] = static_cast<int>(i);
 
-  uni20::mdspan<int, stdex::extents<std::size_t, 2, 3, 4>> rank3(rank3_data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 3, 4>> rank3(rank3_data.data());
   print_full("rank-3 tensor, exhaustive default slices", rank3, terminal_policy);
 
   presentation::mdspan_format_options axis_options;
@@ -121,7 +121,7 @@ int main()
                                         complex_t{2.0, -0.0},
                                         complex_t{std::numeric_limits<double>::infinity(), 1.0},
                                         complex_t{-0.5, std::numeric_limits<double>::quiet_NaN()}};
-  uni20::mdspan<complex_t, stdex::extents<std::size_t, 2, 3>> complex_matrix(complex_data.data());
+  uni20::mdspan<complex_t, uni20::extents<std::size_t, 2, 3>> complex_matrix(complex_data.data());
 
   presentation::mdspan_format_options complex_options;
   complex_options.numeric.notation = presentation::real_notation::fixed;
@@ -129,7 +129,7 @@ int main()
   print_full("rank-2 complex matrix, fixed precision", complex_matrix, terminal_policy, complex_options);
 
   auto large_matrix_data = sequence(18 * 22, 1000);
-  using dynamic_matrix_extents = stdex::extents<std::size_t, stdex::dynamic_extent, stdex::dynamic_extent>;
+  using dynamic_matrix_extents = uni20::extents<std::size_t, uni20::dynamic_extent, uni20::dynamic_extent>;
   uni20::mdspan<int, dynamic_matrix_extents, uni20::layout_right> large_matrix(large_matrix_data.data(), 18, 22);
 
   presentation::mdspan_preview_options fixed_preview;
@@ -140,7 +140,7 @@ int main()
 
   auto rank3_preview_data = mixed_sign_rank3_data(6, 9, 64);
   using dynamic_rank3_extents =
-      stdex::extents<std::size_t, stdex::dynamic_extent, stdex::dynamic_extent, stdex::dynamic_extent>;
+      uni20::extents<std::size_t, uni20::dynamic_extent, uni20::dynamic_extent, uni20::dynamic_extent>;
   uni20::mdspan<double, dynamic_rank3_extents, uni20::layout_right> large_rank3(rank3_preview_data.data(), 6, 9, 64);
 
   presentation::mdspan_preview_options terminal_preview;

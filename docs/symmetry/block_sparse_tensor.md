@@ -40,7 +40,7 @@ policy, layered on top (see `../architecture/execution.md`).
 
 ## Two-level structure
 
-- **Dense block (leaf).** A lightweight `mdspan` (namespace `stdex::`) over dense
+- **Dense block (leaf).** A lightweight `uni20::mdspan` over dense
   storage that lives on exactly one device. This is mostly C++ detail — extents,
   `layout_stride`, accessor/memory-space policy — not a heavyweight object. A
   block never spans devices.

@@ -85,7 +85,7 @@ template <class Element, std::size_t Rank, class Layout = uni20::layout_left> cl
   public:
     using element_type = Element;
     using value_type = std::remove_cv_t<element_type>;
-    using extents_type = stdex::dextents<index_type, Rank>;
+    using extents_type = uni20::dextents<index_type, Rank>;
     using layout_type = Layout;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using storage_type = std::vector<element_type>;

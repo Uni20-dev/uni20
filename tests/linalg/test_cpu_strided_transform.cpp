@@ -159,7 +159,7 @@ TEST(TransformInplace, ScaleAndShiftMixedStrides)
     for (index_t c = 0; c < 3; ++c)
       buf[r * 5 + c * 2] = static_cast<double>(r * 3 + c);
 
-  using extents_t = stdex::dextents<index_t, 2>;
+  using extents_t = uni20::dextents<index_t, 2>;
   // extents = (3,3), strides = (5,2)  —  row step = 5, col step = 2
   std::array<std::ptrdiff_t, 2> strides{5, 2};
   auto mapping = uni20::layout_stride::mapping<extents_t>(extents_t{3, 3}, strides);
@@ -180,7 +180,7 @@ TEST(TransformInplace, ScaleAndShiftMixedStrides)
 
 TEST(TransformInplace, NonMergeable4DDispatchesDynamically)
 {
-  using extents_t = stdex::dextents<index_t, 4>;
+  using extents_t = uni20::dextents<index_t, 4>;
   extents_t extents{2, 3, 4, 5};
   std::array<std::ptrdiff_t, 4> strides{500, 60, 7, 1};
   auto mapping = uni20::layout_stride::mapping<extents_t>(extents, strides);
@@ -215,7 +215,7 @@ TEST(TransformInplace, NonMergeable4DDispatchesDynamically)
 
 TEST(Transform, UnaryMixedCanonicalLayouts)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> input_storage(12);
   std::vector<double> output_storage(12, 0.0);
@@ -238,7 +238,7 @@ TEST(Transform, UnaryMixedCanonicalLayouts)
 
 TEST(Transform, BinaryMixedLayouts)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> lhs_storage(12);
   std::vector<double> rhs_storage(24, 0.0);
@@ -267,7 +267,7 @@ TEST(Transform, BinaryMixedLayouts)
 
 TEST(TransformInplace, BinaryTracksOutputOnce)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> output_storage(12);
   std::vector<double> rhs_storage(12);
@@ -316,7 +316,7 @@ TEST(CpuStridedTransformTest, ZeroExtentDoesNotVisitStorage)
 
 TEST(CpuStridedTransformTest, RankZeroAppliesExactlyOnce)
 {
-  using extents_type = stdex::dextents<index_t, 0>;
+  using extents_type = uni20::dextents<index_t, 0>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
 
   std::array<std::ptrdiff_t, 0> strides{};

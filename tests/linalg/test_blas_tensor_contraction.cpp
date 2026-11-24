@@ -472,10 +472,10 @@ TEST(BlasTensorContractionTest, ResidualNGroupUsesOriginalBetaForEverySlice)
 
 TEST(BlasTensorContractionTest, LoopedGemmOffsetsDeferredHostDescriptors)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 3>;
+  using extents_type = uni20::dextents<uni20::index_type, 3>;
   using lhs_mapping_type = uni20::layout_stride::mapping<extents_type>;
   using output_mapping_type = uni20::layout_right::mapping<extents_type>;
-  using matrix_extents_type = stdex::dextents<uni20::index_type, 2>;
+  using matrix_extents_type = uni20::dextents<uni20::index_type, 2>;
   using matrix_mapping_type = uni20::layout_right::mapping<matrix_extents_type>;
   using mutable_descriptor = uni20::test::HostStorageDescriptor<std::vector<double>>;
   using const_descriptor = uni20::test::HostStorageDescriptor<std::vector<double> const>;

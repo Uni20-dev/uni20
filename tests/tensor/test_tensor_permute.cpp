@@ -72,7 +72,7 @@ TEST(TensorPermuteTest, ColumnAndRowMajorViewsAliasAndMaterialize)
 
 TEST(TensorPermuteTest, PaddedStridesAndStaticExtentsArePreserved)
 {
-  using extents = stdex::extents<uni20::index_type, 2, stdex::dynamic_extent, 4>;
+  using extents = uni20::extents<uni20::index_type, 2, uni20::dynamic_extent, 4>;
   using tensor_type = uni20::BasicTensor<double, extents, uni20::HostStorage, uni20::layout_stride>;
   tensor_type tensor(extents{3}, std::array<uni20::index_type, 3>{1, 5, 20});
   tensor[1, 2, 3] = 42;
@@ -80,7 +80,7 @@ TEST(TensorPermuteTest, PaddedStridesAndStaticExtentsArePreserved)
   using permuted_extents = typename decltype(view)::extents_type;
   static_assert(permuted_extents::static_extent(0) == 4);
   static_assert(permuted_extents::static_extent(1) == 2);
-  static_assert(permuted_extents::static_extent(2) == stdex::dynamic_extent);
+  static_assert(permuted_extents::static_extent(2) == uni20::dynamic_extent);
   EXPECT_EQ(view.stride(0), 20);
   EXPECT_EQ(view.stride(1), 1);
   EXPECT_EQ(view.stride(2), 5);

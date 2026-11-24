@@ -28,7 +28,7 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using qr_matrix_extents = stdex::dextents<uni20::index_type, 2>;
+using qr_matrix_extents = uni20::dextents<uni20::index_type, 2>;
 
 template <class QTensor, class RTensor, class MatrixTensor>
 concept CompatibleQrTensors =

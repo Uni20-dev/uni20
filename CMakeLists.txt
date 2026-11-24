@@ -363,6 +363,9 @@ if(NOT UNI20_DOCS_WEB AND UNI20_ENABLE_CUDA)
   set(UNI20_BACKEND_CUDA_DEFAULT ON)
 endif()
 
+include(Uni20Extents)
+uni20_select_extents()
+
 # Backends
 option(UNI20_BACKEND_BLAS     "Enable the BLAS backend" ON)
 option(UNI20_BACKEND_CUDA     "Enable the CUDA backend" ${UNI20_BACKEND_CUDA_DEFAULT})
@@ -445,28 +448,6 @@ if(NOT UNI20_DOCS_WEB)
   if(UNI20_BUILD_CLI)
     include(Uni20CLI)
   endif()
-
-  # mdspan reference implementation, put it into stdex namespace to prevent possible conflict with standard library version
-  # and set up the uni20_mdspan_base interface target for configured consumers
-  set(_uni20_mdspan_fetchcontent_paths
-    SOURCE_DIR "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}/mdspan-src"
-    BINARY_DIR "${UNI20_FETCHCONTENT_BASE_DIR}/mdspan-build")
-
-  set(_uni20_dependency_build_options)
-  if(NOT UNI20_BUILD_EXTERNAL_TESTS)
-    list(APPEND _uni20_dependency_build_options EXCLUDE_FROM_ALL)
-  endif()
-  FetchContent_Declare(
-    mdspan
-    GIT_REPOSITORY https://github.com/kokkos/mdspan.git
-    GIT_TAG stable
-    SYSTEM
-    ${_uni20_dependency_build_options}
-    ${_uni20_mdspan_fetchcontent_paths}
-  )
-  FetchContent_MakeAvailable(mdspan)
-  target_compile_definitions(mdspan INTERFACE MDSPAN_IMPL_STANDARD_NAMESPACE=stdex)
-  relax_warnings(mdspan)
 
   # oneTBB
   uni20_add_dependency(

@@ -130,9 +130,9 @@ namespace detail
 {
 template <std::size_t Rank, std::size_t... Axis>
 [[nodiscard]] auto make_contraction_extents(std::array<uni20::index_type, Rank> const& values,
-                                            std::index_sequence<Axis...>) -> stdex::dextents<uni20::index_type, Rank>
+                                            std::index_sequence<Axis...>) -> uni20::dextents<uni20::index_type, Rank>
 {
-  return stdex::dextents<uni20::index_type, Rank>{values[Axis]...};
+  return uni20::dextents<uni20::index_type, Rank>{values[Axis]...};
 }
 } // namespace detail
 
@@ -140,7 +140,7 @@ template <std::size_t Rank, std::size_t... Axis>
 template <class Lhs, class Rhs, std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank>
 [[nodiscard]] auto contraction_output_extents(Lhs const& lhs, Rhs const& rhs,
                                               ContractionAxes<LhsRank, RhsRank, ContractedRank> const& axes)
-    -> stdex::dextents<uni20::index_type, ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank>
+    -> uni20::dextents<uni20::index_type, ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank>
 {
   CHECK(contraction_axes_are_valid(axes));
   for (std::size_t index = 0; index < ContractedRank; ++index)
