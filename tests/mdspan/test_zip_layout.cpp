@@ -11,7 +11,7 @@ using namespace uni20;
 TEST(StridedZipLayoutMapping1D, OffsetsAndIsStrided)
 {
   using Layout = StridedZipLayout<2>;
-  using extents_t = stdex::dextents<index_t, 1>;
+  using extents_t = uni20::dextents<index_t, 1>;
   extents_t exts{4};
 
   // pick two different strides
@@ -49,7 +49,7 @@ TEST(StridedZipLayoutMapping1D, OffsetsAndIsStrided)
 TEST(StridedZipLayoutMapping1D, MergePrependAppend)
 {
   using Layout = StridedZipLayout<3>;
-  using extents_t = stdex::dextents<index_t, 1>;
+  using extents_t = uni20::dextents<index_t, 1>;
   extents_t exts{3};
 
   // start with a 2-span mapping:
@@ -75,7 +75,7 @@ TEST(GeneralZipLayoutMapping1D, DefaultStrides)
 {
   using L1 = uni20::layout_stride;
   using L2 = uni20::layout_stride;
-  using extents_t = stdex::dextents<index_t, 1>;
+  using extents_t = uni20::dextents<index_t, 1>;
   using Layout = GeneralZipLayout<L1::mapping<extents_t>, L2::mapping<extents_t>>;
 
   extents_t exts{5};
@@ -124,7 +124,7 @@ concept has_required_span_size = requires(Mapping const& m) { m.required_span_si
 
 TEST(ZipLayoutMapping, HasNoRequiredSpanSize)
 {
-  using extents_t = stdex::dextents<index_t, 1>;
+  using extents_t = uni20::dextents<index_t, 1>;
   using strided = StridedZipLayout<2>::mapping<extents_t>;
   using child = uni20::layout_stride::mapping<extents_t>;
   using general = GeneralZipLayout<child, child>::mapping<extents_t>;

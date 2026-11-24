@@ -155,7 +155,7 @@ using tensor_device_accessor_t = typename TensorDeviceAccessor<AccessorFactory, 
 template <typename ElementType, std::size_t Rank, typename StoragePolicy = HostStorage,
           typename LayoutPolicy = uni20::layout_left,
           typename AccessorFactory = detail::tensor_accessor_factory_t<StoragePolicy>,
-          typename Extents = stdex::dextents<index_type, Rank>>
+          typename Extents = uni20::dextents<index_type, Rank>>
   requires detail::ZeroBaseOffsetMapping<typename LayoutPolicy::template mapping<Extents>>
 class Tensor {
   public:

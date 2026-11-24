@@ -69,11 +69,12 @@ uni20::linalg::KernelAttempt try_kernel(MdspecOnlyCopyBackend const& backend, un
 }
 } // namespace
 
+#ifdef __cpp_lib_mdspan
 TEST(TensorCopyTest, ExplicitForeignImportPreservesRowMajorOrder)
 {
-  using shape = stdex::extents<int, 2, 3>;
-  using foreign_span = stdex::mdspan<double, shape>;
-  using const_foreign_span = stdex::mdspan<double const, shape>;
+  using shape = std::extents<int, 2, 3>;
+  using foreign_span = std::mdspan<double, shape>;
+  using const_foreign_span = std::mdspan<double const, shape>;
   static_assert(!uni20::MdspanLike<foreign_span>);
   static_assert(!uni20::MdspecLike<foreign_span>);
   static_assert(!CanMaterializeSpan<foreign_span>);
@@ -90,9 +91,11 @@ TEST(TensorCopyTest, ExplicitForeignImportPreservesRowMajorOrder)
     EXPECT_EQ(flat[i], values[i]);
 }
 
-TEST(TensorCopyTest, PlainCharMdspanIndex)
+#endif
+
+TEST(TensorCopyTest, NarrowSignedMdspanIndex)
 {
-  using extents = stdex::extents<char, 2>;
+  using extents = uni20::extents<signed char, 2>;
   std::array<double, 2> input{3.0, 4.0};
   std::array<double, 2> output{};
   uni20::mdspan<double const, extents> source{input.data()};
@@ -192,7 +195,7 @@ TEST(TensorCopyTest, BareMdspanConvenienceDispatchesNormalizedMdspecs)
 
 TEST(TensorCopyTest, MakeTensorMaterializesStaticExtentsAsGeneralPurposeTensor)
 {
-  using fixed_extents = stdex::extents<uni20::index_type, 2, 3>;
+  using fixed_extents = uni20::extents<uni20::index_type, 2, 3>;
   using fixed_tensor = uni20::BasicTensor<double, fixed_extents, uni20::HostStorage, uni20::RowMajor>;
   fixed_tensor input(fixed_extents{});
   input[0, 0] = 1.0;
@@ -233,7 +236,7 @@ TEST(TensorCopyTest, MakeTensorUsesDefaultLayoutForNoncanonicalSourceType)
 
 TEST(TensorCopyTest, ExplicitStaticExtentsRejectMismatchedSourceShape)
 {
-  using fixed_extents = stdex::extents<uni20::index_type, 2, 3>;
+  using fixed_extents = uni20::extents<uni20::index_type, 2, 3>;
   using fixed_tensor = uni20::BasicTensor<double, fixed_extents>;
   ErrorModeGuard const error_mode;
 

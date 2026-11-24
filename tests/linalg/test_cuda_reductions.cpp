@@ -43,7 +43,7 @@ auto cuda_strided_view(Tensor& tensor, std::array<index_type, Rank> const& exten
   auto const_base = std::as_const(tensor).mdspec();
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
-  using extents_type = stdex::dextents<index_type, Rank>;
+  using extents_type = uni20::dextents<index_type, Rank>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type =
       uni20::mdspec<typename mutable_base_type::element_type, extents_type, uni20::layout_stride,
@@ -63,7 +63,7 @@ auto host_strided_view(Tensor& tensor, std::array<index_type, Rank> const& exten
                        std::array<index_type, Rank> const& strides, std::size_t offset = 0)
 {
   using element_type = typename Tensor::value_type;
-  using extents_type = stdex::dextents<index_type, Rank>;
+  using extents_type = uni20::dextents<index_type, Rank>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type = uni20::mdspan<element_type, extents_type, uni20::layout_stride>;
   using const_type = uni20::mdspan<element_type const, extents_type, uni20::layout_stride>;
@@ -162,7 +162,7 @@ TEST_F(CudaReductionTest, AddsMappingOriginAndDescriptorOffsetOnce)
   host[3] = 3;
   auto const device = uni20::to_device(host, 0);
   auto const base = device.mdspec();
-  using shape = stdex::extents<index_type, 2>;
+  using shape = uni20::extents<index_type, 2>;
   using spec = uni20::mdspec<double const, shape, ShiftedLayout, typename decltype(base)::accessor_type,
                              typename decltype(base)::data_descriptor_type>;
   spec descriptor{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()};

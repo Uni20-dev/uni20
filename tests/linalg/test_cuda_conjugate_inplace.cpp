@@ -23,7 +23,7 @@ using complex_cuda_matrix_type = uni20::CudaTensor<complex_type, 2>;
 using real_cuda_matrix_type = uni20::CudaTensor<double, 2>;
 using complex_cuda_mdspec = decltype(std::declval<complex_cuda_matrix_type&>().mdspec());
 using real_cuda_mdspec = decltype(std::declval<real_cuda_matrix_type&>().mdspec());
-using extents_type = stdex::dextents<uni20::index_type, 2>;
+using extents_type = uni20::dextents<uni20::index_type, 2>;
 
 static_assert(uni20::linalg::detail::cuda_reference::SupportedConjugateMdspec<complex_cuda_mdspec>);
 static_assert(uni20::linalg::detail::cuda_reference::SupportedConjugateMdspec<real_cuda_mdspec>);
@@ -77,7 +77,7 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanCompactsAndDecodesPaddedStrides)
 
 TEST(CudaConjugatePlanningTest, OneOperandPlanSelects64BitReachableOffsets)
 {
-  using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
+  using vector_extents_type = uni20::dextents<uni20::index_type, 1>;
   using mapping_type = uni20::layout_stride::mapping<vector_extents_type>;
   auto const stride = static_cast<uni20::index_type>(std::numeric_limits<std::int32_t>::max()) + 1;
   mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{stride}};

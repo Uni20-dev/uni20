@@ -28,7 +28,7 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using lq_matrix_extents = stdex::dextents<uni20::index_type, 2>;
+using lq_matrix_extents = uni20::dextents<uni20::index_type, 2>;
 
 template <class LTensor, class QTensor, class MatrixTensor>
 concept CompatibleLqTensors =

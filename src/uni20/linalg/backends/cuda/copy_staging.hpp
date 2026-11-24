@@ -37,16 +37,16 @@ template <class Mdspan> using scalar_t = std::remove_cv_t<typename std::remove_c
 
 template <class Mdspan> inline constexpr std::size_t rank_v = std::remove_cvref_t<Mdspan>::rank();
 
-template <std::size_t Rank> using transfer_mapping_t = uni20::layout_stride::mapping<stdex::dextents<index_type, Rank>>;
+template <std::size_t Rank> using transfer_mapping_t = uni20::layout_stride::mapping<uni20::dextents<index_type, Rank>>;
 
 /// \brief CUDA staging view in a transfer order.
 template <class Element, std::size_t Rank>
-using device_stage_t = uni20::mdspec<Element, stdex::dextents<index_type, Rank>, uni20::layout_stride,
+using device_stage_t = uni20::mdspec<Element, uni20::dextents<index_type, Rank>, uni20::layout_stride,
                                      uni20::cuda::CudaPointerAccessor<Element>, uni20::cuda::CudaBufferView<Element>>;
 
 /// \brief Host staging view in a transfer order.
 template <class Element, std::size_t Rank>
-using host_stage_t = uni20::mdspan<Element, stdex::dextents<index_type, Rank>, uni20::layout_stride>;
+using host_stage_t = uni20::mdspan<Element, uni20::dextents<index_type, Rank>, uni20::layout_stride>;
 
 /// \brief Host staging storage whose elements are never constructed or destroyed.
 /// \details Staged elements are trivially copyable, and each is written by a
@@ -68,7 +68,7 @@ template <class Scalar> class HostStagingBuffer {
 
 /// \brief One-dimensional CUDA view of a storage range.
 template <class Element>
-using device_range_t = uni20::mdspec<Element, stdex::dextents<index_type, 1>, uni20::layout_right,
+using device_range_t = uni20::mdspec<Element, uni20::dextents<index_type, 1>, uni20::layout_right,
                                      uni20::cuda::CudaPointerAccessor<Element>, uni20::cuda::CudaBufferView<Element>>;
 
 /// \brief Outcome of the checks a staging backend makes before any work.
@@ -137,7 +137,7 @@ template <class HostMdspan, class DeviceMdspan>
       stride *= extents[axis];
     }
   }
-  return transfer_mapping_t<rank>(stdex::dextents<index_type, rank>(extents), strides);
+  return transfer_mapping_t<rank>(uni20::dextents<index_type, rank>(extents), strides);
 }
 
 template <class Mdspan>
@@ -205,7 +205,7 @@ template <class InputMdspan>
   using views_type = PeerStageViews<InputMdspan>;
   using scalar_type = typename views_type::scalar_type;
   using input_type = typename views_type::input_type;
-  using range_extents = stdex::dextents<index_type, 1>;
+  using range_extents = uni20::dextents<index_type, 1>;
   using range_mapping = uni20::layout_right::mapping<range_extents>;
 
   uni20::cuda::CudaBufferView<scalar_type> const stage_view(stage);

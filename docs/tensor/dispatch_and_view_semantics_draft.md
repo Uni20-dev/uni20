@@ -37,7 +37,7 @@ The implemented dense GEMM and GEMV paths use a strict layer split:
    They run on handles, extents, strides, accessors, or provider descriptors and
    do not participate in the operation-tag dispatch walk.
 
-A plain `stdex::mdspan` or structural `MdspanLike` is sufficient for a
+A plain `uni20::mdspan` or structural `MdspanLike` is sufficient for a
 lower-level kernel and is also the immediate case of `MdspecLike`. It does not
 carry tensor-level backend-selection policy, so a bare-mdspan frontend requires
 an explicit selector.
@@ -100,7 +100,7 @@ not strict write-through assignment.
 ### Resolved Views
 
 A resolved view is a shallow descriptor: data handle plus
-mapping/extents/accessor. This can often be a plain `stdex::mdspan` or a small
+mapping/extents/accessor. This can often be a plain `uni20::mdspan` or a small
 mdspan-like object. Assignment of a resolved view should have mdspan semantics:
 
 ```cpp
@@ -196,7 +196,7 @@ Do not treat a pointer `data_handle_type` as proof that a backend may read or
 write the storage directly. The data handle identifies storage; the accessor
 defines the value observed at that storage. A semantic accessor can keep the
 same pointer while changing the value returned by `access(...)`. Direct
-provider paths that bypass `access(...)` must require `stdex::default_accessor`
+provider paths that bypass `access(...)` must require `uni20::default_accessor`
 or a specifically recognized accessor whose semantics are lowered into provider
 metadata. Uni20's conjugating mdspan accessor follows the C++26
 `std::linalg::conjugated_accessor` direction described in WG21 P3050R3, but
@@ -986,7 +986,7 @@ being raw mdspan descriptors.
 5. What lifetime/epoch token does `TensorRef` need for slices of async or shared
    owning tensors?
 6. Which external types should get built-in CPO adapters (`std::vector`,
-   `stdex::mdspan`, nanobind arrays), and which should require explicit
+   `std::mdspan`, nanobind arrays), and which should require explicit
    adapters?
 7. Should the dispatch customization layer be implemented as named CPO objects,
    ADL free functions, or a small trait class that forwards to members?

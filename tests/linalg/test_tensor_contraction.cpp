@@ -179,10 +179,10 @@ TEST(CpuTensorContractionTest, DeferredTensorOperandsUseHostLeases)
 
 TEST(CpuTensorContractionTest, ContractsRankTwoDiagonalComponentsOnEitherSide)
 {
-  using component_extents_type = stdex::dextents<uni20::index_type, 1>;
+  using component_extents_type = uni20::dextents<uni20::index_type, 1>;
   using component_mapping_type = uni20::layout_signed_stride::mapping<component_extents_type>;
   using component_mdspan_type = uni20::mdspan<double, component_extents_type, uni20::layout_signed_stride>;
-  using matrix_extents_type = stdex::dextents<uni20::index_type, 2>;
+  using matrix_extents_type = uni20::dextents<uni20::index_type, 2>;
 
   std::array<double, 5> component_storage{2.0, 0.0, 3.0, 0.0, 4.0};
   auto const component_mapping =

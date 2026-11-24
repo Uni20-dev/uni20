@@ -30,6 +30,27 @@ static_assert(SupportsSignedLayout<MatrixShape, uni20::default_accessor<int>>);
 static_assert(!SupportsSignedLayout<uni20::dextents<unsigned, 2>, uni20::default_accessor<int>>);
 static_assert(!SupportsSignedLayout<MatrixShape, UnsignedOffsetAccessor>);
 
+TEST(NativeMdspanTest, ConfiguredExtentsPreserveMixedShape)
+{
+  using Shape = uni20::extents<int, 2, uni20::dynamic_extent, 4, uni20::dynamic_extent>;
+  using WideShape = uni20::extents<std::ptrdiff_t, 2, uni20::dynamic_extent, 4, uni20::dynamic_extent>;
+  static_assert(Shape::rank() == 4 && Shape::rank_dynamic() == 2);
+  static_assert(ScalarShape::rank() == 0 && ScalarShape::rank_dynamic() == 0);
+  static_assert(std::same_as<Shape::index_type, int> && std::same_as<Shape::size_type, unsigned>);
+#if UNI20_USE_STD_EXTENTS
+  static_assert(std::same_as<Shape, std::extents<int, 2, std::dynamic_extent, 4, std::dynamic_extent>>);
+#else
+  static_assert(std::is_empty_v<ScalarShape> && std::is_empty_v<uni20::extents<int, 2, 3>>);
+#endif
+  constexpr std::array dynamic{3, 5};
+  constexpr std::array all{2, 3, 4, 5};
+  constexpr Shape mixed{dynamic};
+  static_assert(mixed == Shape{all} && mixed == Shape{std::span{dynamic}});
+  static_assert(WideShape{mixed} == mixed && Shape{WideShape{mixed}} == mixed);
+  static_assert(Shape{}.extent(1) == 0 && Shape{}.extent(2) == 4);
+  static_assert(mixed.extent(0) == 2 && mixed.extent(1) == 3 && mixed.extent(2) == 4 && mixed.extent(3) == 5);
+}
+
 template <class Span> constexpr auto axis_steps(Span const& span)
 {
   typename Span::index_type steps = 0;
@@ -171,10 +192,12 @@ TEST(NativeMdspanTest, RankZeroHasAnObserverAndOneElement)
   EXPECT_EQ(view.mapping().base_offset(), 0U);
   EXPECT_EQ(view.mapping().required_span_size(), 1);
 
-  stdex::mdspan<int, ScalarShape, stdex::layout_stride> foreign{&data, {}};
+#ifdef __cpp_lib_mdspan
+  std::mdspan<int, std::extents<int>, std::layout_stride> foreign{&data, {}};
   auto borrowed = uni20::mdspan{foreign};
   EXPECT_EQ(borrowed[], 42);
   EXPECT_EQ(axis_steps(borrowed), 0);
+#endif
 }
 
 TEST(NativeMdspanTest, InterleavedDiagonalStridesAndZeroSingletonStride)
@@ -242,10 +265,11 @@ TEST(NativeMdspanTest, ReverseRetainsAnEmptyHandleAndItsStrides)
   static_assert(reversed.data_handle() == nullptr && reversed.mapping().strides() == std::array{1, 0});
 }
 
+#ifdef __cpp_lib_mdspan
 TEST(NativeMdspanTest, ImportBorrowsStorageAndPreservesStaticExtents)
 {
-  using Shape = stdex::extents<std::int16_t, 2, stdex::dynamic_extent>;
-  using Source = stdex::mdspan<int const, Shape, stdex::layout_left>;
+  using Shape = std::extents<std::int16_t, 2, std::dynamic_extent>;
+  using Source = std::mdspan<int const, Shape, std::layout_left>;
   int data[]{0, 1, 2, 3, 4, 5};
   Source const source{data, 3};
   auto imported = uni20::mdspan{source};
@@ -255,21 +279,22 @@ TEST(NativeMdspanTest, ImportBorrowsStorageAndPreservesStaticExtents)
           decltype(imported),
           uni20::mdspan<int const, uni20::extents<std::ptrdiff_t, 2, uni20::dynamic_extent>, uni20::layout_left>>);
   static_assert(!std::is_convertible_v<Source, decltype(imported)>);
-  static_assert(!std::is_constructible_v<uni20::mdspan<int, Shape, uni20::layout_left>, Source>);
+  static_assert(!std::is_constructible_v<uni20::mdspan<int, uni20::extents<std::int16_t, 2, uni20::dynamic_extent>,
+                                                      uni20::layout_left>, Source>);
   EXPECT_EQ(imported.data_handle(), data);
   EXPECT_EQ(imported.stride(1), 2);
   EXPECT_EQ((imported[1, 2]), 5);
 
-  struct CustomAccessor : stdex::default_accessor<int const>
+  struct CustomAccessor : std::default_accessor<int const>
   {};
-  using CustomView = stdex::mdspan<int const, Shape, stdex::layout_left, CustomAccessor>;
+  using CustomView = std::mdspan<int const, Shape, std::layout_left, CustomAccessor>;
   static_assert(!std::is_constructible_v<decltype(imported), CustomView>);
 }
 
 TEST(NativeMdspanTest, ImportChecksRequiredSpanSizeBeforeNarrowing)
 {
-  using Shape = stdex::dextents<std::int16_t, 1>;
-  using Source = stdex::mdspan<int, Shape, stdex::layout_stride>;
+  using Shape = std::dextents<std::int16_t, 1>;
+  using Source = std::mdspan<int, Shape, std::layout_stride>;
   using Narrow = uni20::mdspan<int, uni20::dextents<std::int8_t, 1>, uni20::layout_stride>;
   int data[128]{};
   auto source = [&](int extent, int stride) {
@@ -285,21 +310,20 @@ TEST(NativeMdspanTest, ImportChecksRequiredSpanSizeBeforeNarrowing)
 
 TEST(NativeMdspanTest, ImportChecksShapeEvenWhenEmpty)
 {
-  using Shape = stdex::dextents<std::int16_t, 3>;
+  using Shape = std::dextents<std::int16_t, 3>;
   using Narrow = uni20::mdspan<int, uni20::dextents<std::int8_t, 3>>;
   using Fixed = uni20::mdspan<int, uni20::extents<int, 1, uni20::dynamic_extent, uni20::dynamic_extent>>;
-  stdex::mdspan<int, Shape> empty{nullptr, 0, 16, 16};
+  std::mdspan<int, Shape> empty{nullptr, 0, 16, 16};
   EXPECT_THROW(static_cast<void>(Narrow{empty}), std::overflow_error);
   EXPECT_THROW(static_cast<void>(Fixed{empty}), std::invalid_argument);
 
-  using Source = stdex::mdspan<int, stdex::dextents<std::size_t, 1>, stdex::layout_stride>;
+  using Source = std::mdspan<int, std::dextents<std::size_t, 1>, std::layout_stride>;
   int data = 0;
   Source singleton{&data,
                    Source::mapping_type{Source::extents_type{1}, std::array{std::numeric_limits<std::size_t>::max()}}};
   EXPECT_THROW(static_cast<void>(uni20::mdspan{singleton}), std::overflow_error);
 }
 
-#ifdef __cpp_lib_mdspan
 TEST(NativeMdspanTest, ImportStandardMdspan)
 {
   using Shape = std::extents<int, 3, std::dynamic_extent>;

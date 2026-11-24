@@ -249,7 +249,7 @@ concept MdspecDescriptor = SpanMetadata<S> && requires(span_type_t<S> const& spa
 ///          exposes its static rank, extents, mapping, accessor, data handle,
 ///          and an `operator[]` accepting one index per rank whose result is
 ///          exactly `reference`. Its `offset_type` agrees with the accessor.
-///          Import a standard or Kokkos view with `uni20::mdspan{view}`.
+///          Import a standard mdspan with `uni20::mdspan{view}`.
 /// \tparam S The type being tested for MdspanLike requirements.
 /// \ingroup mdspan_ext
 template <class S>

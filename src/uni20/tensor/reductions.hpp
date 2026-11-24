@@ -73,7 +73,7 @@ template <TensorView InputTensor, std::size_t InputRank, std::size_t ReducedRank
                                             linalg::ReductionAxes<InputRank, ReducedRank> const& axes,
                                             std::index_sequence<OutputAxis...>)
 {
-  using extents_type = stdex::dextents<uni20::index_type, InputRank - ReducedRank>;
+  using extents_type = uni20::dextents<uni20::index_type, InputRank - ReducedRank>;
   return extents_type{static_cast<uni20::index_type>(input.extent(axes.surviving[OutputAxis]))...};
 }
 

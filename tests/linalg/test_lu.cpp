@@ -219,7 +219,7 @@ TEST(Lu, NativePrecisionsExtremeProductsAndConjugation)
 
 TEST(Lu, DirectDeclineAndStridedCpuFactors)
 {
-  using E = stdex::dextents<std::size_t, 2>;
+  using E = uni20::dextents<std::size_t, 2>;
   double storage[12] = {0};
   uni20::mdspan<double, E, uni20::layout_stride> a(
       storage, uni20::layout_stride::mapping<E>(E(2, 2), std::array<std::size_t, 2>{5, 2}));
@@ -302,7 +302,7 @@ TEST(Lu, DirectCpuFactorizationAcrossStorageOrders)
     DenseMatrix<S, RowMajor> row_major(3, 3);
     check(column_major.mdspan());
     check(row_major.mdspan());
-    using E = stdex::dextents<std::size_t, 2>;
+    using E = uni20::dextents<std::size_t, 2>;
     S storage[27]{};
     for (auto strides : {std::array<std::size_t, 2>{2, 11}, std::array<std::size_t, 2>{11, 2}})
     {

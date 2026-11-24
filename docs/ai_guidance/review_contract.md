@@ -48,8 +48,7 @@ AI guidance never overrides the named repository snapshot.
   shims for unfinished in-tree interfaces unless compatibility is explicitly
   requested.
 - Use Uni20’s native mdspan and layout types with square-bracket multidimensional
-  indexing. Import foreign views explicitly with `uni20::mdspan{view}`. Do not enable
-  `MDSPAN_USE_PAREN_OPERATOR`.
+  indexing. Import standard mdspans explicitly with `uni20::mdspan{view}`.
 - Spell project complex scalars as `uni20::complex<T>` and use
   `uni20::numeric_limits<T>` in scalar-generic Uni20 algorithms.
 - Async coroutine lambdas must be captureless and `static`; pass state as

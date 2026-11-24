@@ -247,8 +247,7 @@ The exact names can change, but the split matters:
   direct concepts should therefore distinguish "storage handle can be passed to
   the ABI" from "the accessor is identity-like or otherwise explicitly lowered
   into provider transform metadata". The default direct-memory case is an
-  mdspan with `uni20::default_accessor<T>`. Import a supported standard or
-  Kokkos view with `uni20::mdspan{view}` before provider dispatch. Other accessors
+  mdspan with `uni20::default_accessor<T>`. Import a supported standard mdspan with `uni20::mdspan{view}` before provider dispatch. Other accessors
   are direct only when the wrapper recognizes and lowers their semantics. The BLAS
   adapter currently treats Uni20's C++26-style `conjugated_accessor` as
   lowerable for readable inputs because it maps to `MatrixTransform`; arbitrary

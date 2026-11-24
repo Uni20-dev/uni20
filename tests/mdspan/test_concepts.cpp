@@ -100,10 +100,10 @@ TEST(MdspanConcepts, ConstAccessorAdaptorYieldsConstReference)
   EXPECT_EQ(2, ref);
 }
 
-using DynamicExtent = stdex::extents<std::size_t, stdex::dynamic_extent>;
-using DynamicMatrixExtents = stdex::dextents<std::size_t, 2>;
-using StaticSpan = uni20::mdspan<int, stdex::extents<std::size_t, 2, 3>>;
-using ConstStaticSpan = uni20::mdspan<int const, stdex::extents<std::size_t, 2, 3>>;
+using DynamicExtent = uni20::extents<std::size_t, uni20::dynamic_extent>;
+using DynamicMatrixExtents = uni20::dextents<std::size_t, 2>;
+using StaticSpan = uni20::mdspan<int, uni20::extents<std::size_t, 2, 3>>;
+using ConstStaticSpan = uni20::mdspan<int const, uni20::extents<std::size_t, 2, 3>>;
 using StridedSpan = uni20::mdspan<int, DynamicExtent, uni20::layout_stride>;
 using ConstStridedSpan = uni20::mdspan<int const, DynamicExtent, uni20::layout_stride>;
 using StridedMatrixSpan = uni20::mdspan<int, DynamicMatrixExtents, uni20::layout_stride>;

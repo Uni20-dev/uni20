@@ -299,7 +299,7 @@ template <
 template <uni20::MdspanLike Mdspan>
 using contraction_matrix_mdspan_t =
     uni20::mdspan<typename std::remove_cvref_t<Mdspan>::element_type,
-                  stdex::dextents<typename std::remove_cvref_t<Mdspan>::index_type, 2>, uni20::layout_stride,
+                  uni20::dextents<typename std::remove_cvref_t<Mdspan>::index_type, 2>, uni20::layout_stride,
                   typename std::remove_cvref_t<Mdspan>::accessor_type>;
 
 namespace detail::contraction_strides
@@ -315,7 +315,7 @@ template <class Mdspec> struct ContractionMatrixMdspec<Mdspec, true>
 template <class Mdspec> struct ContractionMatrixMdspec<Mdspec, false>
 {
     using span_type = std::remove_cvref_t<Mdspec>;
-    using type = uni20::mdspec<typename span_type::element_type, stdex::dextents<typename span_type::index_type, 2>,
+    using type = uni20::mdspec<typename span_type::element_type, uni20::dextents<typename span_type::index_type, 2>,
                                uni20::layout_stride, typename span_type::accessor_type,
                                typename span_type::data_descriptor_type>;
 };
@@ -326,7 +326,7 @@ template <class Mdspec> struct OffsetContractionMatrixMdspec<Mdspec, true>
 {
     using span_type = std::remove_cvref_t<Mdspec>;
     using accessor_type = typename span_type::accessor_type::offset_policy;
-    using type = uni20::mdspan<typename accessor_type::element_type, stdex::dextents<typename span_type::index_type, 2>,
+    using type = uni20::mdspan<typename accessor_type::element_type, uni20::dextents<typename span_type::index_type, 2>,
                                uni20::layout_stride, accessor_type>;
 };
 

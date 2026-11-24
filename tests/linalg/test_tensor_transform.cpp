@@ -40,7 +40,7 @@ struct move_only_scale
 
 TEST(TensorTransformTest, CpuReferenceDispatchSupportsVariadicMixedStridedMappings)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 2>;
+  using extents_type = uni20::dextents<uni20::index_type, 2>;
 
   std::vector<double> output_storage(12, 0.0);
   std::vector<double> lhs_storage(12, 0.0);

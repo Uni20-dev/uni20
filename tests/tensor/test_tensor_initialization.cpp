@@ -58,7 +58,7 @@ TEST(TensorInitializationTest, StridedAndStaticExtentsInitializeOwnedElements)
       EXPECT_EQ((matrix[i, j]), 0.0);
 
   using static_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::layout_left, uni20::DefaultAccessorFactory,
-                                    stdex::extents<uni20::index_type, 2, 3>>;
+                                    uni20::extents<uni20::index_type, 2, 3>>;
   static_type fixed(static_type::extents_type{});
   EXPECT_EQ((fixed[1, 2]), 0.0);
   uni20::DenseMatrix<double> empty(0, 4);

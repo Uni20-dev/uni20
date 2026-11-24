@@ -25,7 +25,7 @@ using generated_matrix = decltype(uni20::ones<double>(2, 3));
 using const_strided_matrix = uni20::ConstTensorView<strided_matrix>;
 using deferred_complex_matrix = uni20::test::DeferredHostTensor<uni20::complex<double>, 2>;
 using deferred_conjugated_matrix = decltype(uni20::conj(std::declval<deferred_complex_matrix&>()));
-using metadata_extents = stdex::dextents<uni20::index_type, 2>;
+using metadata_extents = uni20::dextents<uni20::index_type, 2>;
 using metadata_span = uni20::mdspec<double const, metadata_extents, uni20::layout_stride,
                                     uni20::default_accessor<double const>, std::size_t>;
 

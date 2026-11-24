@@ -107,7 +107,7 @@ template <std::size_t... Axis, StridedMdspecLike Span> auto diagonal_mdspec(Span
 {
   using index_type = typename Span::index_type;
   constexpr std::size_t result_rank = Span::rank() - sizeof...(Axis) / 2;
-  using extents_type = stdex::dextents<index_type, result_rank>;
+  using extents_type = uni20::dextents<index_type, result_rank>;
   using element_type = typename Span::element_type;
   using accessor_type = typename Span::accessor_type;
 

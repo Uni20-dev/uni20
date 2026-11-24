@@ -2,20 +2,20 @@
 
 This directory contains Uni20's native views and layouts and the structural
 utilities used by dense kernels and layout-aware algorithms. Tensor producers
-and CUDA acquisition use native mdspan types. The Kokkos implementation
-supplies extents and supports interop.
+and CUDA acquisition use native mdspan types. Extents use the standard
+library or the built-in fallback selected at configure time.
 
 ## Contents
 
-- `mdspan.hpp`: native borrowed view and checked import from the standard
-  and Kokkos mdspans. It also includes the configured Kokkos implementation.
+- `extents.hpp`: configured extents for host and CUDA translation units.
+- `mdspan.hpp`: native borrowed view and checked import from standard mdspan.
 - `layouts.hpp`: native contiguous and nonnegative strided mappings.
 - `layout_signed_stride.hpp`: affine mappings with signed strides and storage span queries.
 - `default_accessor.hpp`: pointer access with signed element offsets.
 - `offset_range.hpp`: inclusive physical offset bounds for iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
   a data descriptor for later handle acquisition.
-- `format.hpp`: `std::format` and `{fmt}` support for mdspan extents.
+- `format.hpp`: `{fmt}` support for extents and `std::format` support for fallback extents.
 - `concepts.hpp`: concepts for mdspan-like objects and related structural
   properties.
 - `conjugate_accessor.hpp`: read-only mdspan accessor adaptor and `conj(...)`
@@ -44,7 +44,7 @@ supplies extents and supports interop.
 - `MdspanLike` is the readable view protocol used by leaf kernels. Its
   descriptor aliases agree with the accessor, including `offset_type`. It exposes
   rank and extent observers, and its rank-dimensional `operator[]` returns the
-  declared `reference` type. Import standard or Kokkos views with
+  declared `reference` type. Import standard mdspans with
   `uni20::mdspan{view}`.
   `MutableMdspanLike` additionally proves assignment through that indexed result.
 - `MdspecLike` is the broader structural protocol for mdspan metadata whose

@@ -63,7 +63,7 @@ using complex_host_matrix_type = uni20::Tensor<complex_type, 2>;
 using complex_cuda_matrix_type = uni20::CudaTensor<complex_type, 2>;
 using cuda_vector_type = uni20::CudaTensor<double, 1>;
 using complex_cuda_conjugated_view = uni20::ConjugatedTensorView<complex_cuda_matrix_type>;
-using cuda_extents_type = stdex::dextents<uni20::index_type, 2>;
+using cuda_extents_type = uni20::dextents<uni20::index_type, 2>;
 using resolved_cuda_output_mdspan =
     uni20::mdspan<double, cuda_extents_type, uni20::layout_left, uni20::cuda::CudaPointerAccessor<double>>;
 using resolved_cuda_input_mdspan =
@@ -263,7 +263,7 @@ auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
   auto const_base = std::as_const(tensor).mdspec();
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
-  using extents_type = stdex::dextents<uni20::index_type, Rank>;
+  using extents_type = uni20::dextents<uni20::index_type, Rank>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type =
       uni20::mdspec<typename mutable_base_type::element_type, extents_type, uni20::layout_stride,
@@ -283,7 +283,7 @@ auto host_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
                        std::array<uni20::index_type, Rank> const& strides)
 {
   using element_type = typename Tensor::value_type;
-  using extents_type = stdex::dextents<uni20::index_type, Rank>;
+  using extents_type = uni20::dextents<uni20::index_type, Rank>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   using mutable_type = uni20::mdspan<element_type, extents_type, uni20::layout_stride>;
   using const_type = uni20::mdspan<element_type const, extents_type, uni20::layout_stride>;
@@ -437,7 +437,7 @@ TEST(CudaCopyPlanningTest, ElementwisePlanCompactsAndDecodesIndependentPaddedStr
 
 TEST(CudaCopyPlanningTest, ElementwisePlanUses64BitOffsetsWhenAReachableOffsetExceeds32Bits)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 1>;
+  using extents_type = uni20::dextents<uni20::index_type, 1>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   auto const large_stride = static_cast<uni20::index_type>(std::numeric_limits<std::int32_t>::max()) + 1;
   mapping_type output_mapping{extents_type{2}, std::array<uni20::index_type, 1>{large_stride}};
@@ -472,7 +472,7 @@ TEST(CudaCopyPlanningTest, LoweredPlanVisitsOnlyTheSelectedPayload)
 
 TEST(CudaCopyPlanningTest, EmptyIterationLowersToAZeroRank32BitPayload)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 1>;
+  using extents_type = uni20::dextents<uni20::index_type, 1>;
   using mapping_type = uni20::layout_stride::mapping<extents_type>;
   mapping_type mapping{extents_type{0}, std::array<uni20::index_type, 1>{1}};
   double value = 0;
@@ -488,7 +488,7 @@ TEST(CudaCopyPlanningTest, EmptyIterationLowersToAZeroRank32BitPayload)
 
 TEST(CudaCopyPlanningTest, ElementwisePlanDeclinesNegativeStridesUntilCudaRebasingIsDefined)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 1>;
+  using extents_type = uni20::dextents<uni20::index_type, 1>;
   using mapping_type = uni20::layout_signed_stride::mapping<extents_type>;
   mapping_type output_mapping{extents_type{2}, std::array<uni20::index_type, 1>{-1}};
   mapping_type input_mapping{extents_type{2}, std::array<uni20::index_type, 1>{1}};

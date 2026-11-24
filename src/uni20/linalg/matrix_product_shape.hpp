@@ -14,7 +14,7 @@
 namespace uni20::linalg::detail
 {
 
-using matrix_product_extents = stdex::dextents<uni20::index_type, 2>;
+using matrix_product_extents = uni20::dextents<uni20::index_type, 2>;
 
 template <class Lhs, class Rhs>
 [[nodiscard]] matrix_product_extents matrix_product_shape_impl(Lhs const& lhs, Rhs const& rhs)

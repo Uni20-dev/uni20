@@ -1,6 +1,6 @@
 include(FetchContent)
 set(UNI20_SUBPROJECT_TEST_ARGS "")
-foreach(dependency IN ITEMS fmt mdspan TBB GTest nanobind)
+foreach(dependency IN ITEMS fmt TBB GTest nanobind)
   unset(dependency_source)
   FetchContent_GetProperties(${dependency} SOURCE_DIR dependency_source)
   if(dependency_source)

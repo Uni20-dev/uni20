@@ -29,7 +29,7 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using self_adjoint_eigenvalue_extents = stdex::dextents<uni20::index_type, 1>;
+using self_adjoint_eigenvalue_extents = uni20::dextents<uni20::index_type, 1>;
 
 template <uni20::MutableRankedTensorView<1> EigenvalueTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
 [[nodiscard]] self_adjoint_eigh_op prepare_self_adjoint_eigh(EigenvalueTensor& eigenvalues, MatrixTensor& matrix_work,

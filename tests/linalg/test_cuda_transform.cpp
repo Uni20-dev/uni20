@@ -23,7 +23,7 @@
 namespace
 {
 
-using extents_type = stdex::dextents<uni20::index_type, 2>;
+using extents_type = uni20::dextents<uni20::index_type, 2>;
 using real_cuda_matrix = uni20::CudaTensor<double, 2>;
 using const_real_cuda_mdspec = decltype(std::declval<real_cuda_matrix const&>().mdspec());
 using mutable_real_cuda_mdspec = decltype(std::declval<real_cuda_matrix&>().mdspec());
@@ -56,7 +56,7 @@ auto cuda_strided_view(Tensor& tensor, std::array<uni20::index_type, Rank> const
   auto const_base = std::as_const(tensor).mdspec();
   using mutable_base_type = decltype(mutable_base);
   using const_base_type = decltype(const_base);
-  using view_extents = stdex::dextents<uni20::index_type, Rank>;
+  using view_extents = uni20::dextents<uni20::index_type, Rank>;
   using mapping_type = uni20::layout_stride::mapping<view_extents>;
   using mutable_type =
       uni20::mdspec<typename mutable_base_type::element_type, view_extents, uni20::layout_stride,
@@ -156,7 +156,7 @@ TEST(CudaTransformPlanningTest, UnaryPlanDecodesDifferentPaddedStrides)
 
 TEST(CudaTransformPlanningTest, RankZeroUnaryPlanVisitsOneElement)
 {
-  using scalar_extents = stdex::extents<uni20::index_type>;
+  using scalar_extents = uni20::extents<uni20::index_type>;
   double output_value = 0.0;
   double input_value = 1.0;
   uni20::mdspan<double, scalar_extents> output{&output_value};
@@ -173,7 +173,7 @@ TEST(CudaTransformPlanningTest, RankZeroUnaryPlanVisitsOneElement)
 
 TEST(CudaTransformPlanningTest, DimensionsBeyondTheKernelRankBecomeHostLoops)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 10>;
+  using extents_type = uni20::dextents<uni20::index_type, 10>;
   extents_type const extents{2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
   double value = 0.0;
   // Column-major output from a row-major input: no two axes merge.

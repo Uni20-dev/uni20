@@ -215,7 +215,7 @@ template <StridedMdspecLike Span> [[nodiscard]] auto dense_diagonal_components(S
   using span_type = std::remove_cvref_t<Span>;
   using element_type = typename span_type::element_type;
   using index_type = typename span_type::index_type;
-  using extents_type = stdex::dextents<index_type, 1>;
+  using extents_type = uni20::dextents<index_type, 1>;
   using layout_type = uni20::layout_stride;
   using mapping_type = typename layout_type::template mapping<extents_type>;
   using accessor_type = typename span_type::accessor_type;

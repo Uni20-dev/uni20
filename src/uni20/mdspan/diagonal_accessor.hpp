@@ -238,7 +238,7 @@ template <class Extents>
 
 // GeneratedLayout encodes a full logical coordinate as one linear offset.
 template <class Index, std::size_t... Axes>
-constexpr auto diagonal_logical_extents(stdex::extents<Index, Axes...> extents, bool empty)
+constexpr auto diagonal_logical_extents(uni20::extents<Index, Axes...> extents, bool empty)
 {
   using logical_index = std::common_type_t<Index, std::ptrdiff_t>;
   if (!empty)
@@ -252,7 +252,7 @@ constexpr auto diagonal_logical_extents(stdex::extents<Index, Axes...> extents, 
       size *= extent;
     }
   }
-  return stdex::extents<logical_index, Axes...>{extents};
+  return uni20::extents<logical_index, Axes...>{extents};
 }
 
 template <class Mapping, std::size_t... Axis>
@@ -300,7 +300,7 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
                   diagonal_accessor<ElementType, AccessorExtents, ComponentIndex, ComponentLayout>> const& span)
 {
   using index_type = ComponentIndex;
-  using component_extents_type = stdex::dextents<index_type, 1>;
+  using component_extents_type = uni20::dextents<index_type, 1>;
   using component_mapping_type = ComponentLayout::template mapping<component_extents_type>;
   using component_mdspan_type = uni20::mdspan<ElementType, component_extents_type, ComponentLayout>;
   auto const count = detail::diagonal_component_extent(span.extents());

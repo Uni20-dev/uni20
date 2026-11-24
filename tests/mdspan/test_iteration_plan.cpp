@@ -124,7 +124,7 @@ TEST(MakeIterationPlanTest, AllSizeOneIsScalarEmptyPlan)
 
 TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
 {
-  using extents_t = stdex::dextents<index_t, 0>;
+  using extents_t = uni20::dextents<index_t, 0>;
   using mapping_t = uni20::layout_stride::mapping<extents_t>;
 
   std::array<std::ptrdiff_t, 0> strides{};
@@ -148,7 +148,7 @@ TEST(IterationPlanTest, NormalizesMinimumNarrowStrideWithoutNarrowing)
 
 TEST(IterationPlanTest, PreservesEachMappingOrigin)
 {
-  using shape = stdex::extents<std::uint8_t, 2>;
+  using shape = uni20::extents<std::uint8_t, 2>;
   using base_mapping = uni20::layout_right::mapping<shape>;
   struct Mapping : base_mapping
   {
@@ -189,7 +189,7 @@ TEST(MakeMultiIterationPlanTest, SimpleMatchingLayouts)
 
 TEST(MakeMultiIterationPlanTest, RankZeroMappingProducesOneScalarElement)
 {
-  using extents_type = stdex::dextents<index_t, 0>;
+  using extents_type = uni20::dextents<index_t, 0>;
   using mapping_type = uni20::layout_left::mapping<extents_type>;
   auto plan = make_multi_iteration_plan(std::tuple{mapping_type{extents_type{}}});
 
@@ -314,7 +314,7 @@ TEST(MakeMultiIterationPlanTest, ZeroExtentProducesRetainedZeroDim)
 
 TEST(IterationPlanTest, EmptyShapesDoNotQueryStrides)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
   using base_mapping = uni20::layout_left::mapping<extents_type>;
   struct Mapping : base_mapping
   {

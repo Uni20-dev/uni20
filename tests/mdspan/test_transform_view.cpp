@@ -38,8 +38,8 @@ struct member_record
 template <class Function, class Span>
 concept CanMakeUnaryTransformView = requires(Function function, Span const& span) { transform_view(function, span); };
 
-using scalar_span = uni20::mdspan<double, stdex::dextents<index_type, 1>>;
-using member_span = uni20::mdspan<member_record, stdex::dextents<index_type, 1>>;
+using scalar_span = uni20::mdspan<double, uni20::dextents<index_type, 1>>;
+using member_span = uni20::mdspan<member_record, uni20::dextents<index_type, 1>>;
 
 static_assert(CanMakeUnaryTransformView<final_scale, scalar_span>);
 static_assert(!CanMakeUnaryTransformView<decltype(&member_record::value), member_span>);
@@ -238,8 +238,8 @@ TEST(TransformView2D, RowMajorSum)
 
 TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
 {
-  using small_shape = stdex::extents<std::uint8_t, 2, 2>;
-  using wide_shape = stdex::extents<int, 2, 2>;
+  using small_shape = uni20::extents<std::uint8_t, 2, 2>;
+  using wide_shape = uni20::extents<int, 2, 2>;
   std::array<int, 4> dense{1, 2, 3, 4};
   std::array<int, 301> padded{};
   std::iota(padded.begin(), padded.end(), 0);
@@ -262,8 +262,8 @@ TEST(TransformView2D, PreservesEachOperandsPhysicalOffsets)
 
 TEST(TransformView1D, PromotesIndicesOnlyWhenNeeded)
 {
-  using signed_shape = stdex::extents<std::int32_t, 2>;
-  using unsigned_shape = stdex::extents<std::uint32_t, 2>;
+  using signed_shape = uni20::extents<std::int32_t, 2>;
+  using unsigned_shape = uni20::extents<std::uint32_t, 2>;
   std::array<int, 2> values{3, 7};
   uni20::mdspan<int, signed_shape> a{values.data()};
   uni20::mdspan<int, unsigned_shape> b{values.data()};
@@ -284,8 +284,8 @@ TEST(TransformView1D, PromotesIndicesOnlyWhenNeeded)
 
 TEST(TransformView2D, PreservesChildMappingsWhenComposingMixedIndexTypes)
 {
-  using signed_shape = stdex::extents<std::int64_t, 2, 2>;
-  using unsigned_shape = stdex::extents<std::uint64_t, 2, 2>;
+  using signed_shape = uni20::extents<std::int64_t, 2, 2>;
+  using unsigned_shape = uni20::extents<std::uint64_t, 2, 2>;
   std::array<int, 4> dense{1, 2, 3, 4};
   std::array<int, 8> padded{10, 0, 20, 0, 30, 0, 40, 0};
   uni20::mdspan<int, signed_shape> a{dense.data(), signed_shape{}};
@@ -316,7 +316,7 @@ struct wide_offset_layout
 
 TEST(TransformView1D, PreservesWiderMappingOffsetsWithNarrowCoordinates)
 {
-  using shape = stdex::extents<std::uint8_t, 2>;
+  using shape = uni20::extents<std::uint8_t, 2>;
   std::array<int, 301> storage{};
   storage[300] = 23;
   uni20::mdspan<int, shape, wide_offset_layout> input{storage.data(), wide_offset_layout::mapping<shape>{}};

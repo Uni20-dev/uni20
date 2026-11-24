@@ -14,7 +14,7 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 using uni20::linalg::blas::MatrixTransform;
 
 template <class Scalar> using left_mdspan = uni20::mdspan<Scalar, extents_2d, uni20::layout_left>;
@@ -187,7 +187,7 @@ TEST(BlasMatrixOperandTest, StagesRowMajorMdspanAsTransposedProviderMatrix)
 
 TEST(BlasMatrixOperandTest, NormalizesUnobservedZeroRowProviderStride)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 2>;
+  using extents_type = uni20::dextents<uni20::index_type, 2>;
   uni20::mdspan<double, extents_type, uni20::layout_right> matrix(nullptr, 2, 0);
 
   auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(matrix);

@@ -32,12 +32,12 @@ template <std::size_t A, std::size_t B> static constexpr std::size_t merge_exten
 {
   if constexpr (A == B)
     return A;
-  else if constexpr (A == stdex::dynamic_extent)
+  else if constexpr (A == uni20::dynamic_extent)
     return B;
-  else if constexpr (B == stdex::dynamic_extent)
+  else if constexpr (B == uni20::dynamic_extent)
     return A;
   else
-    static_assert(A == B || A == stdex::dynamic_extent || B == stdex::dynamic_extent, "Incompatible static extents");
+    static_assert(A == B || A == uni20::dynamic_extent || B == uni20::dynamic_extent, "Incompatible static extents");
   return 0;
 }
 
@@ -92,7 +92,7 @@ template <typename FirstSpan, typename... OtherSpans> struct common_extents
     // Build the extents type by expanding merged_static_extent<Is>()...
     template <std::size_t... Is> static constexpr auto make_extents(std::index_sequence<Is...>)
     {
-      return stdex::extents<index_type,
+      return uni20::extents<index_type,
                             merged_static_extent<Is>()... // one per dimension
                             >{};
     }
