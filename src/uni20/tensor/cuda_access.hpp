@@ -40,10 +40,10 @@ template <class Pointer> [[nodiscard]] Pointer offset_cuda_pointer(Pointer point
   return pointer + offset;
 }
 
-template <class Mapping, class Count>
+template <StorageSpanMapping Mapping, class Count>
 void validate_cuda_mapping_range(Mapping const& mapping, Count required, std::size_t offset, std::size_t buffer_size)
 {
-  auto const base_offset = detail::ZeroBaseOffsetMapping<Mapping> ? std::size_t{0} : detail::mapping_base_offset(mapping);
+  auto const base_offset = mapping.base_offset();
   CHECK(base_offset <= offset && offset <= buffer_size, base_offset, offset, buffer_size);
   auto const span_start = offset - base_offset;
   CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - span_start), required,

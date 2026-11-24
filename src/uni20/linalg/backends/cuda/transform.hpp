@@ -39,6 +39,8 @@ template <class OutputMdspec, class... InputMdspecs>
 concept RawCudaOverwriteMdspecs =
     uni20::MutableMdspecLike<OutputMdspec> && (uni20::MdspecLike<InputMdspecs> && ...) &&
     is_raw_mutable_cuda_mdspec<OutputMdspec> && (is_raw_const_cuda_mdspec<InputMdspecs> && ...) &&
+    uni20::detail::StorageSpanMapping<typename std::remove_cvref_t<OutputMdspec>::mapping_type> &&
+    (uni20::detail::StorageSpanMapping<typename std::remove_cvref_t<InputMdspecs>::mapping_type> && ...) &&
     ((std::remove_cvref_t<OutputMdspec>::rank() == std::remove_cvref_t<InputMdspecs>::rank()) && ...) &&
     (std::same_as<transform_scalar_t<OutputMdspec>, transform_scalar_t<InputMdspecs>> && ...) &&
     (std::remove_cvref_t<OutputMdspec>::rank() == 0 ||

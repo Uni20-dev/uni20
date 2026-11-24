@@ -134,11 +134,11 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    padding. `base_offset()` is the displacement from the start of that span to
    the data handle. A native affine mapping returns zero for the all-zero
    coordinate, so the handle addresses the logical origin. Both storage queries
-   return zero for an empty mapping. The built-in nonnegative layouts declare
-   `is_base_offset_always_zero()`. Both `mdspan` and `mdspec` expose this
-   compile-time mapping property when the mapping has `required_span_size()`.
-   A legacy mapping exposing only `required_span_size()` describes a span
-   starting at its handle.
+   return zero for an empty mapping. A mapping that describes a storage span
+   provides `required_span_size()`, `base_offset()`, and a static
+   `constexpr bool is_base_offset_always_zero()`. The built-in nonnegative
+   layouts return true from this classifier. Both `mdspan` and `mdspec`
+   forward it when the mapping provides all three observers.
    The rule covers a mapping that returns
    one offset, read by an accessor that uses it as an element offset into one
    buffer. This includes paired-axis diagonal views and accessors that forward
@@ -150,7 +150,9 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    work with the accessors and operations written for them, and anything that
    needs those queries, such as buffer validation or conversion to the
    standard, does not accept them. PR #152 removed the conformance claims and
-   the zip span-size query. A translating accessor is outside the rule too: `diagonal_accessor`
+   the zip span-size query. Generated layouts also sit outside the storage-span
+   contract since their offsets encode logical coordinates. A translating
+   accessor is outside the rule too: `diagonal_accessor`
    maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
    diagonal is mapping offset 8 but component 2, and validating its buffer is
    left to the accessor.

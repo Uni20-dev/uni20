@@ -77,9 +77,9 @@ class mdspec {
 
     /// \brief Report whether the mapping's storage span always starts at the eventual handle.
     [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept
-      requires requires(mapping_type const& mapping) { mapping.required_span_size(); }
+      requires detail::StorageSpanMapping<mapping_type>
     {
-      return detail::ZeroBaseOffsetMapping<mapping_type>;
+      return mapping_type::is_base_offset_always_zero();
     }
 
     /// \brief Return the descriptor used to acquire writable data access.

@@ -1,3 +1,4 @@
+#include <uni20/mdspan/generated_layout.hpp>
 #include <uni20/mdspan/mdspec.hpp>
 #include <uni20/mdspan/reverse.hpp>
 
@@ -29,6 +30,29 @@ struct UnsignedOffsetAccessor : uni20::default_accessor<int>
 static_assert(SupportsSignedLayout<MatrixShape, uni20::default_accessor<int>>);
 static_assert(!SupportsSignedLayout<uni20::dextents<unsigned, 2>, uni20::default_accessor<int>>);
 static_assert(!SupportsSignedLayout<MatrixShape, UnsignedOffsetAccessor>);
+
+struct MissingBaseOffsetLayout
+{
+    template <class Extents> struct mapping : uni20::layout_right::mapping<Extents>
+    {
+        using layout_type = MissingBaseOffsetLayout;
+        std::size_t base_offset() const = delete;
+    };
+};
+
+template <class View>
+concept HasBaseOffsetClassifier = requires { View::is_base_offset_always_zero(); };
+
+using IncompleteStorageSpan = uni20::mdspan<int, MatrixShape, MissingBaseOffsetLayout>;
+using IncompleteStorageSpec =
+    uni20::mdspec<int, MatrixShape, MissingBaseOffsetLayout, uni20::default_accessor<int>, int>;
+static_assert(uni20::AffineMdspanLike<IncompleteStorageSpan>);
+static_assert(uni20::AffineMdspecLike<IncompleteStorageSpec>);
+static_assert(!uni20::StridedMdspanLike<IncompleteStorageSpan>);
+static_assert(!uni20::StridedMdspecLike<IncompleteStorageSpec>);
+static_assert(!HasBaseOffsetClassifier<IncompleteStorageSpan>);
+static_assert(!HasBaseOffsetClassifier<IncompleteStorageSpec>);
+static_assert(!HasBaseOffsetClassifier<uni20::mdspan<int, MatrixShape, uni20::GeneratedLayout>>);
 
 TEST(NativeMdspanTest, ConfiguredExtentsPreserveMixedShape)
 {
