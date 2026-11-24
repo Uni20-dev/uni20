@@ -365,6 +365,8 @@ concept MutableMdspecLike =
     (MutableMdspanLike<S> || detail::AccessorReferenceAssignable<typename detail::span_type_t<S>::accessor_type>);
 
 /// \brief An affine mdspec-like type with a stride observer for each axis.
+/// \details Its mapping sends the all-zero coordinate to offset zero, so the data handle and `stride()`
+///          locate every element. `uni20::mdspan` and `uni20::mdspec` check this when they are formed.
 template <class S>
 concept AffineMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_strided() &&
                            requires(detail::span_type_t<S> const& span, std::size_t axis) {

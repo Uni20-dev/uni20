@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -121,17 +122,56 @@ struct ShiftedSignedComponentLayout
     };
 };
 
-TEST(DiagonalMdspecTest, BorrowsComponentsFromTheirMappedOrigin)
+// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179), so a shifted
+// origin cannot reach the diagonal factories. The offset belongs in the handle instead.
+TEST(DiagonalMdspecTest, RejectsComponentViewsWithAShiftedOrigin)
 {
   using shape = uni20::extents<int, 2>;
   using mapping = ShiftedSignedComponentLayout::mapping<shape>;
   std::array<int, 4> storage{5, 10, 20, 30};
-  auto components = uni20::mdspan{storage.data() + 2, mapping{}};
+  EXPECT_THROW((uni20::mdspan<int, shape, ShiftedSignedComponentLayout>{storage.data() + 2, mapping{}}),
+               std::invalid_argument);
+
+  uni20::mdspan<int, shape, uni20::layout_signed_stride> components{
+      storage.data() + 3, uni20::layout_signed_stride::mapping<shape>{shape{}, {-2}}};
   auto diagonal = make_diagonal_mdspan(uni20::extents<int, 2, 2>{}, components);
   auto recovered = diagonal_components(diagonal);
   EXPECT_EQ(recovered.data_handle(), storage.data() + 3);
   EXPECT_EQ((diagonal[0, 0]), 30);
   EXPECT_EQ((diagonal[1, 1]), 10);
+}
+
+template <int Origin> struct ShiftedStrideLayout
+{
+    template <class Extents> struct mapping : layout_stride::mapping<Extents>
+    {
+        using base_type = layout_stride::mapping<Extents>;
+        using layout_type = ShiftedStrideLayout;
+        using base_type::base_type;
+
+        template <class... Indices> constexpr typename Extents::index_type operator()(Indices... indices) const noexcept
+        {
+          return Origin + base_type::operator()(indices...);
+        }
+    };
+};
+
+// The #176 review reproducer: diagonal_components decodes the handle alone, so a logical view
+// with mapping(i, j) = 4 + 3i + j over a 3x3 diagonal would recover the wrong components.
+TEST(DiagonalMdspecTest, RejectsLogicalViewsWithAShiftedOrigin)
+{
+  using original_extents_type = uni20::dextents<index_type, 2>;
+  using view_extents_type = uni20::dextents<index_type, 2>;
+  using layout_type = ShiftedStrideLayout<4>;
+  using accessor_type = diagonal_accessor<double, original_extents_type>;
+  using view_type = uni20::mdspan<double, view_extents_type, layout_type, accessor_type>;
+
+  std::array<double, 3> storage{2.0, 3.0, 5.0};
+  auto const mapping =
+      layout_type::mapping<view_extents_type>{view_extents_type{2, 2}, std::array<index_type, 2>{3, 1}};
+  EXPECT_THROW(
+      (view_type{diagonal_data_handle<double>{storage.data(), 0}, mapping, accessor_type{original_extents_type{3, 3}}}),
+      std::invalid_argument);
 }
 
 TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)

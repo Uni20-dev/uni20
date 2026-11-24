@@ -91,6 +91,8 @@ struct DiagonalLayout
     };
 };
 
+template <> inline constexpr bool zero_origin_layout<DiagonalLayout> = true;
+
 template <std::size_t Rank, std::size_t... Axis> consteval bool valid_diagonal_pairs()
 {
   if (sizeof...(Axis) == 0 || sizeof...(Axis) % 2 != 0) return false;

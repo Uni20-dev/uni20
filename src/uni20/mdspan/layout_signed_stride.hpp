@@ -124,6 +124,8 @@ struct layout_signed_stride
 namespace detail
 {
 
+template <> inline constexpr bool zero_origin_layout<layout_signed_stride> = true;
+
 template <class Layout, class Extents, class Accessor>
 concept LayoutOffsetCompatible =
     !std::same_as<Layout, layout_signed_stride> ||

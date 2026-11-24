@@ -7,6 +7,7 @@
 #include <concepts>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 
 namespace
@@ -337,5 +338,58 @@ TEST(NativeMdspanTest, ImportStandardMdspan)
   EXPECT_EQ(view.stride(0), 4);
 }
 #endif
+
+template <int Origin, bool Strided = true> struct OriginShiftedLayout
+{
+    template <class Extents> struct mapping : uni20::layout_stride::mapping<Extents>
+    {
+        using base_type = uni20::layout_stride::mapping<Extents>;
+        using layout_type = OriginShiftedLayout;
+        using base_type::base_type;
+
+        template <class... Indices> constexpr typename Extents::index_type operator()(Indices... indices) const noexcept
+        {
+          return Origin + base_type::operator()(indices...);
+        }
+        static constexpr bool is_always_strided() noexcept { return Strided; }
+        constexpr bool is_strided() const noexcept { return Strided; }
+    };
+};
+
+// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179). The standard admits
+// m(i) = c + 2i as strided, but consumers that use the handle and strides, such as the strided
+// zip layout, would drop c.
+TEST(NativeMdspanTest, RejectsAStridedMappingWithAShiftedOrigin)
+{
+  using shape = uni20::extents<int, 2>;
+  using shifted = OriginShiftedLayout<1>;
+  std::array<int, 4> storage{10, 11, 12, 13};
+  auto const mapping = shifted::mapping<shape>{shape{}, std::array<int, 1>{2}};
+  EXPECT_THROW((uni20::mdspan<int, shape, shifted>{storage.data(), mapping}), std::invalid_argument);
+
+  uni20::mdspan<int, shape, uni20::layout_stride> rebased{
+      storage.data() + 1, uni20::layout_stride::mapping<shape>{shape{}, std::array<int, 1>{2}}};
+  EXPECT_EQ(rebased[0], 11);
+  EXPECT_EQ(rebased[1], 13);
+
+  using scalar = uni20::extents<int>;
+  EXPECT_THROW((uni20::mdspan<int, scalar, shifted>{storage.data(), shifted::mapping<scalar>{}}),
+               std::invalid_argument);
+}
+
+TEST(NativeMdspanTest, AcceptsShiftedOriginsWithoutACoordinateOrAStrideClaim)
+{
+  std::array<int, 4> storage{};
+  using empty_shape = uni20::extents<int, 0>;
+  using shifted = OriginShiftedLayout<1>;
+  uni20::mdspan<int, empty_shape, shifted> empty{storage.data(),
+                                                 shifted::mapping<empty_shape>{empty_shape{}, std::array<int, 1>{1}}};
+  EXPECT_EQ(empty.extent(0), 0);
+
+  using shape = uni20::extents<int, 2>;
+  using unstrided = OriginShiftedLayout<1, false>;
+  uni20::mdspan<int, shape, unstrided> view{storage.data(), unstrided::mapping<shape>{shape{}, std::array<int, 1>{2}}};
+  EXPECT_EQ(view.mapping()(0), 1);
+}
 
 } // namespace
