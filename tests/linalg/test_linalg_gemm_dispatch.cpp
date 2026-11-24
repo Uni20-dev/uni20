@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -1027,4 +1028,26 @@ TEST(LinalgGemmDispatchTest, TensorOperandsUseGlobalStoragePolicyOverride)
   EXPECT_DOUBLE_EQ((c.span[0, 1]), 22.0);
   EXPECT_DOUBLE_EQ((c.span[1, 0]), 43.0);
   EXPECT_DOUBLE_EQ((c.span[1, 1]), 50.0);
+}
+
+// The contracted axis belongs to the inputs. A narrow output index type must not bound it (#170).
+TEST(LinalgGemmDispatchTest, CpuReferenceContractsBeyondTheOutputIndexRange)
+{
+  using narrow_output = uni20::BasicTensor<double, uni20::dextents<std::int16_t, 2>>;
+  using lhs_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::ColumnMajor>;
+  using rhs_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::RowMajor>;
+  for (uni20::index_type const inner : {uni20::index_type{32767}, uni20::index_type{32768}})
+  {
+    lhs_type lhs(lhs_type::extents_type{1, inner});
+    rhs_type rhs(rhs_type::extents_type{inner, 1});
+    for (uni20::index_type k = 0; k < inner; ++k)
+    {
+      lhs[0, k] = 1.0;
+      rhs[k, 0] = 1.0;
+    }
+    narrow_output output(narrow_output::extents_type{1, 1});
+
+    uni20::linalg::gemm(uni20::linalg::CpuReferenceBackend{}, output, 1.0, lhs, rhs, 0.0);
+    EXPECT_DOUBLE_EQ((output[0, 0]), static_cast<double>(inner)) << "contracted extent " << inner;
+  }
 }
