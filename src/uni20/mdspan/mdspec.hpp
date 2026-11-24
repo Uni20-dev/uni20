@@ -79,6 +79,13 @@ class mdspec {
     /// \brief Report whether every mapping of this type is strided.
     [[nodiscard]] static constexpr bool is_always_strided() noexcept { return mapping_type::is_always_strided(); }
 
+    /// \brief Report whether the mapping's storage span always starts at the eventual handle.
+    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept
+      requires detail::StorageSpanMapping<mapping_type>
+    {
+      return mapping_type::is_base_offset_always_zero();
+    }
+
     /// \brief Return the descriptor used to acquire writable data access.
     [[nodiscard]] constexpr auto data_descriptor() noexcept -> data_descriptor_type& { return descriptor_; }
 

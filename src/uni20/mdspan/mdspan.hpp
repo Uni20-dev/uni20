@@ -308,6 +308,13 @@ class mdspan {
       return mapping_type::is_always_exhaustive();
     }
 
+    /// \brief Report whether the mapping's storage span always starts at the handle.
+    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept
+      requires detail::StorageSpanMapping<mapping_type>
+    {
+      return mapping_type::is_base_offset_always_zero();
+    }
+
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_unique() const noexcept { return mapping_.is_unique(); }
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_strided() const noexcept { return mapping_.is_strided(); }
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept { return mapping_.is_exhaustive(); }

@@ -73,19 +73,16 @@ template <class Extents> consteval bool has_static_zero_extent()
   return false;
 }
 
-// Legacy mappings describe their required span starting at the handle.
 template <class Mapping>
-[[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t mapping_base_offset(Mapping const& mapping)
-{
-  if constexpr (requires { mapping.base_offset(); })
-    return mapping.base_offset();
-  else
-    return 0;
-}
+concept StorageSpanMapping = requires(Mapping const& mapping) {
+  { mapping.required_span_size() } -> std::integral;
+  { mapping.base_offset() } -> std::same_as<std::size_t>;
+  { Mapping::is_base_offset_always_zero() } -> std::same_as<bool>;
+  typename std::bool_constant<Mapping::is_base_offset_always_zero()>;
+};
 
 template <class Mapping>
-concept ZeroBaseOffsetMapping = (!requires(Mapping const& mapping) { mapping.base_offset(); }) ||
-                                requires { requires Mapping::is_base_offset_always_zero(); };
+concept ZeroBaseOffsetMapping = StorageSpanMapping<Mapping> && (Mapping::is_base_offset_always_zero());
 
 template <class Layout, class Extents, bool Left> class contiguous_mapping {
   public:
