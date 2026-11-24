@@ -347,11 +347,9 @@ applies to it:
   are `uni20::mdspan`'s. It lacks `data_handle()` and `operator[]`, and adds
   `data_descriptor_type` and `data_descriptor()`. Its `size()` and `empty()`
   inspect the logical extents before acquisition.
-- **Strides at every rank (rules 1 and 4).** `mdspec::stride(r)` today exists
-  only where the mapping's does, so a rank-zero `layout_left` mdspec has none.
-  With Uni20 layouts it exists at every rank with the precondition
-  `r < rank()`, and `StridedMdspecLike` and `StridedMdspanLike` keep one
-  definition.
+- **Strides at every rank (rules 1 and 4).** Native strided mappings provide
+  `mdspec::stride(r)` at every rank with the precondition `r < rank()`.
+  `StridedMdspecLike` and `StridedMdspanLike` use the same requirement.
 - **Offsets (rules 2 and 5).** `S::offset_type` names the accessor offset on
   a deferred descriptor just as it does on an immediate view. Pairing the
   mapping and accessor establishes representability before a handle is
