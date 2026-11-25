@@ -557,7 +557,15 @@ class EpochContext {
       if (requires_writer && writer_sink_retired_) return;
       // An owning take can rethrow an already published producer failure.
       if (eptr_) return;
-      DEBUG_CHECK(phase_ <= Phase::Reading);
+      // An owning holder that an exception destroyed published the epoch before the promise
+      // reached unhandled_exception(). Readers still holding the epoch receive the failure. Once
+      // they have all finished, its consumers have already seen the value, and the failure is
+      // left to the task registry, which recorded it when it escaped the coroutine (#163).
+      if (phase_ > Phase::Reading)
+      {
+        DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception after the epoch finished", this, counter_);
+        return;
+      }
       eptr_ = std::move(e);
     }
 

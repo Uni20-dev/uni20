@@ -287,7 +287,10 @@ Buffers can register exception sinks with the current coroutine promise.
 - `WriteBuffer` coroutine parameters are auto-registered as sinks
 - explicit registration is available via `propagate_exceptions_to(...)`
 
-This is how unhandled exceptions are forwarded to downstream epochs.
+This is how unhandled exceptions are forwarded to downstream epochs. A
+parameter stays registered when an owning `co_await` or `write_to` takes its
+writer. See [owning writers](exceptions_and_cancellation.md#owning-writers) for
+when the failure arrives.
 
 ## Helper Awaiters (awaiters.hpp)
 

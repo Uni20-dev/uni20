@@ -380,26 +380,30 @@ namespace detail
 ///          ownership transfer explicit.
 template <typename T, typename Value> class WriteToAwaiter {
   public:
+    /// \brief Take the writer, leaving the buffer and its exception sink with the caller.
+    /// \details A `WriteBuffer` coroutine parameter passed as `buffer.transfer()` stays registered
+    ///          with the promise, so an exception from constructing the value still reaches its
+    ///          epoch (#169).
     WriteToAwaiter(WriteBuffer<T>&& buffer, Value&& value)
-        : buffer_(std::move(buffer)), value_(std::forward<Value>(value))
+        : writer_(std::move(buffer).operator co_await()), value_(std::forward<Value>(value))
     {
       static_assert(std::constructible_from<T, Value&&>, "Value must be constructible as T for WriteBuffer<T>");
     }
 
-    [[nodiscard]] bool await_ready() const noexcept { return buffer_.await_ready(); }
+    [[nodiscard]] bool await_ready() const noexcept { return writer_.await_ready(); }
 
-    auto await_suspend(BasicTask&& t) noexcept { return buffer_.await_suspend(std::move(t)); }
+    auto await_suspend(BasicTask&& t) noexcept { return writer_.await_suspend(std::move(t)); }
 
-    /// \brief Resume as `co_await buffer` does, then emplace the value.
-    /// \details Resuming through the buffer's own `await_resume()` matters after a suspension:
+    /// \brief Resume as an owning `co_await` of the buffer does, then emplace the value.
+    /// \details Resuming through the awaiter's own `await_resume()` matters after a suspension:
     ///          the epoch has already made this writer active, and only that path records it.
     ///          Asking the epoch again, as `emplace_assert()` does, would find the writer active
     ///          and fail. The value is emplaced, replacing a constructed value rather than
     ///          assigning to it.
-    void await_resume() { buffer_.await_resume().emplace(std::move(value_)); }
+    void await_resume() { writer_.await_resume().emplace(std::move(value_)); }
 
   private:
-    WriteBuffer<T> buffer_;
+    OwningWriteAwaiter<T> writer_;
     std::remove_reference_t<Value> value_;
 };
 } // namespace detail

@@ -92,6 +92,29 @@ delivery through that writer. A later failure still reaches the coroutine's
 remaining output writers. An output can also fail while waiting for an earlier
 epoch to finish. A successful predecessor preserves that failure.
 
+### Owning writers
+
+A `WriteBuffer` parameter stays registered as a sink when an owning form takes
+its writer: `co_await buffer.transfer()`, `buffer.transfer().storage()`, an
+owning `take()`, or `write_to(buffer.transfer(), value)`. An exception thrown
+while one of these holds the writer therefore reaches the epoch. That includes
+an exception from constructing the value
+([#169](https://github.com/Uni20-dev/uni20/issues/169)).
+
+The owning holder publishes the epoch when the exception destroys it. That
+happens before the promise reaches `unhandled_exception()` and delivers the
+failure ([#163](https://github.com/Uni20-dev/uni20/issues/163)).
+- Readers that still hold the epoch when the failure arrives see it, and so
+  does a successor that starts after them.
+- A successor that starts in between keeps its own value, and a reader on
+  another thread can see the previous value.
+- A failure that arrives after the epoch has finished is dropped. The task
+  registry still records the exception that escaped the coroutine.
+
+If a failing producer must always fail its value, hold the writer through the
+non-owning `co_await buffer` instead. That form keeps the writer until the
+coroutine finishes.
+
 ### Explicit path
 
 Use:

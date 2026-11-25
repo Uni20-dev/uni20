@@ -74,12 +74,17 @@ T Async<T>::move_from_wait()
 template <TaskAwaitable A> inline auto TaskPromiseBase::await_transform(A& a) { return TaskAwaiter<A&>(a, *this); }
 
 /// \brief Transforms rvalue awaitables into task-aware awaiters.
+/// \details The awaiter refers to the operand rather than moving it. A prvalue operand is a
+///          temporary of the `co_await` expression and lives across its suspension. For an
+///          xvalue such as `buffer.transfer()`, the owning `await_resume() &&` moves the reader or
+///          writer out, and the buffer keeps its exception sink. Moving the whole buffer into
+///          the awaiter would end that sink with the `co_await` expression (#169).
 /// \tparam A Awaitable type.
 /// \param a Awaitable object.
 /// \return Task-aware awaiter bound to this promise.
 template <TaskAwaitable A> inline auto TaskPromiseBase::await_transform(A&& a)
 {
-  return TaskAwaiter<std::remove_reference_t<A>>(std::move(a), *this);
+  return TaskAwaiter<A&&>(std::forward<A>(a), *this);
 }
 
 /// \brief Transforms lvalue awaitable factories into task-aware awaiters.

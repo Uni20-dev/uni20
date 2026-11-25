@@ -8,6 +8,7 @@ add_test_module(async
           test_async_deferred.cpp test_async_emplace.cpp test_async_default_init_threads.cpp
           test_async_move.cpp test_async_alias.cpp test_async_toys.cpp test_shared_storage.cpp
           test_task_registry.cpp test_task_registry_lifetime.cpp
+          test_async_unwinding.cpp
   LIBS uni20_common uni20_async
 )
 
