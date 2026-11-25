@@ -421,10 +421,10 @@ TEST(AsyncUnwindingTest, DroppedWriteToEndsExceptionDelivery)
   EXPECT_NO_THROW(EXPECT_EQ(reader.get_wait(sched), 4));
 }
 
-// ReverseEpochQueue::start() reserves and cancels a placeholder writer on a ReverseValue's first
-// epoch. The placeholder is not a holder, so it must not reopen delivery that a dropped write_to
-// ended. When finalize() ran between the drop and the failure, the reader used to get the failure
-// instead of the absent value.
+// finalize() must not reopen exception delivery that a dropped write_to ended on a ReverseValue's
+// first epoch. ReverseEpochQueue::start() used to reserve and cancel a placeholder writer, which
+// cleared that decision. When finalize() ran between the drop and the failure, the reader got the
+// failure instead of the absent value.
 TEST(AsyncUnwindingTest, DroppedWriteToOnAReverseValueStaysAbsentAfterFinalize)
 {
   DebugScheduler sched;
