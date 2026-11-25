@@ -703,6 +703,9 @@ class EpochContext {
     /// \brief Returns the exception object.
     std::exception_ptr reader_exception() const noexcept
     {
+      // A failure can still arrive while readers hold the epoch: an owning holder that an
+      // exception destroyed published it before the promise delivered the failure (#163).
+      std::lock_guard lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_exception", this, counter_);
       DEBUG_PRECONDITION(phase_ == Phase::Reading);
 
