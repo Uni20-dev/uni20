@@ -301,6 +301,22 @@ class EpochContext {
       this->advance_start_locked(std::move(lock));
     }
 
+    /// \brief Start the epoch and count it as written, with or without a writer.
+    /// \details A reverse queue starts its first epoch this way. It is one locked step that takes no
+    ///          writer reservation, so a writer released concurrently always makes the final release
+    ///          and its decision whether to end exception delivery stands.
+    void start_as_written()
+    {
+      std::unique_lock lock(mtx_);
+      DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start_as_written", this, counter_, phase_);
+      DEBUG_CHECK(phase_ <= Phase::Started);
+      ++total_writers_;
+      if (phase_ == Phase::Pending)
+        this->advance_start_locked(std::move(lock));
+      else if (phase_ == Phase::Started)
+        this->advance_writing_locked(std::move(lock));
+    }
+
     // start executing the epoch, propogating the exception and cancellation state from a previous epoch
     void start(std::exception_ptr eptr)
     {
@@ -580,10 +596,9 @@ class EpochContext {
     /// \brief Release a writer without it executing
     /// \pre Must follow writer_acquire()
     /// \param retire_sink Whether releasing the final writer ends exception delivery, as for a
-    ///        writer that is dropped normally. `false` leaves an earlier decision in place, so the
-    ///        placeholder writer that `ReverseEpochQueue::start()` cancels does not reopen delivery.
+    ///        writer that is dropped normally. `false` leaves an earlier decision in place.
     /// \return true if this call released the final writer.
-    bool writer_cancel(bool retire_sink = false) noexcept
+    bool writer_cancel(bool retire_sink) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);

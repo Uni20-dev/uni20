@@ -156,9 +156,7 @@ class ReverseEpochQueue {
       // FIXME: we need to start() here in such a way that if we don't have an initial writer then
       // we set an error state (which will generally be absorbed by the backprop accumulation knowing
       // how to handle missing data)
-      first_->writer_acquire();
-      first_->writer_cancel();
-      first_->start();
+      first_->start_as_written();
       first_.reset();
     }
 
