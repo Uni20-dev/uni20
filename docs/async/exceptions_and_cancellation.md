@@ -108,9 +108,10 @@ value alone.
 
 A coroutine that receives an owning holder by value, as in
 `co_await child(co_await buffer.transfer())`, destroys its parameters after the
-promise has handled an escaping exception. The frame of a failed coroutine is
-destroyed while that exception is rethrown, so the holder counts as destroyed by
-the exception, wherever it sits among the parameters. The failure then reaches
+promise has handled an escaping exception. When an exception has escaped the
+coroutine body, its frame is destroyed while that exception is rethrown, so the
+holder counts as destroyed by the exception, wherever it sits among the
+parameters. A failure that the body caught does not count. The failure then reaches
 the epoch from the caller's `WriteBuffer` sink, as described next.
 
 An owning holder that an exception destroys publishes the epoch at that point.

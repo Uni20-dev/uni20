@@ -135,6 +135,12 @@ class TaskPromiseBase {
     std::atomic<bool> exception_{false};
     std::exception_ptr eptr_ = nullptr;
 
+    /// \brief Set when an exception other than `task_cancelled` escaped the coroutine body.
+    /// \details `exception_` also records a failure that an epoch injected when it resumed the
+    ///          coroutine, which the body may have caught (#166). `unhandled_exception()` and
+    ///          final suspension run in the same resumption, so this flag needs no atomic.
+    bool body_failed_{false};
+
     /// \brief If true, then when the coroutine is next resumed (i.e. transferred to the scheduler)
     /// it is destroyed (stack unwound and coroutine frame freed).
     std::atomic<bool> cancel_on_resume_{false};
@@ -421,7 +427,7 @@ class TaskPromiseBase {
     ///          see the failure through `std::uncaught_exceptions()`, as the coroutine's locals did.
     ///          An owning writer held by a parameter then keeps exception delivery open (#163).
     /// \param handle Finished task.
-    /// \param eptr Exception that escaped the coroutine, or null.
+    /// \param eptr The promise's exception if one escaped the coroutine body, or null.
     static void destroy_finished(TaskHandle handle, std::exception_ptr const& eptr) noexcept
     {
       if (!eptr)
@@ -575,7 +581,8 @@ class TaskPromiseBase {
             TRACE_MODULE(ASYNC, "Final suspend of coroutine", completed.coroutine(), continuation.coroutine(),
                          cancelled);
 
-            TaskPromiseBase::destroy_finished(completed, eptr);
+            bool const body_failed = promise->body_failed_;
+            TaskPromiseBase::destroy_finished(completed, body_failed ? eptr : nullptr);
 
             TRACE_MODULE(ASYNC, "Destroy is done");
 
@@ -632,6 +639,7 @@ class TaskPromiseBase {
       {
         bool const originating_failure = !exception_.load(std::memory_order_acquire);
         auto eptr = std::current_exception();
+        body_failed_ = true;
         TaskRegistry::record_unhandled_exception(this->self().coroutine(), eptr, originating_failure);
         this->set_exception(eptr);
         for (auto* node = exception_sinks_head_; node; node = node->next)

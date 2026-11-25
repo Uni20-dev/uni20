@@ -54,6 +54,13 @@ AsyncTask fail_with_proxy(OwningWriteAccessProxy<int> proxy)
   co_return;
 }
 
+// Holds the writer until the frame is destroyed, so the failure is stored before readers resume.
+AsyncTask fail_after_writing(WriteBuffer<int> writer)
+{
+  co_await writer = 1;
+  throw ProducerFailure{};
+}
+
 // A holder that no coroutine-argument hook could know about.
 struct HeldStorage
 {
@@ -282,4 +289,52 @@ TEST(AsyncUnwindingTest, CoroutineHoldingAnOwningParameterDeliversItsFailure)
   }(value.write()));
   sched.run_all();
   EXPECT_EQ(value.get_wait(), 5);
+}
+
+// An epoch that resumes a waiting coroutine with an upstream failure records it on the promise,
+// and the parent still receives it after the child has handled it (#166). Only an exception that
+// escapes the body destroys the frame as failed, so the value the child wrote stays.
+TEST(AsyncUnwindingTest, ChildThatHandledAnUpstreamFailureKeepsItsOwningParameterValue)
+{
+  {
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<int> input = 0;
+    Async<int> value = 4;
+    auto producer = fail_after_writing(input.write());
+    schedule([](ReadBuffer<int> in, WriteBuffer<int> w) static -> AsyncTask {
+      co_await [](ReadBuffer<int> in, OwningWriteAccessProxy<int> out) static -> AsyncTask {
+        try
+        {
+          out = co_await in;
+        }
+        catch (ProducerFailure const&)
+        {
+          out = -1;
+        }
+      }(std::move(in), co_await w.transfer());
+    }(input.read(), value.write()));
+    sched.run_all(); // the child waits for the input
+    schedule(std::move(producer));
+    sched.run_all();
+    EXPECT_NO_THROW(EXPECT_EQ(value.get_wait(), -1));
+  }
+  {
+    // A writer waiting for a failed predecessor is resumed with the failure, with nothing to catch.
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<int> other = 0;
+    Async<int> value = 4;
+    auto producer = fail_after_writing(other.write());
+    schedule([](WriteBuffer<int> o, WriteBuffer<int> w) static -> AsyncTask {
+      co_await [](WriteBuffer<int> o, OwningWriteAccessProxy<int> out) static -> AsyncTask {
+        co_await o = 1;
+        out = 5;
+      }(std::move(o), co_await w.transfer());
+    }(other.write(), value.write()));
+    sched.run_all();
+    schedule(std::move(producer));
+    sched.run_all();
+    EXPECT_NO_THROW(EXPECT_EQ(value.get_wait(), 5));
+  }
 }
