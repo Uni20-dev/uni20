@@ -154,7 +154,11 @@ struct AllAwaiter //: public AsyncAwaiter
 
     template <std::size_t... I> void await_suspend_impl(TaskFactory f, std::index_sequence<I...>) noexcept
     {
-      ((ready_[I] ? void() : std::get<I>(bufs_).await_suspend(f.take_next())), ...);
+      // Handing out the last claim can resume the coroutine, possibly on another thread, and it may
+      // finish and destroy the frame that holds this awaiter. Read the flags from a copy, so the
+      // fold touches the frame only while it still holds a claim.
+      auto const ready = ready_;
+      ((ready[I] ? void() : std::get<I>(bufs_).await_suspend(f.take_next())), ...);
     }
 
     template <std::size_t I> decltype(auto) await_resume_child()

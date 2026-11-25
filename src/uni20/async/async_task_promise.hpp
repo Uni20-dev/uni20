@@ -84,6 +84,9 @@ concept TaskFactoryChildAwaitable = requires(T a, BasicTask task) {
 ///       ownership across multiple sub-awaitables.
 /// \note `num_awaiters()` runs before ownership transfer and need not be
 ///       `noexcept`; `await_suspend(TaskFactory)` runs afterward and must be.
+/// \note Handing out the last claim from the factory can resume the coroutine at
+///       once, possibly on another thread. The awaitable lives in the coroutine
+///       frame, so `await_suspend` must not touch it after that point.
 template <typename T>
 concept TaskFactoryAwaitable = requires(T a, TaskFactory factory) {
   { a.await_suspend(std::move(factory)) } noexcept -> std::same_as<void>;
