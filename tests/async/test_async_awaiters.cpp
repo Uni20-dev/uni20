@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstring>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -118,7 +117,8 @@ class ZeroedFrameTask final : public BasicTask {
     friend ZeroedFramePromise;
 };
 
-// Zeroes the frame when it is freed, so a read of a destroyed frame sees cleared flags.
+// Zeroes the frame when it is freed, so a read of a destroyed frame sees cleared flags. The stores
+// go through a volatile pointer because a compiler may drop a memset before a deallocation.
 class ZeroedFramePromise final : public TaskPromiseBase {
   public:
     static constexpr TaskDomain task_domain = TaskDomain::host;
@@ -133,7 +133,9 @@ class ZeroedFramePromise final : public TaskPromiseBase {
 
     static void operator delete(void* frame, std::size_t size) noexcept
     {
-      std::memset(frame, 0, size);
+      auto* bytes = static_cast<unsigned char volatile*>(frame);
+      for (std::size_t i = 0; i < size; ++i)
+        bytes[i] = 0;
       ::operator delete(frame, size);
     }
 };
