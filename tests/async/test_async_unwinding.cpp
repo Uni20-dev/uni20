@@ -4,6 +4,7 @@
 #include <uni20/async/awaiters.hpp>
 #include <uni20/async/debug_scheduler.hpp>
 
+#include <optional>
 #include <stdexcept>
 
 using namespace uni20::async;
@@ -337,4 +338,84 @@ TEST(AsyncUnwindingTest, ChildThatHandledAnUpstreamFailureKeepsItsOwningParamete
     sched.run_all();
     EXPECT_NO_THROW(EXPECT_EQ(value.get_wait(), 5));
   }
+}
+
+// A copy of a buffer that carries an explicit sink links the copy into the same promise. A failed
+// child that received such a copy is destroyed during a rethrow, and its parameter used to trip the
+// check for explicit sinks lost during unwinding, although the parent's original still covers the
+// epoch and the parent was about to catch the exception.
+TEST(AsyncUnwindingTest, FailedChildHoldingACopiedExplicitSinkLetsTheParentCatch)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 7;
+  bool caught = false;
+  schedule([](ReadBuffer<int> input, bool& caught) static -> AsyncTask {
+    auto sink = input;
+    co_await propagate_exceptions_to(sink);
+    try
+    {
+      co_await [](ReadBuffer<int> r) static -> AsyncTask {
+        static_cast<void>(co_await r);
+        throw ProducerFailure{};
+      }(sink);
+    }
+    catch (ProducerFailure const&)
+    {
+      caught = true;
+    }
+  }(value.read(), caught));
+  sched.run_all();
+  EXPECT_TRUE(caught);
+  EXPECT_EQ(value.get_wait(), 7);
+}
+
+// A named owning awaiter is moved into the co_await expression, so a take that throws releases its
+// writer when the expression ends. It used to stay in the named awaiter, and the next writer of the
+// same value waited for it forever.
+TEST(AsyncUnwindingTest, FailedNamedTakeReleasesItsWriter)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value;
+  auto first = value.write();
+  auto next = value.write();
+  schedule([](WriteBuffer<int> first, WriteBuffer<int> next) static -> AsyncTask {
+    auto take = first.transfer().take();
+    try
+    {
+      static_cast<void>(co_await std::move(take));
+    }
+    catch (buffer_write_uninitialized const&)
+    {}
+    co_await next = 7;
+  }(std::move(first), std::move(next)));
+  sched.run_all();
+  EXPECT_EQ(value.get_wait(), 7);
+}
+
+// A write_to dropped unawaited at the end of its scope publishes the previous value, and ends
+// exception delivery like any owning holder that ends normally. A later exception used to fail the
+// epoch after a reader had already seen 4.
+TEST(AsyncUnwindingTest, DroppedWriteToEndsExceptionDelivery)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  Async<int> gate = 0;
+  std::optional<WriteBuffer<int>> gate_writer{gate.write()};
+  schedule([](WriteBuffer<int> out, ReadBuffer<int> gate) static -> AsyncTask {
+    {
+      auto op = write_to(out.transfer(), 5);
+      static_cast<void>(op);
+    }
+    static_cast<void>(co_await gate);
+    throw ProducerFailure{};
+  }(value.write(), gate.read()));
+  auto reader = value.read();
+  sched.run_all();
+  EXPECT_EQ(reader.get_wait(sched), 4);
+  gate_writer.reset();
+  sched.run_all();
+  EXPECT_NO_THROW(EXPECT_EQ(reader.get_wait(sched), 4));
 }

@@ -261,13 +261,27 @@ class TaskPromiseBase {
       exception_sinks_head_ = &node;
     }
 
+    /// \brief Report whether another linked sink delivers to the same epoch as `node`.
+    /// \param node Linked sink node.
+    /// \return true if removing `node` leaves delivery to its epoch unchanged.
+    bool has_other_sink_like(ExceptionSinkNode const& node) const noexcept
+    {
+      for (auto const* other = exception_sinks_head_; other; other = other->next)
+      {
+        if (other != &node && other->epoch == node.epoch && other->requires_writer == node.requires_writer) return true;
+      }
+      return false;
+    }
+
     /// \brief Unregister one exception propagation sink from this promise.
     /// \param node Intrusive node currently linked into this promise.
     /// \param from_destructor true when called from buffer destruction.
     void unregister_exception_sink(ExceptionSinkNode& node, bool from_destructor) noexcept
     {
       if (node.owner != this) return;
-      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0)
+      // A copy of a registered buffer, such as one passed to a failed child coroutine whose frame
+      // is destroyed during a rethrow, loses nothing while an equivalent sink remains.
+      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0 && !this->has_other_sink_like(node))
       {
         CHECK(
             false,

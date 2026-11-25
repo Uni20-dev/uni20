@@ -579,8 +579,10 @@ class EpochContext {
 
     /// \brief Release a writer without it executing
     /// \pre Must follow writer_acquire()
+    /// \param retire_sink Whether releasing the final writer ends exception delivery, as for a
+    ///        writer that is dropped normally.
     /// \return true if this call released the final writer.
-    bool writer_cancel() noexcept
+    bool writer_cancel(bool retire_sink = false) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);
@@ -588,6 +590,7 @@ class EpochContext {
       DEBUG_CHECK(num_writers_ >= 1);
 
       --num_writers_;
+      if (num_writers_ == 0) writer_sink_retired_ = retire_sink;
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {
@@ -1336,7 +1339,7 @@ template <typename T> class EpochContextWriter {
         if (acquired_)
           epoch_->writer_release_active(retire_sink);
         else
-          epoch_->writer_cancel(); // releasing without ever
+          epoch_->writer_cancel(retire_sink); // releasing without ever
         epoch_.reset();
         storage_.reset();
       }

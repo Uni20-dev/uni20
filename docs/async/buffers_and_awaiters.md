@@ -289,8 +289,9 @@ Buffers can register exception sinks with the current coroutine promise.
 
 This is how unhandled exceptions are forwarded to downstream epochs. A
 parameter stays registered when an owning `co_await` or `write_to` takes its
-writer. See [owning writers](exceptions_and_cancellation.md#owning-writers) for
-when the failure arrives.
+writer. The "Owning writers" section of
+[exceptions and cancellation](exceptions_and_cancellation.md) describes when the
+failure arrives.
 
 ## Helper Awaiters (awaiters.hpp)
 

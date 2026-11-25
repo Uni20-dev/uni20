@@ -74,17 +74,21 @@ T Async<T>::move_from_wait()
 template <TaskAwaitable A> inline auto TaskPromiseBase::await_transform(A& a) { return TaskAwaiter<A&>(a, *this); }
 
 /// \brief Transforms rvalue awaitables into task-aware awaiters.
-/// \details The awaiter refers to the operand rather than moving it. A prvalue operand is a
-///          temporary of the `co_await` expression and lives across its suspension. For an
-///          xvalue such as `buffer.transfer()`, the owning `await_resume() &&` moves the reader or
-///          writer out, and the buffer keeps its exception sink. Moving the whole buffer into
-///          the awaiter would end that sink with the `co_await` expression (#169).
+/// \details For a buffer, such as `buffer.transfer()`, the awaiter refers to the operand, and the
+///          owning `await_resume() &&` moves the reader or writer out. The buffer keeps its
+///          exception sink. Moving the whole buffer into the awaiter would end that sink with the
+///          `co_await` expression (#169). Any other awaitable is moved into the awaiter, so a
+///          named owning awaiter such as `co_await std::move(take)` releases its reader or writer
+///          when the expression ends, also when it throws.
 /// \tparam A Awaitable type.
 /// \param a Awaitable object.
 /// \return Task-aware awaiter bound to this promise.
 template <TaskAwaitable A> inline auto TaskPromiseBase::await_transform(A&& a)
 {
-  return TaskAwaiter<A&&>(std::forward<A>(a), *this);
+  if constexpr (exception_sink_buffer<std::remove_cvref_t<A>>)
+    return TaskAwaiter<A&&>(std::forward<A>(a), *this);
+  else
+    return TaskAwaiter<A>(std::forward<A>(a), *this);
 }
 
 /// \brief Transforms lvalue awaitable factories into task-aware awaiters.

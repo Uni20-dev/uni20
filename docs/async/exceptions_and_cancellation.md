@@ -103,7 +103,8 @@ an exception from constructing the value
 
 An owning holder that finishes normally, at the end of its scope or when
 `write_to` has emplaced its value, ends exception delivery to the epoch, as
-`release()` does. A later exception escaping the coroutine then leaves that
+`release()` does. So does a `write_to` dropped without being awaited, which
+publishes the previous value. A later exception escaping the coroutine then leaves that
 value alone.
 
 A coroutine that receives an owning holder by value, as in
