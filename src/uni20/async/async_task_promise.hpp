@@ -16,8 +16,10 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace uni20::async
@@ -140,13 +142,20 @@ class TaskPromiseBase {
     std::exception_ptr eptr_ = nullptr;
 
 #if UNI20_DEBUG_ASYNC_TASKS
-    /// \brief The first failure an epoch reported when it resumed this coroutine.
-    /// \details Diagnostics only: it tells the task registry that an escaping exception was passed
+    /// \brief One failure an epoch reported when it resumed this coroutine.
+    struct UpstreamFailure
+    {
+        std::exception_ptr failure;
+        UpstreamFailure* next;
+    };
+
+    /// \brief The distinct failures epochs reported when they resumed this coroutine, newest first.
+    /// \details Diagnostics only: they tell the task registry that an escaping exception was passed
     ///          on rather than raised here. Epochs can report concurrently when the coroutine awaits
-    ///          several buffers at once, so `upstream_failure_set_` picks one writer. All reports
-    ///          happen before the resumption that reads it.
-    std::atomic<bool> upstream_failure_set_{false};
-    std::exception_ptr upstream_failure_ = nullptr;
+    ///          several buffers at once, so a report pushes a node with a compare-exchange. Nodes
+    ///          stay until the promise is destroyed. A report happens before the resumption that
+    ///          follows it, so `unhandled_exception()` sees every earlier report.
+    std::atomic<UpstreamFailure*> upstream_failures_{nullptr};
 #endif
 
     /// \brief Set when an exception other than `task_cancelled` escaped the coroutine body.
@@ -224,6 +233,10 @@ class TaskPromiseBase {
       DEBUG_CHECK(continuation_exception_ == nullptr);
       while (exception_sinks_head_)
         this->unregister_exception_sink(*exception_sinks_head_, false);
+#if UNI20_DEBUG_ASYNC_TASKS
+      for (auto* node = upstream_failures_.load(std::memory_order_acquire); node;)
+        delete std::exchange(node, node->next);
+#endif
     }
 
     /// \brief Decrease the number of active awaiters by one.
@@ -258,15 +271,31 @@ class TaskPromiseBase {
     }
 
     /// \brief Note a failure that an epoch reports when it resumes this coroutine.
-    /// \details The failure does not fail the coroutine. Builds with task diagnostics keep the first
-    ///          one, so that `unhandled_exception()` can tell the exception was passed on (#166).
+    /// \details The failure does not fail the coroutine. Builds with task diagnostics keep each
+    ///          distinct one, so that `unhandled_exception()` can tell the exception was passed on
+    ///          (#166). A failed allocation drops the note, which only affects diagnostics.
     /// \param e The epoch's stored failure.
     void note_upstream_failure([[maybe_unused]] std::exception_ptr e) noexcept
     {
 #if UNI20_DEBUG_ASYNC_TASKS
-      if (!upstream_failure_set_.exchange(true, std::memory_order_acq_rel)) upstream_failure_ = std::move(e);
+      if (!e || this->is_upstream_failure(e)) return;
+      auto* node = new (std::nothrow) UpstreamFailure{std::move(e), upstream_failures_.load(std::memory_order_relaxed)};
+      if (!node) return;
+      while (!upstream_failures_.compare_exchange_weak(node->next, node, std::memory_order_release,
+                                                       std::memory_order_relaxed))
+      {}
 #endif
     }
+
+#if UNI20_DEBUG_ASYNC_TASKS
+    /// \brief Whether an epoch reported `e` when it resumed this coroutine.
+    bool is_upstream_failure(std::exception_ptr const& e) const noexcept
+    {
+      for (auto const* node = upstream_failures_.load(std::memory_order_acquire); node; node = node->next)
+        if (node->failure == e) return true;
+      return false;
+    }
+#endif
 
     /// \brief Register one exception propagation sink with this promise.
     /// \param node Intrusive node owned by a buffer object.
@@ -680,7 +709,7 @@ class TaskPromiseBase {
 #if UNI20_DEBUG_ASYNC_TASKS
         // On the Itanium C++ ABI a rethrown exception keeps its object, so a failure passed on from
         // an epoch compares equal to the one it reported.
-        bool const originating_failure = eptr != upstream_failure_;
+        bool const originating_failure = !this->is_upstream_failure(eptr);
 #else
         bool const originating_failure = true;
 #endif

@@ -852,6 +852,52 @@ TEST(TaskRegistryDebugTest, OriginatingCoroutineExceptionWritesLiveFailedTaskSna
   std::filesystem::remove_all(dir);
 }
 
+// A coroutine that catches one failure an epoch reported, and then passes on another, writes no
+// snapshot of its own. Each failing producer writes one (#166).
+TEST(TaskRegistryDebugTest, CoroutinePassingOnALaterReportedFailureWritesNoSnapshot)
+{
+  CoroutineExceptionDiagnosticsOptionsGuard guard;
+  auto dir = make_temp_dir("uni20-dag-later-reported-failure-test");
+  TaskRegistry::set_coroutine_exception_diagnostics_options({
+      .enabled = true,
+      .write_graphviz = true,
+      .dump_options = {.output_dir = dir.string(), .file_prefix = "later-reported-failure"},
+  });
+
+  DebugScheduler scheduler;
+  Async<int> first;
+  Async<int> second;
+  Async<int> output;
+  auto first_producer = fail_writer(first.write());
+  auto second_producer = [](WriteBuffer<int> writer) static -> AsyncTask {
+    static_cast<void>(writer);
+    throw std::logic_error("second deliberate failure");
+    co_return;
+  }(second.write());
+  auto consumer = [](ReadBuffer<int> a, ReadBuffer<int> b, WriteBuffer<int> out) static -> AsyncTask {
+    try
+    {
+      static_cast<void>(co_await a);
+    }
+    catch (std::runtime_error const&)
+    {}
+    co_await out = co_await b;
+  }(first.read(), second.read(), output.write());
+  scheduler.schedule(std::move(consumer));
+  scheduler.run_all(); // the consumer waits for the first value
+  scheduler.schedule(std::move(first_producer));
+  scheduler.run_all(); // it catches the first failure and waits for the second value
+  scheduler.schedule(std::move(second_producer));
+  scheduler.run_all();
+
+  EXPECT_THROW(static_cast<void>(output.get_wait(scheduler)), std::logic_error);
+  std::size_t dot_file_count = 0;
+  for (auto const& entry : std::filesystem::directory_iterator(dir))
+    if (entry.path().extension() == ".dot") ++dot_file_count;
+  EXPECT_EQ(dot_file_count, 2U);
+  std::filesystem::remove_all(dir);
+}
+
 TEST(TaskRegistryDebugTest, DefaultStacktraceOptionsReadEnvironment)
 {
   EnvVarGuard frames("UNI20_DEBUG_DAG_STACKTRACE_FRAMES", "3");
