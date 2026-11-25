@@ -1219,7 +1219,9 @@ template <typename T> class EpochContextWriter {
     ///          the epoch, as `release()` does. A later exception escaping the coroutine then
     ///          leaves the published value alone. A holder destroyed by an exception keeps
     ///          delivery open: it publishes before the promise reaches `unhandled_exception()`,
-    ///          and the failure still reaches readers that hold the epoch (#163). The two cases
+    ///          and the failure still reaches readers that hold the epoch (#163). A failed
+    ///          coroutine destroys its frame while rethrowing its exception, so a holder among its
+    ///          parameters also counts as destroyed by the exception. The two cases
     ///          are told apart by `std::uncaught_exceptions()` against its value when this object
     ///          took the writer. A coroutine step resumed during an unrelated exception can
     ///          misclassify, which affects only that best-effort delivery.

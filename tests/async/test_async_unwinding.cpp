@@ -40,6 +40,33 @@ AsyncTask fail_holding_storage(WriteBuffer<int> writer)
   throw ProducerFailure{};
 }
 
+AsyncTask fail_with_storage(OwningStorageAccessProxy<int> storage)
+{
+  static_cast<void>(storage);
+  throw ProducerFailure{};
+  co_return;
+}
+
+AsyncTask fail_with_proxy(OwningWriteAccessProxy<int> proxy)
+{
+  proxy = 5;
+  throw ProducerFailure{};
+  co_return;
+}
+
+// A holder that no coroutine-argument hook could know about.
+struct HeldStorage
+{
+    OwningStorageAccessProxy<int> storage;
+};
+
+AsyncTask fail_with_held_storage(HeldStorage held)
+{
+  static_cast<void>(held);
+  throw ProducerFailure{};
+  co_return;
+}
+
 } // namespace
 
 // The owning forms used to move the parameter's buffer, and its exception sink, into a temporary
@@ -216,4 +243,43 @@ TEST(AsyncUnwindingTest, LaterExceptionLeavesANormallyPublishedOwningWriteAlone)
     EXPECT_EQ(output.get_wait(), 5);
     EXPECT_EQ(output.get_wait(), 5);
   }
+}
+
+// A coroutine parameter is destroyed after unhandled_exception() has returned. A failed coroutine's
+// frame is now destroyed while its exception is rethrown, so an owning holder among the parameters
+// keeps delivery open, as a local does, and the caller's sink delivers the failure. The holder used
+// to count as a normal finish, and readers saw whatever the child left.
+TEST(AsyncUnwindingTest, CoroutineHoldingAnOwningParameterDeliversItsFailure)
+{
+  auto check = [](auto parent) {
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<int> value = 4;
+    Async<int> seen = 0;
+    schedule(parent(value.write()));
+    schedule(copy_value(value.read(), seen.write()));
+    sched.run_all();
+    EXPECT_THROW((void)seen.get_wait(), ProducerFailure);
+    EXPECT_THROW((void)value.get_wait(), ProducerFailure);
+  };
+  check([](WriteBuffer<int> w) static -> AsyncTask { co_await fail_with_storage(co_await w.transfer().storage()); });
+  check([](WriteBuffer<int> w) static -> AsyncTask { co_await fail_with_proxy(co_await w.transfer()); });
+  check([](WriteBuffer<int> w) static -> AsyncTask {
+    co_await fail_with_held_storage(HeldStorage{co_await w.transfer().storage()});
+  });
+
+  // A parameter that has already published keeps its value.
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  schedule([](WriteBuffer<int> w) static -> AsyncTask {
+    co_await [](OwningWriteAccessProxy<int> proxy) static -> AsyncTask {
+      proxy = 5;
+      proxy.release();
+      throw ProducerFailure{};
+      co_return;
+    }(co_await w.transfer());
+  }(value.write()));
+  sched.run_all();
+  EXPECT_EQ(value.get_wait(), 5);
 }

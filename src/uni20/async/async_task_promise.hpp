@@ -197,10 +197,13 @@ class TaskPromiseBase {
       return c;
     }
 
+    /// \brief Unlink the remaining sinks: parameter copies, which own them, outlive the promise.
     ~TaskPromiseBase() noexcept
     {
       DEBUG_CHECK(!continuation_);
       DEBUG_CHECK(continuation_exception_ == nullptr);
+      while (exception_sinks_head_)
+        this->unregister_exception_sink(*exception_sinks_head_, false);
     }
 
     /// \brief Decrease the number of active awaiters by one.
@@ -412,6 +415,34 @@ class TaskPromiseBase {
       handle.coroutine().destroy();
     }
 
+    /// \brief Destroy a finished coroutine frame, during unwinding if the coroutine failed.
+    /// \details Parameter copies are destroyed with the frame, after `unhandled_exception()` has
+    ///          returned. Destroying the frame while its exception is rethrown lets their destructors
+    ///          see the failure through `std::uncaught_exceptions()`, as the coroutine's locals did.
+    ///          An owning writer held by a parameter then keeps exception delivery open (#163).
+    /// \param handle Finished task.
+    /// \param eptr Exception that escaped the coroutine, or null.
+    static void destroy_finished(TaskHandle handle, std::exception_ptr const& eptr) noexcept
+    {
+      if (!eptr)
+      {
+        destroy_and_track(handle);
+        return;
+      }
+      struct DestroyOnUnwind
+      {
+          TaskHandle handle;
+          ~DestroyOnUnwind() { destroy_and_track(handle); }
+      };
+      try
+      {
+        DestroyOnUnwind destroy{handle};
+        std::rethrow_exception(eptr);
+      }
+      catch (...)
+      {}
+    }
+
     /// \brief Complete an unbound child's route before nested execution.
     /// \details Scheduler inheritance is allowed across task domains only when
     ///          the parent scheduler accepts the child's complete route.
@@ -544,7 +575,7 @@ class TaskPromiseBase {
             TRACE_MODULE(ASYNC, "Final suspend of coroutine", completed.coroutine(), continuation.coroutine(),
                          cancelled);
 
-            TaskPromiseBase::destroy_and_track(completed);
+            TaskPromiseBase::destroy_finished(completed, eptr);
 
             TRACE_MODULE(ASYNC, "Destroy is done");
 
