@@ -293,8 +293,8 @@ uni20::TaskRegistry::set_coroutine_exception_diagnostics_options({
 
 The policy is process-wide rather than thread-local because a coroutine may resume
 on a different worker thread. Only the coroutine that originates an exception
-triggers automatic capture; downstream coroutines that merely rethrow the injected
-exception are still marked failed in later live snapshots but do not each write a
+triggers automatic capture; downstream coroutines that rethrow a failure an epoch
+reported when it resumed them are still marked failed in later live snapshots but do not each write a
 duplicate file. “Unhandled” here has the standard coroutine meaning of escaping
 one coroutine body. The exception may still be intentionally observed later at an
 `Async<T>` boundary.

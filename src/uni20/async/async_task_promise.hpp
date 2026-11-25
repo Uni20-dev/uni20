@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <uni20/config.hpp>
+
 #include "async_errors.hpp"
 #include "async_node.hpp"
 #include "async_task.hpp"
@@ -128,17 +130,29 @@ class TaskPromiseBase {
     ///       Ownership must be transferred explicitly using take_ownership().
     std::atomic<int> awaiter_count_ = 0;
 
-    /// \brief EpochContext can inject an exception into a coroutine, which will be thrown when resuming
-    /// from an awaiter.  This could, in principle, happen from multiple threads if we are awaiting multiple
-    /// buffers so we protect access by the exception_ flag.  Only the first attempt to set exception_ to true
-    /// is permitted to set eptr_; subsequent exceptions are simply dropped.
+    /// \brief The failure this coroutine passes to its continuation at final suspension.
+    /// \details `unhandled_exception()` sets it, and so does a nested task that failed with no
+    ///          awaiter-owned destination for its failure (see `resolve_await_suspend_result`). Only
+    ///          the first attempt to set `exception_` stores `eptr_`; later failures are dropped. A
+    ///          failure that an epoch reports on resumption is not stored here. The body sees that
+    ///          failure only through a value it reads or takes, and may catch it (#166).
     std::atomic<bool> exception_{false};
     std::exception_ptr eptr_ = nullptr;
 
+#if UNI20_DEBUG_ASYNC_TASKS
+    /// \brief The first failure an epoch reported when it resumed this coroutine.
+    /// \details Diagnostics only: it tells the task registry that an escaping exception was passed
+    ///          on rather than raised here. Epochs can report concurrently when the coroutine awaits
+    ///          several buffers at once, so `upstream_failure_set_` picks one writer. All reports
+    ///          happen before the resumption that reads it.
+    std::atomic<bool> upstream_failure_set_{false};
+    std::exception_ptr upstream_failure_ = nullptr;
+#endif
+
     /// \brief Set when an exception other than `task_cancelled` escaped the coroutine body.
-    /// \details `exception_` also records a failure that an epoch injected when it resumed the
-    ///          coroutine, which the body may have caught (#166). `unhandled_exception()` and
-    ///          final suspension run in the same resumption, so this flag needs no atomic.
+    /// \details `exception_` can also hold a failure that a nested task passed back without the
+    ///          body seeing it. `unhandled_exception()` and final suspension run in the same
+    ///          resumption, so this flag needs no atomic.
     bool body_failed_{false};
 
     /// \brief If true, then when the coroutine is next resumed (i.e. transferred to the scheduler)
@@ -233,7 +247,7 @@ class TaskPromiseBase {
     /// \return The value of the counter prior to the increment.
     int add_awaiter(int count) noexcept { return awaiter_count_.fetch_add(count, std::memory_order_relaxed); }
 
-    /// \brief Record an exception for deferred rethrow on resume.
+    /// \brief Record the failure to pass to the continuation at final suspension.
     /// \param e Exception pointer to record.
     void set_exception(std::exception_ptr e) noexcept
     {
@@ -241,6 +255,17 @@ class TaskPromiseBase {
       {
         eptr_ = e;
       }
+    }
+
+    /// \brief Note a failure that an epoch reports when it resumes this coroutine.
+    /// \details The failure does not fail the coroutine. Builds with task diagnostics keep the first
+    ///          one, so that `unhandled_exception()` can tell the exception was passed on (#166).
+    /// \param e The epoch's stored failure.
+    void note_upstream_failure([[maybe_unused]] std::exception_ptr e) noexcept
+    {
+#if UNI20_DEBUG_ASYNC_TASKS
+      if (!upstream_failure_set_.exchange(true, std::memory_order_acq_rel)) upstream_failure_ = std::move(e);
+#endif
     }
 
     /// \brief Register one exception propagation sink with this promise.
@@ -651,8 +676,14 @@ class TaskPromiseBase {
       }
       catch (...)
       {
-        bool const originating_failure = !exception_.load(std::memory_order_acquire);
         auto eptr = std::current_exception();
+#if UNI20_DEBUG_ASYNC_TASKS
+        // On the Itanium C++ ABI a rethrown exception keeps its object, so a failure passed on from
+        // an epoch compares equal to the one it reported.
+        bool const originating_failure = eptr != upstream_failure_;
+#else
+        bool const originating_failure = true;
+#endif
         body_failed_ = true;
         TaskRegistry::record_unhandled_exception(this->self().coroutine(), eptr, originating_failure);
         this->set_exception(eptr);
