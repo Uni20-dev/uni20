@@ -580,7 +580,8 @@ class EpochContext {
     /// \brief Release a writer without it executing
     /// \pre Must follow writer_acquire()
     /// \param retire_sink Whether releasing the final writer ends exception delivery, as for a
-    ///        writer that is dropped normally.
+    ///        writer that is dropped normally. `false` leaves an earlier decision in place, so the
+    ///        placeholder writer that `ReverseEpochQueue::start()` cancels does not reopen delivery.
     /// \return true if this call released the final writer.
     bool writer_cancel(bool retire_sink = false) noexcept
     {
@@ -590,7 +591,7 @@ class EpochContext {
       DEBUG_CHECK(num_writers_ >= 1);
 
       --num_writers_;
-      if (num_writers_ == 0) writer_sink_retired_ = retire_sink;
+      if (num_writers_ == 0 && retire_sink) writer_sink_retired_ = true;
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {

@@ -146,7 +146,15 @@ This is useful when errors should be routed to additional buffers (including rea
 ### Explicit sink lifetime guard
 
 If an explicit sink is destroyed during stack unwinding before promise
-`unhandled_exception()` runs, runtime aborts intentionally (`CHECK`).
+`unhandled_exception()` runs, and the promise has no other sink for that epoch,
+the runtime aborts intentionally (`CHECK`).
+
+- A copy of a registered buffer registers with the same promise. Destroying the
+  copy while the original remains loses nothing and does not abort.
+- A failed coroutine's parameters are destroyed during a rethrow of its
+  exception (see "Owning writers" above). Moving the only registered sink into
+  a child coroutine that fails therefore aborts, even if the parent catches the
+  exception.
 
 This fail-fast behavior prevents silent loss of exception routing in hard-to-debug cases.
 

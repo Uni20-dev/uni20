@@ -3,6 +3,7 @@
 #include <uni20/async/async.hpp>
 #include <uni20/async/awaiters.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <uni20/async/reverse_value.hpp>
 
 #include <optional>
 #include <stdexcept>
@@ -418,4 +419,31 @@ TEST(AsyncUnwindingTest, DroppedWriteToEndsExceptionDelivery)
   gate_writer.reset();
   sched.run_all();
   EXPECT_NO_THROW(EXPECT_EQ(reader.get_wait(sched), 4));
+}
+
+// ReverseEpochQueue::start() reserves and cancels a placeholder writer on a ReverseValue's first
+// epoch. The placeholder is not a holder, so it must not reopen delivery that a dropped write_to
+// ended. When finalize() ran between the drop and the failure, the reader used to get the failure
+// instead of the absent value.
+TEST(AsyncUnwindingTest, DroppedWriteToOnAReverseValueStaysAbsentAfterFinalize)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  ReverseValue<double> gradient;
+  Async<int> gate = 0;
+  std::optional<WriteBuffer<int>> gate_writer{gate.write()};
+  auto reader = gradient.read();
+  schedule([](WriteBuffer<double> out, ReadBuffer<int> gate) static -> AsyncTask {
+    {
+      auto op = write_to(out.transfer(), 1.0);
+      static_cast<void>(op);
+    }
+    static_cast<void>(co_await gate);
+    throw ProducerFailure{};
+  }(gradient.output(), gate.read()));
+  sched.run_all();
+  gradient.finalize();
+  gate_writer.reset();
+  sched.run_all();
+  EXPECT_THROW((void)reader.get_wait(sched), buffer_read_uninitialized);
 }

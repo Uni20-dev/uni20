@@ -1238,7 +1238,9 @@ template <exception_sink_buffer... Buffers> class PropagateExceptionsAwaiter {
 
 /// \brief Register buffers that should receive unhandled coroutine exceptions.
 /// \details The registration remains active for as long as each buffer object remains alive.
-/// \note If a registered explicit sink is destroyed during stack unwinding, the runtime aborts.
+/// \note If a registered explicit sink is destroyed during stack unwinding while the promise has
+///       no equivalent sink, the runtime aborts. That includes the only registered sink moved into
+///       a child coroutine that fails. Destroying a copy while the original remains does not abort.
 template <exception_sink_buffer... Buffers> auto propagate_exceptions_to(Buffers&... buffers)
 {
   return PropagateExceptionsAwaiter<Buffers...>(buffers...);
