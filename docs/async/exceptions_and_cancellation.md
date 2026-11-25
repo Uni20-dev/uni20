@@ -101,15 +101,24 @@ while one of these holds the writer therefore reaches the epoch. That includes
 an exception from constructing the value
 ([#169](https://github.com/Uni20-dev/uni20/issues/169)).
 
-The owning holder publishes the epoch when the exception destroys it. That
-happens before the promise reaches `unhandled_exception()` and delivers the
+An owning holder that finishes normally, at the end of its scope or when
+`write_to` has emplaced its value, ends exception delivery to the epoch, as
+`release()` does. A later exception escaping the coroutine then leaves that
+value alone.
+
+An owning holder that an exception destroys publishes the epoch at that point.
+That happens before the promise reaches `unhandled_exception()` and delivers the
 failure ([#163](https://github.com/Uni20-dev/uni20/issues/163)).
 - Readers that still hold the epoch when the failure arrives see it, and so
   does a successor that starts after them.
 - A successor that starts in between keeps its own value, and a reader on
   another thread can see the previous value.
-- A failure that arrives after the epoch has finished is dropped. The task
-  registry still records the exception that escaped the coroutine.
+- A failure that arrives after the epoch has finished is dropped. Builds with
+  task diagnostics (`UNI20_DEBUG_ASYNC_TASKS`) still record the exception in the
+  task registry when it escapes the coroutine.
+- If the coroutine catches that exception, delivery stays open. A later
+  exception escaping the coroutine can still fail the epoch while it is being
+  read.
 
 If a failing producer must always fail its value, hold the writer through the
 non-owning `co_await buffer` instead. That form keeps the writer until the

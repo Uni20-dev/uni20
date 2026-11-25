@@ -559,8 +559,8 @@ class EpochContext {
       if (eptr_) return;
       // An owning holder that an exception destroyed published the epoch before the promise
       // reached unhandled_exception(). Readers still holding the epoch receive the failure. Once
-      // they have all finished, its consumers have already seen the value, and the failure is
-      // left to the task registry, which recorded it when it escaped the coroutine (#163).
+      // they have all finished, its consumers have already seen the value and the failure is
+      // dropped. Builds with task diagnostics record it in the task registry (#163).
       if (phase_ > Phase::Reading)
       {
         DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception after the epoch finished", this, counter_);
@@ -1208,14 +1208,22 @@ template <typename T> class EpochContextWriter {
         storage_ = std::move(other.storage_);
         epoch_ = std::move(other.epoch_);
         acquired_ = other.acquired_;
+        uncaught_at_take_ = std::uncaught_exceptions();
         other.epoch_.reset();
       }
       return *this;
     }
 
     /// \brief Release the writer on destruction.
-    /// \note A proxy can unwind before its registered coroutine parameter receives an exception.
-    ~EpochContextWriter() { this->release(false); }
+    /// \details A holder destroyed normally has finished writing, so it ends exception delivery to
+    ///          the epoch, as `release()` does. A later exception escaping the coroutine then
+    ///          leaves the published value alone. A holder destroyed by an exception keeps
+    ///          delivery open: it publishes before the promise reaches `unhandled_exception()`,
+    ///          and the failure still reaches readers that hold the epoch (#163). The two cases
+    ///          are told apart by `std::uncaught_exceptions()` against its value when this object
+    ///          took the writer. A coroutine step resumed during an unrelated exception can
+    ///          misclassify, which affects only that best-effort delivery.
+    ~EpochContextWriter() { this->release(std::uncaught_exceptions() <= uncaught_at_take_); }
 
 #if UNI20_DEBUG_DAG
     /// \brief Get the debug node pointer of the object
@@ -1340,6 +1348,8 @@ template <typename T> class EpochContextWriter {
     mutable shared_storage<T> storage_;
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
+    /// \brief `std::uncaught_exceptions()` when this object took the writer.
+    int uncaught_at_take_{std::uncaught_exceptions()};
 };
 
 } // namespace uni20::async

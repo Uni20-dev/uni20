@@ -177,3 +177,43 @@ TEST(AsyncUnwindingTest, LaterExceptionAfterACatchDoesNotAbort)
   EXPECT_EQ(value.get_wait(), 9);
   EXPECT_EQ(other.get_wait(), 1);
 }
+
+// An owning holder that finished normally ends exception delivery, so a later exception escaping
+// the coroutine does not fail the value it wrote. With the parameter's sink retained, it used to
+// fail every later read of the epoch.
+TEST(AsyncUnwindingTest, LaterExceptionLeavesANormallyPublishedOwningWriteAlone)
+{
+  {
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<int> value = 4;
+    Async<int> seen = 0;
+    schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+      {
+        auto proxy = co_await writer.transfer();
+        proxy = 5;
+      }
+      throw ProducerFailure{};
+    }(value.write()));
+    schedule(copy_value(value.read(), seen.write()));
+    sched.run_all();
+    EXPECT_EQ(seen.get_wait(), 5);
+    EXPECT_EQ(value.get_wait(), 5);
+  }
+  {
+    // write_to has finished writing before the coroutine reads a failed input.
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<int> input = 0;
+    Async<int> output = 4;
+    schedule(fail_holding_proxy(input.write()));
+    schedule([](ReadBuffer<int> in, WriteBuffer<int> out) static -> AsyncTask {
+      co_await write_to(out.transfer(), 5);
+      int const x = co_await in;
+      static_cast<void>(x);
+    }(input.read(), output.write()));
+    sched.run_all();
+    EXPECT_EQ(output.get_wait(), 5);
+    EXPECT_EQ(output.get_wait(), 5);
+  }
+}
