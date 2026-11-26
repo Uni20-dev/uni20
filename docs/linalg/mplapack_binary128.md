@@ -33,7 +33,7 @@ Use `UNI20_USE_SYSTEM_MPLAPACK` to select the normal Uni20 dependency modes:
 | --- | --- |
 | `AUTO` | Prefer an installed MPLAPACK 3.0.0 or newer package with `binary128`; otherwise fetch `v3.0.0`. |
 | `ON` | Require a compatible installed package and fail if it is unavailable. |
-| `OFF` | Always fetch the pinned `v3.0.0` source. |
+| `OFF` | Fetch the pinned `v3.0.0` source, unless a parent project already created the MPLAPACK targets ([CMake consumers](../development/cmake_consumers.md)). |
 
 MPLAPACK 3.0.0 exposes one self-contained library per precision. Uni20 consumes:
 

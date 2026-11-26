@@ -1,16 +1,21 @@
 # src/uni20/mdspan
 
-This directory contains Uni20's mdspan-facing structural utilities. It works
-with the Kokkos reference mdspan implementation through `stdex::` and provides
-small helpers used by dense kernels and layout-aware algorithms.
+This directory contains Uni20's native views and layouts and the structural
+utilities used by dense kernels and layout-aware algorithms. Tensor producers
+and CUDA acquisition use native mdspan types. Extents use the standard
+library or the built-in fallback selected at configure time.
 
 ## Contents
 
-- `mdspan.hpp`: configured gateway to the Kokkos reference implementation in
-  namespace `stdex::`.
+- `extents.hpp`: configured extents for host and CUDA translation units.
+- `mdspan.hpp`: native borrowed view and checked import from standard mdspan.
+- `layouts.hpp`: native contiguous and nonnegative strided mappings.
+- `layout_signed_stride.hpp`: affine mappings with signed strides and storage span queries.
+- `default_accessor.hpp`: pointer access with signed element offsets.
+- `offset_range.hpp`: inclusive physical offset bounds for iteration plans.
 - `mdspec.hpp`: mdspan-shaped mapping and accessor metadata paired with
   a data descriptor for later handle acquisition.
-- `format.hpp`: `std::format` and `{fmt}` support for mdspan extents.
+- `format.hpp`: `{fmt}` support for extents and `std::format` support for fallback extents.
 - `concepts.hpp`: concepts for mdspan-like objects and related structural
   properties.
 - `conjugate_accessor.hpp`: read-only mdspan accessor adaptor and `conj(...)`
@@ -20,6 +25,9 @@ small helpers used by dense kernels and layout-aware algorithms.
 - `generated_accessor.hpp` and `generated_layout.hpp`: read-only generated
   values with synthetic, non-strided logical offset mapping.
 - `strides.hpp`: stride inspection and stride utility helpers.
+- `permute.hpp`: zero-copy axis permutations of strided mdspans and mdspecs,
+  preserving static extents and accessor semantics.
+- `reverse.hpp`: zero-copy reversal of one axis in a native pointer-backed mdspan.
 - `iteration_plan.hpp`: backend-neutral compact affine iteration planning over
   one or more strided mappings, including element counts and reachable offset
   ranges.
@@ -33,9 +41,11 @@ small helpers used by dense kernels and layout-aware algorithms.
 - This module should describe structure and layout, not ownership or backend
   dispatch policy. CPU execution of iteration plans belongs to the linalg CPU
   backend.
-- `MdspanLike` is the complete readable mdspan protocol used by leaf kernels: its
-  descriptor aliases must agree, it exposes rank and extent observers, and its
-  rank-dimensional `operator[]` returns the declared `reference` type.
+- `MdspanLike` is the readable view protocol used by leaf kernels. Its
+  descriptor aliases agree with the accessor, including `offset_type`. It exposes
+  rank and extent observers, and its rank-dimensional `operator[]` returns the
+  declared `reference` type. Import standard mdspans with
+  `uni20::mdspan{view}`.
   `MutableMdspanLike` additionally proves assignment through that indexed result.
 - `MdspecLike` is the broader structural protocol for mdspan metadata whose
   data handle is either immediately present or available through a data
@@ -51,16 +61,17 @@ small helpers used by dense kernels and layout-aware algorithms.
   `MutableRankedStridedMdspanLike` requires an immediately usable mdspan, while
   `MutableRankedStridedMdspecLike` also accepts descriptor-backed
   metadata.
-- `StridedMdspanLike` refines `MdspanLike` by requiring an always-strided
-  mapping and both mdspan and mapping stride observers. It includes
-  `layout_left`, `layout_right`, and `layout_stride` mappings.
+- `AffineMdspanLike` and `AffineMdspecLike` require an always-strided mapping
+  and stride observers. `StridedMdspanLike` and `StridedMdspecLike` additionally
+  require a statically zero base offset. A native affine mapping addresses
+  the logical origin at offset zero relative to its handle. That handle may
+  sit inside the storage span, at `base_offset()` elements from its start.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for
-  specialized kernels. The component view preserves its signed stride, so a
-  diagonal borrowed from another tensor need not be contiguous or forward
-  ordered. The initial `make_diagonal_mdspan` factory accepts a default-accessor
-  component mdspan and therefore produces a host-domain accessor. A future CUDA
+  specialized kernels. The component view preserves its stride and its
+  layout's zero-base-offset guarantee. The `make_diagonal_mdspan` factory
+  accepts a default-accessor component mdspan and produces a host-domain accessor. A future CUDA
   form must retain and propagate the CUDA component accessor rather than
   reclassifying a raw pointer-shaped handle.
 - An extent-one axis has no observable stride. Stride coalescing treats it as
@@ -68,7 +79,7 @@ small helpers used by dense kernels and layout-aware algorithms.
   non-singleton axis's stride. Generic iteration plans remove singleton axes
   before coalescing.
 - A pointer `data_handle_type` is not enough to prove direct memory semantics.
-  Backends that bypass `access(...)` must check for `stdex::default_accessor`
+  Backends that bypass `access(...)` must check for the default accessor
   or an explicitly lowerable accessor such as Uni20's `conjugated_accessor`.
 - Read-only accessor policies declare const `element_type`, including calculated
   accessors that return values. Ordinary `MutableMdspanLike` accessors also prove

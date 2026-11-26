@@ -1,6 +1,7 @@
 #include <uni20/async/cuda_task.hpp>
 #include <uni20/async/debug_cuda_scheduler.hpp>
 #include <uni20/backend/cuda/task_awaiters.hpp>
+#include <uni20/mdspan/layout_signed_stride.hpp>
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/tensor/tensor.hpp>
 
@@ -16,9 +17,49 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
+
+namespace
+{
+
+template <bool SuppliesSpan> struct ReflectingCudaAccessor
+{
+    using element_type = double const;
+    using data_handle_type = double const*;
+    using reference = double const&;
+    using offset_type = std::ptrdiff_t;
+    using offset_policy = ReflectingCudaAccessor;
+
+    UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle, offset_type offset) const noexcept
+    {
+      return handle[-offset];
+    }
+
+    UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type handle, offset_type offset) const noexcept
+    {
+      return handle - offset;
+    }
+
+    template <class Mapping>
+    uni20::cuda::BufferStorageSpan cuda_storage_span(Mapping const& mapping, std::size_t origin) const
+      requires SuppliesSpan
+    {
+      auto const size = mapping.required_span_size();
+      if (size == 0) return {origin, 0};
+      auto const reflected_base = size - mapping.base_offset() - 1;
+      if (reflected_base > origin) throw std::out_of_range("reflected span starts before the buffer");
+      return {origin - reflected_base, size};
+    }
+};
+
+} // namespace
+
+template <bool SuppliesSpan>
+inline constexpr bool uni20::enable_accessor_in_domain<ReflectingCudaAccessor<SuppliesSpan>, uni20::cuda_access_domain> =
+    true;
 
 namespace
 {
@@ -532,6 +573,80 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionResolvesPolicyFreePointerMdspans)
   EXPECT_EQ(output, input);
 }
 
+TEST_F(CudaTensorTest, SignedDescriptorAcquisitionPreservesTheLogicalOrigin)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  tensor_type const tensor(resources, 3, 3);
+  auto const source = tensor.mdspec();
+  auto const source_lease = uni20::acquire_cuda_read_access_sync(source);
+  auto const* allocation = source_lease.mdspan().data_handle();
+
+  using shape = uni20::dextents<uni20::index_type, 2>;
+  using layout = uni20::layout_signed_stride;
+  using spec = uni20::mdspec<double const, shape, layout, typename decltype(source)::accessor_type,
+                             typename decltype(source)::data_descriptor_type>;
+  spec const signed_view{source.data_descriptor().offset_by(6), layout::mapping<shape>{shape{3, 2}, {-3, 2}},
+                         source.accessor()};
+  auto const signed_lease = uni20::acquire_cuda_read_access_sync(signed_view);
+  EXPECT_EQ(signed_lease.mdspan().data_handle(), allocation + 6);
+  EXPECT_EQ(signed_lease.mdspan().mapping().required_span_size(), 9U);
+
+  spec const empty_view{source.data_descriptor().offset_by(9), layout::mapping<shape>{shape{0, 2}, {-3, 2}},
+                        source.accessor()};
+  auto const empty_lease = uni20::acquire_cuda_read_access_sync(empty_view);
+  EXPECT_EQ(empty_lease.mdspan().data_handle(), allocation + 9);
+  EXPECT_TRUE(empty_lease.mdspan().empty());
+}
+
+TEST_F(CudaTensorTest, DescriptorAcquisitionUsesTranslatingAccessorSpan)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  uni20::CudaTensor<double, 1> tensor(resources, 2);
+  std::array<double, 2> const input{100.0, 101.0};
+  uni20::cuda::ScopedDevice guard(resources.device().ordinal());
+  {
+    auto lease = uni20::acquire_cuda_write_access_sync(tensor);
+    uni20::cuda::check(cudaMemcpy(lease.mdspan().data_handle(), input.data(), sizeof(input), cudaMemcpyHostToDevice),
+                       "cudaMemcpy test upload", resources.device().ordinal());
+  }
+
+  auto descriptor = std::as_const(tensor).mdspec().data_descriptor();
+  using shape = uni20::dextents<uni20::index_type, 1>;
+  using layout = uni20::layout_signed_stride;
+  using spec = uni20::mdspec<double const, shape, layout, ReflectingCudaAccessor<true>, decltype(descriptor)>;
+  layout::mapping<shape> const mapping{shape{2}, {-1}};
+  spec const reflected{descriptor, mapping, {}};
+
+  {
+    auto const lease = uni20::acquire_cuda_read_access_sync(reflected);
+    auto const& span = lease.mdspan();
+    std::array<double, 2> output{};
+    for (uni20::index_type i = 0; i < 2; ++i)
+    {
+      auto const* address = span.accessor().offset(span.data_handle(), span.mapping()(i));
+      uni20::cuda::check(cudaMemcpy(&output[static_cast<std::size_t>(i)], address, sizeof(double), cudaMemcpyDeviceToHost),
+                         "cudaMemcpy reflected element", resources.device().ordinal());
+    }
+    EXPECT_EQ(output, input);
+  }
+
+  // The mapping alone fits at offset one, but reflection would address element two.
+  spec const outside{descriptor.offset_by(1), mapping, {}};
+  EXPECT_THROW((void)uni20::acquire_cuda_read_access_sync(outside), std::out_of_range);
+}
+
+TEST_F(CudaTensorTest, DescriptorAcquisitionRequiresStorageSpanOptIn)
+{
+  uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
+  uni20::CudaTensor<double, 1> const tensor(resources, 2);
+  auto const source = tensor.mdspec();
+  using source_type = decltype(tensor.mdspec());
+  using spec = uni20::mdspec<double const, typename source_type::extents_type, typename source_type::layout_type,
+                             ReflectingCudaAccessor<false>, typename source_type::data_descriptor_type>;
+  spec const reflected{source.data_descriptor(), source.mapping(), {}};
+  EXPECT_THROW((void)uni20::acquire_cuda_read_access_sync(reflected), std::invalid_argument);
+}
+
 // The only stream returns to its pool from a CUDA host callback, so the task's
 // stream acquisition is woken from outside the scheduler. A wait must block for
 // that wakeup rather than report a deadlock.
@@ -709,6 +824,10 @@ TEST_F(CudaTensorTest, OwningRvalueStreamReadPublishesCompletion)
     uni20::cuda::ScopedDevice guard(resources.device().ordinal());
     uni20::cuda::check(cudaMemcpy(lease.mdspan().data_handle(), input.data(), sizeof(input), cudaMemcpyHostToDevice),
                        "cudaMemcpy owning stream read test upload", resources.device().ordinal());
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize owning stream read test upload",
+                       resources.device().ordinal());
   }
 
   auto stream = resources.streams().acquire();

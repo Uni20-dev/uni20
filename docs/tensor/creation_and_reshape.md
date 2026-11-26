@@ -3,6 +3,12 @@
 For the wider operation taxonomy and current Async support, see
 [Tensor Operations, Semantics, and Async Support](operations.md).
 
+`Tensor::size()` returns the product of the extents as `uni20::size_type`.
+A rank-zero tensor has one element, and a tensor with any zero extent has none.
+For a `2 × 2` tensor with strides `(1, 3)`, `size()` is 4 and
+`mapping().required_span_size()` is 5 because the mapping skips one element.
+An adopted buffer can be larger still. Use `storage().size()` for its element count.
+
 ## Owning Tensor Initialization
 
 Shape construction initializes owned numerical elements to zero on both host and
@@ -142,6 +148,54 @@ The extents need not be equal. Rank-zero `eye<T>()` is scalar one; rank-one
 rectangular identity matrix. This is also the tensor-network copy tensor, so a
 separate `copy_tensor` factory is unnecessary.
 
+## Axis Permutations
+
+`permute<Axes...>(tensor)` returns a borrowed dense tensor view. Output axis
+`j` is source axis `Axes[j]`; the axis list must be a compile-time bijection.
+
+```cpp
+Tensor<double, 3> tensor(2, 3, 4);
+auto view = permute<2, 0, 1>(tensor);  // shape (4, 2, 3)
+view[3, 1, 2] = 7;                    // writes tensor[1, 2, 3]
+auto packed = Tensor(view);           // independent contiguous owner
+```
+
+This first implementation supports zero-origin strided mappings representable
+by `layout_stride`, including canonical row/column-major and padded layouts.
+It permutes extents and strides without copying elements or acquiring storage
+access. Nonidentity permutations use Uni20 `layout_stride` and require a unique
+mapping whose extents and strides satisfy that layout. They preserve the strides
+of empty and singleton axes. Identity permutations preserve the source layout type. Compile-time extents, accessor
+semantics, deferred storage descriptors, and backend selectors are retained.
+The mdspan/mdspec overload applies the same metadata operation below the tensor
+layer; BlockTensor uses that shared mapping helper for its dense blocks.
+Generated and other non-strided mappings are not supported yet.
+
+Const sources and const view interfaces remain read-only. Tensor lvalues and
+temporary borrowed descriptor views are accepted; temporary owners are
+rejected. Nested permutation descriptors do not retain intermediate views.
+The payload owner must remain alive and must not be moved or structurally
+modified while a synchronous view is used. Runtime-precision views retain a
+live binding to the source default, so a tensor lvalue source must itself stay
+alive while the view is used; changing that default does not convert any
+stored elements. Views have no independent precision setter.
+
+`async::permute<Axes...>(parent)` retains the parent storage and shares its
+exact epoch queue. It can be created before the parent value is constructed;
+metadata and precision are resolved when the parent epoch becomes readable.
+Mutable aliases support write-through assignment for owning tensors and custom
+TensorView models through the same ADL customization. Const aliases are read-only,
+and parent failures propagate to readers of the alias.
+
+A permutation view does not rearrange physical memory. Prefer `Tensor(view)`
+for ordinary owning materialization: the spelling makes the result's owning
+tensor type explicit while CTAD deduces its scalar type, rank, and storage
+domain. `make_tensor(view)` remains equivalent here; use
+`make_tensor<RowMajor>(view)` when selecting the physical layout explicitly.
+A subsequent `reshape_view_left` or `reshape_view_right` still requires canonical contiguous
+strides, except for an empty view; permuting axes alone does not make arbitrary groups fusible for GEMM.
+Automatic contraction packing is separate from this view API.
+
 ## Reshape Operations
 
 Uni20 separates aliasing, object mutation, and owning value construction:
@@ -159,8 +213,8 @@ count. All forms reject mismatched element counts and ambiguous inference.
 ### `reshape_view`
 
 `reshape_view` never allocates or copies elements. It preserves the source data
-handle and accessor. Automatic order selection is available only when the
-source mdspan's static layout type is `layout_left` or `layout_right`; the
+handle or deferred data descriptor and its accessor. Automatic order selection
+is available only when the source's static layout type is `layout_left` or `layout_right`; the
 result preserves that same layout type.
 
 For a general strided mapping, select the interpretation explicitly:
@@ -182,6 +236,13 @@ accessor: reshaping a mutable tensor gives a mutable alias, while a const source
 remains read-only. Generated tensors are layout-neutral and do not have a
 structural `reshape_view`; use owning `reshape` when a value-level reshape is
 required.
+
+A synchronous reshape stores its read and write descriptors by value. For
+example, a helper can reshape a local permutation of a CUDA tensor and return
+the result. The local permutation can go out of scope as long as the underlying
+buffer remains valid. Construction validates the shape using metadata
+alone. Operations such as `copy(matrix, source)` acquire device access when
+they execute. Runtime-precision views retain the source's live precision binding.
 
 Repeated tensor-level reshapes preserve order through the result's static
 `layout_left` or `layout_right` type. No runtime provenance flag is required,

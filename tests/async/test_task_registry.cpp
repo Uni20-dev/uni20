@@ -1,11 +1,19 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <limits>
+#include <mutex>
+#include <set>
+#include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -19,11 +27,13 @@
 #include <uni20/common/presentation.hpp>
 #include <uni20/config.hpp>
 #include <uni20/core/scalar_precision.hpp>
+#include <vector>
 
 #include "../common/env_var_guard.hpp"
 
 #if defined(__linux__)
 #include <signal.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 
@@ -83,6 +93,7 @@ AsyncTask copy_value(ReadBuffer<int> reader, WriteBuffer<int> writer)
   co_return;
 }
 
+#if UNI20_DEBUG_DAG
 AsyncTask sum_all_values(ReadBuffer<int> lhs, ReadBuffer<int> rhs, WriteBuffer<int> writer)
 {
   auto [left, right] = co_await all(lhs, rhs);
@@ -111,6 +122,20 @@ struct OpaqueValue
 {};
 
 std::string uni20_async_debug_value(CustomDebugValue const& value) { return "custom id=" + std::to_string(value.id); }
+
+struct ThrowingDebugValue
+{};
+
+struct NonStandardThrowingDebugValue
+{};
+
+std::string uni20_async_debug_value(ThrowingDebugValue const&)
+{
+  throw std::runtime_error("formatter unavailable\nsecond line");
+}
+
+std::string uni20_async_debug_value(NonStandardThrowingDebugValue const&) { throw 42; }
+#endif
 
 std::filesystem::path make_temp_dir(std::string_view name)
 {
@@ -656,6 +681,34 @@ TEST(TaskRegistryDebugTest, GraphSnapshotUsesCustomDebugValueHook)
   EXPECT_NE(dot.find("value=custom id=7"), std::string::npos);
 }
 
+// A debug-value hook that throws must not end the program or lose the rest of
+// the dump: diagnostics are best effort.
+TEST(TaskRegistryDebugTest, GraphSnapshotReportsADebugValueHookThatThrows)
+{
+  Async<ThrowingDebugValue> throwing(ThrowingDebugValue{});
+  throwing.debug_name("throwing value");
+  Async<NonStandardThrowingDebugValue> non_standard(NonStandardThrowingDebugValue{});
+  non_standard.debug_name("non-standard throwing value");
+  Async<CustomDebugValue> custom(CustomDebugValue{7});
+  custom.debug_name("custom value");
+
+  TaskRegistry::GraphSnapshot snapshot;
+  ASSERT_NO_THROW(snapshot = TaskRegistry::snapshot());
+  auto value_of = [&snapshot](std::string_view label) {
+    auto const node = std::find_if(snapshot.data_nodes.begin(), snapshot.data_nodes.end(),
+                                   [label](auto const& node) { return node.label == label; });
+    return node == snapshot.data_nodes.end() ? std::string("(missing)") : node->value;
+  };
+  EXPECT_EQ(value_of("throwing value"), "(debug value threw: formatter unavailable second line)");
+  EXPECT_EQ(value_of("non-standard throwing value"), "(debug value threw)");
+  EXPECT_EQ(value_of("custom value"), "custom id=7");
+
+  std::string dot;
+  ASSERT_NO_THROW(dot = TaskRegistry::graphviz_dot(snapshot));
+  EXPECT_NE(dot.find("value=(debug value threw: formatter unavailable second line)"), std::string::npos);
+  EXPECT_NE(dot.find("value=custom id=7"), std::string::npos);
+}
+
 TEST(TaskRegistryDebugTest, GraphSnapshotOmitsValueForOpaqueConstructedTypes)
 {
   Async<OpaqueValue> value(OpaqueValue{});
@@ -799,6 +852,52 @@ TEST(TaskRegistryDebugTest, OriginatingCoroutineExceptionWritesLiveFailedTaskSna
   std::filesystem::remove_all(dir);
 }
 
+// A coroutine that catches one failure an epoch reported, and then passes on another, writes no
+// snapshot of its own. Each failing producer writes one (#166).
+TEST(TaskRegistryDebugTest, CoroutinePassingOnALaterReportedFailureWritesNoSnapshot)
+{
+  CoroutineExceptionDiagnosticsOptionsGuard guard;
+  auto dir = make_temp_dir("uni20-dag-later-reported-failure-test");
+  TaskRegistry::set_coroutine_exception_diagnostics_options({
+      .enabled = true,
+      .write_graphviz = true,
+      .dump_options = {.output_dir = dir.string(), .file_prefix = "later-reported-failure"},
+  });
+
+  DebugScheduler scheduler;
+  Async<int> first;
+  Async<int> second;
+  Async<int> output;
+  auto first_producer = fail_writer(first.write());
+  auto second_producer = [](WriteBuffer<int> writer) static -> AsyncTask {
+    static_cast<void>(writer);
+    throw std::logic_error("second deliberate failure");
+    co_return;
+  }(second.write());
+  auto consumer = [](ReadBuffer<int> a, ReadBuffer<int> b, WriteBuffer<int> out) static -> AsyncTask {
+    try
+    {
+      static_cast<void>(co_await a);
+    }
+    catch (std::runtime_error const&)
+    {}
+    co_await out = co_await b;
+  }(first.read(), second.read(), output.write());
+  scheduler.schedule(std::move(consumer));
+  scheduler.run_all(); // the consumer waits for the first value
+  scheduler.schedule(std::move(first_producer));
+  scheduler.run_all(); // it catches the first failure and waits for the second value
+  scheduler.schedule(std::move(second_producer));
+  scheduler.run_all();
+
+  EXPECT_THROW(static_cast<void>(output.get_wait(scheduler)), std::logic_error);
+  std::size_t dot_file_count = 0;
+  for (auto const& entry : std::filesystem::directory_iterator(dir))
+    if (entry.path().extension() == ".dot") ++dot_file_count;
+  EXPECT_EQ(dot_file_count, 2U);
+  std::filesystem::remove_all(dir);
+}
+
 TEST(TaskRegistryDebugTest, DefaultStacktraceOptionsReadEnvironment)
 {
   EnvVarGuard frames("UNI20_DEBUG_DAG_STACKTRACE_FRAMES", "3");
@@ -853,8 +952,22 @@ TEST(TaskRegistryDebugTest, DebugSchedulerServicesQueuedGraphvizDumpRequests)
   std::filesystem::remove_all(dir);
 }
 
+namespace
+{
+// UNI20_DEBUG_DAG_SIGNAL starts a service for the whole process before any test
+// runs, and again in each re-executed child. The service tests start and stop
+// the process's service themselves, so they skip rather than stop that one.
+bool diagnostics_service_started_by_environment()
+{
+  auto const* signal = std::getenv("UNI20_DEBUG_DAG_SIGNAL");
+  return signal && signal[0] != '\0';
+}
+} // namespace
+
 TEST(TaskRegistryDebugTest, DiagnosticsServicePollsControlFile)
 {
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
   TaskRegistry::stop_diagnostics_service();
   auto dir = make_temp_dir("uni20-dag-control-test");
   auto request_file = dir / "dump.request";
@@ -875,23 +988,336 @@ TEST(TaskRegistryDebugTest, DiagnosticsServicePollsControlFile)
   std::filesystem::remove_all(dir);
 }
 
-#if defined(__linux__)
-TEST(TaskRegistryDebugTest, DiagnosticsServiceHandlesSignalTrigger)
+#if UNI20_DEBUG_DAG
+namespace
+{
+// The diagnostics service writes a requested dump on its own thread, where an
+// exception from formatting a value would end the program.
+int service_dump_with_throwing_value_probe()
 {
   TaskRegistry::stop_diagnostics_service();
-  auto dir = make_temp_dir("uni20-dag-signal-test");
+  Async<ThrowingDebugValue> throwing(ThrowingDebugValue{});
+  throwing.debug_name("throwing value");
+  auto dir = make_temp_dir("uni20-dag-throwing-value-test");
+  auto request_file = dir / "dump.request";
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.dump_options.output_dir = dir.string();
+  options.request_file = request_file.string();
+  options.poll_interval_ms = 10;
+  if (!TaskRegistry::start_diagnostics_service(options)) return 2;
+  {
+    std::ofstream request(request_file);
+    request << "dump\n";
+  }
+  bool const dumped = wait_for_dot_file(dir, std::chrono::milliseconds(2000));
+  TaskRegistry::stop_diagnostics_service();
+  auto const dot = dumped ? read_file(find_dot_file(dir)) : std::string();
+  std::filesystem::remove_all(dir);
+  return dot.find("debug value threw: formatter unavailable") != std::string::npos ? 0 : 1;
+}
+} // namespace
 
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceDumpSurvivesADebugValueHookThatThrows)
+{
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(service_dump_with_throwing_value_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+#endif
+
+#if defined(__linux__)
+namespace
+{
+// Each signal probe runs in a child process of its own (death-test style
+// "threadsafe" runs the test binary again for just that test). A process gives
+// its signal to the service only once, and the child has no thread from an
+// earlier test that could take the signal in place of the service thread. A
+// probe returns 0 and explains a failure on stderr.
+
+int probe_failed(char const* reason)
+{
+  std::fprintf(stderr, "%s\n", reason);
+  return 1;
+}
+
+TaskRegistry::DiagnosticsServiceOptions signal_service_options(std::filesystem::path const& dir, int signal)
+{
   TaskRegistry::DiagnosticsServiceOptions options;
   options.dump_options.output_dir = dir.string();
   options.dump_options.file_prefix = "signal";
-  options.signal_number = SIGUSR1;
-  options.poll_interval_ms = 50;
+  options.signal_number = signal;
+  options.poll_interval_ms = 20;
+  return options;
+}
 
-  ASSERT_TRUE(TaskRegistry::start_diagnostics_service(options));
-  ASSERT_EQ(::kill(::getpid(), SIGUSR1), 0);
-  EXPECT_TRUE(wait_for_dot_file(dir, std::chrono::milliseconds(1000)));
+// Starts the service, sends the signal with `send`, and waits for the DOT file.
+template <class Send> int signal_dump_probe(int signal, Send send)
+{
+  auto dir = make_temp_dir("uni20-dag-signal-test");
+  if (!TaskRegistry::start_diagnostics_service(signal_service_options(dir, signal)))
+    return probe_failed("the service did not start");
+  if (send() != 0) return probe_failed("the signal was not sent");
+  bool const dumped = wait_for_dot_file(dir, std::chrono::milliseconds(1000));
   TaskRegistry::stop_diagnostics_service();
   std::filesystem::remove_all(dir);
+  return dumped ? 0 : probe_failed("no DOT file after the signal");
+}
+
+int signal_to_process_probe(int signal)
+{
+  return signal_dump_probe(signal, [signal] { return ::kill(::getpid(), signal); });
+}
+
+// A thread that exists before the service starts and does not block the
+// signal, whatever mask the test was launched with, as a TBB worker would be.
+// The signal is sent to it directly, so its default action would end the process.
+int signal_to_earlier_thread_probe()
+{
+  std::promise<void> ready;
+  std::jthread bystander([&ready](std::stop_token stop) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    ::pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+    ready.set_value();
+    std::mutex mutex;
+    std::condition_variable_any idle;
+    std::unique_lock lock(mutex);
+    idle.wait(lock, stop, [] { return false; });
+  });
+  ready.get_future().wait();
+  return signal_dump_probe(SIGUSR1, [&bystander] { return ::pthread_kill(bystander.native_handle(), SIGUSR1); });
+}
+
+std::set<pid_t> thread_ids()
+{
+  std::set<pid_t> ids;
+  for (auto const& entry : std::filesystem::directory_iterator("/proc/self/task"))
+    ids.insert(static_cast<pid_t>(std::stol(entry.path().filename().string())));
+  return ids;
+}
+
+// The starter blocks the signal, as in a program started with it blocked, and
+// the service thread inherits that mask. The signal goes to the service thread
+// itself, so only that thread's own unblocking lets the dump happen, whatever
+// other threads exist, such as a BLAS library's worker pool.
+int signal_with_starter_blocking_it_probe()
+{
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  if (::pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) return probe_failed("could not block the signal");
+  auto const before = thread_ids();
+  return signal_dump_probe(SIGUSR1, [&before] {
+    std::vector<pid_t> started;
+    for (pid_t id : thread_ids())
+      if (!before.contains(id)) started.push_back(id);
+    if (started.size() != 1) return probe_failed("could not identify the service thread");
+    return static_cast<int>(::syscall(SYS_tgkill, ::getpid(), started.front(), SIGUSR1));
+  });
+}
+
+void program_handler(int) {}
+
+void program_siginfo_handler(int, siginfo_t*, void*) {}
+
+int install_program_handler(int signal, bool siginfo = false)
+{
+  struct sigaction handled = {};
+  sigemptyset(&handled.sa_mask);
+  if (siginfo)
+  {
+    handled.sa_sigaction = program_siginfo_handler;
+    handled.sa_flags = SA_SIGINFO;
+  }
+  else
+  {
+    handled.sa_handler = program_handler;
+  }
+  return ::sigaction(signal, &handled, nullptr);
+}
+
+bool signal_handler_is(int signal, void (*handler)(int))
+{
+  struct sigaction current = {};
+  return ::sigaction(signal, nullptr, &current) == 0 && current.sa_handler == handler;
+}
+
+// Stopping restores the previous disposition. An ignored action can keep
+// SA_SIGINFO from an earlier three-argument handler, and is still not a handler.
+int restores_previous_action_probe(bool keep_siginfo_flag)
+{
+  struct sigaction ignore = {};
+  if (keep_siginfo_flag && (install_program_handler(SIGUSR1, true) != 0 || ::sigaction(SIGUSR1, nullptr, &ignore) != 0))
+    return probe_failed("could not install a three-argument handler");
+  sigemptyset(&ignore.sa_mask);
+  ignore.sa_handler = SIG_IGN;
+  if (::sigaction(SIGUSR1, &ignore, nullptr) != 0) return probe_failed("could not ignore the signal");
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the service refused an ignored signal");
+  TaskRegistry::stop_diagnostics_service();
+  return signal_handler_is(SIGUSR1, SIG_IGN) ? 0 : probe_failed("stop did not restore the previous action");
+}
+
+// A handler the program installs while the service runs takes the signal back,
+// and stopping the service leaves it in place.
+int stop_leaves_a_later_handler_probe()
+{
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the service did not start");
+  if (install_program_handler(SIGUSR1) != 0) return probe_failed("could not install a handler");
+  TaskRegistry::stop_diagnostics_service();
+  return signal_handler_is(SIGUSR1, program_handler) ? 0 : probe_failed("stop replaced the program's handler");
+}
+
+// A signal the program already handles, for example to checkpoint, stays its
+// own, and the service can still take the other one.
+int refuses_a_handled_signal_probe(bool siginfo)
+{
+  if (install_program_handler(SIGUSR1, siginfo) != 0) return probe_failed("could not install a handler");
+  struct sigaction before = {};
+  if (::sigaction(SIGUSR1, nullptr, &before) != 0) return probe_failed("could not read the action");
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  if (TaskRegistry::start_diagnostics_service(options))
+  {
+    TaskRegistry::stop_diagnostics_service();
+    return probe_failed("the service took a signal the program handles");
+  }
+  struct sigaction after = {};
+  if (::sigaction(SIGUSR1, nullptr, &after) != 0 || after.sa_handler != before.sa_handler ||
+      after.sa_flags != before.sa_flags)
+    return probe_failed("the program's handler was replaced");
+  options.signal_number = SIGUSR2;
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the service did not take SIGUSR2");
+  TaskRegistry::stop_diagnostics_service();
+  return 0;
+}
+
+int signal_taken_once_probe()
+{
+  TaskRegistry::DiagnosticsServiceOptions options;
+  options.signal_number = SIGUSR1;
+  if (!TaskRegistry::start_diagnostics_service(options)) return probe_failed("the first start failed");
+  TaskRegistry::stop_diagnostics_service();
+  for (int signal : {SIGUSR1, SIGUSR2})
+  {
+    options.signal_number = signal;
+    if (TaskRegistry::start_diagnostics_service(options))
+    {
+      TaskRegistry::stop_diagnostics_service();
+      return probe_failed("a second service took a signal");
+    }
+  }
+  options.signal_number = 0;
+  if (!TaskRegistry::start_diagnostics_service(options))
+    return probe_failed("a service without a signal did not start");
+  TaskRegistry::stop_diagnostics_service();
+  return 0;
+}
+
+int environment_signal_probe()
+{
+  {
+    EnvVarGuard signal("UNI20_DEBUG_DAG_SIGNAL", std::to_string(SIGFPE));
+    if (TaskRegistry::start_diagnostics_service())
+      return probe_failed("UNI20_DEBUG_DAG_SIGNAL accepted SIGFPE by number");
+  }
+  EnvVarGuard signal("UNI20_DEBUG_DAG_SIGNAL", std::to_string(SIGUSR2));
+  if (!TaskRegistry::start_diagnostics_service())
+    return probe_failed("UNI20_DEBUG_DAG_SIGNAL did not accept SIGUSR2 by number");
+  TaskRegistry::stop_diagnostics_service();
+  return 0;
+}
+} // namespace
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceHandlesEitherSignal)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR1)); }, ::testing::ExitedWithCode(0), "");
+  EXPECT_EXIT({ std::_Exit(signal_to_process_probe(SIGUSR2)); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalReachesItFromThreadsStartedEarlier)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_to_earlier_thread_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceReceivesTheSignalWhenItsStarterBlocksIt)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_with_starter_blocking_it_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRestoresThePreviousSignalAction)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(restores_previous_action_probe(false)); }, ::testing::ExitedWithCode(0), "");
+  EXPECT_EXIT({ std::_Exit(restores_previous_action_probe(true)); }, ::testing::ExitedWithCode(0), "");
+  EXPECT_EXIT({ std::_Exit(stop_leaves_a_later_handler_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceRefusesASignalTheProgramHandles)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(refuses_a_handled_signal_probe(false)); }, ::testing::ExitedWithCode(0), "");
+  EXPECT_EXIT({ std::_Exit(refuses_a_handled_signal_probe(true)); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceTakesASignalOncePerProcess)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(signal_taken_once_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TaskRegistryDebugDeathTest, DiagnosticsServiceSignalEnvironmentRefusesOtherSignals)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT({ std::_Exit(environment_signal_probe()); }, ::testing::ExitedWithCode(0), "");
+}
+
+// A fault signal such as SIGFPE returns to the faulting instruction after a
+// handler, which traps again; the others belong to the program. start() refuses
+// them before changing anything, so this runs in the test process.
+TEST(TaskRegistryDebugTest, DiagnosticsServiceRefusesSignalsOtherThanUsr1AndUsr2)
+{
+  if (diagnostics_service_started_by_environment())
+    GTEST_SKIP() << "UNI20_DEBUG_DAG_SIGNAL started a service for the whole process";
+  TaskRegistry::stop_diagnostics_service();
+  for (int signal : {SIGFPE, SIGSEGV, SIGBUS, SIGILL, SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGRTMIN, -1})
+  {
+    struct sigaction before = {};
+    if (signal > 0)
+    {
+      ASSERT_EQ(::sigaction(signal, nullptr, &before), 0);
+    }
+    TaskRegistry::DiagnosticsServiceOptions options;
+    options.signal_number = signal;
+    EXPECT_FALSE(TaskRegistry::start_diagnostics_service(options)) << "signal " << signal;
+    TaskRegistry::stop_diagnostics_service();
+    struct sigaction after = {};
+    if (signal > 0)
+    {
+      ASSERT_EQ(::sigaction(signal, nullptr, &after), 0);
+    }
+    EXPECT_EQ(after.sa_handler, before.sa_handler) << "signal " << signal;
+  }
 }
 #endif
 #endif

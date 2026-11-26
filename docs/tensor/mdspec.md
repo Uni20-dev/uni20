@@ -115,11 +115,12 @@ acquisition:
 - `element_type` and `value_type`;
 - `extents_type`, `index_type`, `size_type`, and `rank_type`;
 - `layout_type` and `mapping_type`;
-- `accessor_type`, `data_handle_type`, and `reference`;
+- `accessor_type`, `offset_type`, `data_handle_type`, and `reference`;
 - `data_descriptor_type`.
 
 The `data_handle_type` alias is known from the accessor even though no handle
-value is stored.
+value is stored. `offset_type` is the accessor's offset argument type. Accessors
+following the standard interface use `std::size_t` when they omit the alias.
 
 The available observers are:
 
@@ -127,17 +128,21 @@ The available observers are:
 |---|---|
 | Descriptor | mutable and const `data_descriptor()` |
 | Mapping and accessor | `mapping()`, `accessor()` |
-| Shape | `rank()`, `rank_dynamic()`, `static_extent(axis)`, `extents()`, `extent(axis)` |
+| Shape | `rank()`, `rank_dynamic()`, `static_extent(axis)`, `extents()`, `extent(axis)`, `size()`, `empty()` |
 | Mapping properties | `is_always_unique()`, `is_always_exhaustive()`, `is_always_strided()` |
 | Runtime mapping properties | `is_unique()`, `is_exhaustive()`, `is_strided()` |
 | Strides | `stride(axis)` when the mapping provides it |
+
+`size()` returns the product of the extents as `extents_type::size_type`.
+Padding contributes only to the mapping's storage span. A scalar descriptor
+has one element. A descriptor with any zero extent is empty.
 
 An unresolved `mdspec` intentionally does not expose:
 
 - `data_handle()`;
 - multidimensional `operator[]`;
 - host or device dereference;
-- implicit conversion to `stdex::mdspan`;
+- implicit conversion to `mdspan`;
 - allocation, migration, synchronization, or access acquisition.
 
 It therefore does not model `MdspanLike`.
@@ -155,6 +160,10 @@ concrete `mdspec` class when a structural constraint is sufficient.
 2. an unresolved structural model exposing mdspan metadata plus
    `data_descriptor_type` and `data_descriptor()`.
 
+Both forms declare an `offset_type` that matches their accessor's
+`offset_type`. Import a supported standard mdspan with
+`uni20::mdspan{view}` before passing it to a Uni20 operation.
+
 For Uni20's concrete `Tensor`, immediate accessibility takes precedence over
 descriptor availability. Its mutable and const `mdspec()` overloads
 therefore return ordinary mdspans whenever the corresponding writable or
@@ -162,6 +171,10 @@ readable handle is immediately available, even if the storage policy also
 provides a descriptor. Only a missing immediate handle selects the
 metadata-only `uni20::mdspec` representation. Read, write, immediate,
 and deferred capabilities are detected independently.
+
+`HostStorage` provides immediate handles for both reads and writes.
+`CudaStorage` provides deferred descriptors for both. A custom storage policy
+can expose a const handle for reading and require a lease for writing.
 
 The unresolved model must expose compatible element, extent, layout, mapping,
 accessor, handle, and reference aliases. Its accessor must satisfy
@@ -212,9 +225,11 @@ Metadata-only helpers use the mdspec concepts directly. For example,
 `uni20::strides()` accepts `StridedMdspecLike`, and its tensor overload
 accepts `StridedTensorView`. Both immediate and descriptor-backed inputs
 therefore expose the same mapping information without acquiring a handle.
-Contiguous-mapping analysis used by reshape order validation follows the same
-rule; the view-producing reshape operations remain mdspan-only because they
-must retain an immediately usable handle.
+Tensor-level `reshape_view` validates contiguity from the mapping and stores
+the reshaped read and write descriptors. Each retains its source's access
+mode, so a deferred write still acquires its handle when an operation uses
+the view. The [reshape guide](creation_and_reshape.md#reshape_view) describes
+the lifetime of the underlying storage.
 
 ### Tensor-Level Concepts
 
@@ -327,7 +342,7 @@ uni20::CudaAccessibleMdspec<Span>
 The accessor concepts classify accessor policies directly. The first mdspan
 pair requires a resolved `MdspanLike`; the second mdspan pair also accepts
 descriptor-backed `MdspecLike` metadata targeting that domain.
-`stdex::default_accessor<T>` is host-accessible.
+`uni20::default_accessor<T>` is host-accessible.
 `uni20::cuda::CudaPointerAccessor<T>` is CUDA-accessible. Const adaptation,
 conjugation, and elementwise transform accessors preserve the domains supported
 by their wrapped accessors.
@@ -601,6 +616,18 @@ auto lease = co_await uni20::acquire_cuda_write_access_async(tensor, stream);
 static_assert(uni20::CudaWriteTensorLease<decltype(lease)>);
 launch_kernel(stream, lease.mdspan());
 ```
+
+CUDA acquisition checks the storage span before taking a buffer lease. The
+built-in pointer and conjugating accessors use the mapping's span. A custom
+accessor that preserves the mapping's element offsets can make the same
+guarantee by specializing `uni20::cuda::enable_mapping_storage_span<Accessor>`
+to `true`. A translating accessor can supply a const host member
+`cuda_storage_span(mapping, element_offset)` returning a
+`uni20::cuda::BufferStorageSpan` that covers all physical elements it can
+access. Both fields count elements, with `start` measured from the beginning of
+the buffer. The member must produce representable bounds or throw. Acquisition rejects
+accessors without either opt-in. Const and conjugating adaptors preserve the
+wrapped accessor's storage-span policy.
 
 Acquiring the stream is separate from acquiring tensor data. Once a stream is
 available, `acquire_cuda_write_access_async(tensor, stream)` installs predecessor

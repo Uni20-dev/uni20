@@ -9,9 +9,11 @@
 #include "access.hpp"
 #include "basic_tensor.hpp"
 #include "conjugate.hpp"
+#include "diagonal.hpp"
 #include "generated.hpp"
 #include "mdspec_tensor_view.hpp"
 #include "output.hpp"
+#include "permute.hpp"
 #include "precision.hpp"
 #include "reshape.hpp"
 
@@ -27,10 +29,10 @@ namespace uni20
 {
 
 /// \brief Conventional row-major contiguous mdspan layout.
-using RowMajor = stdex::layout_right;
+using RowMajor = uni20::layout_right;
 
 /// \brief Conventional column-major contiguous mdspan layout.
-using ColumnMajor = stdex::layout_left;
+using ColumnMajor = uni20::layout_left;
 
 /// \brief Owning runtime-extents tensor with canonical column-major storage.
 template <typename ElementType, std::size_t Rank, typename StoragePolicy = HostStorage,
@@ -45,7 +47,7 @@ using RowMajorTensor = Tensor<ElementType, Rank, StoragePolicy, RowMajor, Access
 /// \brief Owning runtime-extents tensor with an explicitly strided mapping.
 template <typename ElementType, std::size_t Rank, typename StoragePolicy = HostStorage,
           typename AccessorFactory = detail::tensor_accessor_factory_t<StoragePolicy>>
-using StridedTensor = Tensor<ElementType, Rank, StoragePolicy, stdex::layout_stride, AccessorFactory>;
+using StridedTensor = Tensor<ElementType, Rank, StoragePolicy, uni20::layout_stride, AccessorFactory>;
 
 /// \brief Owning rank-zero tensor that retains storage and backend semantics.
 template <typename ElementType, typename StoragePolicy = HostStorage,

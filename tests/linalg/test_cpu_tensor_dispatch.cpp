@@ -11,13 +11,13 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
 using backend_selector_type = uni20::linalg::backend_list<uni20::linalg::CpuReferenceBackend>;
-using dense_mdspan = stdex::mdspan<double, extents_2d, stdex::layout_left>;
-using dense_const_mdspan = stdex::mdspan<double const, extents_2d, stdex::layout_left>;
-using dense_vector_mdspan = stdex::mdspan<double, extents_1d, stdex::layout_left>;
-using dense_const_vector_mdspan = stdex::mdspan<double const, extents_1d, stdex::layout_left>;
+using dense_mdspan = uni20::mdspan<double, extents_2d, uni20::layout_left>;
+using dense_const_mdspan = uni20::mdspan<double const, extents_2d, uni20::layout_left>;
+using dense_vector_mdspan = uni20::mdspan<double, extents_1d, uni20::layout_left>;
+using dense_const_vector_mdspan = uni20::mdspan<double const, extents_1d, uni20::layout_left>;
 
 template <class Backend, class OutputSpan, class InputSpan>
 concept HasDirectGemmTryKernel =
@@ -47,6 +47,7 @@ struct NonConvertibleReadAccessor
     using data_handle_type = double const*;
     using reference = NonConvertibleReference;
     using offset_policy = NonConvertibleReadAccessor;
+    using offset_type = std::size_t;
 
     [[nodiscard]] auto access(data_handle_type data, std::size_t offset) const noexcept -> reference
     {
@@ -64,7 +65,7 @@ class NonConvertibleReadMatrixView {
     using storage_policy = uni20::HostStorage;
     using extents_type = extents_2d;
     using index_type = typename extents_type::index_type;
-    using mdspan_type = stdex::mdspan<double const, extents_type, stdex::layout_left, NonConvertibleReadAccessor>;
+    using mdspan_type = uni20::mdspan<double const, extents_type, uni20::layout_left, NonConvertibleReadAccessor>;
 
     NonConvertibleReadMatrixView(double const* data, index_type rows, index_type cols) : span_(data, rows, cols) {}
 
@@ -86,9 +87,9 @@ class NonConvertibleReadMatrixView {
 class NonConvertibleReadVectorView {
   public:
     using storage_policy = uni20::HostStorage;
-    using extents_type = stdex::dextents<uni20::index_type, 1>;
+    using extents_type = uni20::dextents<uni20::index_type, 1>;
     using index_type = typename extents_type::index_type;
-    using mdspan_type = stdex::mdspan<double const, extents_type, stdex::layout_left, NonConvertibleReadAccessor>;
+    using mdspan_type = uni20::mdspan<double const, extents_type, uni20::layout_left, NonConvertibleReadAccessor>;
 
     NonConvertibleReadVectorView(double const* data, index_type size) : span_(data, size) {}
 

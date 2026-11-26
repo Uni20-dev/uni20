@@ -9,6 +9,8 @@
 #include <array>
 #include <concepts>
 #include <coroutine>
+#include <cstddef>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -154,19 +156,69 @@ struct AllAwaiter //: public AsyncAwaiter
 
     template <std::size_t... I> void await_suspend_impl(TaskFactory f, std::index_sequence<I...>) noexcept
     {
-      ((ready_[I] ? void() : std::get<I>(bufs_).await_suspend(f.take_next())), ...);
+      // Handing out the last claim can resume the coroutine, possibly on another thread, and it may
+      // finish and destroy the frame that holds this awaiter. Read the flags from a copy, so the
+      // fold touches the frame only while it still holds a claim.
+      auto const ready = ready_;
+      ((ready[I] ? void() : std::get<I>(bufs_).await_suspend(f.take_next())), ...);
     }
 
-    template <std::size_t I> decltype(auto) await_resume_child()
+    using result_type = std::tuple<detail::all_result_t<Aw>...>;
+
+    struct NoResult
+    {};
+    /// \brief Holds a discarded child result until the join's failure propagates. A reference
+    ///        result needs no holder.
+    template <std::size_t I>
+    using discarded_result_t = std::conditional_t<std::is_reference_v<std::tuple_element_t<I, result_type>>, NoResult,
+                                                  std::optional<std::tuple_element_t<I, result_type>>>;
+
+    template <std::size_t I> decltype(auto) await_resume_child(std::size_t& current)
     {
+      current = I;
       using awaiter_type = std::tuple_element_t<I, std::tuple<Aw...>>;
       return std::forward<awaiter_type>(std::get<I>(bufs_)).await_resume();
     }
 
-    template <std::size_t... I> auto await_resume_impl(std::index_sequence<I...>)
+    template <std::size_t... I> result_type await_resume_impl(std::index_sequence<I...> children)
     {
-      using result_type = std::tuple<detail::all_result_t<Aw>...>;
-      return result_type{this->template await_resume_child<I>()...};
+      std::size_t current = 0;
+      try
+      {
+        return result_type{this->template await_resume_child<I>(current)...};
+      }
+      catch (...)
+      {
+        this->resume_rest_and_rethrow(current, std::current_exception(), children);
+      }
+    }
+
+    /// \brief Resume the children after one that threw, then rethrow its failure.
+    /// \details A writer among them may already be active in its epoch, and a writer released
+    ///          without being resumed cancels a writer that the epoch started. Their results are kept
+    ///          until the failure propagates, so owning holders release as they would when an
+    ///          exception passes through local variables. The first failure wins.
+    template <std::size_t... I>
+    [[noreturn]] void resume_rest_and_rethrow(std::size_t failed, std::exception_ptr failure, std::index_sequence<I...>)
+    {
+      std::tuple<discarded_result_t<I>...> rest;
+      (this->template resume_discarded<I>(failed, std::get<I>(rest)), ...);
+      std::rethrow_exception(std::move(failure));
+    }
+
+    template <std::size_t I> void resume_discarded(std::size_t failed, discarded_result_t<I>& holder) noexcept
+    {
+      if (I <= failed) return;
+      std::size_t current = 0;
+      try
+      {
+        if constexpr (std::is_reference_v<std::tuple_element_t<I, result_type>>)
+          static_cast<void>(this->template await_resume_child<I>(current));
+        else
+          holder.emplace(this->template await_resume_child<I>(current));
+      }
+      catch (...)
+      {}
     }
 };
 
@@ -371,27 +423,39 @@ namespace detail
 ///
 /// \note Use this when you want to write a computed value directly into an Async<T>
 ///       in one expression. Especially useful when the WriteBuffer is a temporary.
-///       `co_await write_to(buffer, v)` is equivalent to `co_await buffer = std::move(v)`
+///       `co_await write_to(buffer, v)` waits and resumes like `co_await buffer`, then
+///       emplaces `v`. Unlike `co_await buffer = std::move(v)`, which assigns to a value
+///       that is already constructed, it destroys that value and constructs a new one.
 ///
 /// \warning The WriteBuffer must not be reused after passing to write_to. For named
 ///          buffers, prefer `write_to(buffer.transfer(), value)` to make that
 ///          ownership transfer explicit.
 template <typename T, typename Value> class WriteToAwaiter {
   public:
+    /// \brief Take the writer, leaving the buffer and its exception sink with the caller.
+    /// \details A `WriteBuffer` coroutine parameter passed as `buffer.transfer()` stays registered
+    ///          with the promise, so an exception from constructing the value still reaches its
+    ///          epoch (#169).
     WriteToAwaiter(WriteBuffer<T>&& buffer, Value&& value)
-        : buffer_(std::move(buffer)), value_(std::forward<Value>(value))
+        : writer_(std::move(buffer).operator co_await()), value_(std::forward<Value>(value))
     {
       static_assert(std::constructible_from<T, Value&&>, "Value must be constructible as T for WriteBuffer<T>");
     }
 
-    [[nodiscard]] bool await_ready() const noexcept { return buffer_.await_ready(); }
+    [[nodiscard]] bool await_ready() const noexcept { return writer_.await_ready(); }
 
-    auto await_suspend(BasicTask&& t) noexcept { return buffer_.await_suspend(std::move(t)); }
+    auto await_suspend(BasicTask&& t) noexcept { return writer_.await_suspend(std::move(t)); }
 
-    void await_resume() { buffer_.emplace_assert(std::move(value_)); }
+    /// \brief Resume as an owning `co_await` of the buffer does, then emplace the value.
+    /// \details Resuming through the awaiter's own `await_resume()` matters after a suspension:
+    ///          the epoch has already made this writer active, and only that path records it.
+    ///          Asking the epoch again, as `emplace_assert()` does, would find the writer active
+    ///          and fail. The value is emplaced, replacing a constructed value rather than
+    ///          assigning to it.
+    void await_resume() { writer_.await_resume().emplace(std::move(value_)); }
 
   private:
-    WriteBuffer<T> buffer_;
+    OwningWriteAwaiter<T> writer_;
     std::remove_reference_t<Value> value_;
 };
 } // namespace detail

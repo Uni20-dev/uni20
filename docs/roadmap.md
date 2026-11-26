@@ -42,8 +42,9 @@ The following foundations are implemented and tested.
 - Async owning reshape supports preserving, consuming, and in-place mapping
   changes. Copy, `make_tensor`, `to_host`, and `to_device` cover explicit host
   and CUDA materialization while preserving accessor semantics.
-- Canonical contiguous Tensors transfer between pageable host storage and CUDA
-  storage through explicit blocking `to_host`/`to_device` boundaries. Device
+- Tensors in any positive-strided layout transfer between pageable host storage
+  and CUDA storage through explicit blocking `to_host`/`to_device`/`copy`
+  boundaries. Device
   and peer copies retain CUDA completion in the buffer ledger, with a dedicated
   non-blocking Async CUDA-to-CUDA overload.
 

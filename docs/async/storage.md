@@ -115,6 +115,31 @@ classification and the operations that the payload actually supports:
 | mutable reshape or slice descriptor | retain alias identity and invoke an ADL-visible `assign_through(target, source)` |
 | const or conjugating descriptor | ill-formed because no matching `assign_through` exists |
 
+### Assignment through an alias
+
+Assigning a handle to the same stored descriptor leaves it unchanged.
+Write-through from a distinct descriptor holds the source reader while writing
+the destination. A parent and its aliases share one epoch queue, so this
+operation cannot obtain both leases. Uni20 diagnoses that case for its own
+`Async` handles at submission.
+
+To copy overlapping tensor data, take an owning snapshot explicitly and give
+the source the destination's extents. In this example `x` owns a matrix and
+`y` is its reshape alias. Copy-constructing the owning `Async` schedules a
+snapshot on an independent timeline. Copy-constructing an alias handle would
+keep the same descriptor and queue.
+
+```cpp
+Async<Tensor> snapshot(x);
+y = async::reshape_view(snapshot, rows, columns);
+```
+
+A fixed-rank tensor alias requires a source of the same rank. For matching
+ranks the write checks the extents when it executes. Owning `async_assign`
+can read a value and release its lease before writing. The
+[deadlock diagnostics policy](runtime_model.md#deadlock-diagnostics) describes
+when queue sharing warrants an error.
+
 Tensor aliases obtain write-through capability from `MutableTensorView`.
 `uni20::assign_through` delegates to the ordinary backend-dispatched tensor
 `copy` operation. A read-only tensor descriptor exposes a const-element mdspec,

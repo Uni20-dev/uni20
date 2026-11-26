@@ -10,11 +10,13 @@
 
 #include <atomic>
 #include <cstddef>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 namespace uni20::async
 {
@@ -25,7 +27,27 @@ enum class NodeValueState
   Invalid,       ///< No storage or fallback value is available.
   Unconstructed, ///< Storage exists but does not currently contain a value.
   Constructed,   ///< A value is currently constructed.
+  Expired,       ///< The storage has been released; only the node's identity remains.
 };
+
+/// \brief Returns a stable label for a construction state, suitable for Graphviz output.
+/// \param state Construction state.
+/// \return The label.
+[[nodiscard]] constexpr std::string_view node_value_state_label(NodeValueState state) noexcept
+{
+  switch (state)
+  {
+    case NodeValueState::Invalid:
+      return "invalid";
+    case NodeValueState::Unconstructed:
+      return "unconstructed";
+    case NodeValueState::Constructed:
+      return "constructed";
+    case NodeValueState::Expired:
+      return "expired";
+  }
+  return "invalid";
+}
 
 namespace detail
 {
@@ -163,70 +185,34 @@ template <typename T> std::string debug_value_for_value(T const& value)
 ///
 /// Each NodeInfo represents a single instance of an object participating
 /// in the dependency DAG (e.g., an Async<T>). It is assigned a unique global
-/// index at construction, and retains diagnostic addresses for the async storage
-/// and the constructed value when available.
+/// index at construction, and retains the identity of the async storage.
 ///
 /// NodeInfo objects are always heap-allocated and intentionally leaked for
 /// process-lifetime diagnostics. Each node is globally unique for the process lifetime.
+/// The node does not keep its storage alive: diagnostic history may outlive the value,
+/// and \ref observe reports such a value as expired.
 class NodeInfo {
   public:
+    class Observation;
+
     /// \brief Deleted default constructor. NodeInfo can only be constructed via \ref create.
     NodeInfo() = delete;
 
-    /// \brief Returns the raw address of the current constructed value when observable.
-    /// \return Constructed value address, or `nullptr` if the value is currently unconstructed.
-    [[nodiscard]] void const* address() const
-    {
-      return value_address_observer_ ? value_address_observer_(storage_address_) : fallback_value_address_;
-    }
-
-    /// \brief Returns the raw address of the shared storage control block.
+    /// \brief Returns the address of the shared storage control block.
+    /// \details An identity only: the block may already have been released.
     /// \return Control-block address, or `nullptr` when the node was not storage-backed.
-    [[nodiscard]] void const* storage_address() const { return storage_address_; }
+    [[nodiscard]] void const* storage_address() const { return storage_; }
 
-    /// \brief Reports the current construction state when observable.
-    /// \return Current value state for snapshot rendering.
-    [[nodiscard]] NodeValueState value_state() const noexcept
-    {
-      if (value_constructed_observer_)
-      {
-        if (!storage_address_) return NodeValueState::Invalid;
-        return value_constructed_observer_(storage_address_) ? NodeValueState::Constructed
-                                                             : NodeValueState::Unconstructed;
-      }
-      return fallback_value_address_ ? NodeValueState::Constructed : NodeValueState::Invalid;
-    }
-
-    /// \brief Returns a stable label for the current construction state.
-    /// \return State label suitable for Graphviz output.
-    [[nodiscard]] std::string_view value_state_label() const noexcept
-    {
-      switch (this->value_state())
-      {
-        case NodeValueState::Invalid:
-          return "invalid";
-        case NodeValueState::Unconstructed:
-          return "unconstructed";
-        case NodeValueState::Constructed:
-          return "constructed";
-      }
-      return "invalid";
-    }
-
-    /// \brief Reports whether the value is currently constructed when observable.
-    /// \return `true` when \ref address is non-null.
-    [[nodiscard]] bool value_constructed() const noexcept { return this->value_state() == NodeValueState::Constructed; }
-
-    /// \brief Returns type-specific display text for the current value.
-    /// \return One-line value text, such as a scalar value or `shape=(...)`, when available.
-    [[nodiscard]] std::string value_text() const
-    {
-      auto const state = this->value_state();
-      if (state != NodeValueState::Constructed) return {};
-      if (!value_text_observer_) return {};
-      auto const* context = value_constructed_observer_ ? storage_address_ : fallback_value_address_;
-      return value_text_observer_(context);
-    }
+    /// \brief Observe the node's value, keeping its storage alive while the observation exists.
+    /// \details One observation covers the construction state, the value address and the value
+    ///          text. For storage that is still owned, it holds a strong reference, taken through
+    ///          the node's anchor so that it is never taken after the last owner has gone. If the
+    ///          program drops its last owner meanwhile, the value is destroyed when the observation
+    ///          ends, on the observing thread. Storage already released is reported as
+    ///          `Expired`. A node created from a raw pointer has no lifetime guarantee, so its
+    ///          observation carries only the pointer's identity and never formats the value.
+    /// \return The observation.
+    [[nodiscard]] Observation observe() const noexcept;
 
     /// \brief Returns a human-readable, demangled type name.
     ///
@@ -267,6 +253,7 @@ class NodeInfo {
 
     /// \brief Factory method to create a NodeInfo for shared async storage.
     ///
+    /// \pre \p storage has not yet been shared with another thread, and has no node yet.
     /// \tparam T The async storage value type.
     /// \param storage Storage handle represented by this node.
     /// \return Pointer to the new NodeInfo (never deallocated).
@@ -278,25 +265,30 @@ class NodeInfo {
     }
 
   private:
-    using ValueAddressObserver = void const* (*)(void const*) noexcept;
-    using ValueConstructedObserver = bool (*)(void const*) noexcept;
-    using ValueTextObserver = std::string (*)(void const*);
+    using Block = detail::shared_storage_control_block;
+    using ReservedAddressObserver = void const* (*)(Block const*) noexcept;
+    using ValueTextObserver = std::string (*)(Block const*);
 
-    template <typename T> static std::string text_for_raw_value(void const* value)
+    template <typename T> using TypedBlock = typename shared_storage<T>::control_block;
+
+    // The address reserved for the value in the block. It is never dereferenced, so it is valid to
+    // compute while another thread constructs or destroys the value in place.
+    template <typename T> static void const* reserved_value_address(Block const* block) noexcept
     {
-      return value ? detail::debug_value_for_value(*static_cast<T const*>(value)) : std::string{};
+      return static_cast<TypedBlock<T> const*>(block)->storage;
     }
 
-    template <typename T> static std::string text_for_storage_value(void const* control)
+    template <typename T> static std::string text_for_storage_value(Block const* block)
     {
-      auto const* value = static_cast<T const*>(shared_storage<T>::diagnostic_value_address_from_control(control));
-      return value ? detail::debug_value_for_value(*value) : std::string{};
+      auto* typed = const_cast<TypedBlock<T>*>(static_cast<TypedBlock<T> const*>(block));
+      T const& value = *typed->ptr();
+      return detail::debug_value_for_value(value);
     }
 
     template <typename T>
     NodeInfo(T const* value)
-        : fallback_value_address_(static_cast<void const*>(value)), type_key_(typeid(T).name()),
-          value_text_observer_(&NodeInfo::text_for_raw_value<T>), global_index_(next_global_++)
+        : raw_value_address_(static_cast<void const*>(value)), type_key_(typeid(T).name()),
+          global_index_(next_global_++)
 #if 0 && UNI20_HAS_STACKTRACE
           ,
           stack_(std::stacktrace::current())
@@ -305,16 +297,18 @@ class NodeInfo {
 
     template <typename T>
     explicit NodeInfo(shared_storage<T> const& storage)
-        : storage_address_(storage.control_address()), fallback_value_address_(static_cast<void const*>(storage.get())),
-          type_key_(typeid(T).name()),
-          value_address_observer_(&shared_storage<T>::diagnostic_value_address_from_control),
-          value_constructed_observer_(&shared_storage<T>::diagnostic_constructed_from_control),
+        : storage_(storage.ctrl_), type_key_(typeid(T).name()),
+          reserved_address_observer_(&NodeInfo::reserved_value_address<T>),
           value_text_observer_(&NodeInfo::text_for_storage_value<T>), global_index_(next_global_++)
 #if 0 && UNI20_HAS_STACKTRACE
           ,
           stack_(std::stacktrace::current())
 #endif
-    {}
+    {
+#if UNI20_DEBUG_DAG
+      if (storage_) storage_->attach_diagnostic_anchor(&anchor_);
+#endif
+    }
 
     // global data for the map of mangled name to demangled name (protected by map_mutex_), and the global index
     inline static std::unordered_map<const char*, std::string> map_;
@@ -322,16 +316,114 @@ class NodeInfo {
     inline static std::atomic<uint64_t> next_global_ = 0;
 
     // Per-instance data:
-    void const* storage_address_{nullptr};                  ///< Address of the async storage control block.
-    void const* fallback_value_address_{nullptr};           ///< Value address used when no observer is available.
-    char const* type_key_;                                  ///< Mangled type name (from typeid).
-    ValueAddressObserver value_address_observer_{};         ///< Observer for current value address.
-    ValueConstructedObserver value_constructed_observer_{}; ///< Observer for current construction state.
-    ValueTextObserver value_text_observer_{};               ///< Observer for one-line value text.
-    uint64_t global_index_;                                 ///< Globally unique node index.
+    Block* storage_{nullptr};                ///< Storage control block; may have been released.
+    void const* raw_value_address_{nullptr}; ///< Identity of the value of a raw-pointer node.
+    char const* type_key_;                   ///< Mangled type name (from typeid).
+    // Read only by observe() in DAG builds, the only ones that can pin the storage.
+    [[maybe_unused]] ReservedAddressObserver reserved_address_observer_{}; ///< Value address reserved in the block.
+    ValueTextObserver value_text_observer_{};                              ///< One-line text of a live value.
+    uint64_t global_index_;                                                ///< Globally unique node index.
+    mutable detail::StorageObservationAnchor anchor_; ///< Retired by the final release of storage_.
 #if 0 && UNI20_HAS_STACKTRACE
     std::stacktrace stack_; ///< stacktrace of where the node was constructed
 #endif
 };
+
+/// \brief One observation of a debug DAG node's value; see \ref NodeInfo::observe.
+/// \details Holds a strong reference to the value's storage, if it was still owned, until the
+///          observation is destroyed. The state and address are read once, when the observation
+///          is made.
+class NodeInfo::Observation {
+  public:
+    Observation(Observation&& other) noexcept
+        : node_(other.node_), pinned_(std::exchange(other.pinned_, nullptr)), state_(other.state_),
+          address_(other.address_)
+    {}
+    Observation(Observation const&) = delete;
+    Observation& operator=(Observation const&) = delete;
+    Observation& operator=(Observation&&) = delete;
+
+    ~Observation()
+    {
+      if (pinned_) pinned_->release_ref();
+    }
+
+    /// \brief Construction state when the observation was made.
+    [[nodiscard]] NodeValueState state() const noexcept { return state_; }
+
+    /// \brief The value's address when the observation was made.
+    /// \details For storage, the address reserved for a constructed value in the block; for a raw-pointer
+    ///          node, the pointer it was created from. Only an identity: it is not dereferenced here.
+    /// \return The address, or `nullptr` when no value was constructed or the storage had expired.
+    [[nodiscard]] void const* address() const noexcept { return address_; }
+
+    /// \brief Returns type-specific display text for the value.
+    /// \details Calls the value's formatter, such as a custom `uni20_async_debug_value` hook. If
+    ///          formatting throws, the text says so instead. Diagnostics are best effort: a dump
+    ///          written by the diagnostics service or at a scheduler progress point must not end
+    ///          the program, and the rest of the dump is still useful.
+    /// \pre No writer modifies or destroys the value during the call.
+    /// \return One-line text, such as a scalar value or `shape=(...)`. Empty when the value was not
+    ///         constructed, its storage had expired, the node was created from a raw pointer, or
+    ///         the type has no useful display.
+    [[nodiscard]] std::string value_text() const
+    {
+      if (!pinned_ || state_ != NodeValueState::Constructed) return {};
+      try
+      {
+        return node_->value_text_observer_(pinned_);
+      }
+      catch (std::exception const& e)
+      {
+        return detail::sanitize_debug_value(std::string("(debug value threw: ") + e.what() + ")");
+      }
+      catch (...)
+      {
+        return "(debug value threw)";
+      }
+    }
+
+  private:
+    friend class NodeInfo;
+
+    explicit Observation(NodeInfo const* node) noexcept : node_(node) {}
+
+    NodeInfo const* node_;
+    Block* pinned_{nullptr};
+    NodeValueState state_{NodeValueState::Invalid};
+    void const* address_{nullptr};
+};
+
+inline NodeInfo::Observation NodeInfo::observe() const noexcept
+{
+  Observation observation(this);
+  if (!storage_)
+  {
+    observation.state_ = raw_value_address_ ? NodeValueState::Constructed : NodeValueState::Invalid;
+    observation.address_ = raw_value_address_;
+    return observation;
+  }
+#if UNI20_DEBUG_DAG
+  if (!detail::try_pin_observed_block(anchor_, storage_))
+  {
+    observation.state_ = NodeValueState::Expired;
+    return observation;
+  }
+  observation.pinned_ = storage_;
+  if (storage_->constructed())
+  {
+    observation.state_ = NodeValueState::Constructed;
+    observation.address_ = reserved_address_observer_(storage_);
+  }
+  else
+  {
+    observation.state_ = NodeValueState::Unconstructed;
+  }
+#else
+  // Without the DAG build, nothing retires an anchor, so the storage cannot be pinned safely.
+  observation.state_ = NodeValueState::Invalid;
+#endif
+  return observation;
+}
 
 } // namespace uni20::async

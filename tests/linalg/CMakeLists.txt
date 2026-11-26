@@ -1,3 +1,5 @@
+add_test_module(contraction_precision SOURCES test_contraction_precision.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+
 if(UNI20_HAS_MPREAL)
   add_test_module(cpu_runtime_lu SOURCES test_cpu_runtime_lu.cpp LIBS uni20_linalg uni20_async TBB::tbb)
 endif()
@@ -95,6 +97,7 @@ if(TARGET uni20_backend_cuda)
       test_cuda_block_tensor.cpp
       test_cuda_conjugate_inplace.cpp
       test_cuda_copy.cpp
+      test_cuda_reductions.cpp
       test_cuda_transform.cpp
     LIBS uni20_linalg uni20_async uni20_backend_cuda uni20_symmetry TBB::tbb
   )
@@ -102,5 +105,12 @@ if(TARGET uni20_backend_cuda)
   set_target_properties(uni20_linalg_cuda_tests PROPERTIES
     CUDA_STANDARD 20
     CUDA_STANDARD_REQUIRED ON
+  )
+
+  # User copy-selector overrides change selection for every TU that sees them,
+  # so they get their own executable.
+  add_test_module(linalg_cuda_copy_override
+    SOURCES test_cuda_copy_override.cpp
+    LIBS uni20_linalg uni20_async uni20_backend_cuda TBB::tbb
   )
 endif()

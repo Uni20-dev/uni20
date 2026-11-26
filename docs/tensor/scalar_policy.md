@@ -39,6 +39,11 @@ explicit bulk conversion. Fixed-precision storage and views have no correspondin
 runtime state. See [tensor construction defaults](mpreal.md#tensor-construction-defaults)
 for output allocation and view metadata semantics.
 
+Dense `permute<Axes...>` views carry the same live default binding through
+copied and nested descriptors. Their default cannot be set independently;
+`Tensor(view)` creates an owner with the current source default. Permuting
+indices never changes the precision of stored values.
+
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
 `src/uni20/core/scalar_traits.hpp` and `src/uni20/core/scalar_concepts.hpp`.
@@ -75,14 +80,25 @@ following their parent's default. Host tensor constructors and
 `at_precision(tensor, p)` accept precision for fixed types too, validating the
 match before allocation or copying.
 
-The matrix-product, GEMM, square-solve, LU, log-determinant, QR/LQ, self-adjoint
+The matrix-product, GEMM, pairwise-contraction, square-solve, LU, log-determinant, QR/LQ, self-adjoint
 and general eigensystem, SVD and truncated-SVD interfaces accept
 the same explicit precision argument for native and runtime scalars. Omitting it
 selects precision from participating tensor defaults; exact defaults are neutral,
 and different finite defaults require an override. An explicit request fixes the
 result precision: native results must match their type, while runtime conversion
 happens inside the backend. Approximation-only operations require finite precision.
-Async operations infer defaults after awaiting their readable inputs.
+Dense async operations infer defaults after awaiting their readable inputs.
+
+BlockTensor pairwise contractions resolve one operation precision from the
+logical input defaults and pass it to every dense contribution. Async block
+contractions capture this logical metadata at submission; numerical leaf
+values still follow their scheduled epochs. Host block
+constructors accept a trailing `Precision`; block and mapped views retain the
+ultimate owner's live default without an independent setter. Fixed scalar
+promotion is separate from runtime default selection: a `float`/`double` block
+product produces `double` and uses its native precision. Differing finite
+runtime defaults still require an explicit override. See
+[BlockTensor precision](../symmetry/block_tensor_prototype.md#working-precision).
 
 [LU refinement](../linalg/lu_refinement.md) explicitly separates factor, working
 and residual scalar/precision roles. Each fixed role still requires its native
@@ -274,9 +290,22 @@ unsupported requests, rather than silently narrowing. Native fp80 availability
 does not extend the supported precisions of the projected LAPACK-based Krylov
 solvers or DMRG.
 
-Reference sums and inner products use compensated accumulation in the input
-scalar field. Norms use scaled sum-of-squares arithmetic in the associated real
-field. Algorithms must choose their numerical accumulation method explicitly;
+CPU reference sums and inner products use compensated accumulation in the input
+scalar field. CPU reference norms use scaled sum-of-squares arithmetic in the
+associated real field.
+
+CUDA reference `sum_host` uses Neumaier compensation for each real and
+imaginary component. Each thread accumulates in `double`, and the fixed
+reduction tree carries the corrections through the final merge. The result
+is converted to the output type after adding the correction. CPU and CUDA
+can round differently because their accumulation order and, for single-precision
+inputs, their accumulator precision differ. Intermediate sums can still overflow.
+
+CUDA reference `inner_product_host` combines its partials with ordinary
+double-precision addition. cuBLAS inner products follow the provider's
+accumulation policy.
+
+Algorithms must choose their numerical accumulation method explicitly;
 Uni20 does not define a universal "next wider" scalar because no such type
 exists for the widest configured precision, and silent promotion would make
 result and performance behavior depend on the input dtype. Integer sums are not

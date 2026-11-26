@@ -122,7 +122,7 @@ TEST(TensorGeneratedTest, MakeTensorAcceptsExplicitGeneratedDestinationLayout)
 
 TEST(TensorGeneratedTest, DefaultMaterializationTraversesColumnMajorDestinationOrder)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 2>;
+  using extents_type = uni20::dextents<uni20::index_type, 2>;
   std::vector<std::array<uni20::index_type, 2>> visits;
   uni20::GeneratedTensor<int, extents_type, RecordingGenerator> generated(extents_type{2, 3},
                                                                           RecordingGenerator{&visits});

@@ -37,8 +37,12 @@ kernels operate on resolved mdspans.
   [`linalg/async/`](../linalg/async/).
 - `concepts.hpp`: tensor views and their immediate, mutable, owning, strided,
   and rank-constrained refinements.
+- `precision_source.hpp`: borrowed live defaults for descriptor and block views.
 - `output.hpp`: fixed-output validation and resizable-output shape preparation.
 - `reshape.hpp`: explicit no-copy, in-place, and owning reshape operations.
+- `permute.hpp`: borrowed strided axis permutations that return
+  `MdspecTensorView`; prefer `Tensor(view)` for an owning permutation.
+- `precision_source.hpp`: live precision bindings retained by copied descriptors.
 - `shape.hpp`: checked runtime-extents construction shared by tensor factories.
 - `layout.hpp`: layout construction helpers.
 

@@ -47,9 +47,8 @@ AI guidance never overrides the named repository snapshot.
 - Uni20 is in active design. Prefer the clearest correct API over compatibility
   shims for unfinished in-tree interfaces unless compatibility is explicitly
   requested.
-- Use the Kokkos reference mdspan implementation in namespace `stdex::`, with
-  square-bracket multidimensional indexing. Do not enable
-  `MDSPAN_USE_PAREN_OPERATOR`.
+- Use Uni20’s native mdspan and layout types with square-bracket multidimensional
+  indexing. Import standard mdspans explicitly with `uni20::mdspan{view}`.
 - Spell project complex scalars as `uni20::complex<T>` and use
   `uni20::numeric_limits<T>` in scalar-generic Uni20 algorithms.
 - Async coroutine lambdas must be captureless and `static`; pass state as

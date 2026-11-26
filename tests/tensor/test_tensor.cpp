@@ -21,10 +21,16 @@ namespace
 {
 
 using index_t = index_type;
-using extents_2d = stdex::dextents<index_t, 2>;
+using extents_2d = uni20::dextents<index_t, 2>;
 using tensor_type = Tensor<int, 2, HostStorage>;
 using strided_tensor_type = StridedTensor<int, 2, HostStorage>;
 using scalar_tensor_type = ScalarTensor<double>;
+
+template <class Layout>
+concept SupportsOwningLayout = requires { typename Tensor<int, 2, HostStorage, Layout>; };
+
+static_assert(SupportsOwningLayout<layout_stride>);
+static_assert(!SupportsOwningLayout<layout_signed_stride>);
 
 static_assert(!HostStorage::storage_t<double>::initializes_elements);
 static_assert(!HostStorage::storage_t<uni20::complex<double>>::initializes_elements);
@@ -106,6 +112,7 @@ struct ReadOnlyImmediateStorage
 template <typename ElementType> struct PassthroughAccessor
 {
     using offset_policy = PassthroughAccessor;
+    using offset_type = std::size_t;
     using element_type = ElementType;
     using reference = element_type&;
     using data_handle_type = element_type*;
@@ -136,8 +143,8 @@ class StorageFreeTensorView {
   public:
     using storage_policy = HostStorage;
     using extents_type = extents_2d;
-    using mutable_mdspan_type = stdex::mdspan<int, extents_type>;
-    using const_mdspan_type = stdex::mdspan<int const, extents_type>;
+    using mutable_mdspan_type = uni20::mdspan<int, extents_type>;
+    using const_mdspan_type = uni20::mdspan<int const, extents_type>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
     StorageFreeTensorView(int* data, extents_type extents) : data_(data), extents_(extents) {}
@@ -170,9 +177,9 @@ struct PolicyFreeTensorView
       return backend_selector_type{linalg::CpuReferenceBackend{}};
     }
 
-    [[nodiscard]] auto mdspan() const noexcept -> stdex::mdspan<int const, extents_2d>
+    [[nodiscard]] auto mdspan() const noexcept -> uni20::mdspan<int const, extents_2d>
     {
-      return stdex::mdspan<int const, extents_2d>{data_, extents_};
+      return uni20::mdspan<int const, extents_2d>{data_, extents_};
     }
 
     [[nodiscard]] auto extents() const noexcept -> extents_2d const& { return extents_; }
@@ -200,9 +207,9 @@ struct HostPolicyTensorView : PolicyFreeTensorView
 struct MismatchedMutableRankTensorView
 {
     using storage_policy = HostStorage;
-    using const_mdspan_type = stdex::mdspan<int const, extents_2d>;
-    using mutable_extents_type = stdex::dextents<index_t, 1>;
-    using mutable_mdspan_type = stdex::mdspan<int, mutable_extents_type>;
+    using const_mdspan_type = uni20::mdspan<int const, extents_2d>;
+    using mutable_extents_type = uni20::dextents<index_t, 1>;
+    using mutable_mdspan_type = uni20::mdspan<int, mutable_extents_type>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
     [[nodiscard]] static auto backend_selector() noexcept -> backend_selector_type
@@ -234,7 +241,7 @@ struct MetadataDescriptor
 class DeferredStridedTensorView {
   public:
     using storage_policy = HostStorage;
-    using mdspan_type = uni20::mdspec<int const, extents_2d, stdex::layout_stride, stdex::default_accessor<int const>,
+    using mdspan_type = uni20::mdspec<int const, extents_2d, uni20::layout_stride, uni20::default_accessor<int const>,
                                       MetadataDescriptor>;
     using backend_selector_type = linalg::backend_list<linalg::CpuReferenceBackend>;
 
@@ -315,6 +322,7 @@ class ThrowingMoveTensorAccessState {
 struct ThrowingMoveAccessor
 {
     using offset_policy = ThrowingMoveAccessor;
+    using offset_type = std::size_t;
     using element_type = int const;
     using reference = element_type&;
     using data_handle_type = element_type*;
@@ -334,14 +342,14 @@ struct ThrowingMoveAccessor
     }
 };
 
-using throwing_move_mdspan = stdex::mdspan<int const, extents_2d, stdex::layout_left, ThrowingMoveAccessor>;
+using throwing_move_mdspan = uni20::mdspan<int const, extents_2d, uni20::layout_left, ThrowingMoveAccessor>;
 
 template <class Mdspan, class AccessState>
 concept CanFormReadMdspanLease = requires { typename read_mdspan_lease<Mdspan, AccessState>; };
 
 using access_test_selector = linalg::backend_list<linalg::CpuReferenceBackend>;
-using access_test_mutable_mdspan = stdex::mdspan<int, extents_2d>;
-using access_test_const_mdspan = stdex::mdspan<int const, extents_2d>;
+using access_test_mutable_mdspan = uni20::mdspan<int, extents_2d>;
+using access_test_const_mdspan = uni20::mdspan<int const, extents_2d>;
 using instrumented_read_mdspan_lease = read_mdspan_lease<access_test_const_mdspan, InstrumentedTensorAccessState>;
 using instrumented_write_mdspan_lease = write_mdspan_lease<access_test_mutable_mdspan, InstrumentedTensorAccessState>;
 using instrumented_read_tensor_lease =
@@ -353,6 +361,16 @@ using instrumented_write_tensor_lease =
 using immediate_and_descriptor_tensor = Tensor<int, 2, ImmediateAndDescriptorStorage>;
 using read_only_tensor = Tensor<int, 2, ReadOnlyImmediateStorage>;
 using semantic_accessor_tensor = Tensor<int, 2, HostStorage, ColumnMajor, PassthroughAccessorFactory>;
+
+TEST(TensorTest, CustomAccessorResolvesWritableAndReadOnlySpans)
+{
+  semantic_accessor_tensor tensor(2, 2);
+  tensor.mdspan()[1, 0] = 7;
+  auto read_only = std::as_const(tensor).mdspan();
+  static_assert(!MutableMdspanLike<decltype(read_only)>);
+  EXPECT_EQ((read_only[1, 0]), 7);
+  EXPECT_EQ((tensor[1, 0]), 7);
+}
 
 using read_lease_type = decltype(acquire_host_read_access_sync(std::declval<tensor_type const&>()));
 using write_lease_type = decltype(acquire_host_write_access_sync(std::declval<tensor_type&>()));
@@ -380,7 +398,7 @@ concept CanBorrowReadFromRvalue = requires(T&& value) { acquire_host_read_access
 static_assert(std::same_as<tensor_type, BasicTensor<int, extents_2d, HostStorage, ColumnMajor>>);
 static_assert(std::same_as<tensor_type, ColumnMajorTensor<int, 2>>);
 static_assert(std::same_as<RowMajorTensor<int, 2>, Tensor<int, 2, HostStorage, RowMajor>>);
-static_assert(std::same_as<strided_tensor_type, Tensor<int, 2, HostStorage, stdex::layout_stride>>);
+static_assert(std::same_as<strided_tensor_type, Tensor<int, 2, HostStorage, uni20::layout_stride>>);
 static_assert(!std::constructible_from<tensor_type, extents_2d const&, std::array<index_t, 2> const&>);
 static_assert(std::constructible_from<strided_tensor_type, extents_2d const&, std::array<index_t, 2> const&>);
 static_assert(HasMutableData<tensor_type>);
@@ -507,7 +525,7 @@ static_assert(StridedTensorView<DeferredStridedTensorView>);
 static_assert(!ImmediateTensorView<DeferredStridedTensorView>);
 
 using row_major_matrix = DenseMatrix<int, RowMajor>;
-using strided_matrix = typename row_major_matrix::template rebind_layout_type<stdex::layout_stride>;
+using strided_matrix = typename row_major_matrix::template rebind_layout_type<uni20::layout_stride>;
 static_assert(std::same_as<strided_matrix, StridedTensor<int, 2>>);
 
 template <typename Span>
@@ -707,9 +725,15 @@ TEST(TensorTest, ScalarTensorAllocatesItsSoleElement)
   EXPECT_DOUBLE_EQ(const_scalar[], 3.5);
 }
 
+TEST(TensorTest, ZeroExtentHasNoLogicalElements)
+{
+  DenseMatrix<int> empty(3, 0);
+  EXPECT_EQ(empty.size(), 0);
+}
+
 TEST(BasicTensorTest, SupportsStaticMdspanExtents)
 {
-  using fixed_extents = stdex::extents<index_t, 2, 3>;
+  using fixed_extents = uni20::extents<index_t, 2, 3>;
   BasicTensor<int, fixed_extents> tensor(fixed_extents{});
 
   static_assert(decltype(tensor)::rank() == 2);
@@ -746,6 +770,7 @@ TEST(TensorTest, CustomStridesAllocateFullSpan)
 
   EXPECT_EQ(tensor.mapping().stride(0), strides[0]);
   EXPECT_EQ(tensor.mapping().stride(1), strides[1]);
+  EXPECT_EQ(tensor.size(), 4);
   EXPECT_EQ(tensor.mapping().required_span_size(), 5);
   EXPECT_EQ(tensor.storage().size(), 5u);
 
@@ -777,7 +802,8 @@ TEST(TensorTest, AdoptedStorageMayRetainPaddingAndUnusedTail)
 
   EXPECT_EQ(tensor.mutable_handle(), original_storage);
   EXPECT_EQ(tensor.storage().size(), 8u);
-  EXPECT_EQ(tensor.size(), 5);
+  EXPECT_EQ(tensor.mapping().required_span_size(), 5);
+  EXPECT_EQ(tensor.size(), 4);
   EXPECT_EQ((tensor[0, 0]), 10);
   EXPECT_EQ((tensor[1, 0]), 11);
   EXPECT_EQ((tensor[0, 1]), 12);

@@ -30,7 +30,7 @@ template <std::integral... Extents> [[nodiscard]] auto make_tensor_extents(Exten
 {
   ERROR_IF(!(tensor_extent_is_valid(extents) && ...),
            "tensor extents must be nonnegative and representable by uni20::index_type");
-  using extents_type = stdex::dextents<index_type, sizeof...(Extents)>;
+  using extents_type = uni20::dextents<index_type, sizeof...(Extents)>;
   return extents_type{static_cast<index_type>(extents)...};
 }
 
@@ -111,7 +111,7 @@ template <std::integral... Extents>
     ERROR_IF(known_size != source_size, "reshape source and destination element counts differ");
   }
 
-  using extents_type = stdex::dextents<index_type, rank>;
+  using extents_type = uni20::dextents<index_type, rank>;
   return [&]<std::size_t... Axis>(std::index_sequence<Axis...>) {
     return extents_type{values[Axis]...};
   }(std::make_index_sequence<rank>{});
@@ -124,7 +124,7 @@ template <class TargetExtents, class SourceExtents>
   for (std::size_t axis = 0; axis < TargetExtents::rank(); ++axis)
   {
     auto const fixed_extent = TargetExtents::static_extent(axis);
-    ERROR_IF(fixed_extent != stdex::dynamic_extent && static_cast<std::size_t>(source.extent(axis)) != fixed_extent,
+    ERROR_IF(fixed_extent != uni20::dynamic_extent && static_cast<std::size_t>(source.extent(axis)) != fixed_extent,
              "reshape extent does not match the tensor's static extent");
   }
 

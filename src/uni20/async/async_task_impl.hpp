@@ -110,9 +110,9 @@ inline void BasicTask::set_cancel_on_resume() noexcept
   handle_.promise().set_cancel_on_resume();
 }
 
-inline void BasicTask::exception_on_resume(std::exception_ptr error) noexcept
+inline void BasicTask::note_upstream_failure(std::exception_ptr error) noexcept
 {
-  handle_.promise().set_exception(error);
+  handle_.promise().note_upstream_failure(std::move(error));
 }
 
 inline BasicTask& BasicTask::operator=(BasicTask&& other) noexcept

@@ -16,6 +16,7 @@
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/mdspan/iteration_plan.hpp>
 #include <uni20/storage/cuda_storage.hpp>
+#include <uni20/tensor/cuda_access.hpp>
 
 #include <array>
 #include <concepts>
@@ -38,6 +39,8 @@ template <class OutputMdspec, class... InputMdspecs>
 concept RawCudaOverwriteMdspecs =
     uni20::MutableMdspecLike<OutputMdspec> && (uni20::MdspecLike<InputMdspecs> && ...) &&
     is_raw_mutable_cuda_mdspec<OutputMdspec> && (is_raw_const_cuda_mdspec<InputMdspecs> && ...) &&
+    uni20::detail::StorageSpanMapping<typename std::remove_cvref_t<OutputMdspec>::mapping_type> &&
+    (uni20::detail::StorageSpanMapping<typename std::remove_cvref_t<InputMdspecs>::mapping_type> && ...) &&
     ((std::remove_cvref_t<OutputMdspec>::rank() == std::remove_cvref_t<InputMdspecs>::rank()) && ...) &&
     (std::same_as<transform_scalar_t<OutputMdspec>, transform_scalar_t<InputMdspecs>> && ...) &&
     (std::remove_cvref_t<OutputMdspec>::rank() == 0 ||
@@ -89,8 +92,6 @@ template <class Scalar, std::size_t InputCount, std::size_t MaximumRank> struct 
     std::array<uni20::cuda::CudaBuffer<Scalar> const*, InputCount> input_buffers{};
     std::size_t output_offset = 0;
     std::array<std::size_t, InputCount> input_offsets{};
-    std::size_t output_span_size = 0;
-    std::array<std::size_t, InputCount> input_span_sizes{};
     LoweredStridedElementwisePlan<InputCount + 1, MaximumRank> elementwise_plan;
     bool has_work = false;
 };
@@ -188,14 +189,11 @@ template <class Plan, class OutputMdspec, class... InputMdspecs>
     plan.attempt = KernelAttempt::unsupported_shape;
     return plan;
   }
-  plan.output_span_size = *output_span_size;
-
   auto output_descriptor = output.data_descriptor();
   plan.output_buffer = std::addressof(output_descriptor.buffer());
   plan.output_offset = output_descriptor.element_offset();
-  CHECK(plan.output_offset <= plan.output_buffer->size() &&
-            plan.output_span_size <= plan.output_buffer->size() - plan.output_offset,
-        plan.output_offset, plan.output_span_size, plan.output_buffer->size());
+  uni20::detail::validate_cuda_mapping_range(output.mapping(), *output_span_size, plan.output_offset,
+                                             plan.output_buffer->size());
 
   if constexpr (sizeof...(InputMdspecs) > 0)
   {
@@ -207,12 +205,11 @@ template <class Plan, class OutputMdspec, class... InputMdspecs>
       auto input_descriptor = input.data_descriptor();
       auto const* input_buffer = std::addressof(input_descriptor.buffer());
       auto const input_offset = input_descriptor.element_offset();
-      CHECK(input_offset <= input_buffer->size() && *input_span_size <= input_buffer->size() - input_offset,
-            input_offset, *input_span_size, input_buffer->size());
+      uni20::detail::validate_cuda_mapping_range(input.mapping(), *input_span_size, input_offset,
+                                                 input_buffer->size());
 
       plan.input_buffers[input_index] = input_buffer;
       plan.input_offsets[input_index] = input_offset;
-      plan.input_span_sizes[input_index] = *input_span_size;
       ++input_index;
       return true;
     };

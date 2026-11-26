@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -83,6 +84,114 @@ struct RefQualifiedResultAwaiter
       return value;
     }
 };
+
+// Resumes a task as soon as it is rescheduled, so a coroutine can finish inside the
+// await_suspend() that released its last claim.
+class InlineScheduler final : public IAsyncScheduler {
+  public:
+    void schedule_host(BasicTask&& task) override
+    {
+      if (task.set_scheduler(this)) task.resume();
+    }
+
+    void pause() override {}
+    void resume() override {}
+
+  private:
+    bool accepts_route(TaskRoute route) const noexcept override
+    {
+      return route.domain == TaskDomain::host && !route.cuda_device;
+    }
+
+    bool can_direct_transfer(TaskHandle, TaskHandle) const noexcept override { return false; }
+    void reschedule(BasicTask&& task) override { task.resume(); }
+};
+
+class ZeroedFramePromise;
+class ZeroedFrameTask final : public BasicTask {
+  public:
+    using promise_type = ZeroedFramePromise;
+    ZeroedFrameTask(ZeroedFrameTask&&) = default;
+
+  private:
+    explicit ZeroedFrameTask(TaskHandle handle) : BasicTask(handle, construction_key{}) {}
+    friend ZeroedFramePromise;
+};
+
+// Zeroes the frame when it is freed, so a read of a destroyed frame sees cleared flags. The stores
+// go through a volatile pointer because a compiler may drop a memset before a deallocation.
+class ZeroedFramePromise final : public TaskPromiseBase {
+  public:
+    static constexpr TaskDomain task_domain = TaskDomain::host;
+    template <class... Args> explicit ZeroedFramePromise(Args&... args) : TaskPromiseBase(args...) {}
+
+    ZeroedFrameTask get_return_object() noexcept
+    {
+      return ZeroedFrameTask(this->initialize_task(std::coroutine_handle<ZeroedFramePromise>::from_promise(*this)));
+    }
+
+    static void* operator new(std::size_t size) { return ::operator new(size); }
+
+    static void operator delete(void* frame, std::size_t size) noexcept
+    {
+      auto* bytes = static_cast<unsigned char volatile*>(frame);
+      for (std::size_t i = 0; i < size; ++i)
+        bytes[i] = 0;
+      ::operator delete(frame, size);
+    }
+};
+
+// Releases its claim through the scheduler, which resumes the coroutine at once.
+struct ResumesAtOnce
+{
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
+    void await_suspend(BasicTask task) noexcept { BasicTask::reschedule(std::move(task)); }
+    [[nodiscard]] int await_resume() const noexcept { return 1; }
+};
+
+int ready_child_suspends = 0;
+
+// Ready at once, so all(...) must never suspend on it.
+struct AlreadyReady
+{
+    [[nodiscard]] bool await_ready() const noexcept { return true; }
+
+    void await_suspend(BasicTask task) noexcept
+    {
+      ++ready_child_suspends;
+      static_cast<void>(task.release_handle());
+    }
+
+    [[nodiscard]] int await_resume() const noexcept { return 2; }
+};
+
+int resumptions = 0;
+
+// Ready at once, and counts its resumptions.
+struct CountsResumption
+{
+    [[nodiscard]] bool await_ready() const noexcept { return true; }
+    void await_suspend(BasicTask) const noexcept {}
+
+    [[nodiscard]] int await_resume() const noexcept
+    {
+      ++resumptions;
+      return 3;
+    }
+};
+
+AsyncTask fail_writer(WriteBuffer<int> writer)
+{
+  static_cast<void>(writer);
+  throw std::runtime_error("producer failure");
+  co_return;
+}
+
+ZeroedFrameTask join_child_that_resumes_at_once(int& sum)
+{
+  auto [a, b] = co_await all(ResumesAtOnce{}, AlreadyReady{});
+  sum = a + b;
+}
 
 } // namespace
 
@@ -424,6 +533,75 @@ TEST(AsyncAwaitersTest, AllAwaiterNoneBlocked)
   sched.schedule(std::move(task));
   sched.run_all();
   EXPECT_EQ(count, 3);
+}
+
+// all(...) resumes the children after one that throws, and then rethrows the first failure.
+TEST(AsyncAwaitersTest, AllAwaiterResumesEveryChildAfterOneThrows)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> failed = 0;
+  schedule(fail_writer(failed.write()));
+  sched.run_all();
+  resumptions = 0;
+  bool caught = false;
+  schedule([](ReadBuffer<int> reader, bool& caught) static -> AsyncTask {
+    try
+    {
+      static_cast<void>(co_await all(reader, CountsResumption{}));
+    }
+    catch (std::runtime_error const&)
+    {
+      caught = true;
+    }
+  }(failed.read(), caught));
+  sched.run_all();
+  EXPECT_TRUE(caught);
+  EXPECT_EQ(resumptions, 1);
+}
+
+// A writer that the join waited for is acquired even when an earlier child throws. Released
+// unacquired, it would cancel a writer its epoch had already started, which Debug builds reject
+// with DEBUG_CHECK(!writer_active_). The epoch must still let a later writer run.
+TEST(AsyncAwaitersTest, AllAwaiterAcquiresAWaitingWriterAfterAnEarlierChildThrows)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> failed = 0;
+  Async<int> out = 0;
+  schedule(fail_writer(failed.write()));
+  sched.run_all();
+  auto first_writer = [](WriteBuffer<int> w) static -> AsyncTask { co_await w = 5; }(out.write());
+  schedule([](ReadBuffer<int> reader, WriteBuffer<int> writer) static -> AsyncTask {
+    auto [value, proxy] = co_await all(reader, writer);
+    proxy = value;
+  }(failed.read(), out.write()));
+  sched.run_all(); // the join waits for the first writer
+  schedule(std::move(first_writer));
+  sched.run_all();
+  EXPECT_THROW((void)out.get_wait(), std::runtime_error);
+
+  bool wrote = false;
+  schedule([](WriteBuffer<int> w, bool& wrote) static -> AsyncTask {
+    co_await w = 7;
+    wrote = true;
+  }(out.write(), wrote));
+  sched.run_all();
+  EXPECT_TRUE(wrote);
+}
+
+// The last pending child of all(...) can resume the coroutine before await_suspend() returns, and
+// the coroutine can finish and free its frame. A ready child after it must not be suspended on
+// because its flag in the freed frame no longer reads as ready.
+TEST(AsyncAwaitersTest, AllAwaiterLeavesTheFrameAloneAfterTheLastClaim)
+{
+  InlineScheduler scheduler;
+  IAsyncScheduler& interface = scheduler;
+  int sum = 0;
+  ready_child_suspends = 0;
+  interface.schedule(join_child_that_resumes_at_once(sum));
+  EXPECT_EQ(sum, 3);
+  EXPECT_EQ(ready_child_suspends, 0);
 }
 
 TEST(AsyncAwaitersTest, BufferAwaitersSupportRepeatedCoAwait)
@@ -1060,4 +1238,19 @@ TEST(AsyncAwaitersTest, TransferWriteStorageKeepsRefcountStableDuringOwnershipTr
   EXPECT_EQ(count_during, count_before);
   EXPECT_EQ(count_after, 1u);
   EXPECT_EQ(value.get_wait(), 13);
+}
+
+TEST(AsyncAwaitersTest, TransferredStorageUnwindPropagatesToItsWriterParameter)
+{
+  struct Failure
+  {};
+  DebugScheduler scheduler;
+  ScopedScheduler scoped(&scheduler);
+  Async<int> value = 4;
+  schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+    auto storage = co_await writer.transfer().storage();
+    (void)storage;
+    throw Failure{};
+  }(value.write()));
+  EXPECT_THROW((void)value.get_wait(), Failure);
 }

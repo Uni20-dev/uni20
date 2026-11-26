@@ -179,7 +179,9 @@ the operation is valid in either storage state.
 For more specific requirements, use an explicit operation:
 
 - `proxy.emplace(args...)` always reconstructs inside the current storage and queue
-- `proxy.get() = rhs` requires an existing value and uses its assignment operator
+- `proxy.get() = rhs` requires an existing value and uses its assignment operator.
+  Like every in-place access, it rethrows a failure the epoch inherited from a
+  failed producer, while `proxy = rhs` overwrites without looking.
 
 Direct assignment to an independent `Async<T>` handle creates a fresh timeline.
 For an async alias, assignment is available only when ADL finds a matching
@@ -287,7 +289,11 @@ Buffers can register exception sinks with the current coroutine promise.
 - `WriteBuffer` coroutine parameters are auto-registered as sinks
 - explicit registration is available via `propagate_exceptions_to(...)`
 
-This is how unhandled exceptions are forwarded to downstream epochs.
+This is how unhandled exceptions are forwarded to downstream epochs. A
+parameter stays registered when an owning `co_await` or `write_to` takes its
+writer. The "Owning writers" section of
+[exceptions and cancellation](exceptions_and_cancellation.md) describes when the
+failure arrives.
 
 ## Helper Awaiters (awaiters.hpp)
 
@@ -295,7 +301,7 @@ This is how unhandled exceptions are forwarded to downstream epochs.
 |---|---|
 | `all(a, b, ...)` | await all inputs and return tuple of results |
 | `try_await(x)` | non-blocking readiness probe |
-| `write_to(writer.transfer(), value)` | concise deferred write helper |
+| `write_to(writer.transfer(), value)` | concise deferred write helper; emplaces `value`, replacing a constructed value instead of assigning to it |
 
 `try_await(...)` never suspends. It probes the child awaiter's readiness once:
 an unavailable child produces an empty `optional`, while an available child

@@ -10,6 +10,7 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -72,7 +73,6 @@ class TaskRegistry {
         int signal_number{0};
         std::string request_file{};
         int poll_interval_ms{250};
-        bool block_signal_in_calling_thread{true};
     };
 
     /// \brief Runtime controls for stacktrace formatting mirrored from the debug registry.
@@ -150,11 +150,14 @@ class TaskRegistry {
       static_cast<void>(label);
     }
     /// \brief No-op epoch-context registration hook.
-    /// \param epoch_context Epoch context pointer ignored in dummy mode.
-    static constexpr void register_epoch_context(async::EpochContext const* epoch_context) noexcept
+    /// \param epoch_context Epoch context ignored in dummy mode.
+    static constexpr void register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context) noexcept
     {
       static_cast<void>(epoch_context);
     }
+    /// \brief Reports whether a snapshot is running; none can in dummy mode.
+    /// \return `false`.
+    static constexpr bool snapshots_in_progress() noexcept { return false; }
     /// \brief No-op epoch-context destruction hook.
     /// \param epoch_context Epoch context pointer ignored in dummy mode.
     static constexpr void destroy_epoch_context(async::EpochContext const* epoch_context) noexcept

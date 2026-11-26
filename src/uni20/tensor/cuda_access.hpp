@@ -12,6 +12,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -39,16 +40,59 @@ template <class Pointer> [[nodiscard]] Pointer offset_cuda_pointer(Pointer point
   return pointer + offset;
 }
 
+template <StorageSpanMapping Mapping, class Count>
+void validate_cuda_mapping_range(Mapping const& mapping, Count required, std::size_t offset, std::size_t buffer_size)
+{
+  auto const base_offset = mapping.base_offset();
+  CHECK(base_offset <= offset && offset <= buffer_size, base_offset, offset, buffer_size);
+  auto const span_start = offset - base_offset;
+  CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - span_start), required,
+        span_start, buffer_size);
+}
+
+struct ValidateCudaStorageSpan
+{
+    template <class Accessor>
+    void operator()(Accessor const& accessor, auto const& mapping, auto const& descriptor) const
+    {
+      auto const offset = descriptor.element_offset();
+      auto const buffer_size = descriptor.buffer().size();
+      if constexpr (cuda::enable_mapping_storage_span<Accessor>)
+      {
+        validate_cuda_mapping_range(mapping, +mapping.required_span_size(), offset, buffer_size);
+      }
+      else if constexpr (requires {
+                           { accessor.cuda_storage_span(mapping, offset) } -> std::same_as<cuda::BufferStorageSpan>;
+                         })
+      {
+        if (offset > buffer_size) throw std::out_of_range("CUDA descriptor handle is outside the buffer");
+        auto const range = accessor.cuda_storage_span(mapping, offset);
+        if (range.start > buffer_size || range.size > buffer_size - range.start)
+          throw std::out_of_range("CUDA accessor storage span is outside the buffer");
+      }
+      else
+      {
+        throw std::invalid_argument("CUDA accessor requires enable_mapping_storage_span or cuda_storage_span");
+      }
+    }
+
+    // These adaptors preserve the wrapped accessor's storage accesses.
+    template <class Accessor>
+    void operator()(const_accessor_adaptor<Accessor> const& accessor, auto const& mapping, auto const& descriptor) const
+    {
+      (*this)(accessor.wrapped_accessor(), mapping, descriptor);
+    }
+
+    template <AccessorPolicy Accessor>
+    void operator()(conjugated_accessor<Accessor> const& accessor, auto const& mapping, auto const& descriptor) const
+    {
+      (*this)(accessor.wrapped_accessor(), mapping, descriptor);
+    }
+};
+
 template <class Mdspec> void validate_cuda_descriptor_range(Mdspec const& span)
 {
-  auto const& descriptor = span.data_descriptor();
-  auto const required = span.mapping().required_span_size();
-  CHECK(std::cmp_greater_equal(required, 0), required);
-  CHECK(std::cmp_less_equal(required, descriptor.buffer().size()), required, descriptor.buffer().size());
-  auto const count = static_cast<std::size_t>(required);
-  auto const offset = descriptor.element_offset();
-  CHECK(offset <= descriptor.buffer().size() && count <= descriptor.buffer().size() - offset, offset, count,
-        descriptor.buffer().size());
+  ValidateCudaStorageSpan{}(span.accessor(), span.mapping(), span.data_descriptor());
 }
 
 template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Mdspec const& span, Pointer pointer)
@@ -57,7 +101,7 @@ template <class Mdspec, class Pointer> [[nodiscard]] auto resolve_cuda_mdspan(Md
   auto accessor = lower_cuda_accessor(span.accessor());
   using accessor_type = decltype(accessor);
   static_assert(std::same_as<typename accessor_type::element_type, typename span_type::element_type>);
-  using mdspan_type = stdex::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
+  using mdspan_type = uni20::mdspan<typename accessor_type::element_type, typename span_type::extents_type,
                                     typename span_type::layout_type, accessor_type>;
   return mdspan_type{pointer, span.mapping(), std::move(accessor)};
 }

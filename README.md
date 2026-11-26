@@ -1,5 +1,7 @@
 # Uni20
 
+![Yushan as a tensor network](docs/branding/uni20-logo.png)
+
 [![CI](https://github.com/Uni20-dev/uni20/actions/workflows/ci.yml/badge.svg)](https://github.com/Uni20-dev/uni20/actions/workflows/ci.yml)
 [![Documentation](https://github.com/Uni20-dev/uni20/actions/workflows/docs.yml/badge.svg)](https://uni20-dev.github.io/uni20/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -234,3 +236,5 @@ algorithms, multi-GPU and distributed execution, symmetry models, and
 potential applications. Use
 [GitHub issues](https://github.com/Uni20-dev/uni20/issues) for technical
 proposals, reproducible problems, and research discussions.
+
+[Logo files and attribution](docs/branding/)

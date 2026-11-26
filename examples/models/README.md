@@ -145,7 +145,7 @@ assertion and does not feed a dense state back into the DMRG path.
 
 `ising_hotrg_example.cpp` coarse-grains the square-lattice Ising model with HOTRG
 (Xie, Chen, Qin, Zhu, Yang and Xiang, Phys. Rev. B 86, 045139 (2012)) on dense
-`Tensor<double, 4>` site tensors `T[ym, xm, xp, yp]`. The algorithm lives in the
+`Tensor<R, 4>` site tensors `T[ym, xm, xp, yp]`. The algorithm lives in the
 example-local header `dense_hotrg.hpp`: one step along an axis joins two tensors
 on that axis and squeezes the pair of legs on each side of the other axis back
 to one leg with a single isometry, the leading eigenspace of the gram of one such
@@ -155,6 +155,8 @@ pair taken through `truncated_svd`. A round is a y step then an x step, so after
 ```bash
 ./build/examples/ising_hotrg_example                 # T = Tc, bond 16, 8 rounds
 ./build/examples/ising_hotrg_example --bond=24 --rounds=8 --temperature=1.2
+./build/examples/ising_hotrg_example --precision=fp128 --bond=8 --rounds=8
+./build/examples/ising_hotrg_example --precision=mpreal --bits=256 --bond=4 --rounds=2
 ./build/examples/ising_hotrg_example --check
 ```
 
@@ -165,7 +167,7 @@ transfer matrix: joining its two horizontal legs gives `M = V^(2^k)` for a
 periodic strip of `2^k` sites, so `X_i = ln(lambda_0 / lambda_i) / (2 pi)` with
 no normalization bookkeeping.
 
-`--check` verifies the implementation and exits non-zero on any failure:
+`--check` verifies the original double-precision implementation and exits non-zero on any failure:
 
 - the gram, the update network, and one step along both axes against the
   definition, by brute-force loops on a random tensor with unequal leg dimensions;
@@ -176,68 +178,34 @@ no normalization bookkeeping.
 - every contraction of a round reaching GEMM, through the dispatch diagnostics;
 - the transfer-matrix scaling dimensions against the exactly solved strip;
 - two inputs at the edge: a cut that falls inside the null space of the gram, and
-  a round count whose lattice width `2^rounds` would not fit in 64 bits.
+  a 128-round flow whose lattice width `2^rounds` would not fit in 64 bits.
 
-The exact strip values are tabulated in `ising_strip_reference.hpp` for widths
+The exact strip values are stored as 100-significant-digit decimal strings in
+`ising_strip_reference.hpp`, parsed at the selected precision, for widths
 2 to 256 at `T = Tc` and `T = 1.2 Tc`. They come from the Onsager/Kaufman closed
 form as implemented in <https://github.com/pcchen/Exact_Solution>; the header
-records how to regenerate them. The comparison tolerance is per level rather than
+records their provenance; `scripts/generate_hotrg_reference.py` regenerates it
+from the canonical JSON fixture. The comparison tolerance is per level rather than
 a fixed epsilon: the transfer matrix holds `lambda_i / lambda_0 = exp(-2 pi X_i)`,
 so the rounding of the leading eigenvalue limits `X_i` to about
 `eps exp(2 pi X_i) / (2 pi)`.
 
-Two properties of the current dense API shape the header. `contract` does not
-pack an operand, so each contraction is written as a matrix product, with the
-surviving index group leading or trailing and the summed group adjacent on both
-operands, which is the form that dispatches to GEMM. The dense `Tensor` has no
-axis permutation, so each regrouping between contractions goes through an
-order-four `BlockTensor` over single-sector U(1) spaces, whose `permute<>` view
-is then materialized with `make_tensor`; tensors of rank five enter it with two
-adjacent axes fused by `reshape_view`.
+`contract` does not pack an operand, so each contraction in the header is
+written as a matrix product, with the surviving index group leading or trailing
+and the summed group adjacent on both operands, which is the form that
+dispatches to GEMM. Each regrouping between contractions is a `permute<>` view
+of the dense tensor, copied into a column-major tensor allocated at the selected
+precision.
 
-## The same HOTRG step on host and CUDA tensors
+The flow carries normalization logarithms and integer `log2_width` exponents;
+it never forms the represented lattice size or products of removed scales.
+The initial tensor is normalized before the first Gram matrix, and bond weights
+factor out the growing exponential before evaluation. There is no 62-round cap.
+Temperature is parsed as `T/Tc` and the critical coupling is computed at the
+selected precision.
 
-`ising_hotrg_shared_example.cpp` runs the step of `dense_hotrg.hpp` written once
-for both places. The header `dense_hotrg_shared.hpp` makes every function of the
-step a template over the place where its tensors live: `Tensor<double, N>` on the
-host, `CudaTensor<double, N>` on a device. The gram, the update network, one
-step and the flow are the same text for both.
-
-```bash
-./build/examples/ising_hotrg_shared_example --check
-./build/examples/ising_hotrg_shared_example --bond=32 --rounds=5
-./build/examples/ising_hotrg_shared_example --execution=cuda --bond=32 --rounds=5
-./build/examples/ising_hotrg_shared_example --execution=cuda --check
-```
-
-`--execution=cpu` is the default. `--execution=cuda` needs a build with the
-CUDA, cuBLAS and cuSOLVER backends; without them only the host place is
-compiled. `--check` compares the shared step with the step of `dense_hotrg.hpp`:
-the gram and the update network entry by entry, one step along each axis, and
-two flows. With `--execution=cuda` it checks the host place, the device place,
-and the device place with the gram cut on the host. `--reference` runs the step
-of `dense_hotrg.hpp` itself, for a timing comparison on the host.
-
-What cannot be the same text is collected in the namespace `shim` of the header,
-as pairs of overloads. The host overload is the idiom of `dense_hotrg.hpp`; the
-device overload stands in for a function that a device tensor does not have, and
-its comment states what is missing and what is done instead:
-
-| | Missing for a device tensor | What the host writes | Stand-in, and where it runs |
-|---|---|---|---|
-| M1 | `linalg::truncated_svd` (also `linalg::eigh`, `linalg::self_adjoint_eigh`) | `truncated_svd(reshape_view(theta, n * n, n * n), policy)` | split: the full `linalg::singular_value_decomposition` on the device through cuSOLVER; then the values and the left factor are downloaded, cut on the host, and the isometry is uploaded |
-| M2 | `reshape_view` | `reshape_view(theta, n * n, n * n)` | on the device, without a copy: `reshape(std::move(theta), n * n, n * n)` on the owning tensor |
-| M3 | a reduction for the largest entry | a loop over `t.storage()` | on the host: `to_host(t)` downloads the tensor, then the host loop |
-| M4 | a trace over paired axes | a loop over `t[i, j, j, i]` | on the host: `to_host(t)` downloads the tensor, then the host loop |
-| M5 | access to the entries (by design) | fills and reads tensors entry by entry | on the host: builds there and transfers |
-
-Everything else is one call for both places: `contract` with adjacent index
-groups (BLAS on the host, cuBLAS on the device), `permute<>` of a single-sector
-`BlockTensor` followed by `make_tensor`, `copy`, and
-`transform_inplace(t, linalg::scale{f})`. The step keeps its two rank-five
-intermediates as five-leg `BlockTensor`s, so it needs no `reshape_view` around
-its contractions.
-
-The flow prints, per round, the time in contractions, in regroupings, in the
-SVD, and in the two stand-ins that download a tensor (`via host`), followed by
-the backend that ran each kind of operation.
+`uni20_models_tests` covers all configured arithmetic types, including MPFR at
+128 and 256 bits. MPFR contractions and decompositions use MPLAPACK with explicit working
+precision. The Onsager quadrature sample count remains a
+separate accuracy control. See [the HOTRG numerical contract](../../docs/tensor_network/dense_hotrg.md)
+for supported providers, reference regeneration, and precision coverage.

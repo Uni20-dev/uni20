@@ -56,7 +56,9 @@ template <typename T> class EpochContextWriter;
 /// (see `Phase transition rules` in code for exhaustive list).
 ///
 /// ### Ownership and Lifetime
-/// - EpochContexts are heap-allocated and shared via `std::shared_ptr`.
+/// - EpochContexts are created by `make()`, `make_successor()` or `make_previous()`, which share them
+///   via `std::shared_ptr` and register each one with the task registry once its identity is set.
+///   The registry holds only a weak reference.
 /// - Each epoch owns a reference to its successor (`next_epoch_`) if one is created.
 /// - The lifetime of an epoch is extended by:
 ///   - Outstanding readers or writers (RAII handles)
@@ -160,7 +162,11 @@ template <typename T> class EpochContextWriter;
 //
 // If there is a next_epoch_, then the cancellation and exception status is propogated forwards.
 //
-// co_await on a WriteBuffer on a cancelled or exception EpochContext passes the error into the coroutine.
+// A failure reaches a coroutine only through a value it reads or takes, whether or not the coroutine
+// suspended first. A writer on an epoch that inherited a failure still runs. take() and in-place
+// access through a write proxy rethrow the failure, an overwrite does not see it, and the epoch
+// keeps it for its readers. A coroutine that catches the failure finishes
+// normally (#166). Resuming a coroutine with a failure only notes it for task diagnostics.
 //
 
 class EpochQueue;
@@ -198,22 +204,60 @@ class EpochContext {
 #endif
     };
 
-    EpochContext() { TaskRegistry::register_epoch_context(this); }
+  private:
+    /// \brief Restricts construction to the factories below.
+    /// \details Each factory registers the epoch with the task registry only after its generation and
+    ///          debug node are set, so a snapshot never sees an epoch whose identity is still being written.
+    struct ConstructionKey
+    {
+        explicit ConstructionKey() = default;
+    };
 
-    /// Construct an EpochContext given an existing next epoch.
-    /// \note this is backwards propogation, the counter is initialized to next->counter_ - 1
-    explicit EpochContext(std::shared_ptr<EpochContext> next) : counter_(next->counter_ - 1), next_epoch_(next)
+  public:
+    /// \brief Construct an epoch; use \ref make, \ref make_successor or \ref make_previous instead.
+    EpochContext(ConstructionKey, int counter, std::shared_ptr<EpochContext> next, NodeInfo const* node)
+        : counter_(counter), next_epoch_(std::move(next))
     {
 #if UNI20_DEBUG_DAG
-      node_ = next ? next->node() : nullptr;
+      node_ = node;
+#else
+      static_cast<void>(node);
 #endif
-      TaskRegistry::register_epoch_context(this);
     }
 
-    /// Helper factory to construct the previous epoch in a reverse-mode chain
+    /// \brief Create the first epoch of a queue.
+    /// \return The new epoch, already registered for diagnostics.
+    static std::shared_ptr<EpochContext> make() { return registered(ConstructionKey{}, 0, nullptr, nullptr); }
+
+    /// \brief Create the epoch that will follow \p pred, to be passed to `pred.set_next_epoch()`.
+    /// \details The successor takes the next generation and the debug node of \p pred. Neither field of
+    ///          \p pred can change by now: the generation is set at construction, and the node by the
+    ///          `Async` constructor before its queue can append an epoch. Successors are created only by
+    ///          the externally serialized queue head, so this reads them without locking \p pred.
+    /// \param pred Current last epoch of the queue.
+    /// \return The new epoch, already registered for diagnostics.
+    static std::shared_ptr<EpochContext> make_successor(EpochContext const& pred)
+    {
+#if UNI20_DEBUG_DAG
+      NodeInfo const* const node = pred.node_;
+#else
+      NodeInfo const* const node = nullptr;
+#endif
+      return registered(ConstructionKey{}, pred.counter_ + 1, nullptr, node);
+    }
+
+    /// \brief Create the epoch that precedes \p next in a reverse-mode chain.
+    /// \param next Current first epoch of the reverse chain.
+    /// \return The new epoch, already registered for diagnostics, with \p next as its successor.
     static std::shared_ptr<EpochContext> make_previous(std::shared_ptr<EpochContext> next)
     {
-      return std::make_shared<EpochContext>(std::move(next));
+      int const counter = next->counter_ - 1;
+#if UNI20_DEBUG_DAG
+      NodeInfo const* const node = next->node();
+#else
+      NodeInfo const* const node = nullptr;
+#endif
+      return registered(ConstructionKey{}, counter, std::move(next), node);
     }
 
     ~EpochContext()
@@ -226,18 +270,17 @@ class EpochContext {
       TaskRegistry::destroy_epoch_context(this);
     }
 
-    /// Set the next EpochContext in the chain.
+    /// \brief Set the next EpochContext in the chain.
+    /// \param next Epoch created by \ref make_successor for this epoch.
     void set_next_epoch(std::shared_ptr<EpochContext> next)
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::set_next_epoch", this, next.get(), counter_);
       DEBUG_CHECK(!next_epoch_); // make sure that we haven't already set the next epoch pointer
       DEBUG_CHECK(phase_ <= Phase::Reading);
+      // The successor's identity was set before it was registered (make_successor), never here.
+      DEBUG_CHECK_EQUAL(next->counter_, counter_ + 1);
 
-      next->counter_ = counter_ + 1; // increment the epoch counter
-#if UNI20_DEBUG_DAG
-      next->node_ = node_;
-#endif
       next_epoch_ = std::move(next);
       if (phase_ == Phase::Reading && num_readers_ == 0) this->advance_finished_locked(std::move(lock));
     }
@@ -262,13 +305,38 @@ class EpochContext {
       this->advance_start_locked(std::move(lock));
     }
 
+    /// \brief Start the epoch and count it as written, with or without a writer.
+    /// \details A reverse queue starts its first epoch this way. It is one locked step that takes no
+    ///          writer reservation, so a writer released concurrently always makes the final release
+    ///          and its decision whether to end exception delivery stands.
+    void start_as_written()
+    {
+      std::unique_lock lock(mtx_);
+      DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start_as_written", this, counter_, phase_);
+      DEBUG_CHECK(phase_ <= Phase::Started);
+      ++total_writers_;
+      if (phase_ == Phase::Pending)
+        this->advance_start_locked(std::move(lock));
+      else if (phase_ == Phase::Started)
+        this->advance_writing_locked(std::move(lock));
+    }
+
     // start executing the epoch, propogating the exception and cancellation state from a previous epoch
     void start(std::exception_ptr eptr)
     {
+      // Declared before the lock, so that a failure replaced below is destroyed only after this
+      // epoch's mutex is released: its destructor may release a buffer of this epoch.
+      std::exception_ptr replaced;
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start", this, counter_);
       DEBUG_CHECK(phase_ == Phase::Pending, this);
-      eptr_ = eptr;
+      // A task may already have failed while waiting for this epoch to start; the inherited
+      // failure takes its place.
+      if (eptr)
+      {
+        replaced = std::exchange(eptr_, std::move(eptr));
+        has_exception_.store(true, std::memory_order_release);
+      }
       this->advance_start_locked(std::move(lock));
     }
 
@@ -367,13 +435,53 @@ class EpochContext {
       std::lock_guard lock(mtx_);
       node_ = node;
     }
+
+    /// \brief Outcome of \ref diagnostic_reader_admit.
+    enum class DiagnosticReadAdmission
+    {
+      Admitted,     ///< A reader is held; release it with \ref diagnostic_reader_release.
+      Busy,         ///< The epoch's mutex was busy and the caller did not wait for it.
+      WriterActive, ///< A writer of this epoch holds the value.
+      NotReadable,  ///< The epoch is not in its reading phase.
+      OtherNode,    ///< The epoch belongs to another value.
+    };
+
+    /// \brief Admit a diagnostic reader of \p node's value, if this epoch is reading it.
+    /// \details Admits only in the Reading phase. This epoch's writers have finished, every earlier
+    ///          epoch has finished, and the next epoch cannot start until the reader is released, so
+    ///          no writer can change or destroy the value meanwhile. Like any reader, an admitted
+    ///          reader delays the next writer until it is released. That includes a writer already
+    ///          enrolled in a successor epoch: such values are often what a dump needs to show, so
+    ///          a successor does not prevent admission. Admission never waits for a writer, and
+    ///          the mutex is not held after it returns.
+    /// \param node Node whose value is to be read.
+    /// \param wait_for_lock Whether to wait for this epoch's mutex rather than give up if it is busy.
+    /// \return `Admitted`, which must be matched by \ref diagnostic_reader_release, or why not.
+    DiagnosticReadAdmission diagnostic_reader_admit(NodeInfo const* node, bool wait_for_lock) noexcept
+    {
+      std::unique_lock lock(mtx_, std::defer_lock);
+      if (wait_for_lock)
+        lock.lock();
+      else if (!lock.try_lock())
+        return DiagnosticReadAdmission::Busy;
+      if (node_ != node) return DiagnosticReadAdmission::OtherNode;
+      if (phase_ == Phase::Writing && writer_active_) return DiagnosticReadAdmission::WriterActive;
+      if (phase_ != Phase::Reading) return DiagnosticReadAdmission::NotReadable;
+      ++num_readers_;
+      return DiagnosticReadAdmission::Admitted;
+    }
+
+    /// \brief Release a reader admitted by \ref diagnostic_reader_admit.
+    /// \details As with any reader, releasing the last one can finish this epoch and start the next
+    ///          one on the calling thread, which can reschedule its writer.
+    void diagnostic_reader_release() noexcept { this->reader_release(); }
 #endif
 
   private:
     // Writer interface
     // internal private used only by EpochContextWriter<T>
     template <typename T> friend class EpochContextWriter;
-    friend void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept;
+    friend void propagate_unhandled_buffer_exception(EpochContext*, std::exception_ptr, bool) noexcept;
 
     /// \brief Acquire the writer role for this epoch.
     /// \pre phase_ <= Phase::Started
@@ -403,6 +511,7 @@ class EpochContext {
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_clear_errors", this, counter_);
       DEBUG_CHECK(phase_ <= Phase::Writing);
       eptr_ = nullptr;
+      has_exception_.store(false, std::memory_order_release);
       // cancelled_ = false;
       // inherit_error_state_ = false;
     }
@@ -456,12 +565,43 @@ class EpochContext {
       writer_ready_waiters_.push_back(std::move(notify));
     }
 
-    void writer_set_exception(std::exception_ptr e) noexcept
+    /// \brief Read the failure of the value currently held by the active writer.
+    /// \details `take()` checks this on every call, and in-place access once per writer handle.
+    ///          Most writers find no failure, so the exception-presence flag lets them skip the
+    ///          mutex. Debug builds still lock it to check the precondition.
+    std::exception_ptr writer_exception() const noexcept
+    {
+#if !defined(NDEBUG)
+      {
+        std::lock_guard lock(mtx_);
+        DEBUG_PRECONDITION(phase_ == Phase::Writing && writer_active_);
+      }
+#endif
+      if (!has_exception_.load(std::memory_order_acquire)) return {};
+      std::lock_guard lock(mtx_);
+      return eptr_;
+    }
+
+    void writer_set_exception(std::exception_ptr e, bool requires_writer = true) noexcept
     {
       std::lock_guard lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception", this, counter_);
-      DEBUG_CHECK(phase_ <= Phase::Reading);
-      if (!eptr_) eptr_ = e;
+      // A proxy can explicitly release a writer while the parameter that registered
+      // the sink still exists. Explicit read sinks can receive failures in Reading.
+      if (requires_writer && writer_sink_retired_) return;
+      // An owning take can rethrow an already published producer failure.
+      if (eptr_) return;
+      // An owning holder that an exception destroyed published the epoch before the promise
+      // reached unhandled_exception(). Readers still holding the epoch receive the failure. Once
+      // they have all finished, its consumers have already seen the value and the failure is
+      // dropped. Builds with task diagnostics record it in the task registry (#163).
+      if (phase_ > Phase::Reading)
+      {
+        DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception after the epoch finished", this, counter_);
+        return;
+      }
+      eptr_ = std::move(e);
+      has_exception_.store(static_cast<bool>(eptr_), std::memory_order_release);
     }
 
     // void writer_set_cancel() noexcept
@@ -474,8 +614,10 @@ class EpochContext {
 
     /// \brief Release a writer without it executing
     /// \pre Must follow writer_acquire()
+    /// \param retire_sink Whether releasing the final writer ends exception delivery, as for a
+    ///        writer that is dropped normally. `false` leaves an earlier decision in place.
     /// \return true if this call released the final writer.
-    bool writer_cancel() noexcept
+    bool writer_cancel(bool retire_sink) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);
@@ -483,6 +625,7 @@ class EpochContext {
       DEBUG_CHECK(num_writers_ >= 1);
 
       --num_writers_;
+      if (num_writers_ == 0 && retire_sink) writer_sink_retired_ = true;
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {
@@ -497,7 +640,7 @@ class EpochContext {
     /// \note This is called when a currently running coroutine releases a write buffer
     /// \pre We must be in the Writing phase here (otherwise we would not have an active coroutine).
     /// \return true if this call released the final writer.
-    bool writer_release_active() noexcept
+    bool writer_release_active(bool retire_sink) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);
@@ -510,6 +653,7 @@ class EpochContext {
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {
+        writer_sink_retired_ = retire_sink;
         this->advance_reading_locked(std::move(lock));
         return true;
       }
@@ -584,7 +728,7 @@ class EpochContext {
         DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_bind is scheduling the task immediately", this, counter_);
         std::exception_ptr my_eptr = eptr_;
         lock.unlock();
-        if (my_eptr) h.exception_on_resume(my_eptr);
+        if (my_eptr) h.note_upstream_failure(my_eptr);
         BasicTask::reschedule(std::move(h));
       }
       else
@@ -598,6 +742,10 @@ class EpochContext {
     std::exception_ptr reader_exception() const noexcept
     {
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_exception", this, counter_);
+      // A failure may arrive after the writer released the epoch. Use the atomic flag on
+      // successful reads and take the mutex before copying an exception pointer.
+      if (!has_exception_.load(std::memory_order_acquire)) return {};
+      std::lock_guard lock(mtx_);
       DEBUG_PRECONDITION(phase_ == Phase::Reading);
 
       return eptr_;
@@ -692,7 +840,7 @@ class EpochContext {
       DEBUG_CHECK(phase_ == Phase::Writing);
       DEBUG_CHECK(!writer_active_);
 
-      if (eptr_) task.task.exception_on_resume(eptr_);
+      if (eptr_) task.task.note_upstream_failure(eptr_);
       writer_active_ = true;
       lock.unlock();
       BasicTask::reschedule(std::move(task.task));
@@ -732,7 +880,7 @@ class EpochContext {
 
       for (auto&& task : my_reader_tasks)
       {
-        if (my_eptr) task.task.exception_on_resume(my_eptr);
+        if (my_eptr) task.task.note_upstream_failure(my_eptr);
         BasicTask::reschedule(std::move(task.task));
       }
     }
@@ -740,12 +888,22 @@ class EpochContext {
     friend class EpochQueue;
     friend class ReverseEpochQueue;
 
-    // All of the data is protected by the mutex
+    /// \brief Construct a complete epoch, then publish it to the task registry.
+    static std::shared_ptr<EpochContext> registered(ConstructionKey key, int counter,
+                                                    std::shared_ptr<EpochContext> next, NodeInfo const* node)
+    {
+      auto epoch = std::make_shared<EpochContext>(key, counter, std::move(next), node);
+      TaskRegistry::register_epoch_context(epoch);
+      return epoch;
+    }
+
+    // The mutex protects the epoch's mutable state except for the atomic exception flag.
     mutable std::mutex mtx_;
 
     // Exception pointer - if this is set, then any attempt to get a buffer throws the exception.
     // This is also propogated to future epochs
     std::exception_ptr eptr_{nullptr};
+    std::atomic<bool> has_exception_{false};
 
     // Epoch counter. This is mainly for debugging
     int counter_{0};
@@ -761,6 +919,7 @@ class EpochContext {
     std::vector<TaskState> writer_tasks_;
     std::vector<std::function<void()>> writer_ready_waiters_;
     bool writer_active_{false};
+    bool writer_sink_retired_{false};
 
     // Reader interface
     int num_readers_{0};
@@ -833,10 +992,11 @@ class EpochContext {
     // }
 };
 
-inline void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept
+inline void propagate_unhandled_buffer_exception(EpochContext* epoch, std::exception_ptr eptr,
+                                                 bool requires_writer) noexcept
 {
   if (!epoch || !eptr) return;
-  epoch->writer_set_exception(std::move(eptr));
+  epoch->writer_set_exception(std::move(eptr), requires_writer);
 }
 
 constexpr std::string_view format_as(uni20::async::EpochContext::Phase p)
@@ -1072,7 +1232,8 @@ template <typename T> class EpochContextWriter {
     /// \brief Move constructor transferring the writer handle.
     /// \param other Writer being moved from.
     EpochContextWriter(EpochContextWriter&& other) noexcept
-        : storage_(std::move(other.storage_)), epoch_(std::move(other.epoch_)), acquired_(std::move(other.acquired_))
+        : storage_(std::move(other.storage_)), epoch_(std::move(other.epoch_)), acquired_(std::move(other.acquired_)),
+          inherited_failure_checked_(other.inherited_failure_checked_.load(std::memory_order_relaxed))
     {
       other.epoch_.reset();
     }
@@ -1088,13 +1249,29 @@ template <typename T> class EpochContextWriter {
         storage_ = std::move(other.storage_);
         epoch_ = std::move(other.epoch_);
         acquired_ = other.acquired_;
+        inherited_failure_checked_.store(other.inherited_failure_checked_.load(std::memory_order_relaxed),
+                                         std::memory_order_relaxed);
+        uncaught_at_take_ = std::uncaught_exceptions();
         other.epoch_.reset();
       }
       return *this;
     }
 
-    /// \brief Destructor releasing any held writer epoch.
-    ~EpochContextWriter() { this->release(); }
+    /// \brief Release the writer on destruction.
+    /// \details A holder destroyed normally has finished writing, so it ends exception delivery to
+    ///          the epoch, as `release()` does. A later exception escaping the coroutine then
+    ///          leaves the published value alone. A holder destroyed by an exception keeps
+    ///          delivery open: it publishes before the promise reaches `unhandled_exception()`,
+    ///          and the failure still reaches readers that hold the epoch (#163). A failed
+    ///          coroutine destroys its frame while rethrowing its exception, so a holder among its
+    ///          parameters also counts as destroyed by the exception. The two cases
+    ///          are told apart by `std::uncaught_exceptions()` against its value when this object
+    ///          took the writer. A coroutine step resumed during an unrelated exception can
+    ///          misclassify, which affects only that best-effort delivery.
+    ~EpochContextWriter()
+    {
+      if (epoch_) this->release(std::uncaught_exceptions() <= uncaught_at_take_);
+    }
 
 #if UNI20_DEBUG_DAG
     /// \brief Get the debug node pointer of the object
@@ -1126,24 +1303,28 @@ template <typename T> class EpochContextWriter {
     T& data() const
     {
       auto* ptr = storage_.get();
-      if (!ptr)
-      {
-#if UNI20_DEBUG_ASYNC_TASKS
-        constexpr char const* reason = "EpochContextWriter::data access on uninitialized storage";
-        auto const mode = TaskRegistry::dump_mode();
-        if (mode != TaskRegistry::DumpMode::None)
-        {
-          auto const epoch_counter = epoch_ ? epoch_->counter_ : -1;
-          TRACE_STACK(reason, this, epoch_.get(), epoch_counter);
-          if (mode == TaskRegistry::DumpMode::Full)
-            TaskRegistry::dump();
-          else
-            TaskRegistry::dump_epoch_context(epoch_.get(), reason);
-        }
-#endif
-        throw buffer_write_uninitialized{};
-      }
+      if (!ptr) [[unlikely]]
+        this->throw_uninitialized_data();
       return *ptr;
+    }
+
+    /// \brief Report access to storage that holds no value. Kept out of line so `data()` inlines.
+    [[noreturn, gnu::cold, gnu::noinline]] void throw_uninitialized_data() const
+    {
+#if UNI20_DEBUG_ASYNC_TASKS
+      constexpr char const* reason = "EpochContextWriter::data access on uninitialized storage";
+      auto const mode = TaskRegistry::dump_mode();
+      if (mode != TaskRegistry::DumpMode::None)
+      {
+        auto const epoch_counter = epoch_ ? epoch_->counter_ : -1;
+        TRACE_STACK(reason, this, epoch_.get(), epoch_counter);
+        if (mode == TaskRegistry::DumpMode::Full)
+          TaskRegistry::dump();
+        else
+          TaskRegistry::dump_epoch_context(epoch_.get(), reason);
+      }
+#endif
+      throw buffer_write_uninitialized{};
     }
 
     template <typename... Args>
@@ -1173,6 +1354,43 @@ template <typename T> class EpochContextWriter {
       }
     }
 
+    /// \brief Rethrow a failure that the epoch inherited from a failed producer.
+    void rethrow_producer_failure() const
+    {
+      if (auto failure = epoch_->writer_exception()) std::rethrow_exception(failure);
+    }
+
+    /// \brief Rethrow a failure that the epoch inherited, before an in-place update.
+    /// \details The epoch inherits a failure before its writer becomes active, so a check that
+    ///          finds none is remembered and later updates skip it. `take()` checks every time.
+    void check_inherited_failure() const
+    {
+      if (inherited_failure_checked_.load(std::memory_order_relaxed)) [[likely]]
+        return;
+      // A released handle has no epoch; data() then reports the missing value as before.
+      if (!epoch_) return;
+      this->rethrow_producer_failure();
+      inherited_failure_checked_.store(true, std::memory_order_relaxed);
+    }
+
+    /// \brief Access the stored value for an in-place update.
+    /// \details Rethrows a failure that the epoch inherited from a failed producer, as `take()`
+    ///          does, so an update never builds on a failed value (#166). Overwrites use `data()`.
+    /// \return Reference to the stored value.
+    T& existing_value() const
+    {
+      this->check_inherited_failure();
+      return this->data();
+    }
+
+    /// \brief Consume the current value under the writer gate, propagating a failed producer.
+    T take()
+    {
+      this->rethrow_producer_failure();
+      if (!storage_.constructed()) throw buffer_write_uninitialized{};
+      return storage_.take();
+    }
+
     shared_storage<T>& storage() { return storage_; }
 
     void set_exception(std::exception_ptr e) const noexcept { epoch_->writer_set_exception(e); }
@@ -1183,28 +1401,36 @@ template <typename T> class EpochContextWriter {
     /// \return true if the epoch reports initialized storage.
     bool value_is_initialized() const noexcept { return storage_.constructed(); }
 
-    /// \brief Wait for the epoch to become available, and then return a prvalue-reference to the value.
     /// \brief Finalize this write gate, if not already done.
-    void release() noexcept
+    void release() noexcept { this->release(true); }
+
+    /// \brief Wait for the epoch to become available and move from the current value.
+    T&& move_from_wait();
+
+  private:
+    void release(bool retire_sink) noexcept
     {
       if (epoch_)
       {
         if (acquired_)
-          epoch_->writer_release_active();
+          epoch_->writer_release_active(retire_sink);
         else
-          epoch_->writer_cancel(); // releasing without ever
+          epoch_->writer_cancel(retire_sink); // releasing without ever
         epoch_.reset();
         storage_.reset();
       }
     }
 
-    /// \brief Wait for the epoch to become available, and then return a prvalue-reference to the value.
-    T&& move_from_wait();
-
-  private:
     mutable shared_storage<T> storage_;
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
+    /// \brief Set once an in-place update has found no inherited failure.
+    /// \details Batch items may update disjoint parts of one value through one write proxy, so
+    ///          their first accesses can check concurrently. Each finds the same answer and may
+    ///          store `true`, so relaxed operations are enough.
+    mutable std::atomic<bool> inherited_failure_checked_{false};
+    /// \brief `std::uncaught_exceptions()` when this object took the writer.
+    int uncaught_at_take_{std::uncaught_exceptions()};
 };
 
 } // namespace uni20::async

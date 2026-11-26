@@ -29,7 +29,7 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using self_adjoint_eigenvalue_extents = stdex::dextents<uni20::index_type, 1>;
+using self_adjoint_eigenvalue_extents = uni20::dextents<uni20::index_type, 1>;
 
 template <uni20::MutableRankedTensorView<1> EigenvalueTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
 [[nodiscard]] self_adjoint_eigh_op prepare_self_adjoint_eigh(EigenvalueTensor& eigenvalues, MatrixTensor& matrix_work,
@@ -99,7 +99,7 @@ template <class MatrixTensor>
 using self_adjoint_eigh_reuse_matrix_t =
     std::conditional_t<std::same_as<typename std::remove_cvref_t<MatrixTensor>::layout_type, uni20::ColumnMajor>,
                        std::remove_cvref_t<MatrixTensor>,
-                       typename std::remove_cvref_t<MatrixTensor>::template rebind_layout_type<stdex::layout_stride>>;
+                       typename std::remove_cvref_t<MatrixTensor>::template rebind_layout_type<uni20::layout_stride>>;
 
 template <class MatrixTensor> consteval bool can_transfer_self_adjoint_eigh_storage()
 {
@@ -109,7 +109,7 @@ template <class MatrixTensor> consteval bool can_transfer_self_adjoint_eigh_stor
                   typename matrix_type::layout_type;
                   typename matrix_type::accessor_factory_type;
                   typename matrix_type::storage_type;
-                  typename matrix_type::template rebind_layout_type<stdex::layout_stride>;
+                  typename matrix_type::template rebind_layout_type<uni20::layout_stride>;
                 })
   {
     using work_type = self_adjoint_eigh_reuse_matrix_t<matrix_type>;

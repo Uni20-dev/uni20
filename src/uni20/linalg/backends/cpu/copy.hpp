@@ -90,8 +90,7 @@ KernelAttempt copy(OutputMdspan&& output, InputMdspan&& input)
       CHECK_EQUAL(output.extent(axis), input.extent(axis));
   }
 
-  if constexpr (uni20::MutableStridedMdspanLike<output_type> &&
-                uni20::StridedMdspanLike<std::remove_cvref_t<InputMdspan>>)
+  if constexpr (uni20::AffineMdspanLike<output_type> && uni20::AffineMdspanLike<std::remove_cvref_t<InputMdspan>>)
   {
     cpu::detail::transform_strided<false>(
         output, [](auto&& value) -> decltype(auto) { return std::forward<decltype(value)>(value); }, input);
@@ -99,7 +98,7 @@ KernelAttempt copy(OutputMdspan&& output, InputMdspan&& input)
   else
   {
     std::array<typename output_type::index_type, output_type::rank()> index{};
-    if constexpr (std::same_as<typename output_type::layout_type, stdex::layout_left>)
+    if constexpr (std::same_as<typename output_type::layout_type, uni20::layout_left>)
       copy_elements<0, true>(output, input, index);
     else
       copy_elements<0, false>(output, input, index);

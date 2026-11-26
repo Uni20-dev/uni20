@@ -77,9 +77,9 @@ add_test(NAME NativeExponentialMathExample COMMAND native_exponential_math_examp
 
 uni20_add_example(buildinfo_example common/buildinfo_example.cpp fmt::fmt uni20_core uni20_common)
 uni20_add_example(gtest_floating_eq_example common/gtest_floating_eq_example.cpp gtest fmt::fmt uni20_common)
-uni20_add_example(trace_example common/trace_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(trace_example common/trace_example.cpp fmt::fmt uni20_common)
 
-uni20_add_example(mdspan_example mdspan/mdspan_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(mdspan_example mdspan/mdspan_example.cpp fmt::fmt uni20_common)
 
 uni20_add_example(block_tensor_example symmetry/block_tensor_example.cpp uni20_symmetry)
 add_test(NAME BlockTensorExample COMMAND block_tensor_example)
@@ -94,13 +94,33 @@ uni20_add_example(block_tensor_svd_nullspace_example symmetry/block_tensor_svd_n
                   uni20_symmetry)
 add_test(NAME BlockTensorSvdNullspaceExample COMMAND block_tensor_svd_nullspace_example)
 
-uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_symmetry uni20_linalg)
+uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_linalg)
 add_test(NAME IsingHotrgExample COMMAND ising_hotrg_example --check)
 add_test(NAME IsingHotrgFlowExample COMMAND ising_hotrg_example --bond=8 --rounds=6)
-
-uni20_add_example(ising_hotrg_shared_example models/ising_hotrg_shared_example.cpp uni20_symmetry uni20_linalg)
-add_test(NAME IsingHotrgSharedExample COMMAND ising_hotrg_shared_example --check)
-add_test(NAME IsingHotrgSharedFlowExample COMMAND ising_hotrg_shared_example --bond=8 --rounds=6)
+add_test(NAME IsingHotrgLowTemperature
+         COMMAND ising_hotrg_example --temperature=0.004 --bond=1 --rounds=1 --onsager-points=16)
+add_test(NAME IsingHotrgVeryLowTemperature
+         COMMAND ising_hotrg_example --temperature=0.0001 --bond=4 --rounds=2 --onsager-points=16)
+add_test(NAME IsingHotrgLongFlow
+         COMMAND ising_hotrg_example --bond=1 --rounds=1100 --onsager-points=16)
+add_test(NAME IsingHotrgFloat32
+         COMMAND ising_hotrg_example --precision=fp32 --bond=4 --rounds=1 --onsager-points=16)
+if(UNI20_HAS_MPLAPACK_FLOAT80)
+  add_test(NAME IsingHotrgFloat80
+           COMMAND ising_hotrg_example --precision=fp80 --bond=4 --rounds=1 --onsager-points=16)
+endif()
+if(UNI20_HAS_MPLAPACK_FLOAT128)
+  add_test(NAME IsingHotrgFloat128
+           COMMAND ising_hotrg_example --precision=fp128 --bond=4 --rounds=1 --onsager-points=16)
+endif()
+if(UNI20_HAS_MPLAPACK_MPREAL)
+  foreach(bits IN ITEMS 128 256)
+    add_test(NAME IsingHotrgMpreal${bits}
+             COMMAND ising_hotrg_example --precision=mpreal --bits=${bits} --bond=4 --rounds=1 --onsager-points=16)
+  endforeach()
+endif()
+add_test(NAME IsingHotrgRejectFixedBits COMMAND ising_hotrg_example --precision=fp64 --bits=128)
+set_tests_properties(IsingHotrgRejectFixedBits PROPERTIES WILL_FAIL TRUE)
 
 uni20_add_example(spin_half_heisenberg_dmrg_example models/spin_half_heisenberg_dmrg_example.cpp uni20_models
                   TBB::tbb)
@@ -246,7 +266,7 @@ uni20_add_example(presentation_table_layout_example presentation/table_layout_ex
 uni20_add_example(presentation_glyph_policy_example presentation/glyph_policy_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_text_art_example presentation/text_art_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_diagnostic_region_example presentation/diagnostic_region_example.cpp fmt::fmt uni20_common)
-uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fmt::fmt uni20_common)
 uni20_add_example(display_example presentation/display_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_data_table_example presentation/data_table_example.cpp fmt::fmt uni20_common)
 

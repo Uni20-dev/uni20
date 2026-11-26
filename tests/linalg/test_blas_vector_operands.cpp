@@ -13,9 +13,9 @@
 
 namespace
 {
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
 
-template <class Scalar> using left_mdspan = stdex::mdspan<Scalar, extents_1d, stdex::layout_left>;
+template <class Scalar> using left_mdspan = uni20::mdspan<Scalar, extents_1d, uni20::layout_left>;
 
 template <class Scalar> struct ValueTransformAccessor
 {
@@ -23,13 +23,14 @@ template <class Scalar> struct ValueTransformAccessor
     using data_handle_type = Scalar*;
     using reference = Scalar;
     using offset_policy = ValueTransformAccessor;
+    using offset_type = std::size_t;
 
     constexpr data_handle_type offset(data_handle_type ptr, std::size_t offset) const { return ptr + offset; }
     constexpr reference access(data_handle_type ptr, std::size_t offset) const { return Scalar{2} * ptr[offset]; }
 };
 
 template <class Scalar>
-using value_transform_mdspan = stdex::mdspan<Scalar, extents_1d, stdex::layout_left, ValueTransformAccessor<Scalar>>;
+using value_transform_mdspan = uni20::mdspan<Scalar, extents_1d, uni20::layout_left, ValueTransformAccessor<Scalar>>;
 
 template <class Mdspan>
 concept can_try_blas_readable_vector =
@@ -51,6 +52,7 @@ TEST(BlasVectorOperandTest, ConstrainsDirectAccessorAndScalarTypes)
   static_assert(can_try_blas_readable_vector<left_mdspan<double const>>);
   static_assert(!can_try_blas_writable_vector<left_mdspan<double const>>);
   static_assert(!can_try_blas_readable_vector<left_mdspan<int>>);
+  static_assert(uni20::MdspanLike<value_transform_mdspan<double>>);
   static_assert(!can_try_blas_readable_vector<value_transform_mdspan<double>>);
   static_assert(!can_try_blas_writable_vector<value_transform_mdspan<double>>);
   static_assert(can_try_lapack_writable_vector<left_mdspan<double>>);
@@ -62,8 +64,8 @@ TEST(BlasVectorOperandTest, ConstrainsDirectAccessorAndScalarTypes)
 TEST(BlasVectorOperandTest, StagesPositiveStridedVector)
 {
   std::vector<double> storage(5);
-  stdex::layout_stride::mapping<extents_1d> mapping(extents_1d{3}, std::array<uni20::index_type, 1>{2});
-  stdex::mdspan<double, extents_1d, stdex::layout_stride> span(storage.data(), mapping);
+  uni20::layout_stride::mapping<extents_1d> mapping(extents_1d{3}, std::array<uni20::index_type, 1>{2});
+  uni20::mdspan<double, extents_1d, uni20::layout_stride> span(storage.data(), mapping);
 
   auto stage = uni20::linalg::blas::try_mdspan_vector_stage(span);
   ASSERT_TRUE(stage.has_value());
@@ -80,8 +82,8 @@ TEST(BlasVectorOperandTest, StagesPositiveStridedVector)
 TEST(BlasVectorOperandTest, NormalizesUnobservedSingletonStride)
 {
   std::vector<double> storage(1);
-  stdex::layout_stride::mapping<extents_1d> mapping(extents_1d{1}, std::array<uni20::index_type, 1>{0});
-  stdex::mdspan<double, extents_1d, stdex::layout_stride> span(storage.data(), mapping);
+  uni20::layout_stride::mapping<extents_1d> mapping(extents_1d{1}, std::array<uni20::index_type, 1>{0});
+  uni20::mdspan<double, extents_1d, uni20::layout_stride> span(storage.data(), mapping);
 
   auto stage = uni20::linalg::blas::try_mdspan_vector_stage(span);
   ASSERT_TRUE(stage.has_value());
@@ -99,8 +101,8 @@ TEST(BlasVectorOperandTest, LapackRequiresContiguousWritableVector)
   EXPECT_EQ(operand->increment, 1);
 
   std::vector<double> strided_storage(5);
-  stdex::layout_stride::mapping<extents_1d> mapping(extents_1d{3}, std::array<uni20::index_type, 1>{2});
-  stdex::mdspan<double, extents_1d, stdex::layout_stride> strided(strided_storage.data(), mapping);
+  uni20::layout_stride::mapping<extents_1d> mapping(extents_1d{3}, std::array<uni20::index_type, 1>{2});
+  uni20::mdspan<double, extents_1d, uni20::layout_stride> strided(strided_storage.data(), mapping);
   EXPECT_FALSE(uni20::linalg::blas::try_lapack_writable_vector(strided).has_value());
 }
 
@@ -125,8 +127,8 @@ TEST(BlasVectorOperandTest, DeclinesValuesOutsideBlasIntegerRange)
     std::vector<double> storage(1);
     auto const too_large =
         static_cast<uni20::index_type>(std::numeric_limits<uni20::blas_int>::max()) + uni20::index_type{1};
-    stdex::layout_stride::mapping<extents_1d> mapping(extents_1d{too_large}, std::array<uni20::index_type, 1>{1});
-    stdex::mdspan<double, extents_1d, stdex::layout_stride> span(storage.data(), mapping);
+    uni20::layout_stride::mapping<extents_1d> mapping(extents_1d{too_large}, std::array<uni20::index_type, 1>{1});
+    uni20::mdspan<double, extents_1d, uni20::layout_stride> span(storage.data(), mapping);
 
     EXPECT_FALSE(uni20::linalg::blas::try_mdspan_vector_stage(span).has_value());
   }

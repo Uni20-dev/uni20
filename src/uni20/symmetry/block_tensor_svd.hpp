@@ -757,8 +757,8 @@ template <std::size_t Rank, MutableTensorView Tensor>
   using mutable_base_type = std::remove_cvref_t<decltype(mutable_base)>;
   using const_base_type = std::remove_cvref_t<decltype(const_base)>;
   using index_type = typename mutable_base_type::index_type;
-  using extents_type = stdex::dextents<index_type, Rank>;
-  using layout_type = stdex::layout_stride;
+  using extents_type = uni20::dextents<index_type, Rank>;
+  using layout_type = uni20::layout_stride;
   using mapping_type = typename layout_type::template mapping<extents_type>;
   using mutable_mdspec_type =
       mdspec<typename mutable_base_type::element_type, extents_type, layout_type,
@@ -787,8 +787,8 @@ template <std::size_t Rank, TensorView Tensor>
   auto base = mdspec_of(tensor);
   using base_type = std::remove_cvref_t<decltype(base)>;
   using index_type = typename base_type::index_type;
-  using extents_type = stdex::dextents<index_type, Rank>;
-  using layout_type = stdex::layout_stride;
+  using extents_type = uni20::dextents<index_type, Rank>;
+  using layout_type = uni20::layout_stride;
   using mapping_type = typename layout_type::template mapping<extents_type>;
   using mdspec_type = mdspec<typename base_type::element_type, extents_type, layout_type,
                              typename base_type::accessor_type, typename base_type::data_descriptor_type>;

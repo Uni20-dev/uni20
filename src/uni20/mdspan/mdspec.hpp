@@ -27,7 +27,8 @@ namespace uni20
 /// \tparam Accessor Accessor policy stored for the eventual mdspan.
 /// \tparam DataDescriptor Descriptor identifying the region from which a handle can be acquired.
 template <class ElementType, class Extents, class LayoutPolicy, AccessorPolicy Accessor, class DataDescriptor>
-  requires std::same_as<ElementType, typename Accessor::element_type>
+  requires std::same_as<ElementType, typename Accessor::element_type> &&
+           detail::LayoutOffsetCompatible<LayoutPolicy, Extents, Accessor>
 class mdspec {
   public:
     using element_type = ElementType;
@@ -36,6 +37,7 @@ class mdspec {
     using layout_type = LayoutPolicy;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = Accessor;
+    using offset_type = typename accessor_type::offset_type;
     using data_descriptor_type = DataDescriptor;
     using data_handle_type = typename accessor_type::data_handle_type;
     using reference = typename accessor_type::reference;
@@ -47,9 +49,13 @@ class mdspec {
     /// \param descriptor Descriptor used by later access acquisition.
     /// \param mapping Mapping installed in the eventual mdspan.
     /// \param accessor Accessor installed in the eventual mdspan.
+    /// \throws std::invalid_argument If `mapping` is always strided, nonempty, and maps the all-zero
+    ///         coordinate to a nonzero offset. Uni20's own layouts never do.
     constexpr explicit mdspec(data_descriptor_type descriptor, mapping_type mapping, accessor_type accessor)
         : descriptor_(std::move(descriptor)), mapping_(std::move(mapping)), accessor_(std::move(accessor))
-    {}
+    {
+      detail::require_zero_strided_origin<layout_type>(mapping_);
+    }
 
     /// \brief Return the static rank.
     [[nodiscard]] static constexpr rank_type rank() noexcept { return extents_type::rank(); }
@@ -73,6 +79,13 @@ class mdspec {
     /// \brief Report whether every mapping of this type is strided.
     [[nodiscard]] static constexpr bool is_always_strided() noexcept { return mapping_type::is_always_strided(); }
 
+    /// \brief Report whether the mapping's storage span always starts at the eventual handle.
+    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept
+      requires detail::StorageSpanMapping<mapping_type>
+    {
+      return mapping_type::is_base_offset_always_zero();
+    }
+
     /// \brief Return the descriptor used to acquire writable data access.
     [[nodiscard]] constexpr auto data_descriptor() noexcept -> data_descriptor_type& { return descriptor_; }
 
@@ -86,11 +99,26 @@ class mdspec {
     [[nodiscard]] constexpr auto accessor() const noexcept -> accessor_type const& { return accessor_; }
 
     /// \brief Return the stored extents.
-    [[nodiscard]] constexpr auto extents() const noexcept -> extents_type const& { return mapping_.extents(); }
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr auto extents() const noexcept -> extents_type const&
+    {
+      return mapping_.extents();
+    }
 
     /// \brief Return the runtime extent of one axis.
     /// \param axis Axis whose extent is requested.
     [[nodiscard]] constexpr index_type extent(rank_type axis) const noexcept { return this->extents().extent(axis); }
+
+    /// \brief Return the logical number of elements, including one for a rank-zero descriptor.
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr size_type size() const noexcept
+    {
+      return detail::mdspan_size<size_type>(this->extents());
+    }
+
+    /// \brief Return whether any extent is zero.
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr bool empty() const noexcept
+    {
+      return detail::mdspan_empty(this->extents());
+    }
 
     /// \brief Report whether this mapping is unique.
     [[nodiscard]] constexpr bool is_unique() const noexcept { return mapping_.is_unique(); }

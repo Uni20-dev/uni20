@@ -192,6 +192,15 @@ auto make_block_tensor(std::array<std::size_t, Order> const& extents, StorageIni
   return make_block_tensor<Tensor>(extents, initialization, std::make_index_sequence<Order>{});
 }
 
+template <class Tensor, std::size_t Order>
+auto make_block_tensor(std::array<std::size_t, Order> const& extents, StorageInitialization initialization,
+                       Precision p) -> Tensor
+{
+  auto const shape = typename Tensor::extents_type(extents);
+  if (initialization == StorageInitialization::Uninitialized) return Tensor(uninitialized, shape, p);
+  return Tensor(shape, p);
+}
+
 template <class Extents, std::size_t Order, std::size_t... I>
 auto make_extents(std::array<std::size_t, Order> const& extents, std::index_sequence<I...>) -> Extents
 {
@@ -257,6 +266,16 @@ auto make_storage(std::size_t size, StorageInitialization initialization) -> typ
     initialize_host_elements(storage.data(), size, initialization);
     return storage;
   }
+}
+
+template <class T>
+auto make_host_block_storage(std::size_t size, StorageInitialization initialization, Precision p) -> HostBuffer<T>
+{
+  require_precision<T>(p);
+  if constexpr (has_runtime_precision_v<T>)
+    return HostBuffer<T>(size, initialization, p);
+  else
+    return HostBuffer<T>(size, initialization);
 }
 
 template <class Storage, class T>
@@ -380,6 +399,20 @@ class SeparateSparseBlockStorageData {
       }
     }
 
+    SeparateSparseBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                   StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+    {
+      require_precision<T>(p);
+      keys_.reserve(specs.size());
+      blocks_.reserve(specs.size());
+      for (auto const& spec : specs)
+      {
+        keys_.push_back(spec.key);
+        blocks_.push_back(make_block_tensor<block_type>(spec.extents, initialization, p));
+      }
+    }
+
     auto size() const noexcept -> std::size_t { return keys_.size(); }
     auto keys() const noexcept -> std::span<key_type const> { return keys_; }
 
@@ -429,13 +462,13 @@ template <typename T, std::size_t DenseBlockOrder, class LeafStorage>
 struct PackedBlockViewTraits<T, DenseBlockOrder, LeafStorage, true>
 {
     using buffer_type = packed_storage_t<LeafStorage, T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
     using accessor_factory_type = tensor_accessor_factory_t<LeafStorage>;
     using accessor_type = typename accessor_factory_type::template accessor_t<T>;
     using const_accessor_type = typename accessor_factory_type::template accessor_t<T const>;
-    using mutable_mdspec_type = stdex::mdspan<T, extents_type, ColumnMajor, accessor_type>;
-    using const_mdspec_type = stdex::mdspan<T const, extents_type, ColumnMajor, const_accessor_type>;
+    using mutable_mdspec_type = uni20::mdspan<T, extents_type, ColumnMajor, accessor_type>;
+    using const_mdspec_type = uni20::mdspan<T const, extents_type, ColumnMajor, const_accessor_type>;
     using mutable_block_type = MdspecTensorView<mutable_mdspec_type, const_mdspec_type, LeafStorage>;
     using const_block_type = MdspecTensorView<const_mdspec_type, const_mdspec_type, LeafStorage>;
 
@@ -466,7 +499,7 @@ template <typename T, std::size_t DenseBlockOrder, class LeafStorage>
 struct PackedBlockViewTraits<T, DenseBlockOrder, LeafStorage, false>
 {
     using buffer_type = packed_storage_t<LeafStorage, T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
     using accessor_factory_type = tensor_accessor_factory_t<LeafStorage>;
     using accessor_type = tensor_device_accessor_t<accessor_factory_type, T>;
@@ -553,6 +586,12 @@ class PackedBlockStorageData {
         : PackedBlockStorageData(make_layout(specs), context, initialization)
     {}
 
+    PackedBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                           StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+        : PackedBlockStorageData(make_layout(specs), initialization, p)
+    {}
+
     auto size() const noexcept -> std::size_t { return keys_.size(); }
     auto keys() const noexcept -> std::span<key_type const> { return keys_; }
 
@@ -606,6 +645,13 @@ class PackedBlockStorageData {
                                     initialization);
     }
 
+    [[nodiscard]] auto allocate_like(StorageInitialization initialization, Precision p) const -> PackedBlockStorageData
+      requires std::same_as<LeafStorage, HostStorage>
+    {
+      return PackedBlockStorageData(Layout{.keys = keys_, .offsets = offsets_, .block_ends = block_ends_},
+                                    initialization, p);
+    }
+
   private:
     struct Layout
     {
@@ -650,6 +696,16 @@ class PackedBlockStorageData {
       }
       layout.offsets.push_back(end_offset);
       return layout;
+    }
+
+    PackedBlockStorageData(Layout layout, StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+        : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)), block_ends_(std::move(layout.block_ends)),
+          buffer_(make_host_block_storage<T>(offsets_.back(), initialization, p))
+    {
+      if constexpr (BlockAlignment > 1)
+        if (initialization == StorageInitialization::Uninitialized)
+          initialize_packed_padding<LeafStorage, T>(buffer_, offsets_, block_ends_);
     }
 
     explicit PackedBlockStorageData(Layout layout, StorageInitialization initialization)
@@ -703,16 +759,16 @@ class PackedDiagonalBlockStorageData {
   public:
     using key_type = BlockKey<KeyCoordinateCount>;
     using buffer_type = typename LeafStorage::template storage_t<T>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename GeneratedLayout::template mapping<extents_type>;
     using accessor_type = diagonal_accessor<T, extents_type>;
     using const_accessor_type = diagonal_accessor<T const, extents_type>;
-    using mutable_mdspan_type = stdex::mdspan<T, extents_type, GeneratedLayout, accessor_type>;
-    using const_mdspan_type = stdex::mdspan<T const, extents_type, GeneratedLayout, const_accessor_type>;
-    using component_extents_type = stdex::dextents<index_type, 1>;
-    using component_mapping_type = stdex::layout_stride::mapping<component_extents_type>;
-    using mutable_components_type = stdex::mdspan<T, component_extents_type, stdex::layout_stride>;
-    using const_components_type = stdex::mdspan<T const, component_extents_type, stdex::layout_stride>;
+    using mutable_mdspan_type = uni20::mdspan<T, extents_type, GeneratedLayout, accessor_type>;
+    using const_mdspan_type = uni20::mdspan<T const, extents_type, GeneratedLayout, const_accessor_type>;
+    using component_extents_type = uni20::dextents<index_type, 1>;
+    using component_mapping_type = uni20::layout_stride::mapping<component_extents_type>;
+    using mutable_components_type = uni20::mdspan<T, component_extents_type, uni20::layout_stride>;
+    using const_components_type = uni20::mdspan<T const, component_extents_type, uni20::layout_stride>;
     using mutable_block_type = MdspecTensorView<mutable_mdspan_type, const_mdspan_type, LeafStorage>;
     using const_block_type = MdspecTensorView<const_mdspan_type, const_mdspan_type, LeafStorage>;
 
@@ -732,6 +788,12 @@ class PackedDiagonalBlockStorageData {
     explicit PackedDiagonalBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
                                             StorageInitialization initialization = StorageInitialization::Zero)
         : PackedDiagonalBlockStorageData(make_layout(specs), initialization)
+    {}
+
+    PackedDiagonalBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                   StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+        : PackedDiagonalBlockStorageData(make_layout(specs), initialization, p)
     {}
 
     auto size() const noexcept -> std::size_t { return keys_.size(); }
@@ -817,6 +879,12 @@ class PackedDiagonalBlockStorageData {
       return layout;
     }
 
+    PackedDiagonalBlockStorageData(Layout layout, StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+        : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)),
+          buffer_(make_host_block_storage<T>(offsets_.back(), initialization, p))
+    {}
+
     explicit PackedDiagonalBlockStorageData(Layout layout, StorageInitialization initialization)
         : keys_(std::move(layout.keys)), offsets_(std::move(layout.offsets)),
           buffer_(make_storage<LeafStorage, T>(offsets_.back(), initialization))
@@ -850,10 +918,10 @@ class AsyncSeparateSparseBlockStorageData {
     using key_type = BlockKey<KeyCoordinateCount>;
     using block_value_type = ColumnMajorTensor<T, DenseBlockOrder, LeafStorage>;
     using async_block_type = async::Async<block_value_type>;
-    using extents_type = stdex::dextents<index_type, DenseBlockOrder>;
+    using extents_type = uni20::dextents<index_type, DenseBlockOrder>;
     using mapping_type = typename ColumnMajor::template mapping<extents_type>;
-    using accessor_type = stdex::default_accessor<T>;
-    using const_accessor_type = stdex::default_accessor<T const>;
+    using accessor_type = uni20::default_accessor<T>;
+    using const_accessor_type = uni20::default_accessor<T const>;
     using mutable_descriptor_type = AsyncBlockDataDescriptor<async_block_type>;
     using const_descriptor_type = AsyncBlockDataDescriptor<async_block_type const>;
     using mutable_mdspec_type = mdspec<T, extents_type, ColumnMajor, accessor_type, mutable_descriptor_type>;
@@ -876,6 +944,20 @@ class AsyncSeparateSparseBlockStorageData {
       {
         keys_.push_back(spec.key);
         blocks_.emplace_back(make_block_tensor<block_value_type>(spec.extents, initialization));
+      }
+    }
+
+    AsyncSeparateSparseBlockStorageData(std::vector<BlockSpec<KeyCoordinateCount, DenseBlockOrder>> const& specs,
+                                        StorageInitialization initialization, Precision p)
+      requires std::same_as<LeafStorage, HostStorage>
+    {
+      require_precision<T>(p);
+      keys_.reserve(specs.size());
+      blocks_.reserve(specs.size());
+      for (auto const& spec : specs)
+      {
+        keys_.push_back(spec.key);
+        blocks_.emplace_back(make_block_tensor<block_value_type>(spec.extents, initialization, p));
       }
     }
 

@@ -54,7 +54,7 @@ constexpr auto layout_left_strides(Extents const& exts) -> std::array<typename E
 struct LayoutRight
 {
     template <typename Extents>
-    constexpr auto operator()(Extents const& exts) const -> mapping_for_t<stdex::layout_stride, Extents>
+    constexpr auto operator()(Extents const& exts) const -> mapping_for_t<uni20::layout_stride, Extents>
     {
       return {exts, detail::layout_right_strides(exts)};
     }
@@ -63,7 +63,7 @@ struct LayoutRight
 struct LayoutLeft
 {
     template <typename Extents>
-    constexpr auto operator()(Extents const& exts) const -> mapping_for_t<stdex::layout_stride, Extents>
+    constexpr auto operator()(Extents const& exts) const -> mapping_for_t<uni20::layout_stride, Extents>
     {
       return {exts, detail::layout_left_strides(exts)};
     }
@@ -72,7 +72,7 @@ struct LayoutLeft
 template <typename LayoutPolicy, typename Extents>
 constexpr auto make_mapping(Extents const& exts) -> mapping_for_t<LayoutPolicy, Extents>
 {
-  if constexpr (std::is_same_v<LayoutPolicy, stdex::layout_stride>)
+  if constexpr (std::is_same_v<LayoutPolicy, uni20::layout_stride>)
   {
     return LayoutRight{}(exts);
   }

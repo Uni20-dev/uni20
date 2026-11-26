@@ -21,7 +21,8 @@ cmake -S . -B build_codex/mplapack_mpfr \
 
 `UNI20_USE_SYSTEM_MPLAPACK=AUTO` prefers an installed MPLAPACK package at least
 version 3.0.0 with target `mplapack::mplapack_mpfr`, otherwise fetching pinned
-v3.0.0. `ON` requires an installed package; `OFF` fetches the pinned source.
+v3.0.0. `ON` requires an installed package; `OFF` fetches the pinned source,
+unless a parent project already created the MPLAPACK targets.
 The fetched build uses the reference library, with optimized, CUDA and OpenCL
 variants disabled. Provider-internal parallelism is outside this adapter's
 precision contract.
@@ -88,6 +89,12 @@ argument. `Precision` and the generic queries are available without MPFR; see
 override and nonzero `beta`, its default also participates in precision selection;
 exact defaults are neutral and differing finite defaults are rejected.
 In finite mode, participating values, including coefficients, convert at the backend boundary.
+
+`contract(output, alpha, a, b, axes, beta[, p])` follows these rules too. Direct
+and looped contraction plans forward the selected precision to each MPFR GEMM;
+the async overload resolves defaults within the readable input epochs. See
+[pairwise contraction](tensor_contraction.md) for layout support and the exact
+CPU reference path.
 Exact mode uses ordinary scalar arithmetic without scanning or reclassifying
 elements. Defaults remain best-effort metadata: inserting approximate elements
 in a tensor with an exact default can produce approximate results or scalar

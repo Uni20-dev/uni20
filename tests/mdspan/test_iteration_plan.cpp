@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <tuple>
 
@@ -123,8 +124,8 @@ TEST(MakeIterationPlanTest, AllSizeOneIsScalarEmptyPlan)
 
 TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
 {
-  using extents_t = stdex::dextents<index_t, 0>;
-  using mapping_t = stdex::layout_stride::mapping<extents_t>;
+  using extents_t = uni20::dextents<index_t, 0>;
+  using mapping_t = uni20::layout_stride::mapping<extents_t>;
 
   std::array<std::ptrdiff_t, 0> strides{};
   mapping_t mapping{extents_t{}, strides};
@@ -132,6 +133,39 @@ TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
   auto [plan, offset] = make_iteration_plan_with_offset(mapping);
   EXPECT_TRUE(plan.empty());
   EXPECT_EQ(offset, 0);
+}
+
+TEST(IterationPlanTest, NormalizesMinimumNarrowStrideWithoutNarrowing)
+{
+  using shape = uni20::extents<std::int8_t, 2>;
+  uni20::layout_signed_stride::mapping<shape> const mapping{shape{}, {-128}};
+  auto [dimensions, offset] = make_iteration_plan_with_offset(mapping);
+  ASSERT_EQ(dimensions.size(), 1U);
+  EXPECT_EQ(dimensions[0].extent, 2);
+  EXPECT_EQ(dimensions[0].stride, 128);
+  EXPECT_EQ(offset, -128);
+}
+
+TEST(IterationPlanTest, PreservesEachMappingOrigin)
+{
+  using shape = uni20::extents<std::uint8_t, 2>;
+  using base_mapping = uni20::layout_right::mapping<shape>;
+  struct Mapping : base_mapping
+  {
+      constexpr int operator()(std::uint8_t i) const { return 300 + i; }
+      constexpr int required_span_size() const { return 302; }
+      static constexpr bool is_always_exhaustive() { return false; }
+      static constexpr bool is_exhaustive() { return false; }
+  };
+  Mapping shifted;
+  auto [dimensions, offset] = make_iteration_plan_with_offset(shifted);
+  ASSERT_EQ(dimensions.size(), 1U);
+  EXPECT_EQ(offset, shifted(0));
+  auto plan = make_multi_iteration_plan(std::tuple{base_mapping{}, shifted});
+  EXPECT_TRUE(plan.representable);
+  EXPECT_EQ(plan.base_offsets[0], 0);
+  EXPECT_EQ(plan.base_offsets[1], shifted(0));
+  EXPECT_EQ(plan.reachable_offsets[1].maximum, shifted(1));
 }
 
 TEST(MakeMultiIterationPlanTest, SimpleMatchingLayouts)
@@ -155,8 +189,8 @@ TEST(MakeMultiIterationPlanTest, SimpleMatchingLayouts)
 
 TEST(MakeMultiIterationPlanTest, RankZeroMappingProducesOneScalarElement)
 {
-  using extents_type = stdex::dextents<index_t, 0>;
-  using mapping_type = stdex::layout_left::mapping<extents_type>;
+  using extents_type = uni20::dextents<index_t, 0>;
+  using mapping_type = uni20::layout_left::mapping<extents_type>;
   auto plan = make_multi_iteration_plan(std::tuple{mapping_type{extents_type{}}});
 
   EXPECT_EQ(plan.rank(), 0);
@@ -278,7 +312,35 @@ TEST(MakeMultiIterationPlanTest, ZeroExtentProducesRetainedZeroDim)
   EXPECT_TRUE(plan.reachable_offsets[1].empty());
 }
 
-TEST(MakeMultiIterationPlanTest, OverflowingPrefixScansForALaterZeroExtent)
+TEST(IterationPlanTest, EmptyShapesDoNotQueryStrides)
+{
+  using extents_type = uni20::dextents<index_t, 2>;
+  using base_mapping = uni20::layout_left::mapping<extents_type>;
+  struct Mapping : base_mapping
+  {
+      using base_mapping::base_mapping;
+      index_t stride(std::size_t axis) const
+      {
+        ADD_FAILURE() << "Empty iteration queried stride on axis " << axis;
+        return base_mapping::stride(axis);
+      }
+  };
+
+  for (auto shape : {extents_type{3, 0}, extents_type{0, 3}})
+  {
+    Mapping mapping{shape};
+    auto [dimensions, offset] = make_iteration_plan_with_offset(mapping);
+    ASSERT_EQ(dimensions.size(), 1);
+    EXPECT_EQ(dimensions[0].extent, 0);
+    EXPECT_EQ(offset, 0);
+
+    auto plan = make_multi_iteration_plan(std::tuple{mapping, mapping});
+    EXPECT_TRUE(plan.representable);
+    EXPECT_TRUE(plan.empty());
+  }
+}
+
+TEST(MakeMultiIterationPlanTest, TrailingZeroMakesIterationEmptyAfterALargePrefix)
 {
   constexpr auto maximum = std::numeric_limits<index_t>::max();
   auto const extents = std::array<std::size_t, 3>{static_cast<std::size_t>(maximum), 2, 0};

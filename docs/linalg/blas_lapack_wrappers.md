@@ -261,12 +261,12 @@ in `docs/tensor/dispatch_and_view_semantics_draft.md`: structural views such as
 transform views such as `conj(x)` are read-only by default.
 
 A pointer `data_handle_type` is not enough to prove direct BLAS readability or
-writeability. Direct BLAS/LAPACK wrappers may bypass `access(...)`; that is only
-correct for `stdex::default_accessor<T>` or for accessors whose semantics the
-wrapper explicitly lowers. For the current BLAS adapter, readable inputs may use
-`stdex::default_accessor<T>` or Uni20's `conjugated_accessor` over a default
-accessor. Writable outputs and LAPACK update operands require default-accessor
-views.
+writeability. Direct BLAS/LAPACK wrappers may bypass `access(...)` for
+`uni20::default_accessor<T>` and for accessors whose semantics the wrapper
+explicitly lowers. The BLAS adapter also accepts readable inputs that use
+Uni20's `conjugated_accessor` over a default accessor. Writable outputs and
+LAPACK update operands require the Uni20 default accessor. Import a supported
+standard mdspan with `uni20::mdspan{view}` before passing it to a wrapper.
 
 ### Aliasing Contract
 
