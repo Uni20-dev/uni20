@@ -209,3 +209,35 @@ selected precision.
 precision. The Onsager quadrature sample count remains a
 separate accuracy control. See [the HOTRG numerical contract](../../docs/tensor_network/dense_hotrg.md)
 for supported providers, reference regeneration, and precision coverage.
+
+### The same step on CUDA tensors
+
+In a build with the CUDA, cuBLAS and cuSOLVER backends, `--execution=cuda` runs
+the flow on CUDA tensors of `float` or `double` (`--precision=fp32` or `fp64`),
+on the device chosen by `--cuda-device=N`:
+
+```bash
+./build/examples/ising_hotrg_example --execution=cuda --bond=32 --rounds=5
+./build/examples/ising_hotrg_example --execution=cuda --check
+```
+
+The step in `dense_hotrg.hpp` is written once: the gram, the update network, one
+step and the flow are templates over the tensor type, and `host_place` and
+`device_place` allocate in their place. The model tensor is built and
+normalized on the host and transferred once, and the flow's observer receives a
+host copy of each coarse tensor, because a CUDA tensor has no element access.
+The contractions run in cuBLAS and the regroupings are device copies of
+`permute<>` views. Where a CUDA tensor has no counterpart of a host idiom, the
+header has an overload for it:
+
+| Host idiom | CUDA tensor |
+| --- | --- |
+| the largest entry, by a loop over the storage | `maximum_host(t)` |
+| scaling, by a loop over the storage | `transform_inplace(t, linalg::scale{f})` |
+| the traces, by element access | `sum_host` of `diagonal_view<0, 3, 1, 2>(t)`, and of `diagonal_view<0, 2, 1, 3>` for the gram |
+| `truncated_svd` of the gram | the full cuSOLVER SVD; the singular values are read on the host, and U is the left factor times the leading `k` columns of the identity, since a device matrix has no column view |
+
+Each of these returns one host scalar or keeps its result on the device. With
+`--execution=cuda`, `--check` adds group I: the gram and the update network
+against the host entry by entry, one step along each axis, and two flows of the
+critical Ising model.

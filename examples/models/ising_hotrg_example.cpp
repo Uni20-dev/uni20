@@ -4,7 +4,10 @@
 // the free energy against Onsager's and the two lowest scaling dimensions read from the coarse
 // tensor's transfer matrix against the exactly solved strip of the same width.
 //
-//   ising_hotrg_example [--bond=D] [--rounds=N] [--temperature=T/Tc] [--check]
+//   ising_hotrg_example [--bond=D] [--rounds=N] [--temperature=T/Tc] [--execution=cpu|cuda] [--check]
+//
+// --execution=cuda runs the same step on CUDA tensors (fp32 or fp64), in a build with the CUDA,
+// cuBLAS and cuSOLVER backends.
 //
 // With --check it verifies the implementation instead and exits non-zero on any failure:
 //
@@ -16,6 +19,11 @@
 //   E  every contraction of a round reaches GEMM
 //   F  the coarse tensor's transfer matrix against the exactly solved Ising strip
 //   G  the same reading along a truncated flow, width by width
+//   H  inputs at the edge
+//   I  with --execution=cuda: the step on CUDA tensors against the host, the gram and the update
+//      network entry by entry, one step along each axis, and two flows.  Coarse tensors are not
+//      compared entry by entry after a decomposition: two SVD codes may return a singular vector
+//      with either sign, which changes the tensor but nothing read from it.
 #include "dense_hotrg.hpp"
 #include "ising_hotrg_output.hpp"
 #include "ising_strip_reference.hpp"
@@ -609,7 +617,92 @@ void inputs_at_the_edge()
          "128 rounds retain the lattice width as an exponent without overflow");
 }
 
-int run_checks()
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// ----------------------------------------------------------------------------------------------
+// I  the step on CUDA tensors
+// ----------------------------------------------------------------------------------------------
+
+template <class A, class B> double relative_difference(A const& a, B const& b)
+{
+  double worst = 0.0, scale = 0.0;
+  auto other = b.storage().begin();
+  for (auto const& value : a.storage())
+  {
+    scale = std::max(scale, std::abs(static_cast<double>(value)));
+    worst = std::max(worst, std::abs(static_cast<double>(value) - static_cast<double>(*other)));
+    ++other;
+  }
+  return worst / scale;
+}
+
+double largest_difference(std::vector<double> const& a, std::vector<double> const& b)
+{
+  double worst = a.size() == b.size() ? 0.0 : HUGE_VAL;
+  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i)
+    worst = std::max(worst, std::abs(a[i] - b[i]));
+  return worst;
+}
+
+void the_step_on_cuda_tensors()
+{
+  d::emit(p::report_builder("I  the step on CUDA tensors against the host"), d::stream::out);
+  {
+    tensor4 const t = random4(3, 4, 4, 3, 4321);
+    double const off = relative_difference(gram_y(t), uni20::to_host(gram_y(device_place::upload(t))));
+    d::emit(text("gram of a (3, 4, 4, 3) tensor: off the host by {:.2e} of its largest entry", off), d::stream::out);
+    report(off < 1e-13, "the gram of a CUDA tensor is the host's");
+  }
+  {
+    tensor4 const upper = random4(3, 4, 4, 5, 4322), lower = random4(5, 4, 4, 2, 4323);
+    tensor3 iso(4, 4, 6);
+    generator g{4324};
+    for (auto& value : iso.storage())
+      value = g.next();
+    auto const on_device =
+        apply_isometry(device_place::upload(upper), device_place::upload(lower), device_place::upload(iso));
+    double const off = relative_difference(apply_isometry(upper, lower, iso), uni20::to_host(on_device));
+    d::emit(text("update network, upper (3, 4, 4, 5), lower (5, 4, 4, 2), isometry (4, 4, 6): off by {:.2e}", off),
+            d::stream::out);
+    report(off < 1e-13, "the update network on CUDA tensors is the host's");
+  }
+  double const K = critical_coupling<double>(model::clock, 2, uni20::native_precision<double>());
+  {
+    flow_record const start = flow(vertex(model::clock, 2, K), 4, 2); // a generic 4^4 tensor
+    auto const t_device = device_place::upload(start.T0);
+    for (axis along : {axis::y, axis::x})
+    {
+      char const* const name = along == axis::y ? "y" : "x";
+      step_result const expected = coarse_grain(start.T0, along, 6);
+      auto const got = coarse_grain(t_device, along, 6);
+      double const invariant = expected.norm * torus_trace(expected.T);
+      double const spectrum = largest_difference(expected.S, got.S) / expected.S.front();
+      double const weight = std::abs(expected.discarded - got.discarded);
+      double const gap = std::abs(expected.gap - got.gap);
+      double const trace = std::abs(got.norm * torus_trace(got.T) - invariant) / std::abs(invariant);
+      d::emit(text("{} step: spectrum {:.1e}, discarded weight {:.1e}, gap {:.1e}, norm x trace {:.1e}", name, spectrum,
+                   weight, gap, trace),
+              d::stream::out);
+      report(spectrum < 1e-12 && weight < 1e-12 && gap < 1e-9 && trace < 1e-12,
+             std::string("the ") + name + " step on CUDA tensors agrees with the host");
+    }
+  }
+  for (std::size_t D : {std::size_t{3}, std::size_t{8}})
+  {
+    int const rounds = 6;
+    flow_record const expected = flow(vertex(model::clock, 2, K), D, rounds);
+    flow_record const got = flow<device_place>(vertex(model::clock, 2, K), D, rounds);
+    double const lnz = largest_difference(expected.lnz, got.lnz);
+    double const cut = std::max(largest_difference(expected.discarded_y, got.discarded_y),
+                                largest_difference(expected.discarded_x, got.discarded_x));
+    d::emit(text("bond {}, {} rounds: ln Z / N {:.15f}, off the host by {:.1e}; cut errors off by {:.1e}", D, rounds,
+                 got.lnz.back(), lnz, cut),
+            d::stream::out);
+    report(lnz < 1e-11 && cut < 1e-9, "bond " + std::to_string(D) + ": the flow on CUDA tensors is the host's");
+  }
+}
+#endif
+
+int run_checks(bool on_device)
 {
   d::emit(p::report_builder("Dense HOTRG checks"), d::stream::out);
   kernel_against_the_definition();
@@ -620,6 +713,11 @@ int run_checks()
   transfer_matrix_against_the_exact_strip();
   truncated_flow_against_the_exact_strip();
   inputs_at_the_edge();
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+  if (on_device) the_step_on_cuda_tensors();
+#else
+  static_cast<void>(on_device);
+#endif
   p::report_builder summary("HOTRG checks");
   summary
       .status(failures == 0 ? p::semantic_glyph::success : p::semantic_glyph::failure,
@@ -641,7 +739,7 @@ template <uni20::Real R> R read_real(std::string_view text, uni20::Precision p)
     return uni20::parse_real<R>(text);
 }
 
-template <uni20::Real R>
+template <uni20::Real R, class Place = host_place>
 int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Precision precision, int quadrature_points)
 {
   R const ratio = read_real<R>(temperature, precision);
@@ -653,11 +751,12 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .field("Bits", precision.bit_count())
       .field("Bond", D)
       .field("Rounds", rounds)
-      .field("Width", "2^log2(width)");
+      .field("Width", "2^log2(width)")
+      .field("Tensors", Place::name);
   d::emit(std::move(setup), d::stream::out);
   auto results = make_flow_table<R>(precision);
   results.attach(p::terminal_sink());
-  auto const record = flow(vertex(model::clock, 2, K), D, rounds, [&](auto const& r, auto const& t) {
+  auto const record = flow<Place>(vertex(model::clock, 2, K), D, rounds, [&](auto const& r, auto const& t) {
     auto const i = r.log2_width.size() - 1;
     int const exponent = r.log2_width[i];
     auto const spectrum = ring_levels(t);
@@ -718,20 +817,33 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .row("--precision=P", "fp32|fp64|fp80|fp128|mpreal (default fp64); wide types require configured MPLAPACK")
       .row("--bits=N", "Binary working precision for mpreal (default 128)")
       .row("--onsager-points=N", "Midpoint samples for the free-energy diagnostic (default 400000)")
-      .row("--check", "Original double-precision definition and flow checks")
+      .row("--execution=E", "cpu|cuda (default cpu); cuda takes fp32 or fp64 and needs the CUDA backends")
+      .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
+      .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
       .row("-h, --help", "Show this help");
   d::emit(std::move(help), complaint ? d::stream::err : d::stream::out);
   std::exit(complaint ? 2 : 0);
 }
 
-template <class Integer> Integer parse_integer(std::string_view text)
+template <class Integer> Integer parse_integer(std::string_view text, Integer least = 1)
 {
   Integer value{};
   auto const [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-  if (error != std::errc{} || end != text.data() + text.size() || value < 1)
-    throw std::invalid_argument("expected a positive integer");
+  if (error != std::errc{} || end != text.data() + text.size() || value < least)
+    throw std::invalid_argument(least == 0 ? "expected a nonnegative integer" : "expected a positive integer");
   return value;
 }
+
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// Initialize the CUDA runtime on one device for the lifetime of `run`.
+template <class Run> int on_cuda_device(int device, Run&& run)
+{
+  auto runtime =
+      uni20::cuda::initialize({.device_ordinals = {device}, .default_device = device, .streams_per_device = 4});
+  uni20::cuda::ScopedDevice const selected(device);
+  return run();
+}
+#endif
 
 } // namespace
 
@@ -740,7 +852,8 @@ int main(int argc, char** argv)
   std::size_t bond = 16;
   int rounds = 8, points = 400000;
   [[maybe_unused]] std::int64_t bits = 128;
-  std::string_view temperature = "1", precision = "fp64";
+  std::string_view temperature = "1", precision = "fp64", execution = "cpu";
+  [[maybe_unused]] int cuda_device = 0;
   bool check = false, explicit_bits = false;
   try
   {
@@ -772,16 +885,35 @@ int main(int argc, char** argv)
       }
       else if (name == "--onsager-points")
         points = parse_integer<int>(value);
+      else if (name == "--execution")
+        execution = value;
+      else if (name == "--cuda-device")
+        cuda_device = parse_integer<int>(value, 0);
       else
         usage("unknown option");
     }
     if (explicit_bits && precision != "mpreal") usage("--bits requires --precision=mpreal");
-    if (check)
+    if (execution != "cpu" && execution != "cuda") usage("--execution is cpu or cuda");
+    if (check && precision != "fp64")
+      usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
+    if (execution == "cuda")
     {
-      if (precision != "fp64")
-        usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
-      return run_checks();
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+      if (check) return on_cuda_device(cuda_device, [] { return run_checks(true); });
+      if (precision == "fp32")
+        return on_cuda_device(cuda_device, [&] {
+          return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points);
+        });
+      if (precision == "fp64")
+        return on_cuda_device(cuda_device, [&] {
+          return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points);
+        });
+      usage("--execution=cuda takes --precision=fp32 or fp64");
+#else
+      usage("--execution=cuda needs a build with the CUDA, cuBLAS and cuSOLVER backends");
+#endif
     }
+    if (check) return run_checks(false);
     if (precision == "fp32")
       return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points);
     if (precision == "fp64")

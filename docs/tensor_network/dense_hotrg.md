@@ -61,6 +61,10 @@ precision setting is needed.
 | `mpreal --bits=N` | N binary digits (default 128) | MPLAPACK MPFR |
 
 Unavailable choices are rejected. `--bits` is valid only with `mpreal`.
+`--execution=cuda` runs the same step on CUDA tensors for `fp32` and `fp64`,
+in a build with the CUDA, cuBLAS and cuSOLVER backends; the wider types are host
+only. See the [model examples](../../examples/models/) for what the
+device step does where a CUDA tensor has no counterpart of a host idiom.
 Temperature is supplied as decimal `T/Tc` and parsed directly at the selected
 precision. The critical coupling `log(1 + sqrt(2))/2` is evaluated at that same
 precision; `--temperature=1` denotes criticality without a stored double `Tc`.
