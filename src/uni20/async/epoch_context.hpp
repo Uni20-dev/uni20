@@ -331,7 +331,11 @@ class EpochContext {
       DEBUG_CHECK(phase_ == Phase::Pending, this);
       // A task may already have failed while waiting for this epoch to start; the inherited
       // failure takes its place.
-      if (eptr) replaced = std::exchange(eptr_, std::move(eptr));
+      if (eptr)
+      {
+        replaced = std::exchange(eptr_, std::move(eptr));
+        has_exception_.store(true, std::memory_order_release);
+      }
       this->advance_start_locked(std::move(lock));
     }
 
@@ -506,6 +510,7 @@ class EpochContext {
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_clear_errors", this, counter_);
       DEBUG_CHECK(phase_ <= Phase::Writing);
       eptr_ = nullptr;
+      has_exception_.store(false, std::memory_order_release);
       // cancelled_ = false;
       // inherit_error_state_ = false;
     }
@@ -586,6 +591,7 @@ class EpochContext {
         return;
       }
       eptr_ = std::move(e);
+      has_exception_.store(static_cast<bool>(eptr_), std::memory_order_release);
     }
 
     // void writer_set_cancel() noexcept
@@ -725,10 +731,11 @@ class EpochContext {
     /// \brief Returns the exception object.
     std::exception_ptr reader_exception() const noexcept
     {
-      // A failure can still arrive while readers hold the epoch: an owning holder that an
-      // exception destroyed published it before the promise delivered the failure (#163).
-      std::lock_guard lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_exception", this, counter_);
+      // A failure may arrive after the writer released the epoch. Use the atomic flag on
+      // successful reads and take the mutex before copying an exception pointer.
+      if (!has_exception_.load(std::memory_order_acquire)) return {};
+      std::lock_guard lock(mtx_);
       DEBUG_PRECONDITION(phase_ == Phase::Reading);
 
       return eptr_;
@@ -880,12 +887,13 @@ class EpochContext {
       return epoch;
     }
 
-    // All of the data is protected by the mutex
+    // The mutex protects the epoch's mutable state except for the atomic exception flag.
     mutable std::mutex mtx_;
 
     // Exception pointer - if this is set, then any attempt to get a buffer throws the exception.
     // This is also propogated to future epochs
     std::exception_ptr eptr_{nullptr};
+    std::atomic<bool> has_exception_{false};
 
     // Epoch counter. This is mainly for debugging
     int counter_{0};
@@ -1247,7 +1255,10 @@ template <typename T> class EpochContextWriter {
     ///          are told apart by `std::uncaught_exceptions()` against its value when this object
     ///          took the writer. A coroutine step resumed during an unrelated exception can
     ///          misclassify, which affects only that best-effort delivery.
-    ~EpochContextWriter() { this->release(std::uncaught_exceptions() <= uncaught_at_take_); }
+    ~EpochContextWriter()
+    {
+      if (epoch_) this->release(std::uncaught_exceptions() <= uncaught_at_take_);
+    }
 
 #if UNI20_DEBUG_DAG
     /// \brief Get the debug node pointer of the object
