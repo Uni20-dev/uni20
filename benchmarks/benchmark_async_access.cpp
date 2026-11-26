@@ -104,29 +104,31 @@ BENCHMARK(AccessHeldReadProxyGetThreads)
 
 // ------------------- Writes with a readback --------------------
 
-AsyncTask write_borrowed(WriteBuffer<int> w, int value) { co_await w = value; }
+// The write benchmarks use unsigned values, which wrap, so long timing runs stay well defined.
 
-AsyncTask write_owning(WriteBuffer<int> w, int value)
+AsyncTask write_borrowed(WriteBuffer<unsigned> w, unsigned value) { co_await w = value; }
+
+AsyncTask write_owning(WriteBuffer<unsigned> w, unsigned value)
 {
   auto proxy = co_await w.transfer();
   proxy = value;
 }
 
-AsyncTask write_with_write_to(WriteBuffer<int> w, int value) { co_await write_to(std::move(w), value); }
+AsyncTask write_with_write_to(WriteBuffer<unsigned> w, unsigned value) { co_await write_to(std::move(w), value); }
 
-AsyncTask add_in_place(WriteBuffer<int> w, int value) { co_await w += value; }
+AsyncTask add_in_place(WriteBuffer<unsigned> w, unsigned value) { co_await w += value; }
 
 // Schedules one writer coroutine per iteration and reads the result back.
-template <AsyncTask (*Write)(WriteBuffer<int>, int)> void write_and_read_back(benchmark::State& state)
+template <AsyncTask (*Write)(WriteBuffer<unsigned>, unsigned)> void write_and_read_back(benchmark::State& state)
 {
   DebugScheduler sched;
-  Async<int> x = 0;
-  int i = 0;
+  Async<unsigned> x = 0;
+  unsigned i = 0;
   for (auto _ : state)
   {
     sched.schedule(Write(x.write(), ++i));
     sched.run_all();
-    int value = x.get_wait(sched);
+    unsigned value = x.get_wait(sched);
     benchmark::DoNotOptimize(value);
   }
 }
@@ -137,21 +139,21 @@ BENCHMARK(write_and_read_back<add_in_place>)->Name("AccessInPlaceAddAndReadback"
 
 // ------------- In-place access through a held proxy -------------
 
-AsyncTask update_borrowed_proxy(WriteBuffer<int> w, benchmark::State& state)
+AsyncTask update_borrowed_proxy(WriteBuffer<unsigned> w, benchmark::State& state)
 {
   auto proxy = co_await w;
   for (auto _ : state)
     benchmark::DoNotOptimize(++proxy.get());
 }
 
-AsyncTask update_owning_proxy(WriteBuffer<int> w, benchmark::State& state)
+AsyncTask update_owning_proxy(WriteBuffer<unsigned> w, benchmark::State& state)
 {
   auto proxy = co_await w.transfer();
   for (auto _ : state)
     benchmark::DoNotOptimize(++proxy.get());
 }
 
-AsyncTask add_through_proxy(WriteBuffer<int> w, benchmark::State& state)
+AsyncTask add_through_proxy(WriteBuffer<unsigned> w, benchmark::State& state)
 {
   auto proxy = co_await w;
   for (auto _ : state)
@@ -162,13 +164,13 @@ AsyncTask add_through_proxy(WriteBuffer<int> w, benchmark::State& state)
 }
 
 // Runs the whole timing loop inside one coroutine that holds the writer.
-template <AsyncTask (*Update)(WriteBuffer<int>, benchmark::State&)> void update_held_proxy(benchmark::State& state)
+template <AsyncTask (*Update)(WriteBuffer<unsigned>, benchmark::State&)> void update_held_proxy(benchmark::State& state)
 {
   DebugScheduler sched;
-  Async<int> x = 0;
+  Async<unsigned> x = 0;
   sched.schedule(Update(x.write(), state));
   sched.run_all();
-  int value = x.get_wait(sched);
+  unsigned value = x.get_wait(sched);
   benchmark::DoNotOptimize(value);
 }
 BENCHMARK(update_held_proxy<update_borrowed_proxy>)->Name("AccessHeldBorrowedProxyGet");
