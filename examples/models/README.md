@@ -186,11 +186,8 @@ a fixed epsilon: the transfer matrix holds `lambda_i / lambda_0 = exp(-2 pi X_i)
 so the rounding of the leading eigenvalue limits `X_i` to about
 `eps exp(2 pi X_i) / (2 pi)`.
 
-Two properties of the current dense API shape the header. `contract` does not
-pack an operand, so each contraction is written as a matrix product, with the
-surviving index group leading or trailing and the summed group adjacent on both
-operands, which is the form that dispatches to GEMM. The dense `Tensor` has no
-axis permutation, so each regrouping between contractions goes through an
-order-four `BlockTensor` over single-sector U(1) spaces, whose `permute<>` view
-is then materialized with `make_tensor`; tensors of rank five enter it with two
-adjacent axes fused by `reshape_view`.
+`contract` does not pack an operand, so each contraction in the header is
+written as a matrix product, with the surviving index group leading or trailing
+and the summed group adjacent on both operands, which is the form that
+dispatches to GEMM. Each regrouping between contractions is a `permute<>` view
+of the dense tensor, materialized as a column-major tensor with `make_tensor`.

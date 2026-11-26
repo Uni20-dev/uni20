@@ -94,7 +94,7 @@ uni20_add_example(block_tensor_svd_nullspace_example symmetry/block_tensor_svd_n
                   uni20_symmetry)
 add_test(NAME BlockTensorSvdNullspaceExample COMMAND block_tensor_svd_nullspace_example)
 
-uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_symmetry uni20_linalg)
+uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_linalg)
 add_test(NAME IsingHotrgExample COMMAND ising_hotrg_example --check)
 add_test(NAME IsingHotrgFlowExample COMMAND ising_hotrg_example --bond=8 --rounds=6)
 

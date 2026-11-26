@@ -15,13 +15,10 @@
 //
 // The kernel is the step ALONG y; the step along x is the kernel on the axis-exchanged tensor.
 //
-// Uni20 has no dense axis permutation and `contract` never packs an operand, so (1) every
-// contraction below is written as a matrix product -- the surviving group leading or trailing,
-// the summed group adjacent on both operands -- which is what reaches GEMM, and (2) every
-// regrouping in between goes through a BlockTensor over single-sector U(1) spaces, whose
-// `permute<>` + materialization is the permutation the dense Tensor lacks (`detail::wrap`,
-// `detail::permuted`).  That API is capped at order 4: a rank-5 tensor enters it with two
-// adjacent axes fused by `reshape_view`.
+// `contract` never packs an operand, so every contraction below is written as a matrix product
+// -- the surviving group leading or trailing, the summed group adjacent on both operands --
+// which is what reaches GEMM.  Every regrouping in between is a `permute<>` view materialized
+// as a column-major tensor (`detail::permuted`).
 //
 // Real double precision, unit cell 1x1.  `ring_levels` reads the transfer-matrix spectrum of
 // the coarse tensor back out, which is what the example compares against exact Ising values
@@ -31,8 +28,8 @@
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/truncated_svd.hpp>
-#include <uni20/symmetry/block_tensor_permute.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/permute.hpp>
 #include <uni20/tensor/reshape.hpp>
 #include <uni20/tensor/tensor.hpp>
 
@@ -55,6 +52,7 @@ using idx = uni20::index_type;
 using axis_pair = std::pair<std::size_t, std::size_t>;
 using tensor3 = uni20::Tensor<double, 3>;
 using tensor4 = uni20::Tensor<double, 4>;
+using tensor5 = uni20::Tensor<double, 5>;
 
 enum class axis
 {
@@ -68,8 +66,8 @@ enum class model
 };
 
 // Where a run's time goes, accumulated over every call since the program started: the GEMM
-// contractions, the regroupings through the U(1) detour (strided copies in Uni20's reference
-// loop), and the SVD of the gram.
+// contractions, the regroupings (strided copies that materialize a permuted view), and the SVD
+// of the gram.
 struct seconds_spent
 {
     double contract = 0.0, regroup = 0.0, svd = 0.0;
@@ -94,53 +92,12 @@ struct lap
     ~lap() { slot += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(); }
 };
 
-// Four legs, all in the domain, so that every permutation of them is side-preserving.
-using Wrap =
-    uni20::BlockTensor<double,
-                       uni20::Domain<uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace, uni20::BlockSpace>,
-                       uni20::Codomain<>, uni20::PackedSparseBlockStorage<>>;
-
-// U(1) with only its identity sector in use: a Wrap is one dense block.
-struct trivial_u1
-{
-    uni20::Symmetry sym{"N:U(1)"};
-    uni20::QNum q0 = uni20::QNum::identity(sym);
-
-    [[nodiscard]] uni20::BlockSpace space(idx dim) const
-    {
-      return uni20::BlockSpace(sym, {{q0, static_cast<std::size_t>(dim)}}, "group");
-    }
-    [[nodiscard]] static Wrap::key_type key() { return Wrap::key_type{{0, 0, 0, 0}}; }
-};
-
-inline trivial_u1 const& group()
-{
-  static trivial_u1 const instance;
-  return instance;
-}
-
-// An order-4 BlockTensor of the given extents; its one block is where `contract` writes.
-[[nodiscard]] inline Wrap wrap(idx e0, idx e1, idx e2, idx e3)
-{
-  auto const& g = group();
-  return Wrap(g.sym, uni20::Domain{g.space(e0), g.space(e1), g.space(e2), g.space(e3)}, uni20::Codomain<>{},
-              {trivial_u1::key()});
-}
-
-[[nodiscard]] inline Wrap wrap(tensor4 const& t)
+// The tensor with its axes regrouped, as an owning column-major tensor: output axis j is source
+// axis Axis[j].
+template <std::size_t... Axis, class Source> [[nodiscard]] auto permuted(Source const& t)
 {
   lap const timer(spent().regroup);
-  Wrap w = wrap(t.extent(0), t.extent(1), t.extent(2), t.extent(3));
-  auto block = w.block(trivial_u1::key());
-  uni20::copy(block, t);
-  return w;
-}
-
-// The block with its axes regrouped, as an owning dense tensor: output axis j is source axis Axis[j].
-template <std::size_t... Axis> [[nodiscard]] auto permuted(Wrap& w)
-{
-  lap const timer(spent().regroup);
-  return uni20::make_tensor<uni20::ColumnMajor>(uni20::permute<Axis...>(w).block(trivial_u1::key()));
+  return uni20::make_tensor<uni20::ColumnMajor>(uni20::permute<Axis...>(t));
 }
 
 inline void require(bool ok, char const* what)
@@ -252,11 +209,7 @@ inline void scale(tensor4& t, double factor)
 }
 
 // The same tensor with the two axes' names exchanged, T[u, l, r, d] -> [l, u, d, r].
-[[nodiscard]] inline tensor4 exchange_axes(tensor4 const& t)
-{
-  auto w = detail::wrap(t);
-  return detail::permuted<1, 0, 3, 2>(w);
-}
+[[nodiscard]] inline tensor4 exchange_axes(tensor4 const& t) { return detail::permuted<1, 0, 3, 2>(t); }
 
 // ---------------------------------------------------------------------------------------------
 // the kernel: the step along y
@@ -282,36 +235,28 @@ inline void scale(tensor4& t, double factor)
 {
   idx const m = t.extent(0), n = t.extent(1);
   detail::require(t.extent(2) == n && t.extent(3) == m, "gram: opposite faces differ in dimension");
-  auto const key = detail::trivial_u1::key();
   using std::array;
 
-  auto site = detail::wrap(t);
-  auto const t_ld_ur = detail::permuted<1, 3, 0, 2>(site); // [l, d, u, r]
-  auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(site); // [l, u, r, d]
+  auto const t_ld_ur = detail::permuted<1, 3, 0, 2>(t); // [l, d, u, r]
+  auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(t); // [l, u, r, d]
 
-  auto upper = detail::wrap(n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
+  tensor4 upper(n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
   {
-    auto block = upper.block(key);
-    auto out = uni20::reshape_view(block, n, m, n, m);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, t_ld_ur, t_ld_ur, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
+    uni20::linalg::contract(upper, 1.0, t_ld_ur, t_ld_ur, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
   }
-  auto lower = detail::wrap(n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
+  tensor4 lower(n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
   {
-    auto block = lower.block(key);
-    auto out = uni20::reshape_view(block, n, m, n, m);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, t_lu_rd, t_lu_rd, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
+    uni20::linalg::contract(lower, 1.0, t_lu_rd, t_lu_rd, array<axis_pair, 2>{{{2, 2}, {3, 3}}}, 0.0);
   }
   auto const a = detail::permuted<0, 2, 1, 3>(upper); // [l1, l1', s, s']
   auto const b = detail::permuted<1, 3, 0, 2>(lower); // [s, s', l2, l2']
 
-  auto paired = detail::wrap(n, n, n, n); // [l1, l1', l2, l2']
+  tensor4 paired(n, n, n, n); // [l1, l1', l2, l2']
   {
-    auto block = paired.block(key);
-    auto out = uni20::reshape_view(block, n, n, n, n);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}}, 0.0);
+    uni20::linalg::contract(paired, 1.0, a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}}, 0.0);
   }
   return detail::permuted<0, 2, 1, 3>(paired); // [l1, l2, l1', l2']
 }
@@ -340,48 +285,37 @@ inline void scale(tensor4& t, double factor)
   detail::require(upper.extent(2) == n && lower.extent(1) == n && lower.extent(2) == n && lower.extent(0) == ms,
                   "apply_isometry: the two tensors do not stack");
   detail::require(iso.extent(0) == n && iso.extent(1) == n, "apply_isometry: the isometry does not fit the fused pair");
-  auto const key = detail::trivial_u1::key();
   using std::array;
 
-  auto up = detail::wrap(upper);
-  auto const tu = detail::permuted<0, 2, 3, 1>(up); // [u, r1, s, l1]
-  auto low = detail::wrap(lower);
-  auto const td = detail::permuted<1, 0, 2, 3>(low); // [l2, s, r2, d]
+  auto const tu = detail::permuted<0, 2, 3, 1>(upper); // [u, r1, s, l1]
+  auto const td = detail::permuted<1, 0, 2, 3>(lower); // [l2, s, r2, d]
 
-  // H2[u, r1, k1, r2, d] = sum_{l2, s} H1 Td, held as [(u r1), k1, r2, d].  The scopes keep at
-  // most two chi^5 buffers alive at a time.
-  auto second = [&] {
-    // H1[u, r1, s, l2, k1] = sum_{l1} Tu U, held as [(u r1), s, l2, k1]
-    auto const h1_owner = [&] {
-      auto first = detail::wrap(mu * n, ms, n, k);
+  // H2[u, r1, k1, r2, d] = sum_{l2, s} H1 Td.  The scopes keep at most two chi^5 buffers alive
+  // at a time.
+  auto const second = [&] {
+    // H1[u, r1, s, l2, k1] = sum_{l1} Tu U, regrouped as [u, r1, k1, l2, s]
+    auto const h1 = [&] {
+      tensor5 first(mu, n, ms, n, k);
       {
-        auto block = first.block(key);
-        auto out = uni20::reshape_view(block, mu, n, ms, n, k);
         detail::lap const timer(spent().contract);
-        uni20::linalg::contract(out, 1.0, tu, iso, array<axis_pair, 1>{{{3, 0}}}, 0.0);
+        uni20::linalg::contract(first, 1.0, tu, iso, array<axis_pair, 1>{{{3, 0}}}, 0.0);
       }
-      return detail::permuted<0, 3, 2, 1>(first); // [(u r1), k1, l2, s]
+      return detail::permuted<0, 1, 4, 3, 2>(first);
     }();
-    auto const h1 = uni20::reshape_view(h1_owner, mu, n, k, n, ms);
-    auto held = detail::wrap(mu * n, k, n, md);
+    tensor5 held(mu, n, k, n, md);
     {
-      auto block = held.block(key);
-      auto out = uni20::reshape_view(block, mu, n, k, n, md);
       detail::lap const timer(spent().contract);
-      uni20::linalg::contract(out, 1.0, h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
+      uni20::linalg::contract(held, 1.0, h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
     }
     return held;
   }();
-  auto const h2_owner = detail::permuted<1, 3, 0, 2>(second); // [k1, d, (u r1), r2]
-  auto const h2 = uni20::reshape_view(h2_owner, k, md, mu, n, n);
+  auto const h2 = detail::permuted<2, 4, 0, 1, 3>(second); // [k1, d, u, r1, r2]
 
   // [k1, d, u, k2] = sum_{r1, r2} H2 U
-  auto third = detail::wrap(k, md, mu, k);
+  tensor4 third(k, md, mu, k);
   {
-    auto block = third.block(key);
-    auto out = uni20::reshape_view(block, k, md, mu, k);
     detail::lap const timer(spent().contract);
-    uni20::linalg::contract(out, 1.0, h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
+    uni20::linalg::contract(third, 1.0, h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}}, 0.0);
   }
   return detail::permuted<2, 0, 3, 1>(third); // [u, k1, k2, d]
 }
