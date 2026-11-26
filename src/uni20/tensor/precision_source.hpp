@@ -1,22 +1,32 @@
 #pragma once
 
 #include <uni20/core/runtime_precision.hpp>
+#include <uni20/tensor/concepts.hpp>
+
+#include <memory>
 
 namespace uni20::detail
 {
-// Descriptor views copy this binding to the ultimate owner, never to an
-// intermediate view. Fixed scalar types need no metadata or extra storage.
+// Descriptor copies retain a live precision source, rather than a snapshot of
+// the default. Fixed scalar types need no binding or extra storage.
 template <class T, bool = has_runtime_precision_v<T>> class precision_source {};
 
 #if UNI20_HAS_MPREAL
 template <class T> class precision_source<T, true> {
   public:
     constexpr precision_source() = default;
-    explicit constexpr precision_source(precision_default<T> const& owner) : value_(&owner.value) {}
 
-    [[nodiscard]] std::optional<Precision> default_precision_if_set() const noexcept
+    template <class Owner>
+      requires requires(Owner const& owner) { owner.default_precision_if_set(); }
+    explicit constexpr precision_source(Owner const& owner)
+        : owner_(std::addressof(owner)), read_([](void const* pointer) -> std::optional<Precision> {
+            return static_cast<Owner const*>(pointer)->default_precision_if_set();
+          })
+    {}
+
+    [[nodiscard]] std::optional<Precision> default_precision_if_set() const
     {
-      return value_ ? *value_ : std::nullopt;
+      return read_ ? read_(owner_) : std::nullopt;
     }
 
     [[nodiscard]] Precision default_precision() const
@@ -27,15 +37,52 @@ template <class T> class precision_source<T, true> {
     }
 
   private:
-    std::optional<Precision> const* value_ = nullptr;
+    void const* owner_ = nullptr;
+    std::optional<Precision> (*read_)(void const*) = nullptr;
 };
 #endif
 
 template <class Tensor>
-[[nodiscard]] auto descriptor_precision_source(Tensor const& tensor) -> precision_source<typename Tensor::value_type>
+[[nodiscard]] constexpr auto
+descriptor_precision_source(Tensor const& tensor) -> precision_source<tensor_element_t<Tensor>>
 {
-  if constexpr (requires { tensor.precision_source(); })
+  using source_type = precision_source<tensor_element_t<Tensor>>;
+  if constexpr (!has_runtime_precision_v<tensor_element_t<Tensor>>)
+    return {};
+  else if constexpr (requires { tensor.precision_source(); })
     return tensor.precision_source();
+  else if constexpr (requires {
+                       requires TensorView<decltype(tensor.base())> &&
+                                    std::is_lvalue_reference_v<decltype(tensor.base())>;
+                     })
+    return descriptor_precision_source(tensor.base());
+  else if constexpr (requires { tensor.default_precision_if_set(); })
+    return source_type{tensor};
+  else
+    return {};
+}
+
+/// \brief Precision source for a descriptor that may outlive the object it was derived from.
+/// \details Binds only through `precision_source()`, or through an lvalue
+///          `base()` by the same rule, which name storage independent of
+///          `tensor` itself. An object that reports its default only through its
+///          own `default_precision_if_set()` is not bound, because binding would
+///          record the address of an object the descriptor can outlive, such as
+///          a by-value parameter or a temporary view. Such a descriptor reports no
+///          default.
+template <class Tensor>
+[[nodiscard]] constexpr auto
+durable_precision_source(Tensor const& tensor) -> precision_source<tensor_element_t<Tensor>>
+{
+  if constexpr (!has_runtime_precision_v<tensor_element_t<Tensor>>)
+    return {};
+  else if constexpr (requires { tensor.precision_source(); })
+    return tensor.precision_source();
+  else if constexpr (requires {
+                       requires TensorView<decltype(tensor.base())> &&
+                                    std::is_lvalue_reference_v<decltype(tensor.base())>;
+                     })
+    return durable_precision_source(tensor.base());
   else
     return {};
 }

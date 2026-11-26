@@ -7,7 +7,6 @@ target_include_directories(uni20_krylov
 
 target_link_libraries(uni20_krylov
     INTERFACE
-        mdspan
         uni20_deps
         uni20_linalg
 )

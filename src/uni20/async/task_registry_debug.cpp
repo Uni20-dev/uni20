@@ -10,15 +10,18 @@
 #include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fmt/chrono.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 #if UNI20_HAS_STACKTRACE
@@ -307,6 +310,20 @@ std::size_t parse_stacktrace_frame_count(char const* raw_value, std::size_t fall
   return static_cast<std::size_t>(parsed);
 }
 
+// Only the two signals reserved for applications. The kernel raises a fault
+// signal such as SIGFPE at the faulting instruction, which traps again when a
+// handler returns, and the other signals belong to the program or its shell.
+bool is_diagnostics_signal(int signal) noexcept
+{
+#if defined(SIGUSR1) && defined(SIGUSR2)
+  return signal == SIGUSR1 || signal == SIGUSR2;
+#else
+  (void)signal;
+  return false;
+#endif
+}
+
+// 0 when the value asks for no signal, -1 when it names one the service does not accept.
 int parse_signal_number(char const* value) noexcept
 {
   if (!value || value[0] == '\0') return 0;
@@ -320,7 +337,8 @@ int parse_signal_number(char const* value) noexcept
 #if defined(SIGUSR2)
   if (signal == "USR2" || signal == "SIGUSR2") return SIGUSR2;
 #endif
-  return parse_positive_int(value, 0);
+  auto const number = parse_positive_int(value, -1);
+  return is_diagnostics_signal(number) ? number : -1;
 }
 
 GraphvizDumpOptions default_graphviz_dump_options()
@@ -578,12 +596,119 @@ struct EpochDebugInfo
 #endif
 };
 
+/// \brief Registry entry for a live epoch.
+/// \details Only a weak reference is kept, so registration never extends an epoch's lifetime.
+struct EpochRegistration
+{
+    std::weak_ptr<EpochContext> epoch{};
+    EpochDebugInfo info{};
+};
+
 struct EpochDotRecord
 {
-    EpochContext const* epoch{nullptr};
+    EpochContext* epoch{nullptr};
     EpochDebugInfo info{};
     EpochContext::DebugSnapshot snapshot{};
     bool snapshot_available{true};
+};
+
+#if UNI20_DEBUG_DAG
+/// \brief A diagnostic reader of one value's reading epoch, if one can be admitted.
+/// \details A snapshot formats a live value only while it holds one, so no writer can change or
+///          destroy the value meanwhile. The snapshot that creates it is counted as in progress
+///          for its whole run (see `SnapshotInProgress`), so this reader is too.
+class DiagnosticRead {
+  public:
+    DiagnosticRead(NodeInfo const* node, std::vector<EpochDotRecord> const& epochs, bool wait_for_lock) noexcept
+    {
+      using Admission = EpochContext::DiagnosticReadAdmission;
+      for (auto const& record : epochs)
+      {
+        // An epoch whose best-effort snapshot failed may still belong to this node; admission checks.
+        if (record.snapshot_available && record.snapshot.node != node) continue;
+        switch (record.epoch->diagnostic_reader_admit(node, wait_for_lock))
+        {
+          case Admission::Admitted:
+            epoch_ = record.epoch;
+            return;
+          case Admission::WriterActive:
+            refusal_ = Refusal::writer_active;
+            break;
+          case Admission::Busy:
+            refusal_ = std::max(refusal_, Refusal::epoch_busy);
+            break;
+          case Admission::NotReadable:
+            refusal_ = std::max(refusal_, Refusal::not_reading);
+            break;
+          case Admission::OtherNode:
+            break;
+        }
+      }
+    }
+
+    DiagnosticRead(DiagnosticRead const&) = delete;
+    DiagnosticRead& operator=(DiagnosticRead const&) = delete;
+
+    ~DiagnosticRead() { this->release_reader(); }
+
+    [[nodiscard]] bool admitted() const noexcept { return epoch_ != nullptr; }
+
+    [[nodiscard]] std::string_view refusal() const noexcept
+    {
+      switch (refusal_)
+      {
+        case Refusal::no_live_epoch:
+          return "no live epoch";
+        case Refusal::not_reading:
+          return "not in a reading phase";
+        case Refusal::epoch_busy:
+          return "epoch busy";
+        case Refusal::writer_active:
+          return "writer active";
+      }
+      return "no live epoch";
+    }
+
+    /// Release the reader, which may start the next epoch.
+    void release_reader() noexcept
+    {
+      if (epoch_) std::exchange(epoch_, nullptr)->diagnostic_reader_release();
+    }
+
+  private:
+    // Ordered by how much each explains a refusal; the most informative one is reported.
+    enum class Refusal
+    {
+      no_live_epoch,
+      not_reading,
+      epoch_busy,
+      writer_active,
+    };
+
+    EpochContext* epoch_{nullptr};
+    Refusal refusal_{Refusal::no_live_epoch};
+};
+#endif
+
+/// \brief Counts one snapshot as in progress for as long as it exists.
+/// \details See `TaskRegistry::snapshots_in_progress()`. A snapshot declares it first, so that the
+///          count covers everything the snapshot holds: diagnostic readers, value pins and epoch
+///          references. Releasing any of them can wake a waiting task, for example when the
+///          destructor of a payload or of an epoch's stored exception releases an async buffer.
+class SnapshotInProgress {
+  public:
+    explicit SnapshotInProgress(std::atomic<std::size_t>& count) noexcept : count_(count)
+    {
+      count_.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    SnapshotInProgress(SnapshotInProgress const&) = delete;
+    SnapshotInProgress& operator=(SnapshotInProgress const&) = delete;
+
+    ~SnapshotInProgress() { count_.fetch_sub(1, std::memory_order_seq_cst); }
+
+  private:
+    std::atomic<std::size_t>& count_;
 };
 
 std::string join_lines(std::vector<std::string> const& lines)
@@ -813,7 +938,10 @@ std::string render_graphviz(GraphSnapshot const& snapshot, GraphDiagnostics cons
   for (auto const& node : snapshot.data_nodes)
   {
     auto detail = fmt::format("storage={}\nstate={}", node.storage_address, node.state);
-    if (!node.value.empty()) detail += fmt::format("\nvalue={}", node.value);
+    if (!node.value.empty())
+      detail += fmt::format("\nvalue={}", node.value);
+    else if (!node.value_unavailable.empty())
+      detail += fmt::format("\nvalue not read: {}", node.value_unavailable);
     auto label = node.label.empty() ? fmt::format("data {}\n{}\n{}", node.id, node.type, detail)
                                     : fmt::format("{}\ndata {}\n{}\n{}", node.label, node.id, node.type, detail);
     if (contains_value(diagnostics.missing_writer_node_ids, node.id)) label += "\ndiagnostic: missing writer";
@@ -1161,17 +1289,18 @@ class TaskRegistryImpl {
         node_names_[node] = label;
     }
 
-    void register_epoch_context(EpochContext const* epoch_context)
+    void register_epoch_context(std::shared_ptr<EpochContext> const& epoch_context)
     {
       if (!epoch_context) return;
       std::lock_guard lock(mutex_);
-      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context);
+      auto [it, inserted] = epoch_contexts_.try_emplace(epoch_context.get());
       if (inserted)
       {
-        it->second.id = next_epoch_id_++;
-        it->second.creation_timestamp = std::chrono::system_clock::now();
+        it->second.epoch = epoch_context;
+        it->second.info.id = next_epoch_id_++;
+        it->second.info.creation_timestamp = std::chrono::system_clock::now();
 #if UNI20_HAS_STACKTRACE
-        it->second.creation_trace = std::stacktrace::current(2);
+        it->second.info.creation_trace = std::stacktrace::current(2);
 #endif
       }
     }
@@ -1208,9 +1337,14 @@ class TaskRegistryImpl {
 
     GraphSnapshot snapshot(bool best_effort)
     {
+      // First, so that it is destroyed after everything below that the snapshot holds.
+      SnapshotInProgress in_progress(snapshots_in_progress_);
       std::unordered_map<void*, TaskDebugInfo> tasks_copy;
       std::unordered_map<NodeInfo const*, std::string> node_names_copy;
-      std::vector<std::pair<EpochContext const*, EpochDebugInfo>> epoch_records;
+      // Strong references taken under the registry lock keep each listed epoch alive until this
+      // snapshot has read it. Declared outside the locked scope so that, on every path, they are
+      // released after the lock: the last release runs ~EpochContext, which takes the registry lock.
+      std::vector<std::pair<std::shared_ptr<EpochContext>, EpochDebugInfo>> epoch_records;
       StacktraceOptions stacktrace_options;
       {
         std::unique_lock<std::mutex> lock;
@@ -1229,18 +1363,20 @@ class TaskRegistryImpl {
         node_names_copy = node_names_;
         stacktrace_options = stacktrace_options_;
         epoch_records.reserve(epoch_contexts_.size());
-        for (auto const& [epoch, info] : epoch_contexts_)
+        for (auto const& [address, registration] : epoch_contexts_)
         {
-          if (!epoch) continue;
-          epoch_records.emplace_back(epoch, info);
+          // Empty once the epoch's count has reached zero: its destructor is waiting for this lock
+          // to unregister it.
+          if (auto epoch = registration.epoch.lock()) epoch_records.emplace_back(std::move(epoch), registration.info);
         }
       }
+      if (auto* hook = snapshot_unlock_hook_.load(std::memory_order_acquire)) hook();
 
       std::vector<EpochDotRecord> epochs;
       epochs.reserve(epoch_records.size());
       for (auto const& [epoch, info] : epoch_records)
       {
-        EpochDotRecord record{epoch, info, {}, true};
+        EpochDotRecord record{epoch.get(), info, {}, true};
         if (best_effort)
           record.snapshot_available = epoch->try_debug_snapshot(record.snapshot);
         else
@@ -1294,10 +1430,29 @@ class TaskRegistryImpl {
         }
         record.type = std::string(node->type());
         record.storage_address = node->storage_address() ? fmt::format("{}", node->storage_address()) : "(unknown)";
-        record.value_constructed = node->value_constructed();
-        record.state = std::string(node->value_state_label());
-        record.address = node->address() ? fmt::format("{}", node->address()) : "(unconstructed)";
-        record.value = node->value_text();
+#if UNI20_DEBUG_DAG
+        // Admitted before observing, so that the state read below is the one the reader protects.
+        // No registry or epoch mutex is held from here on, while the value's formatter runs.
+        DiagnosticRead read(node, epochs, !best_effort);
+#endif
+        {
+          auto const observation = node->observe();
+          auto const state = observation.state();
+          record.value_constructed = state == uni20::async::NodeValueState::Constructed;
+          record.state = std::string(uni20::async::node_value_state_label(state));
+          if (observation.address())
+            record.address = fmt::format("{}", observation.address());
+          else
+            record.address = state == uni20::async::NodeValueState::Expired ? "(expired)" : "(unconstructed)";
+#if UNI20_DEBUG_DAG
+          if (read.admitted())
+            record.value = observation.value_text();
+          else if (record.value_constructed)
+            record.value_unavailable = std::string(read.refusal());
+          // Let the next writer go before the observation's pin is released.
+          read.release_reader();
+#endif
+        }
         graph.data_nodes.push_back(std::move(record));
       }
 
@@ -1412,6 +1567,13 @@ class TaskRegistryImpl {
 
     GraphSnapshot snapshot_best_effort() { return this->snapshot(true); }
 
+    bool snapshots_in_progress() const noexcept { return snapshots_in_progress_.load(std::memory_order_seq_cst) != 0; }
+
+    void set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+    {
+      snapshot_unlock_hook_.store(hook, std::memory_order_release);
+    }
+
     std::string graphviz_dot(bool best_effort)
     {
       auto const graph = this->snapshot(best_effort);
@@ -1434,6 +1596,13 @@ class TaskRegistryImpl {
     bool dump_graphviz_file_best_effort(std::string const& path)
     {
       return write_text_file(path, this->graphviz_dot_best_effort());
+    }
+
+    /// \brief Write one DOT file now with `options`, for a dump the diagnostics service itself was asked for.
+    bool dump_graphviz_now(GraphvizDumpOptions const& options)
+    {
+      ensure_output_dir(options.output_dir);
+      return this->dump_graphviz_file_best_effort(default_dump_path(options));
     }
 
     bool service_debug_requests(GraphvizDumpOptions const& options)
@@ -1583,106 +1752,173 @@ class TaskRegistryImpl {
     std::mutex mutex_;
     TaskDebugInfoMap tasks_;
     std::unordered_map<NodeInfo const*, std::string> node_names_;
-    std::unordered_map<EpochContext const*, EpochDebugInfo> epoch_contexts_;
+    std::unordered_map<EpochContext const*, EpochRegistration> epoch_contexts_;
     StacktraceOptions stacktrace_options_{default_stacktrace_options()};
     CoroutineExceptionDiagnosticsOptions coroutine_exception_diagnostics_options_{
         default_coroutine_exception_diagnostics_options()};
     std::size_t next_task_id_{1};
     std::size_t next_epoch_id_{1};
+    std::atomic<void (*)()> snapshot_unlock_hook_{nullptr};
+    std::atomic<std::size_t> snapshots_in_progress_{0};
 };
+
+// Deliveries of the service's signal. The handler only increments it, so the
+// counter must be lock-free to be safe in a signal handler.
+std::atomic<unsigned> pending_signal_requests{0};
+static_assert(std::atomic<unsigned>::is_always_lock_free);
+
+#if defined(__linux__)
+using signal_action = struct sigaction;
+
+void record_diagnostics_signal(int) noexcept { pending_signal_requests.fetch_add(1, std::memory_order_relaxed); }
+
+// The program's own handler, which the service must not replace. SIG_DFL and
+// SIG_IGN are dispositions rather than handlers, even when an action keeps
+// SA_SIGINFO set; on Linux sa_handler and sa_sigaction share storage.
+bool has_handler(signal_action const& action) noexcept
+{
+  return action.sa_handler != SIG_DFL && action.sa_handler != SIG_IGN;
+}
+
+bool is_diagnostics_handler(signal_action const& action) noexcept
+{
+  return !(action.sa_flags & SA_SIGINFO) && action.sa_handler == record_diagnostics_signal;
+}
+#endif
 
 class DiagnosticServiceState {
   public:
     bool start(DiagnosticsServiceOptions options)
     {
-      std::lock_guard lock(mutex_);
+      std::lock_guard lifecycle(lifecycle_);
+      if (options.signal_number != 0 && !is_diagnostics_signal(options.signal_number)) return false;
       if (thread_.joinable()) return true;
 
 #if defined(__linux__)
-      if (options.signal_number > 0 && options.block_signal_in_calling_thread)
+      // A handler rather than a blocked signal: the kernel may deliver a
+      // process-directed signal to any thread, including ones that existed
+      // before the service started and so do not block it.
+      if (options.signal_number > 0)
       {
-        sigset_t set;
-        sigemptyset(&set);
-        sigaddset(&set, options.signal_number);
-        if (pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) return false;
+        // Once per process. A handler can still be running on another thread
+        // after stop() returns, and would count its delivery for a later service.
+        if (signal_taken_) return false;
+        // A signal the program handles itself, for example to checkpoint, stays its own.
+        signal_action current{};
+        if (sigaction(options.signal_number, nullptr, &current) != 0 || has_handler(current)) return false;
+        signal_action action{};
+        action.sa_handler = record_diagnostics_signal;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_RESTART;
+        if (sigaction(options.signal_number, &action, &previous_action_) != 0) return false;
+        if (has_handler(previous_action_)) // installed by another thread since the check
+        {
+          sigaction(options.signal_number, &previous_action_, nullptr);
+          return false;
+        }
+        signal_taken_ = true;
       }
 #else
       if (options.signal_number > 0) return false;
 #endif
 
-      stop_.store(false, std::memory_order_release);
+      start_pid_.store(current_process_id(), std::memory_order_relaxed);
       signal_number_ = options.signal_number;
-      thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
+      {
+        std::lock_guard lock(mutex_);
+        stop_ = false;
+      }
+      try
+      {
+        thread_ = std::thread([this, options = std::move(options)] { this->run(options); });
+      }
+      catch (...)
+      {
+        this->restore_signal_action();
+        throw;
+      }
       return true;
     }
 
     void stop() noexcept
     {
-      std::thread thread;
-      int signal_number = 0;
+      // After fork(), the child has a copy of the locks and no service thread.
+      if (start_pid_.load(std::memory_order_relaxed) != current_process_id()) return;
+
+      // Held through the join and the restoration, so that a concurrent start()
+      // cannot reset the stopping thread's flag.
+      std::lock_guard lifecycle(lifecycle_);
+      if (!thread_.joinable()) return;
       {
         std::lock_guard lock(mutex_);
-        stop_.store(true, std::memory_order_release);
-        signal_number = signal_number_;
-        thread = std::move(thread_);
+        stop_ = true;
       }
-
-#if defined(__linux__)
-      if (thread.joinable() && signal_number > 0) pthread_kill(thread.native_handle(), signal_number);
-#endif
-      if (thread.joinable()) thread.join();
+      wake_.notify_all();
+      thread_.join();
+      this->restore_signal_action();
     }
 
     ~DiagnosticServiceState() { this->stop(); }
 
   private:
-    static bool wait_for_signal(int signal_number, int poll_interval_ms) noexcept
+    // Called with lifecycle_ held. A handler the program installed meanwhile is left in place.
+    void restore_signal_action() noexcept
     {
 #if defined(__linux__)
-      if (signal_number <= 0)
-      {
-        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-        return false;
-      }
-
-      sigset_t set;
-      sigemptyset(&set);
-      sigaddset(&set, signal_number);
-      pthread_sigmask(SIG_BLOCK, &set, nullptr);
-
-      timespec timeout{};
-      timeout.tv_sec = poll_interval_ms / 1000;
-      timeout.tv_nsec = static_cast<long>(poll_interval_ms % 1000) * 1000000L;
-
-      errno = 0;
-      auto const received = sigtimedwait(&set, nullptr, &timeout);
-      return received == signal_number;
-#else
-      static_cast<void>(signal_number);
-      std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-      return false;
+      signal_action current{};
+      if (signal_number_ > 0 && sigaction(signal_number_, nullptr, &current) == 0 && is_diagnostics_handler(current))
+        sigaction(signal_number_, &previous_action_, nullptr);
 #endif
+      signal_number_ = 0;
     }
 
     void run(DiagnosticsServiceOptions options)
     {
-      auto const poll_interval_ms = options.poll_interval_ms > 0 ? options.poll_interval_ms : 250;
+#if defined(__linux__)
+      // This thread inherits its starter's signal mask. Unblocking the signal here
+      // leaves it a receiver even when every other thread blocks it, as in a
+      // program started with the signal blocked.
+      if (options.signal_number > 0)
+      {
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, options.signal_number);
+        pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+      }
+#endif
+      auto const poll_interval =
+          std::chrono::milliseconds(options.poll_interval_ms > 0 ? options.poll_interval_ms : 250);
       ensure_output_dir(options.dump_options.output_dir);
 
-      while (!stop_.load(std::memory_order_acquire))
+      std::unique_lock lock(mutex_);
+      while (!wake_.wait_for(lock, poll_interval, [this] { return stop_; }))
       {
-        bool triggered = wait_for_signal(options.signal_number, poll_interval_ms);
-        if (stop_.load(std::memory_order_acquire)) break;
+        lock.unlock();
+        auto& registry = TaskRegistryImpl::instance();
+        bool triggered =
+            options.signal_number > 0 && pending_signal_requests.exchange(0, std::memory_order_relaxed) > 0;
         if (consume_request_file(options.request_file)) triggered = true;
-        if (triggered) pending_graphviz_dump_requests.fetch_add(1, std::memory_order_release);
-        TaskRegistryImpl::instance().service_debug_requests(options.dump_options);
+        // Written here with the service's own options: through the shared
+        // request counter, a scheduler progress point could take it first and
+        // write it under the scheduler's directory instead.
+        if (triggered) registry.dump_graphviz_now(options.dump_options);
+        registry.service_debug_requests(options.dump_options);
+        lock.lock();
       }
     }
 
-    std::mutex mutex_;
+    std::atomic<long> start_pid_{-1};
+    static_assert(decltype(start_pid_)::is_always_lock_free);
+    std::mutex lifecycle_; // start and stop: thread_, signal_number_, signal_taken_, previous_action_
+    std::mutex mutex_;     // stop_, with wake_
+    std::condition_variable wake_;
     std::thread thread_{};
-    std::atomic<bool> stop_{false};
+    bool stop_{false};
     int signal_number_{0};
+#if defined(__linux__)
+    bool signal_taken_{false};
+    signal_action previous_action_{};
+#endif
 };
 
 DiagnosticServiceState& diagnostic_service()
@@ -1706,15 +1942,22 @@ void initialize_task_registry_diagnostics_from_environment() noexcept
   try
   {
     auto options = default_diagnostics_service_options();
-    if (options.signal_number <= 0) return;
+    if (options.signal_number == 0) return;
 
     if (!diagnostic_service().start(std::move(options)))
     {
-      std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s\n",
+      std::fprintf(stderr,
+                   "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: reserve SIGUSR1 or "
+                   "SIGUSR2 for diagnostics with a default or ignored disposition\n",
                    configured_signal);
       return;
     }
     environment_diagnostics_service_started = true;
+  }
+  catch (std::exception const& e)
+  {
+    std::fprintf(stderr, "Uni20 could not start async diagnostics for UNI20_DEBUG_DAG_SIGNAL=%s: %s\n",
+                 configured_signal, e.what());
   }
   catch (...)
   {
@@ -1784,7 +2027,7 @@ void TaskRegistry::name_async_value(async::NodeInfo const* node, std::string con
   TaskRegistryImpl::instance().name_async_value(node, label);
 }
 
-void TaskRegistry::register_epoch_context(async::EpochContext const* epoch_context)
+void TaskRegistry::register_epoch_context(std::shared_ptr<async::EpochContext> const& epoch_context)
 {
   TaskRegistryImpl::instance().register_epoch_context(epoch_context);
 }
@@ -1828,6 +2071,13 @@ TaskRegistry::GraphSnapshot TaskRegistry::snapshot() { return TaskRegistryImpl::
 TaskRegistry::GraphSnapshot TaskRegistry::snapshot_best_effort()
 {
   return TaskRegistryImpl::instance().snapshot_best_effort();
+}
+
+bool TaskRegistry::snapshots_in_progress() noexcept { return TaskRegistryImpl::instance().snapshots_in_progress(); }
+
+void TaskRegistry::set_snapshot_unlock_hook_for_testing(void (*hook)()) noexcept
+{
+  TaskRegistryImpl::instance().set_snapshot_unlock_hook_for_testing(hook);
 }
 
 TaskRegistry::GraphDiagnostics TaskRegistry::diagnose_snapshot(GraphSnapshot const& snapshot)

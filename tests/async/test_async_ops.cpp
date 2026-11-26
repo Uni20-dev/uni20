@@ -1,8 +1,10 @@
 #include "gtest/gtest.h"
+#include <functional>
 #include <uni20/async/async.hpp>
 #include <uni20/async/async_ops.hpp>
 #include <uni20/async/async_task.hpp>
 #include <uni20/async/debug_scheduler.hpp>
+#include <utility>
 
 using namespace uni20::async;
 
@@ -50,6 +52,21 @@ struct AssignmentAware
     inline static int assignments = 0;
     inline static int destructions = 0;
 };
+
+/// An immediate payload whose `queue()` is not an epoch queue.
+struct QueueMember
+{
+    int items = 0;
+    int const& queue() const { return items; }
+};
+
+/// An immediate payload that records an epoch queue as metadata.
+struct Stamp
+{
+    EpochQueue const* origin;
+    int sequence;
+    EpochQueue const& queue() const { return *origin; }
+};
 } // namespace async_test_types
 
 TEST(AsyncOpsTest, WriteProxyAssignmentConstructsThenUsesUnderlyingAssignment)
@@ -57,7 +74,7 @@ TEST(AsyncOpsTest, WriteProxyAssignmentConstructsThenUsesUnderlyingAssignment)
   async_test_types::AssignmentAware::reset();
 
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   {
     Async<async_test_types::AssignmentAware> value;
@@ -87,7 +104,7 @@ TEST(AsyncOpsTest, WriteProxyEmplaceExplicitlyReconstructs)
   async_test_types::AssignmentAware::reset();
 
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   {
     Async<async_test_types::AssignmentAware> value;
@@ -113,7 +130,7 @@ TEST(AsyncOpsTest, WriteProxyEmplaceExplicitlyReconstructs)
 TEST(AsyncOpsTest, AddTwoAsyncInts)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched); // installs into global `schedule()` dispatch
+  ScopedScheduler scoped(&sched); // installs into global `schedule()` dispatch
 
   Async<int> a = 5;
   Async<int> b = 7;
@@ -125,7 +142,7 @@ TEST(AsyncOpsTest, AddTwoAsyncInts)
 TEST(AsyncOpsTest, UnaryNegation)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> value = 21;
   auto negated_value = -value;
@@ -141,7 +158,7 @@ TEST(AsyncOpsTest, UnaryNegation)
 TEST(AsyncOpsTest, AddMixedTypesIntDouble)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a = 4;
   Async<double> b = 1.5;
@@ -153,7 +170,7 @@ TEST(AsyncOpsTest, AddMixedTypesIntDouble)
 TEST(AsyncOpsTest, AddAsyncAndScalar)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a = 10;
   auto c = a + 2.5; // should be Async<double>
@@ -164,7 +181,7 @@ TEST(AsyncOpsTest, AddAsyncAndScalar)
 TEST(AsyncOpsTest, AddScalarAndAsync)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<float> b = 3.5f;
   auto c = 1 + b; // should be Async<float>
@@ -175,7 +192,7 @@ TEST(AsyncOpsTest, AddScalarAndAsync)
 TEST(AsyncOpsTest, BasicArithmeticOps)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> a = 6;
   Async<double> b = 2.0;
@@ -194,35 +211,155 @@ TEST(AsyncOpsTest, BasicArithmeticOps)
   EXPECT_DOUBLE_EQ(x.get_wait(), 20.0);
 }
 
-TEST(AsyncOpsTest, BinaryOperationRejectsOutputInputQueueAliasAtSubmission)
+TEST(AsyncOpsTest, BinaryOperationReadsBothInputsBeforeWritingTheirQueue)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  Async<int> other = 4;
+  async_binary_op(value, value, other, std::plus<>{});
+  async_binary_op(value, other, value, std::minus<>{});
+  async_binary_op(value, value, value, std::plus<>{});
+  EXPECT_EQ(value.get_wait(), -6);
+}
 
-  Async<int> output = 3;
-  Async<int> rhs = 4;
-  ErrorModeGuard const error_mode;
+TEST(AsyncOpsTest, BinaryOperationPropagatesFailureWhenTheOutputIsAnInput)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  async_compound_op(value, 1, [](int&, int) { throw std::runtime_error("upstream"); });
+  bool called = false;
+  async_binary_op(value, value, 1, [&](int a, int b) {
+    called = true;
+    return a + b;
+  });
+  EXPECT_THROW((void)value.get_wait(), std::runtime_error);
+  EXPECT_FALSE(called);
+}
 
-  EXPECT_THROW(async_binary_op(output, output, rhs, std::plus<>{}), std::runtime_error);
-  EXPECT_EQ(output.get_wait(), 3);
+TEST(AsyncOpsTest, BinaryCallbackFailureSurvivesSuccessfulInputOnOutputQueue)
+{
+  struct CallbackFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 3;
+  async_binary_op(value, value, 1, [](int, int) -> int { throw CallbackFailure{}; });
+  EXPECT_THROW((void)value.get_wait(), CallbackFailure);
+}
+
+TEST(AsyncOpsTest, BinaryResultIsConvertedBeforeReleasingInputs)
+{
+  using Pair = std::pair<int, int>;
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<Pair> value(Pair{1, 2});
+  async_binary_op(value, value, 0,
+                  [](Pair const& pair, int) { return std::pair{std::cref(pair.second), std::cref(pair.first)}; });
+  EXPECT_EQ(value.get_wait(), (Pair{2, 1}));
+}
+
+TEST(AsyncOpsTest, BinaryResultCanBeConstructedWhenItHasNoMoveAssignment)
+{
+  using Result = async_test_types::AssignmentAware;
+  static_assert(!std::is_move_assignable_v<Result>);
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> input = 2;
+  Async<Result> output;
+  async_binary_op(output, input, 3, std::plus<>{});
+  EXPECT_EQ(output.get_wait().value, 5);
 }
 
 TEST(AsyncOpsTest, CompoundOperationRejectsRhsQueueAliasAtSubmission)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> value = 3;
   ErrorModeGuard const error_mode;
-
   EXPECT_THROW(value += value, std::runtime_error);
   EXPECT_EQ(value.get_wait(), 3);
+}
+
+TEST(AsyncOpsTest, ImmediatePayloadQueueMemberIsNotAnEpochQueue)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+
+  Async<async_test_types::QueueMember> value;
+  async_assign(value, async_test_types::QueueMember{3});
+  EXPECT_EQ(value.get_wait().items, 3);
+
+  async_move(value, async_test_types::QueueMember{5});
+  EXPECT_EQ(value.get_wait().items, 5);
+
+  async_compound_op(
+      value, async_test_types::QueueMember{2},
+      [](async_test_types::QueueMember& lhs, async_test_types::QueueMember const& rhs) { lhs.items += rhs.items; });
+  EXPECT_EQ(value.get_wait().items, 7);
+}
+
+TEST(AsyncOpsTest, MoveUsesImmediateConversionEvenWhenTheOperandCanBeRead)
+{
+  struct Operand
+  {
+      Async<int>& destination;
+      int& reads;
+      EpochQueue const& queue() const { return destination.queue(); }
+      auto read() const
+      {
+        ++reads;
+        return destination.read();
+      }
+      operator int() const { return 17; }
+  };
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  ErrorModeGuard const error_mode;
+  Async<int> value = 4;
+  int reads = 0;
+  async_move(value, Operand{value, reads});
+  EXPECT_EQ(value.get_wait(), 17);
+  EXPECT_EQ(reads, 0);
+}
+
+TEST(AsyncOpsTest, OwningAssignmentReadsTheSourceBeforeEnrollingTheDestination)
+{
+  struct Reader
+  {
+      Async<int>& value;
+      auto read() & { return value.read(); }
+      operator int() const { return -1; }
+  };
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  async_assign(value, 11);
+  Reader reader{value};
+  async_assign(value, reader);
+  EXPECT_EQ(value.get_wait(), 11);
+}
+
+TEST(AsyncOpsTest, ImmediateValueRecordingTheDestinationQueueIsAssigned)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+
+  Async<async_test_types::Stamp> destination;
+  async_test_types::Stamp stamp{&destination.queue(), 9};
+  async_assign(destination, stamp);
+  EXPECT_EQ(destination.get_wait().sequence, 9);
+
+  async_move(destination, async_test_types::Stamp{&destination.queue(), 10});
+  EXPECT_EQ(destination.get_wait().sequence, 10);
 }
 
 TEST(AsyncOpsTest, CompoundOperationExecutionFailurePropagatesThroughOutput)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> value = 3;
   Async<int> rhs = 4;
@@ -236,7 +373,7 @@ TEST(AsyncOpsTest, CompoundOperationExecutionFailurePropagatesThroughOutput)
 TEST(AsyncOpsTest, MoveOnlyType)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<std::string>;
   Async<Ptr> dst;
@@ -252,7 +389,7 @@ TEST(AsyncOpsTest, MoveOnlyType)
 TEST(AsyncOpsTest, AsyncAssignReadWriteSameAsyncDoesNotDeadlock)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   Async<int> value = 9;
   auto src = value.read();

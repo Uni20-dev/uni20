@@ -83,7 +83,7 @@ TEST(SelfAdjointEighTest, ConsumingValueApiReusesRowMajorOwningStorage)
 
   auto result = uni20::linalg::eigh(std::move(matrix));
 
-  static_assert(std::same_as<typename decltype(result.eigenvectors)::layout_type, stdex::layout_stride>);
+  static_assert(std::same_as<typename decltype(result.eigenvectors)::layout_type, uni20::layout_stride>);
   EXPECT_EQ(result.eigenvectors.mutable_handle(), original_storage);
   EXPECT_EQ(result.eigenvectors.mapping().stride(0), 1);
   EXPECT_EQ(result.eigenvectors.mapping().stride(1), 2);

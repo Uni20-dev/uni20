@@ -146,8 +146,10 @@ class BasicTask {
     /// \brief Request cancellation before the next resume.
     void set_cancel_on_resume() noexcept;
 
-    /// \brief Store an exception for delivery on the next resume.
-    void exception_on_resume(std::exception_ptr error) noexcept;
+    /// \brief Note a failure that an epoch reports on resumption, for diagnostics.
+    /// \details The failure does not fail the task. Its body sees it through the value it reads
+    ///          or takes (#166).
+    void note_upstream_failure(std::exception_ptr error) noexcept;
 
     /// \brief Destroy an exclusively owned coroutine.
     void destroy() noexcept;

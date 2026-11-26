@@ -77,9 +77,9 @@ add_test(NAME NativeExponentialMathExample COMMAND native_exponential_math_examp
 
 uni20_add_example(buildinfo_example common/buildinfo_example.cpp fmt::fmt uni20_core uni20_common)
 uni20_add_example(gtest_floating_eq_example common/gtest_floating_eq_example.cpp gtest fmt::fmt uni20_common)
-uni20_add_example(trace_example common/trace_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(trace_example common/trace_example.cpp fmt::fmt uni20_common)
 
-uni20_add_example(mdspan_example mdspan/mdspan_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(mdspan_example mdspan/mdspan_example.cpp fmt::fmt uni20_common)
 
 uni20_add_example(block_tensor_example symmetry/block_tensor_example.cpp uni20_symmetry)
 add_test(NAME BlockTensorExample COMMAND block_tensor_example)
@@ -266,7 +266,7 @@ uni20_add_example(presentation_table_layout_example presentation/table_layout_ex
 uni20_add_example(presentation_glyph_policy_example presentation/glyph_policy_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_text_art_example presentation/text_art_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_diagnostic_region_example presentation/diagnostic_region_example.cpp fmt::fmt uni20_common)
-uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fmt::fmt mdspan uni20_common)
+uni20_add_example(presentation_mdspan_example presentation/mdspan_example.cpp fmt::fmt uni20_common)
 uni20_add_example(display_example presentation/display_example.cpp fmt::fmt uni20_common)
 uni20_add_example(presentation_data_table_example presentation/data_table_example.cpp fmt::fmt uni20_common)
 

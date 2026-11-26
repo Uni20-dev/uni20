@@ -53,7 +53,7 @@ Optional stage timings: [`task_accounting.md`](task_accounting.md).
 | [`kernel_authoring.md`](kernel_authoring.md) | All-async Tensor operation wrappers, lifetimes, alias checks, output preparation, and failures | Tensor operation authors |
 | [`cookbook.md`](cookbook.md) | Common kernel patterns and debugging recipes | New and experienced contributors |
 | [`exceptions_and_cancellation.md`](exceptions_and_cancellation.md) | Exception hierarchy, sink routing, cancellation details | Runtime contributors |
-| [`schedulers.md`](schedulers.md) | `DebugScheduler`, `TbbScheduler`, `TbbNumaScheduler` behavior | Performance and integration work |
+| [`schedulers.md`](schedulers.md) | Choosing a debug or oneTBB scheduler for host and CUDA tasks | Application setup, testing, and integration |
 | [`tbb_execution_primer.md`](tbb_execution_primer.md) | oneTBB threads, arenas, concurrency, constraints, task groups, and resumable waits | TBB scheduler contributors |
 | [`scheduler_migration.md`](scheduler_migration.md) | Typed admission, shared rescheduling, task domains, and scheduler-route migration | Async and CUDA runtime designers |
 | [`external_io_design.md`](external_io_design.md) | Future I/O adapters, external completion, buffer ownership and backpressure; no implemented API | Async and I/O runtime designers |

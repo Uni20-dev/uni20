@@ -52,7 +52,7 @@ template <class TargetExtents, TensorExtentsLike SourceExtents, std::size_t... A
   for (std::size_t axis = 0; axis < TargetExtents::rank(); ++axis)
   {
     auto const fixed_extent = TargetExtents::static_extent(axis);
-    ERROR_IF(fixed_extent != stdex::dynamic_extent && !std::cmp_equal(source.extent(axis), fixed_extent),
+    ERROR_IF(fixed_extent != uni20::dynamic_extent && !std::cmp_equal(source.extent(axis), fixed_extent),
              "tensor extent does not match the destination's static extent");
   }
   using index_type = typename TargetExtents::index_type;

@@ -57,11 +57,9 @@ This replaces the earlier ``coalescing'' wording and aligns the prose with the
 \texttt{merge\_strides\_*} helper names.
 
 \section{From \texttt{mdspan} to Concrete Tensors}
-Uni20 adopts the C++ reference implementation of \texttt{mdspan}, placed in the
-\texttt{stdex} namespace, as \texttt{stdex::mdspan}. Uni20 source includes the
-configured gateway \texttt{uni20/mdspan/mdspan.hpp}; that header validates the
-generated namespace configuration before including the external
-\texttt{mdspan/mdspan.hpp} implementation header.
+Uni20 defines its own \texttt{uni20::mdspan} in
+\texttt{uni20/mdspan/mdspan.hpp}. One configuration selects either the standard
+library's extents or Uni20's fallback for both host and device code.
 
 An \texttt{mdspan} couples a
 raw pointer (``data handle'') with an \emph{extents} object, a layout mapping, and an accessor.
@@ -87,7 +85,7 @@ focused on pointer arithmetic.
   \begin{minipage}{0.9\linewidth}
     \begin{lstlisting}
 class Tensor {
-  using mdspan_type = stdex::mdspan<T, extents_type, layout_type, accessor_type>;
+  using mdspan_type = uni20::mdspan<T, extents_type, layout_type, accessor_type>;
   std::vector<T> storage_;   // owning buffer
   mdspan_type    view_;      // mdspan over that buffer
 };

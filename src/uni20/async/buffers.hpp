@@ -636,7 +636,7 @@ template <typename T> class TakeAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_->resume();
-      return writer_->storage().take();
+      return writer_->take();
     }
 
     /// \brief Returns the epoch context used for exception propagation.
@@ -682,7 +682,7 @@ template <typename T> class TakeReleaseAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_->resume();
-      T value = writer_->storage().take();
+      T value = writer_->take();
       writer_->release();
       return value;
     }
@@ -725,7 +725,7 @@ template <typename T> class OwningStorageAccessProxy {
 
     /// \brief Move the stored value out of writer storage.
     /// \return Moved value.
-    T take() { return writer_.storage().take(); }
+    T take() { return writer_.take(); }
 
     /// \brief Move the stored value out and release the writer epoch.
     /// \return Moved value.
@@ -829,7 +829,7 @@ template <typename T> class OwningTakeAwaiter {
     [[nodiscard]] T await_resume()
     {
       writer_.resume();
-      T value = writer_.storage().take();
+      T value = writer_.take();
       writer_.release();
       return value;
     }
@@ -953,9 +953,10 @@ template <typename T> class WriteBuffer {
       return OwningWriteAccessProxy<T>(std::move(writer_));
     }
 
-    /// \brief Release the writer epoch held by this buffer.
+    /// \brief Retire this buffer as an exception sink and release its writer epoch.
     void release() noexcept
     {
+      this->unregister_exception_sink(false);
       this->invalidate_proxy_state();
       writer_.release();
     }
@@ -1022,6 +1023,18 @@ template <typename T> class WriteBuffer {
     {
       this->invalidate_proxy_state();
       return OwningTakeAwaiter<T>(std::move(writer_));
+    }
+
+    /// \brief Rethrow a failure that the epoch inherited, before an update through `storage()`.
+    /// \details `storage()` itself does not check, because overwrites use it too (#166).
+    /// \pre The writer is active, for example after `co_await` on this buffer or on a join that
+    ///      includes it, and this buffer still holds it. After `co_await std::move(buffer).storage()`
+    ///      the owning storage proxy holds the writer instead.
+    void check_inherited_failure() const
+    {
+      DEBUG_CHECK(writer_.epoch_context_shared(),
+                  "WriteBuffer::check_inherited_failure on a buffer whose writer moved");
+      writer_.check_inherited_failure();
     }
 
     /// \brief Awaiter yielding direct access to writer shared storage.
@@ -1162,7 +1175,7 @@ template <typename T> class WriteBuffer {
     }
 
     EpochContextWriter<T> writer_;
-    mutable TaskPromiseBase::ExceptionSinkNode exception_sink_{};
+    mutable TaskPromiseBase::ExceptionSinkNode exception_sink_{.requires_writer = true};
 #if UNI20_DEBUG_ASYNC_TASKS
     std::shared_ptr<WriteProxyLifetimeState> proxy_state_{std::make_shared<WriteProxyLifetimeState>()};
 #endif
@@ -1237,7 +1250,9 @@ template <exception_sink_buffer... Buffers> class PropagateExceptionsAwaiter {
 
 /// \brief Register buffers that should receive unhandled coroutine exceptions.
 /// \details The registration remains active for as long as each buffer object remains alive.
-/// \note If a registered explicit sink is destroyed during stack unwinding, the runtime aborts.
+/// \note If a registered explicit sink is destroyed during stack unwinding while the promise has
+///       no equivalent sink, the runtime aborts. That includes the only registered sink moved into
+///       a child coroutine that fails. Destroying a copy while the original remains does not abort.
 template <exception_sink_buffer... Buffers> auto propagate_exceptions_to(Buffers&... buffers)
 {
   return PropagateExceptionsAwaiter<Buffers...>(buffers...);
@@ -1265,6 +1280,11 @@ void assign_write_proxy_value(EpochContextWriter<T>& writer, U&& source)
 
 /// \brief Non-owning proxy returned by `co_await` on an lvalue `WriteBuffer<T>`.
 /// \details This proxy references the underlying writer held by the buffer.
+/// \note For a value payload, in-place access (`get()`, `operator->`, conversion to `T&` and
+///       compound assignment) rethrows a failure that the epoch inherited from a failed producer,
+///       as `take()` does. Assignment and `emplace(...)` overwrite the value and do not. An async
+///       alias's descriptor, which kernels use to overwrite as well as to update, is not checked
+///       (#166).
 template <typename T> class WriteAccessProxy {
   public:
     using value_type = T;
@@ -1313,10 +1333,11 @@ template <typename T> class WriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value += std::forward<U>(x); }
     WriteAccessProxy& operator+=(U&& x)
     {
+      this->writer().check_inherited_failure();
       auto& storage = this->writer().storage();
       if (storage.constructed())
       {
-        this->get() += std::forward<U>(x);
+        this->writer().data() += std::forward<U>(x);
       }
       else if constexpr (std::constructible_from<T, U&&>)
       {
@@ -1324,7 +1345,7 @@ template <typename T> class WriteAccessProxy {
       }
       else
       {
-        this->get() += std::forward<U>(x);
+        this->writer().data() += std::forward<U>(x);
       }
       return *this;
     }
@@ -1337,10 +1358,11 @@ template <typename T> class WriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value -= std::forward<U>(x); }
     WriteAccessProxy& operator-=(U&& x)
     {
+      this->writer().check_inherited_failure();
       auto& storage = this->writer().storage();
       if (storage.constructed())
       {
-        this->get() -= std::forward<U>(x);
+        this->writer().data() -= std::forward<U>(x);
       }
       else if constexpr (requires { -std::declval<U&&>(); } &&
                          std::constructible_from<T, decltype(-std::declval<U&&>())>)
@@ -1350,7 +1372,7 @@ template <typename T> class WriteAccessProxy {
       }
       else
       {
-        this->get() -= std::forward<U>(x);
+        this->writer().data() -= std::forward<U>(x);
       }
       return *this;
     }
@@ -1384,7 +1406,7 @@ template <typename T> class WriteAccessProxy {
     T take()
       requires(!is_async_alias_v<T>)
     {
-      return this->writer().storage().take();
+      return this->writer().take();
     }
 
     /// \brief Move out the value and release the writer epoch.
@@ -1418,7 +1440,7 @@ template <typename T> class WriteAccessProxy {
     [[nodiscard]] T& get() const
       requires(!is_async_alias_v<T>)
     {
-      return this->writer().data();
+      return this->writer().existing_value();
     }
 
     /// \brief Inspect an async alias descriptor without permitting retargeting.
@@ -1495,6 +1517,11 @@ template <typename T> class WriteAccessProxy {
 
 /// \brief Owning proxy returned by `co_await write_buffer.transfer()`.
 /// \details Ownership of the writer handle is transferred into this proxy.
+/// \note For a value payload, in-place access (`get()`, `operator->`, conversion to `T&` and
+///       compound assignment) rethrows a failure that the epoch inherited from a failed producer,
+///       as `take()` does. Assignment and `emplace(...)` overwrite the value and do not. An async
+///       alias's descriptor, which kernels use to overwrite as well as to update, is not checked
+///       (#166).
 template <typename T> class OwningWriteAccessProxy {
   public:
     using value_type = T;
@@ -1543,10 +1570,11 @@ template <typename T> class OwningWriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value += std::forward<U>(x); }
     OwningWriteAccessProxy& operator+=(U&& x)
     {
+      writer_.check_inherited_failure();
       auto& storage = writer_.storage();
       if (storage.constructed())
       {
-        this->get() += std::forward<U>(x);
+        writer_.data() += std::forward<U>(x);
       }
       else if constexpr (std::constructible_from<T, U&&>)
       {
@@ -1554,7 +1582,7 @@ template <typename T> class OwningWriteAccessProxy {
       }
       else
       {
-        this->get() += std::forward<U>(x);
+        writer_.data() += std::forward<U>(x);
       }
       return *this;
     }
@@ -1567,10 +1595,11 @@ template <typename T> class OwningWriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value -= std::forward<U>(x); }
     OwningWriteAccessProxy& operator-=(U&& x)
     {
+      writer_.check_inherited_failure();
       auto& storage = writer_.storage();
       if (storage.constructed())
       {
-        this->get() -= std::forward<U>(x);
+        writer_.data() -= std::forward<U>(x);
       }
       else if constexpr (requires { -std::declval<U&&>(); } &&
                          std::constructible_from<T, decltype(-std::declval<U&&>())>)
@@ -1580,7 +1609,7 @@ template <typename T> class OwningWriteAccessProxy {
       }
       else
       {
-        this->get() -= std::forward<U>(x);
+        writer_.data() -= std::forward<U>(x);
       }
       return *this;
     }
@@ -1614,18 +1643,24 @@ template <typename T> class OwningWriteAccessProxy {
     T& get()
       requires(!is_async_alias_v<T>)
     {
-      return writer_.data();
+      return writer_.existing_value();
     }
     /// \brief Access const stored value.
     /// \return Const reference to the stored value.
-    T const& get() const { return writer_.data(); }
+    T const& get() const
+    {
+      if constexpr (is_async_alias_v<T>)
+        return writer_.data();
+      else
+        return writer_.existing_value();
+    }
 
     /// \brief Move out the stored value.
     /// \return Moved value.
     T take()
       requires(!is_async_alias_v<T>)
     {
-      return writer_.storage().take();
+      return writer_.take();
     }
 
     /// \brief Move out the value and release the writer epoch.

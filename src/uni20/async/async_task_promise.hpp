@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <uni20/config.hpp>
+
 #include "async_errors.hpp"
 #include "async_node.hpp"
 #include "async_task.hpp"
@@ -14,8 +16,10 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace uni20::async
@@ -32,10 +36,11 @@ struct CudaTaskAwaiterTag
 template <typename T>
 concept CudaTaskAwaitable = std::derived_from<std::remove_cvref_t<T>, CudaTaskAwaiterTag>;
 
-/// \brief Inject an unhandled writer-side coroutine exception into an epoch.
-/// \param epoch Target epoch context associated with a writer buffer.
+/// \brief Deliver an unhandled coroutine exception to a registered buffer.
+/// \param epoch Epoch selected by the registered buffer.
 /// \param eptr Exception captured by the coroutine promise.
-void propagate_unhandled_writer_exception(EpochContext* epoch, std::exception_ptr eptr) noexcept;
+/// \param requires_writer Whether explicit publication by the writer ends delivery to this sink.
+void propagate_unhandled_buffer_exception(EpochContext* epoch, std::exception_ptr eptr, bool requires_writer) noexcept;
 
 /// \brief Concept for the valid return types of await_suspend.
 /// \details
@@ -83,6 +88,9 @@ concept TaskFactoryChildAwaitable = requires(T a, BasicTask task) {
 ///       ownership across multiple sub-awaitables.
 /// \note `num_awaiters()` runs before ownership transfer and need not be
 ///       `noexcept`; `await_suspend(TaskFactory)` runs afterward and must be.
+/// \note Handing out the last claim from the factory can resume the coroutine at
+///       once, possibly on another thread. The awaitable lives in the coroutine
+///       frame, so `await_suspend` must not touch it after that point.
 template <typename T>
 concept TaskFactoryAwaitable = requires(T a, TaskFactory factory) {
   { a.await_suspend(std::move(factory)) } noexcept -> std::same_as<void>;
@@ -106,6 +114,7 @@ class TaskPromiseBase {
         ExceptionSinkNode* next{nullptr};
         std::shared_ptr<EpochContext> epoch{};
         bool explicit_sink{false};
+        bool requires_writer{false};
     };
 
     /// \brief Tracks whether the coroutine has been scheduled or otherwise started.
@@ -126,12 +135,37 @@ class TaskPromiseBase {
     ///       Ownership must be transferred explicitly using take_ownership().
     std::atomic<int> awaiter_count_ = 0;
 
-    /// \brief EpochContext can inject an exception into a coroutine, which will be thrown when resuming
-    /// from an awaiter.  This could, in principle, happen from multiple threads if we are awaiting multiple
-    /// buffers so we protect access by the exception_ flag.  Only the first attempt to set exception_ to true
-    /// is permitted to set eptr_; subsequent exceptions are simply dropped.
+    /// \brief The failure this coroutine passes to its continuation at final suspension.
+    /// \details `unhandled_exception()` sets it, and so does a nested task that failed with no
+    ///          awaiter-owned destination for its failure (see `resolve_await_suspend_result`). Only
+    ///          the first attempt to set `exception_` stores `eptr_`; later failures are dropped. A
+    ///          failure that an epoch reports on resumption is not stored here. The body sees that
+    ///          failure only through a value it reads or takes, and may catch it (#166).
     std::atomic<bool> exception_{false};
     std::exception_ptr eptr_ = nullptr;
+
+#if UNI20_DEBUG_ASYNC_TASKS
+    /// \brief One failure an epoch reported when it resumed this coroutine.
+    struct UpstreamFailure
+    {
+        std::exception_ptr failure;
+        UpstreamFailure* next;
+    };
+
+    /// \brief The distinct failures epochs reported when they resumed this coroutine, newest first.
+    /// \details Diagnostics only: they tell the task registry that an escaping exception was passed
+    ///          on rather than raised here. Epochs can report concurrently when the coroutine awaits
+    ///          several buffers at once, so a report pushes a node with a compare-exchange. Nodes
+    ///          stay until the promise is destroyed. A report happens before the resumption that
+    ///          follows it, so `unhandled_exception()` sees every earlier report.
+    std::atomic<UpstreamFailure*> upstream_failures_{nullptr};
+#endif
+
+    /// \brief Set when an exception other than `task_cancelled` escaped the coroutine body.
+    /// \details `exception_` can also hold a failure that a nested task passed back without the
+    ///          body seeing it. `unhandled_exception()` and final suspension run in the same
+    ///          resumption, so this flag needs no atomic.
+    bool body_failed_{false};
 
     /// \brief If true, then when the coroutine is next resumed (i.e. transferred to the scheduler)
     /// it is destroyed (stack unwound and coroutine frame freed).
@@ -195,10 +229,17 @@ class TaskPromiseBase {
       return c;
     }
 
+    /// \brief Unlink the remaining sinks: parameter copies, which own them, outlive the promise.
     ~TaskPromiseBase() noexcept
     {
       DEBUG_CHECK(!continuation_);
       DEBUG_CHECK(continuation_exception_ == nullptr);
+      while (exception_sinks_head_)
+        this->unregister_exception_sink(*exception_sinks_head_, false);
+#if UNI20_DEBUG_ASYNC_TASKS
+      for (auto* node = upstream_failures_.load(std::memory_order_acquire); node;)
+        delete std::exchange(node, node->next);
+#endif
     }
 
     /// \brief Decrease the number of active awaiters by one.
@@ -222,7 +263,7 @@ class TaskPromiseBase {
     /// \return The value of the counter prior to the increment.
     int add_awaiter(int count) noexcept { return awaiter_count_.fetch_add(count, std::memory_order_relaxed); }
 
-    /// \brief Record an exception for deferred rethrow on resume.
+    /// \brief Record the failure to pass to the continuation at final suspension.
     /// \param e Exception pointer to record.
     void set_exception(std::exception_ptr e) noexcept
     {
@@ -231,6 +272,33 @@ class TaskPromiseBase {
         eptr_ = e;
       }
     }
+
+    /// \brief Note a failure that an epoch reports when it resumes this coroutine.
+    /// \details The failure does not fail the coroutine. Builds with task diagnostics keep each
+    ///          distinct one, so that `unhandled_exception()` can tell the exception was passed on
+    ///          (#166). A failed allocation drops the note, which only affects diagnostics.
+    /// \param e The epoch's stored failure.
+    void note_upstream_failure([[maybe_unused]] std::exception_ptr e) noexcept
+    {
+#if UNI20_DEBUG_ASYNC_TASKS
+      if (!e || this->is_upstream_failure(e)) return;
+      auto* node = new (std::nothrow) UpstreamFailure{std::move(e), upstream_failures_.load(std::memory_order_relaxed)};
+      if (!node) return;
+      while (!upstream_failures_.compare_exchange_weak(node->next, node, std::memory_order_release,
+                                                       std::memory_order_relaxed))
+      {}
+#endif
+    }
+
+#if UNI20_DEBUG_ASYNC_TASKS
+    /// \brief Whether an epoch reported `e` when it resumed this coroutine.
+    bool is_upstream_failure(std::exception_ptr const& e) const noexcept
+    {
+      for (auto const* node = upstream_failures_.load(std::memory_order_acquire); node; node = node->next)
+        if (node->failure == e) return true;
+      return false;
+    }
+#endif
 
     /// \brief Register one exception propagation sink with this promise.
     /// \param node Intrusive node owned by a buffer object.
@@ -250,13 +318,27 @@ class TaskPromiseBase {
       exception_sinks_head_ = &node;
     }
 
+    /// \brief Report whether another linked sink delivers to the same epoch as `node`.
+    /// \param node Linked sink node.
+    /// \return true if removing `node` leaves delivery to its epoch unchanged.
+    bool has_other_sink_like(ExceptionSinkNode const& node) const noexcept
+    {
+      for (auto const* other = exception_sinks_head_; other; other = other->next)
+      {
+        if (other != &node && other->epoch == node.epoch && other->requires_writer == node.requires_writer) return true;
+      }
+      return false;
+    }
+
     /// \brief Unregister one exception propagation sink from this promise.
     /// \param node Intrusive node currently linked into this promise.
     /// \param from_destructor true when called from buffer destruction.
     void unregister_exception_sink(ExceptionSinkNode& node, bool from_destructor) noexcept
     {
       if (node.owner != this) return;
-      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0)
+      // A copy of a registered buffer, such as one passed to a failed child coroutine whose frame
+      // is destroyed during a rethrow, loses nothing while an equivalent sink remains.
+      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0 && !this->has_other_sink_like(node))
       {
         CHECK(
             false,
@@ -410,6 +492,34 @@ class TaskPromiseBase {
       handle.coroutine().destroy();
     }
 
+    /// \brief Destroy a finished coroutine frame, during unwinding if the coroutine failed.
+    /// \details Parameter copies are destroyed with the frame, after `unhandled_exception()` has
+    ///          returned. Destroying the frame while its exception is rethrown lets their destructors
+    ///          see the failure through `std::uncaught_exceptions()`, as the coroutine's locals did.
+    ///          An owning writer held by a parameter then keeps exception delivery open (#163).
+    /// \param handle Finished task.
+    /// \param eptr The promise's exception if one escaped the coroutine body, or null.
+    static void destroy_finished(TaskHandle handle, std::exception_ptr const& eptr) noexcept
+    {
+      if (!eptr)
+      {
+        destroy_and_track(handle);
+        return;
+      }
+      struct DestroyOnUnwind
+      {
+          TaskHandle handle;
+          ~DestroyOnUnwind() { destroy_and_track(handle); }
+      };
+      try
+      {
+        DestroyOnUnwind destroy{handle};
+        std::rethrow_exception(eptr);
+      }
+      catch (...)
+      {}
+    }
+
     /// \brief Complete an unbound child's route before nested execution.
     /// \details Scheduler inheritance is allowed across task domains only when
     ///          the parent scheduler accepts the child's complete route.
@@ -542,7 +652,8 @@ class TaskPromiseBase {
             TRACE_MODULE(ASYNC, "Final suspend of coroutine", completed.coroutine(), continuation.coroutine(),
                          cancelled);
 
-            TaskPromiseBase::destroy_and_track(completed);
+            bool const body_failed = promise->body_failed_;
+            TaskPromiseBase::destroy_finished(completed, body_failed ? eptr : nullptr);
 
             TRACE_MODULE(ASYNC, "Destroy is done");
 
@@ -597,12 +708,19 @@ class TaskPromiseBase {
       }
       catch (...)
       {
-        bool const originating_failure = !exception_.load(std::memory_order_acquire);
         auto eptr = std::current_exception();
+#if UNI20_DEBUG_ASYNC_TASKS
+        // On the Itanium C++ ABI a rethrown exception keeps its object, so a failure passed on from
+        // an epoch compares equal to the one it reported.
+        bool const originating_failure = !this->is_upstream_failure(eptr);
+#else
+        bool const originating_failure = true;
+#endif
+        body_failed_ = true;
         TaskRegistry::record_unhandled_exception(this->self().coroutine(), eptr, originating_failure);
         this->set_exception(eptr);
         for (auto* node = exception_sinks_head_; node; node = node->next)
-          propagate_unhandled_writer_exception(node->epoch.get(), eptr);
+          propagate_unhandled_buffer_exception(node->epoch.get(), eptr, node->requires_writer);
       }
     }
 

@@ -9,8 +9,8 @@
 
 namespace
 {
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 } // namespace
 
 TEST(MdspanConjugateAccessor, ComplexConjViewConjugatesValues)
@@ -18,7 +18,7 @@ TEST(MdspanConjugateAccessor, ComplexConjViewConjugatesValues)
   using complex_type = uni20::complex<double>;
 
   std::vector<complex_type> storage{{1.0, 2.0}, {3.0, -4.0}, {-5.0, 6.0}, {-7.0, -8.0}};
-  stdex::mdspan<complex_type, extents_2d, stdex::layout_left> span(storage.data(), 2, 2);
+  uni20::mdspan<complex_type, extents_2d, uni20::layout_left> span(storage.data(), 2, 2);
 
   auto conjugated = uni20::conj(span);
   static_assert(uni20::StridedMdspanLike<decltype(conjugated)>);
@@ -41,14 +41,14 @@ TEST(MdspanConjugateAccessor, DoubleConjCancelsConjugatingAccessor)
   using complex_type = uni20::complex<double>;
 
   std::vector<complex_type> storage{{1.0, 2.0}, {3.0, -4.0}, {-5.0, 6.0}, {-7.0, -8.0}};
-  stdex::mdspan<complex_type, extents_2d, stdex::layout_left> span(storage.data(), 2, 2);
+  uni20::mdspan<complex_type, extents_2d, uni20::layout_left> span(storage.data(), 2, 2);
 
   auto conjugated = uni20::conj(span);
   auto roundtrip = uni20::conj(conjugated);
 
   static_assert(uni20::StridedMdspanLike<decltype(roundtrip)>);
   static_assert(!uni20::MutableMdspanLike<decltype(roundtrip)>);
-  static_assert(std::is_same_v<decltype(roundtrip), stdex::mdspan<complex_type const, extents_2d, stdex::layout_left>>);
+  static_assert(std::is_same_v<decltype(roundtrip), uni20::mdspan<complex_type const, extents_2d, uni20::layout_left>>);
   static_assert(!uni20::accessor_applies_conjugation_v<typename decltype(roundtrip)::accessor_type>);
   static_assert(!uni20::mdspan_needs_conjugation_v<decltype(roundtrip)>);
 
@@ -62,11 +62,11 @@ TEST(MdspanConjugateAccessor, DoubleConjCancelsConjugatingAccessor)
 TEST(MdspanConjugateAccessor, NonComplexConjReturnsConstIdentityView)
 {
   std::vector<double> storage{1.0, 2.0, 3.0};
-  stdex::mdspan<double, extents_1d, stdex::layout_left> span(storage.data(), 3);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> span(storage.data(), 3);
 
   auto identity = uni20::conj(span);
 
-  static_assert(std::is_same_v<decltype(identity), stdex::mdspan<double const, extents_1d, stdex::layout_left>>);
+  static_assert(std::is_same_v<decltype(identity), uni20::mdspan<double const, extents_1d, uni20::layout_left>>);
   static_assert(!uni20::MutableMdspanLike<decltype(identity)>);
   static_assert(!uni20::mdspan_needs_conjugation_v<decltype(identity)>);
 

@@ -270,6 +270,9 @@ TEST_F(CudaDeviceTest, KernelReadsPeerDeviceBufferAfterRuntimeGrant)
     uni20::cuda::ScopedDevice guard(0);
     uni20::cuda::check(cudaMemcpy(write.data(), input.data(), sizeof(input), cudaMemcpyHostToDevice),
                        "cudaMemcpy peer source upload", 0);
+    // A pageable cudaMemcpy may return before its DMA lands, and device 1's
+    // default stream does not wait for device 0's, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize peer source upload", 0);
   }
 
   {

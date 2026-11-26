@@ -7,6 +7,7 @@
 
 #include "deferred_host_tensor.hpp"
 
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <type_traits>
@@ -14,8 +15,8 @@
 
 namespace
 {
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 
 template <class Matrix>
 void fill_matrix(Matrix&& matrix, std::initializer_list<typename std::remove_reference_t<Matrix>::value_type> values)
@@ -50,9 +51,9 @@ TEST(CpuGemvBackendTest, SkipsProductReadsWhenAlphaIsZero)
   std::vector<double> input_storage(2, nan);
   std::vector<double> output_storage{2.0, -3.0};
 
-  stdex::mdspan<double, extents_2d, stdex::layout_left> matrix(matrix_storage.data(), 2, 2);
-  stdex::mdspan<double, extents_1d, stdex::layout_left> input(input_storage.data(), 2);
-  stdex::mdspan<double, extents_1d, stdex::layout_left> output(output_storage.data(), 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> matrix(matrix_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> input(input_storage.data(), 2);
+  uni20::mdspan<double, extents_1d, uni20::layout_left> output(output_storage.data(), 2);
 
   uni20::linalg::cpu::gemv(output, 0.0, matrix, input, 2.0);
   EXPECT_DOUBLE_EQ(output[0], 4.0);
@@ -73,6 +74,24 @@ TEST(CpuGemvBackendTest, TensorOperandsAcceptExplicitSelector)
   uni20::linalg::gemv(uni20::linalg::CpuReferenceBackend{}, output, 1.0, matrix, input, 0.0);
   EXPECT_DOUBLE_EQ(output[0], 8.0);
   EXPECT_DOUBLE_EQ(output[1], 18.0);
+}
+
+// The contracted axis belongs to the inputs. A narrow output index type must not bound it (#170).
+TEST(CpuGemvBackendTest, ContractsBeyondTheOutputIndexRange)
+{
+  using narrow_extents = uni20::dextents<std::int16_t, 1>;
+  for (uni20::index_type const inner : {uni20::index_type{32767}, uni20::index_type{32768}})
+  {
+    std::vector<double> matrix_storage(static_cast<std::size_t>(inner), 1.0);
+    std::vector<double> input_storage(static_cast<std::size_t>(inner), 1.0);
+    std::vector<double> output_storage{-1.0};
+    uni20::mdspan<double const, extents_2d, uni20::layout_left> matrix(matrix_storage.data(), 1, inner);
+    uni20::mdspan<double const, extents_1d, uni20::layout_left> input(input_storage.data(), inner);
+    uni20::mdspan<double, narrow_extents, uni20::layout_left> output(output_storage.data(), 1);
+
+    uni20::linalg::cpu::gemv(output, 1.0, matrix, input, 0.0);
+    EXPECT_DOUBLE_EQ(output_storage[0], static_cast<double>(inner)) << "contracted extent " << inner;
+  }
 }
 
 TEST(CpuGemvBackendTest, DeferredTensorOperandsUseHostLeases)

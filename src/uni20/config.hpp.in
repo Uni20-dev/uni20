@@ -89,10 +89,7 @@
 #cmakedefine01 UNI20_HAS_EXP10M1_LONG_DOUBLE
 #cmakedefine01 UNI20_HAS_EXP10M1_FLOAT128
 
-// Use the Kokkos reference mdspan implementation in the Uni20 extension namespace.
-#ifndef MDSPAN_IMPL_STANDARD_NAMESPACE
-#define MDSPAN_IMPL_STANDARD_NAMESPACE stdex
-#endif
+#cmakedefine01 UNI20_USE_STD_EXTENTS
 
 #define UNI20_BLAS_VENDOR "@UNI20_DETECTED_BLAS_VENDOR@"
 

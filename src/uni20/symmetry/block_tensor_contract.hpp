@@ -499,7 +499,7 @@ void execute_local_pairwise_contraction(OutputTensor& output, LeftTensor const& 
   auto execute_group = [&](std::size_t group) {
     std::size_t const first = group_offsets[group];
     std::size_t const last = group_offsets[group + 1];
-    auto output_block = permute_block(output.block_by_ordinal(bindings[first].result_ordinal), output_permutation);
+    auto output_block = permute_block<output_permutation>(output.block_by_ordinal(bindings[first].result_ordinal));
 
     for (std::size_t index = first; index < last; ++index)
     {

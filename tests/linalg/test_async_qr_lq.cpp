@@ -160,7 +160,7 @@ TEST(AsyncQrLqTest, PreservingLqAcceptsDeferredTensorView)
 
   auto [l, q] = uni20::linalg::lq(uni20::linalg::LapackBackend{}, matrix);
 
-  stdex::mdspan<double const, stdex::dextents<uni20::index_type, 2>, stdex::layout_left> original_span(original.data(),
+  uni20::mdspan<double const, uni20::dextents<uni20::index_type, 2>, uni20::layout_left> original_span(original.data(),
                                                                                                        3, 4);
   expect_lq(original_span, l.get_wait(scheduler), q.get_wait(scheduler));
   auto preserved = uni20::test::acquire_host_read_access_sync(matrix.get_wait(scheduler));
@@ -199,7 +199,7 @@ TEST(AsyncQrLqTest, ConsumingLqMaterializesDeferredInput)
 
   auto [l, q] = uni20::linalg::lq(std::move(matrix));
 
-  stdex::mdspan<double const, stdex::dextents<uni20::index_type, 2>, stdex::layout_left> original_span(original.data(),
+  uni20::mdspan<double const, uni20::dextents<uni20::index_type, 2>, uni20::layout_left> original_span(original.data(),
                                                                                                        3, 4);
   expect_lq(original_span, l.get_wait(scheduler), q.get_wait(scheduler));
   EXPECT_THROW((void)matrix.get_wait(scheduler), uni20::async::buffer_read_uninitialized);

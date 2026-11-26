@@ -14,10 +14,10 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 using uni20::linalg::blas::MatrixTransform;
 
-template <class Scalar> using left_mdspan = stdex::mdspan<Scalar, extents_2d, stdex::layout_left>;
+template <class Scalar> using left_mdspan = uni20::mdspan<Scalar, extents_2d, uni20::layout_left>;
 
 template <class Scalar> struct ValueTransformAccessor
 {
@@ -25,6 +25,7 @@ template <class Scalar> struct ValueTransformAccessor
     using data_handle_type = Scalar*;
     using reference = Scalar;
     using offset_policy = ValueTransformAccessor;
+    using offset_type = std::size_t;
 
     constexpr data_handle_type offset(data_handle_type ptr, std::size_t offset) const { return ptr + offset; }
 
@@ -32,7 +33,7 @@ template <class Scalar> struct ValueTransformAccessor
 };
 
 template <class Scalar>
-using value_transform_mdspan = stdex::mdspan<Scalar, extents_2d, stdex::layout_left, ValueTransformAccessor<Scalar>>;
+using value_transform_mdspan = uni20::mdspan<Scalar, extents_2d, uni20::layout_left, ValueTransformAccessor<Scalar>>;
 
 template <class Span>
 concept can_try_blas_writable_matrix =
@@ -122,6 +123,7 @@ TEST(BlasMatrixOperandTest, ConvenienceApisRequireConfiguredScalarBackends)
 
   static_assert(uni20::StridedMdspanLike<value_transform_mdspan<double>>);
   static_assert(std::convertible_to<typename value_transform_mdspan<double>::data_handle_type, double*>);
+  static_assert(uni20::MdspanLike<value_transform_mdspan<double>>);
   static_assert(!uni20::DefaultAccessorMdspanLike<value_transform_mdspan<double>>);
   static_assert(!can_try_blas_writable_matrix<value_transform_mdspan<double>>);
   static_assert(!can_try_blas_readable_matrix<value_transform_mdspan<double>>);
@@ -131,7 +133,7 @@ TEST(BlasMatrixOperandTest, ConvenienceApisRequireConfiguredScalarBackends)
 TEST(BlasMatrixOperandTest, StagesColumnMajorMdspan)
 {
   std::vector<double> storage(6);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> span(storage.data(), 2, 3);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> span(storage.data(), 2, 3);
 
   auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
   ASSERT_TRUE(stage.has_value());
@@ -161,7 +163,7 @@ TEST(BlasMatrixOperandTest, StagesColumnMajorMdspan)
 TEST(BlasMatrixOperandTest, StagesRowMajorMdspanAsTransposedProviderMatrix)
 {
   std::vector<double> storage(6);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> span(storage.data(), 2, 3);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> span(storage.data(), 2, 3);
 
   auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
   ASSERT_TRUE(stage.has_value());
@@ -185,8 +187,8 @@ TEST(BlasMatrixOperandTest, StagesRowMajorMdspanAsTransposedProviderMatrix)
 
 TEST(BlasMatrixOperandTest, NormalizesUnobservedZeroRowProviderStride)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 2>;
-  stdex::mdspan<double, extents_type, stdex::layout_right> matrix(nullptr, 2, 0);
+  using extents_type = uni20::dextents<uni20::index_type, 2>;
+  uni20::mdspan<double, extents_type, uni20::layout_right> matrix(nullptr, 2, 0);
 
   auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(matrix);
 
@@ -201,8 +203,8 @@ TEST(BlasMatrixOperandTest, NormalizesUnobservedSingletonProviderColumnStride)
 {
   {
     std::vector<double> storage(3);
-    stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{1, 0});
-    stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+    uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{1, 0});
+    uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
     auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
     ASSERT_TRUE(stage.has_value());
@@ -217,8 +219,8 @@ TEST(BlasMatrixOperandTest, NormalizesUnobservedSingletonProviderColumnStride)
 
   {
     std::vector<double> storage(3);
-    stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{1, 3}, std::array<uni20::index_type, 2>{0, 1});
-    stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+    uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{1, 3}, std::array<uni20::index_type, 2>{0, 1});
+    uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
     auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
     ASSERT_TRUE(stage.has_value());
@@ -236,8 +238,8 @@ TEST(BlasMatrixOperandTest, UsesSingletonAxisForOtherwiseStridedMatrix)
 {
   {
     std::vector<double> storage(5);
-    stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{2, 37});
-    stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+    uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{2, 37});
+    uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
     auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
     ASSERT_TRUE(stage.has_value());
@@ -252,8 +254,8 @@ TEST(BlasMatrixOperandTest, UsesSingletonAxisForOtherwiseStridedMatrix)
 
   {
     std::vector<double> storage(5);
-    stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{1, 3}, std::array<uni20::index_type, 2>{37, 2});
-    stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+    uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{1, 3}, std::array<uni20::index_type, 2>{37, 2});
+    uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
     auto stage = uni20::linalg::blas::try_mdspan_matrix_stage(span);
     ASSERT_TRUE(stage.has_value());
@@ -270,8 +272,8 @@ TEST(BlasMatrixOperandTest, UsesSingletonAxisForOtherwiseStridedMatrix)
 TEST(BlasMatrixOperandTest, DeclinesNonBlasMatrixStridePattern)
 {
   std::vector<double> storage(16);
-  stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{2, 3}, std::array<uni20::index_type, 2>{2, 5});
-  stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+  uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{2, 3}, std::array<uni20::index_type, 2>{2, 5});
+  uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
   EXPECT_FALSE(uni20::linalg::blas::try_mdspan_matrix_stage(span).has_value());
 }
@@ -287,25 +289,25 @@ TEST(BlasMatrixOperandTest, DeclinesValuesOutsideBlasIntegerRange)
         static_cast<uni20::index_type>(std::numeric_limits<uni20::blas_int>::max()) + uni20::index_type{1};
 
     {
-      stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{too_large, 1},
+      uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{too_large, 1},
                                                         std::array<uni20::index_type, 2>{1, 0});
-      stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+      uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
       EXPECT_FALSE(uni20::linalg::blas::try_mdspan_matrix_stage(span).has_value());
     }
 
     {
-      stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{2, 2},
+      uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{2, 2},
                                                         std::array<uni20::index_type, 2>{1, too_large});
-      stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+      uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
       EXPECT_FALSE(uni20::linalg::blas::try_mdspan_matrix_stage(span).has_value());
     }
 
     {
-      stdex::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1},
+      uni20::layout_stride::mapping<extents_2d> mapping(extents_2d{3, 1},
                                                         std::array<uni20::index_type, 2>{1, too_large});
-      stdex::mdspan<double, extents_2d, stdex::layout_stride> span(storage.data(), mapping);
+      uni20::mdspan<double, extents_2d, uni20::layout_stride> span(storage.data(), mapping);
 
       EXPECT_TRUE(uni20::linalg::blas::try_mdspan_matrix_stage(span).has_value());
     }
@@ -319,7 +321,7 @@ TEST(BlasMatrixOperandTest, DeclinesValuesOutsideBlasIntegerRange)
 TEST(BlasMatrixOperandTest, AccessorTraitMarksConjugatingViews)
 {
   std::vector<uni20::complex<double>> storage(4);
-  stdex::mdspan<uni20::complex<double>, extents_2d, stdex::layout_left> span(storage.data(), 2, 2);
+  uni20::mdspan<uni20::complex<double>, extents_2d, uni20::layout_left> span(storage.data(), 2, 2);
   auto conjugated = uni20::conj(span);
   static_assert(uni20::accessor_applies_conjugation_v<typename decltype(conjugated)::accessor_type>);
 

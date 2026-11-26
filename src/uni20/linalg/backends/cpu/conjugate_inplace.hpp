@@ -40,7 +40,7 @@ void conjugate_element(Mdspan& span, std::array<typename Mdspan::index_type, Mds
 {
   using value_type = typename Mdspan::value_type;
   auto&& element = span.operator[](index[Axis]...);
-  element = uni20::conj(static_cast<value_type>(element));
+  std::forward<decltype(element)>(element) = uni20::conj(static_cast<value_type>(element));
 }
 
 template <std::size_t Axis, class Mdspan>

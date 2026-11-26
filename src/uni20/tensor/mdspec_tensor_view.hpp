@@ -19,24 +19,27 @@ namespace uni20
 
 /// \brief TensorView materialization over writable and read-only mdspec values.
 /// \details The view owns multidimensional metadata but not the described
-///          element storage. Its storage policy supplies tensor-level backend
-///          selection; access acquisition remains governed by the stored
+///          element storage. It retains the source backend selector, defaulting
+///          to its storage policy; access acquisition is governed by the stored
 ///          mdspec data descriptor. An optional precision binding follows the
-///          ultimate owner; the view has no independent default setter.
+///          source owner; the view has no independent default setter.
 /// \tparam MutableMdspec Metadata exposed through the mutable interface.
 /// \tparam ConstMdspec Read-only metadata exposed through the const interface.
 /// \tparam StoragePolicy Dense storage policy associated with the metadata.
-template <MdspecLike MutableMdspec, MdspecLike ConstMdspec, class StoragePolicy>
+/// \tparam BackendSelector Selector retained from the source tensor.
+template <MdspecLike MutableMdspec, MdspecLike ConstMdspec, class StoragePolicy,
+          class BackendSelector = decltype(StoragePolicy::backend_selector())>
   requires(std::same_as<typename MutableMdspec::extents_type, typename ConstMdspec::extents_type> &&
            std::same_as<std::remove_const_t<typename MutableMdspec::element_type>,
                         std::remove_const_t<typename ConstMdspec::element_type>> &&
-           std::is_const_v<typename ConstMdspec::element_type> && requires { StoragePolicy::backend_selector(); })
+           std::is_const_v<typename ConstMdspec::element_type>)
 class MdspecTensorView : public detail::precision_source<typename MutableMdspec::value_type> {
   public:
     using mutable_mdspec_type = MutableMdspec;
     using const_mdspec_type = ConstMdspec;
     using storage_policy = StoragePolicy;
-    using backend_selector_type = std::remove_cvref_t<decltype(storage_policy::backend_selector())>;
+    using backend_selector_type = BackendSelector;
+    using borrowed_tensor_view_tag = void;
     using element_type = typename mutable_mdspec_type::element_type;
     using value_type = std::remove_cv_t<element_type>;
     using extents_type = typename mutable_mdspec_type::extents_type;
@@ -45,19 +48,17 @@ class MdspecTensorView : public detail::precision_source<typename MutableMdspec:
 
     /// \brief Construct a tensor view from writable and read-only metadata.
     constexpr MdspecTensorView(mutable_mdspec_type mutable_mdspec, const_mdspec_type const_mdspec,
-                               precision_source_type precision = {})
+                               precision_source_type precision = {},
+                               backend_selector_type selector = StoragePolicy::backend_selector())
         : precision_source_type(precision), mutable_mdspec_(std::move(mutable_mdspec)),
-          const_mdspec_(std::move(const_mdspec))
+          const_mdspec_(std::move(const_mdspec)), selector_(std::move(selector))
     {}
 
-    /// \brief Retain the ultimate owner's precision binding when transforming this descriptor.
+    /// \brief Retain the precision binding when copying or transforming this descriptor.
     [[nodiscard]] constexpr auto precision_source() const noexcept -> precision_source_type { return *this; }
 
-    /// \brief Return the dense storage policy's default backend selector.
-    [[nodiscard]] static constexpr auto backend_selector() noexcept -> backend_selector_type
-    {
-      return storage_policy::backend_selector();
-    }
+    /// \brief Return the source tensor's backend selector.
+    [[nodiscard]] constexpr auto backend_selector() const noexcept -> backend_selector_type const& { return selector_; }
 
     /// \brief Return writable immediate or descriptor-backed metadata.
     [[nodiscard]] constexpr auto mdspec() & -> mutable_mdspec_type { return mutable_mdspec_; }
@@ -117,6 +118,7 @@ class MdspecTensorView : public detail::precision_source<typename MutableMdspec:
   private:
     [[no_unique_address]] mutable_mdspec_type mutable_mdspec_;
     [[no_unique_address]] const_mdspec_type const_mdspec_;
+    [[no_unique_address]] backend_selector_type selector_;
 };
 
 } // namespace uni20

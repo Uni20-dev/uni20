@@ -154,6 +154,19 @@ Semantic transform views change values observed through an accessor. Complex
 identity view. Applying `conj` twice returns a read-only view of the original
 values rather than a writable left-hand side.
 
+When `transform_view` combines mdspans with the same shape, each operand
+retains its physical offsets. Two `int32_t` inputs use 32-bit offsets.
+Combining `int32_t` and `uint32_t` uses signed 64-bit offsets. If no
+standard integer type covers both ranges, the zip keeps each child mapping.
+
+`make_diagonal_mdspan` preserves the physical component mapping's index type
+and stride, including when `diagonal_components(view)` recovers the component
+view. The diagonal's logical mapping flattens coordinates into a separate wide
+index. Construction checks the component count, rebased component span and
+logical size before forming the view. It throws `std::overflow_error` if the
+chosen mapping cannot represent them. For example, a 50,000 × 50,000 diagonal
+stores 50,000 components but its last logical offset is 2,499,999,999.
+
 Materialization is explicit:
 
 ```cpp
@@ -342,7 +355,7 @@ contracts described later in this guide.
 | `reshape_view_left`, `reshape_view_right` | Explicitly ordered no-copy reshape of a general strided source. | Requires a unique, exhaustive canonical mapping in the selected order. | Matching async overloads retain the parent and queue. |
 | `reshape_inplace(x, ...)` | Replace a canonical owning tensor mapping at the same compile-time rank. | Keeps the allocation; existing copied descriptors keep their old mapping. | Implemented; publishes the mapping change through one writer epoch. |
 | `reshape(x, ...)` | Return an owning reshaped value. | Canonical lvalue copies; canonical owning rvalue may transfer; deferred non-owning and generated inputs materialize before owning reshape. | Preserving and consuming forms return an independent Async owner; the consuming form may transfer the input allocation. |
-| `copy(out, in)` | Overwrite while observing input accessor semantics. Matching contiguous host/CUDA transfers use the CUDA runtime; same-device positive-strided CUDA mappings with compact rank through eight use 32- or 64-bit logical-index elementwise execution. | Resizes a resizable output or validates a fixed output. CUDA strided copy supports jointly compacted differing layouts, padding, and buffer-view offsets; non-strided or unregistered accessor lowerings decline. | Implemented for host and CUDA Tensor operands. CUDA-to-CUDA submission is nonblocking; pageable host transfers execute their blocking CUDA call in the scheduled task. An empty context-bound output still needs input placement or prior construction. |
+| `copy(out, in)` | Overwrite while observing input accessor semantics. Matching contiguous host/CUDA transfers use the CUDA runtime; other host/CUDA layouts stage through one contiguous transfer. Same-device positive-strided CUDA mappings of any rank use 32- or 64-bit logical-index elementwise execution, and strided copies between devices stage through the destination device. | Resizes a resizable output or validates a fixed output. CUDA strided copy supports jointly compacted differing layouts, padding, and buffer-view offsets; non-strided or unregistered accessor lowerings decline. | Implemented for host and CUDA Tensor operands. CUDA-to-CUDA submission is nonblocking; pageable host transfers execute their blocking CUDA call in the scheduled task. An empty context-bound output still needs input placement or prior construction. |
 | `assign_transform(out, function, inputs...)` | Nullary or variadic elementwise overwrite through backend dispatch. With no input, the callable generates every output value. The CUDA reference backend registers same-element-type unary and binary arithmetic function objects plus stateful `linalg::scale<Factor>` for positive-strided raw CUDA operands. | A nullary overwrite requires fixed output shape. Other forms resize a resizable output to the first input or validate a fixed output. | Implemented for all-Async Tensor operands. The callable is immediate state owned by the coroutine. |
 | `fill(out, value)` | Constant nullary overwrite; the old output value is never read. | Requires fixed output shape and preserves storage. | Implemented for synchronous and Async host tensors. Async fill takes one write epoch. |
 | `transform_inplace(out, function, inputs...)` | Variadic elementwise update with the old output as the callable's first argument. | Output shape is fixed and the output appears once as a read/write operand. | Implemented for all-Async Tensor operands with one output writer and distinct input readers. |
@@ -351,11 +364,13 @@ contracts described later in this guide.
 | `conjugate_inplace(x)` | Eager element mutation. CPU accessors are evaluated directly; positive-strided CUDA `cfloat` and `cdouble` storage uses the CUDA reference elementwise executor. Real and integer values return as a no-op. | Reuses existing storage and takes one exclusive execution-domain access when work is required. | Implemented through one writer epoch. |
 | `sum(input)` | Full reduction returning a same-element-type `ScalarTensor`. | Allocates a rank-zero result in the selected storage domain; an explicit scalar output is also supported. | Implemented; returns `Async<ScalarTensor>` or writes an explicit async scalar output. |
 | `sum(input, axes...)` | Remove one or more runtime-selected axes; negative axes are accepted. | Allocates rank `R - sizeof...(axes)`, preserves canonical input layout, and retains surviving-axis order. Explicit outputs may resize. | Implemented; returns an async storage-preserving result or writes an explicit async output. |
-| `sum_host(input)` | Full sum returning a C++ scalar. | CPU path writes the host result directly without allocating a scalar tensor. | Implemented; returns `Async<Element>` without blocking submission. |
+| `sum_host(input)` | Full sum returning a C++ scalar. | The CPU path writes the scalar directly. CUDA supports `float`, `double`, `cfloat`, and `cdouble` with a positive-strided pointer mapping. It uses component-wise Neumaier summation in `double` throughout a fixed reduction tree and transfers a single result. | Returns `Async<Element>`. CUDA submission requires a CUDA-aware scheduler for the input device. |
+| `maximum_host(input)` | Largest signed real entry as a C++ scalar. Requires a nonempty input. NaNs propagate. | CPU and deterministic CUDA reduction. CUDA supports positive-strided `float` and `double` with the default pointer accessor. | Synchronous API. |
+| `diagonal_view<A, B, ...>(input)` | Borrow a dense view with one shared index per axis pair, up to the smaller extent. | Preserves the source storage and accessor. See [Trace As A Dense Reduction Primitive](../linalg/trace_reduction.md). | Synchronous tensor view. |
 | `inner_product(lhs, rhs)` | Conjugate-linear-left full reduction returning a `ScalarTensor`. | Allocates a rank-zero result in the selected storage domain; an explicit scalar output is also supported. | Implemented; returns an Async scalar Tensor or writes an explicit async scalar output. |
-| `inner_product_host(lhs, rhs)` | Same inner product returning a C++ scalar. | CPU path writes the host result directly without allocating a scalar tensor. | Implemented; returns `Async<Element>`. |
+| `inner_product_host(lhs, rhs)` | Same inner product returning a C++ scalar. | CPU path writes the host result directly without allocating a scalar tensor. CUDA operands use cuBLAS when contiguous in one order, otherwise a deterministic reference reduction over any positive-strided layouts. | Returns `Async<Element>`. CUDA submission requires a CUDA-aware scheduler for the input device. |
 | `norm(input)` | Stable Euclidean full reduction returning a real `ScalarTensor`. | Uses scaled sum-of-squares in the CPU reference backend. | Implemented; returns an Async real scalar Tensor or writes an explicit async scalar output. |
-| `norm_host(input)` | Same Euclidean norm returning a real C++ scalar. | CPU path writes the host result directly. | Implemented; returns `Async<Real>`. |
+| `norm_host(input)` | Same Euclidean norm returning a real C++ scalar. | CPU path writes the host result directly. CUDA operands use cuBLAS when contiguous, otherwise a deterministic, overflow-safe reference reduction. | Returns `Async<Real>`. CUDA submission requires a CUDA-aware scheduler for the input device. |
 | `require_output`, `prepare_output` | Output-policy helpers for operation authors. | Validate only, or construct/resize/replace when the output type permits it. | Replaceable-output preparation may be provisional across backend decline; fixed and update outputs remain unchanged. |
 
 For a rank-`R` result, generalized `eye<T>(n0, ..., n{R-1})` returns
@@ -411,6 +426,21 @@ readable. A value-returning sum creates an independent result epoch;
 internally. Explicit outputs must have a distinct epoch queue from the input.
 Mutable async aliases are accepted as fixed-shape outputs and write through
 their bound descriptor.
+
+For async `sum_host`, `inner_product_host`, and `norm_host` on CUDA tensors, install `TbbCudaScheduler`
+with the input device enrolled. Use `DebugCudaScheduler` for single-threaded
+testing and debugging.
+See [Choosing a Scheduler](../async/schedulers.md#choosing-a-scheduler) for a
+complete `sum_host` example. These reductions suspend while waiting
+for a stream (and a cuBLAS handle when used). The task waits for the scalar
+readback on its leased stream before publishing the result.
+
+Async copies that allocate or resize a CUDA Tensor also use a CUDA-aware
+scheduler. A fresh owning CUDA destination inherits the source device for a
+device-to-device copy and uses the runtime default device for a host upload. A resized
+destination stays on its existing device. Allocation releases its stream before
+the selected copy backend acquires execution resources, so one stream suffices
+for an ordinary device-to-device copy.
 
 ## Dense Linear Algebra Support
 

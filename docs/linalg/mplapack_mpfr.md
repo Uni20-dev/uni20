@@ -21,7 +21,8 @@ cmake -S . -B build_codex/mplapack_mpfr \
 
 `UNI20_USE_SYSTEM_MPLAPACK=AUTO` prefers an installed MPLAPACK package at least
 version 3.0.0 with target `mplapack::mplapack_mpfr`, otherwise fetching pinned
-v3.0.0. `ON` requires an installed package; `OFF` fetches the pinned source.
+v3.0.0. `ON` requires an installed package; `OFF` fetches the pinned source,
+unless a parent project already created the MPLAPACK targets.
 The fetched build uses the reference library, with optimized, CUDA and OpenCL
 variants disabled. Provider-internal parallelism is outside this adapter's
 precision contract.

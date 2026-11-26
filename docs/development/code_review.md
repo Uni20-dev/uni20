@@ -127,6 +127,10 @@ irrelevant when that is not obvious.
 - Are coroutine lambdas captureless and `static`?
 - Are values needed after suspension passed by value into the coroutine frame?
 - Are `EpochQueue`, buffer, and alias lifetimes valid?
+- For a deadlock finding, show the enrollment and release order for a valid
+  call. Reporting a caller-created cycle at submission is best effort.
+  Rejecting a valid operation is a correctness defect. See the
+  [async deadlock policy](../async/runtime_model.md#deadlock-diagnostics).
 - Does a decline preserve inputs and fixed/update outputs, and limit any visible
   mutation to operation-authorized preparation of a replaceable output?
 - Are exceptions delivered to every required output without stranding waiters?

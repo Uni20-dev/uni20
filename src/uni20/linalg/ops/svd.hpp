@@ -32,8 +32,8 @@ namespace uni20::linalg
 {
 namespace detail
 {
-using svd_value_extents = stdex::dextents<uni20::index_type, 1>;
-using svd_matrix_extents = stdex::dextents<uni20::index_type, 2>;
+using svd_value_extents = uni20::dextents<uni20::index_type, 1>;
+using svd_matrix_extents = uni20::dextents<uni20::index_type, 2>;
 
 template <uni20::MutableRankedTensorView<1> SingularValueTensor, uni20::MutableRankedTensorView<2> LeftTensor,
           uni20::MutableRankedTensorView<2> RightAdjointTensor, uni20::MutableRankedTensorView<2> MatrixTensor>
@@ -207,7 +207,7 @@ template <class MatrixTensor> using svd_matrix_tensor_t = uni20::Tensor<svd_scal
 
 template <class MatrixTensor>
 using svd_reuse_factor_t =
-    typename std::remove_cvref_t<MatrixTensor>::template rebind_layout_type<stdex::layout_stride>;
+    typename std::remove_cvref_t<MatrixTensor>::template rebind_layout_type<uni20::layout_stride>;
 
 template <class MatrixTensor> consteval bool can_transfer_svd_storage()
 {
@@ -222,7 +222,7 @@ template <class MatrixTensor> consteval bool can_transfer_svd_storage()
                        typename matrix_type::accessor_factory_type;
                        typename matrix_type::storage_type;
                        typename matrix_type::extents_type;
-                       typename matrix_type::template rebind_layout_type<stdex::layout_stride>;
+                       typename matrix_type::template rebind_layout_type<uni20::layout_stride>;
                      })
   {
     using factor_type = svd_reuse_factor_t<matrix_type>;

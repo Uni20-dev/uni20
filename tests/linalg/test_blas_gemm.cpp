@@ -13,7 +13,7 @@ namespace
 {
 using uni20::linalg::KernelAttempt;
 
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
 
 template <class Scalar> struct ValueTransformAccessor
 {
@@ -21,6 +21,7 @@ template <class Scalar> struct ValueTransformAccessor
     using data_handle_type = Scalar*;
     using reference = Scalar;
     using offset_policy = ValueTransformAccessor;
+    using offset_type = std::size_t;
 
     constexpr data_handle_type offset(data_handle_type ptr, std::size_t offset) const { return ptr + offset; }
 
@@ -28,7 +29,7 @@ template <class Scalar> struct ValueTransformAccessor
 };
 
 template <class Scalar>
-using value_transform_mdspan = stdex::mdspan<Scalar, extents_2d, stdex::layout_left, ValueTransformAccessor<Scalar>>;
+using value_transform_mdspan = uni20::mdspan<Scalar, extents_2d, uni20::layout_left, ValueTransformAccessor<Scalar>>;
 
 template <class Span> void fill_matrix(Span span, std::initializer_list<double> values)
 {
@@ -56,9 +57,9 @@ TEST(BlasGemmTest, MultipliesColumnMajorMdspans)
   std::vector<double> b_storage(6);
   std::vector<double> c_storage(4);
 
-  stdex::mdspan<double, extents_2d, stdex::layout_left> a(a_storage.data(), 2, 3);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> b(b_storage.data(), 3, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> c(c_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> a(a_storage.data(), 2, 3);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> b(b_storage.data(), 3, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> c(c_storage.data(), 2, 2);
 
   fill_matrix(a, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
   fill_matrix(b, {7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
@@ -77,9 +78,9 @@ TEST(BlasGemmTest, RewritesRowMajorOutput)
   std::vector<double> b_storage(6);
   std::vector<double> c_storage(4);
 
-  stdex::mdspan<double, extents_2d, stdex::layout_right> a(a_storage.data(), 2, 3);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> b(b_storage.data(), 3, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> c(c_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> a(a_storage.data(), 2, 3);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> b(b_storage.data(), 3, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> c(c_storage.data(), 2, 2);
 
   fill_matrix(a, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
   fill_matrix(b, {7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
@@ -98,12 +99,12 @@ TEST(BlasGemmTest, HandlesTransposedMdspanView)
   std::vector<double> b_storage(6);
   std::vector<double> c_storage(4);
 
-  stdex::mdspan<double, extents_2d, stdex::layout_left> a_base(a_storage.data(), 3, 2);
-  stdex::layout_stride::mapping<extents_2d> a_transposed_mapping(extents_2d{2, 3},
+  uni20::mdspan<double, extents_2d, uni20::layout_left> a_base(a_storage.data(), 3, 2);
+  uni20::layout_stride::mapping<extents_2d> a_transposed_mapping(extents_2d{2, 3},
                                                                  std::array<uni20::index_type, 2>{3, 1});
-  stdex::mdspan<double, extents_2d, stdex::layout_stride> a(a_storage.data(), a_transposed_mapping);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> b(b_storage.data(), 3, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> c(c_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_stride> a(a_storage.data(), a_transposed_mapping);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> b(b_storage.data(), 3, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> c(c_storage.data(), 2, 2);
 
   fill_matrix(a_base, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
   fill_matrix(b, {7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
@@ -122,10 +123,10 @@ TEST(BlasGemmTest, NormalizesUnobservedSingletonProviderColumnStride)
   std::vector<double> b_storage(1, 4.0);
   std::vector<double> c_storage(3);
 
-  stdex::layout_stride::mapping<extents_2d> vector_mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{1, 0});
-  stdex::mdspan<double, extents_2d, stdex::layout_stride> a(a_storage.data(), vector_mapping);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> b(b_storage.data(), 1, 1);
-  stdex::mdspan<double, extents_2d, stdex::layout_stride> c(c_storage.data(), vector_mapping);
+  uni20::layout_stride::mapping<extents_2d> vector_mapping(extents_2d{3, 1}, std::array<uni20::index_type, 2>{1, 0});
+  uni20::mdspan<double, extents_2d, uni20::layout_stride> a(a_storage.data(), vector_mapping);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> b(b_storage.data(), 1, 1);
+  uni20::mdspan<double, extents_2d, uni20::layout_stride> c(c_storage.data(), vector_mapping);
 
   fill_matrix(a, {1.0, 2.0, 3.0});
 
@@ -142,10 +143,10 @@ TEST(BlasGemmTest, TryDeclinesUnsupportedStridePattern)
   std::vector<double> b_storage(4, 1.0);
   std::vector<double> c_storage(4, 7.0);
 
-  stdex::layout_stride::mapping<extents_2d> bad_mapping(extents_2d{2, 2}, std::array<uni20::index_type, 2>{2, 5});
-  stdex::mdspan<double, extents_2d, stdex::layout_stride> a(a_storage.data(), bad_mapping);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> b(b_storage.data(), 2, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> c(c_storage.data(), 2, 2);
+  uni20::layout_stride::mapping<extents_2d> bad_mapping(extents_2d{2, 2}, std::array<uni20::index_type, 2>{2, 5});
+  uni20::mdspan<double, extents_2d, uni20::layout_stride> a(a_storage.data(), bad_mapping);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> b(b_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> c(c_storage.data(), 2, 2);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, 1.0, a, b, 0.0), KernelAttempt::unsupported_layout);
   EXPECT_DOUBLE_EQ((c[0, 0]), 7.0);
@@ -157,9 +158,9 @@ TEST(BlasGemmTest, EmptyOutputSucceedsBeforeOperandStaging)
   std::vector<double> empty_storage;
   std::vector<double> rhs_storage(6);
 
-  stdex::mdspan<double, extents_2d, stdex::layout_right> a(empty_storage.data(), 0, 3);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> b(rhs_storage.data(), 3, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> c(empty_storage.data(), 0, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> a(empty_storage.data(), 0, 3);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> b(rhs_storage.data(), 3, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> c(empty_storage.data(), 0, 2);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, 1.0, a, b, 0.0), KernelAttempt::success);
 }
@@ -169,9 +170,9 @@ TEST(BlasGemmTest, TryDeclinesZeroInnerExtentBeforeOperandStaging)
   std::vector<double> empty_storage;
   std::vector<double> c_storage{1.0, 2.0, 3.0, 4.0};
 
-  stdex::mdspan<double, extents_2d, stdex::layout_right> a(empty_storage.data(), 2, 0);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> b(empty_storage.data(), 0, 2);
-  stdex::mdspan<double, extents_2d, stdex::layout_right> c(c_storage.data(), 2, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> a(empty_storage.data(), 2, 0);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> b(empty_storage.data(), 0, 2);
+  uni20::mdspan<double, extents_2d, uni20::layout_right> c(c_storage.data(), 2, 2);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, 1.0, a, b, 3.0), KernelAttempt::unsupported_instance);
   EXPECT_EQ(c_storage, (std::vector<double>{1.0, 2.0, 3.0, 4.0}));
@@ -183,9 +184,9 @@ TEST(BlasGemmTest, AcceptsRealConjIdentityView)
   std::vector<double> b_storage(1, 4.0);
   std::vector<double> c_storage(1);
 
-  stdex::mdspan<double, extents_2d, stdex::layout_left> a(a_storage.data(), 1, 1);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> b(b_storage.data(), 1, 1);
-  stdex::mdspan<double, extents_2d, stdex::layout_left> c(c_storage.data(), 1, 1);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> a(a_storage.data(), 1, 1);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> b(b_storage.data(), 1, 1);
+  uni20::mdspan<double, extents_2d, uni20::layout_left> c(c_storage.data(), 1, 1);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, 1.0, uni20::conj(a), b, 0.0), KernelAttempt::success);
   EXPECT_DOUBLE_EQ((c[0, 0]), 12.0);
@@ -194,11 +195,12 @@ TEST(BlasGemmTest, AcceptsRealConjIdentityView)
 TEST(BlasGemmTest, ConjugatingMdspanIsReadableOnly)
 {
   using Complex = uni20::complex<double>;
-  using Span = stdex::mdspan<Complex, extents_2d, stdex::layout_left>;
+  using Span = uni20::mdspan<Complex, extents_2d, uni20::layout_left>;
   using ConjugatingSpan = decltype(uni20::conj(std::declval<Span&>()));
 
   static_assert(can_call_try_gemm<Span&, Complex, ConjugatingSpan, Span&>);
   static_assert(!can_call_try_gemm<ConjugatingSpan, Complex, Span&, Span&>);
+  static_assert(uni20::MdspanLike<value_transform_mdspan<Complex>>);
   static_assert(!can_call_try_gemm<Span&, Complex, value_transform_mdspan<Complex>&, Span&>);
 }
 
@@ -210,9 +212,9 @@ TEST(BlasGemmTest, TryDeclinesConjugateOnlyComplexInput)
   std::vector<Complex> b_storage(1, Complex{3.0, 1.0});
   std::vector<Complex> c_storage(1, Complex{-5.0, 2.0});
 
-  stdex::mdspan<Complex, extents_2d, stdex::layout_left> a(a_storage.data(), 1, 1);
-  stdex::mdspan<Complex, extents_2d, stdex::layout_left> b(b_storage.data(), 1, 1);
-  stdex::mdspan<Complex, extents_2d, stdex::layout_left> c(c_storage.data(), 1, 1);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_left> a(a_storage.data(), 1, 1);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_left> b(b_storage.data(), 1, 1);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_left> c(c_storage.data(), 1, 1);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, Complex{1.0, 0.0}, uni20::conj(a), b, Complex{0.0, 0.0}),
             KernelAttempt::unsupported_transform);
@@ -228,11 +230,11 @@ TEST(BlasGemmTest, UsesConjugateTransposedMdspanInput)
   std::vector<Complex> b_storage{Complex{4.0, 0.0}, Complex{5.0, 0.0}};
   std::vector<Complex> c_storage(1);
 
-  stdex::layout_stride::mapping<extents_2d> a_transposed_mapping(extents_2d{1, 2},
+  uni20::layout_stride::mapping<extents_2d> a_transposed_mapping(extents_2d{1, 2},
                                                                  std::array<uni20::index_type, 2>{2, 1});
-  stdex::mdspan<Complex, extents_2d, stdex::layout_stride> a_transposed(a_storage.data(), a_transposed_mapping);
-  stdex::mdspan<Complex, extents_2d, stdex::layout_left> b(b_storage.data(), 2, 1);
-  stdex::mdspan<Complex, extents_2d, stdex::layout_left> c(c_storage.data(), 1, 1);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_stride> a_transposed(a_storage.data(), a_transposed_mapping);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_left> b(b_storage.data(), 2, 1);
+  uni20::mdspan<Complex, extents_2d, uni20::layout_left> c(c_storage.data(), 1, 1);
 
   EXPECT_EQ(uni20::linalg::blas::try_gemm(c, Complex{1.0, 0.0}, uni20::conj(a_transposed), b, Complex{0.0, 0.0}),
             KernelAttempt::success);

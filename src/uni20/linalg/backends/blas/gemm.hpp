@@ -22,6 +22,7 @@
 #include <uni20/tensor/output.hpp>
 
 #include <concepts>
+#include <cstddef>
 #include <type_traits>
 
 namespace uni20::linalg
@@ -91,25 +92,22 @@ auto prepared_output_mapping(typename output_mdspan_t<OutputTensor>::extents_typ
 
 template <class OutputTensor>
 concept PreparedOutputProbeAvailable =
-    std::default_initializable<typename output_mdspan_t<OutputTensor>::data_handle_type> &&
     std::default_initializable<typename output_mdspan_t<OutputTensor>::accessor_type> &&
     requires(typename output_mdspan_t<OutputTensor>::extents_type const& extents) {
       {
         prepared_output_mapping<OutputTensor>(extents)
       } -> std::same_as<typename output_mdspan_t<OutputTensor>::mapping_type>;
-      output_mdspan_t<OutputTensor>{typename output_mdspan_t<OutputTensor>::data_handle_type{},
-                                    prepared_output_mapping<OutputTensor>(extents),
-                                    typename output_mdspan_t<OutputTensor>::accessor_type{}};
     };
 
 template <class OutputTensor>
   requires PreparedOutputProbeAvailable<OutputTensor>
-auto prepared_output_probe(matrix_product_extents const& shape) -> output_mdspan_t<OutputTensor>
+auto prepared_output_probe(matrix_product_extents const& shape)
 {
   using output_span = output_mdspan_t<OutputTensor>;
   auto const extents = uni20::convert_tensor_extents<typename output_span::extents_type>(shape);
-  return output_span{typename output_span::data_handle_type{}, prepared_output_mapping<OutputTensor>(extents),
-                     typename output_span::accessor_type{}};
+  using probe = uni20::mdspec<typename output_span::element_type, typename output_span::extents_type,
+                              typename output_span::layout_type, typename output_span::accessor_type, std::nullptr_t>;
+  return probe{nullptr, prepared_output_mapping<OutputTensor>(extents), typename output_span::accessor_type{}};
 }
 
 template <class OutputTensor, class Scalar, class LhsMdspan, class RhsMdspan>
@@ -167,7 +165,7 @@ consteval auto kernel_accepts_types(BlasBackend const&, assign_product_op const&
 }
 
 /// \brief Probe and lower a replaceable-output tensor matrix product to BLAS GEMM.
-/// \details A mismatched output is represented by prospective mdspan metadata
+/// \details A mismatched output is represented by prospective mdspec metadata
 ///          during the BLAS runtime probe. Input mappings and accessor state are
 ///          inspected without acquiring host access. The real output is prepared
 ///          only after every instance, layout, and transform check succeeds.

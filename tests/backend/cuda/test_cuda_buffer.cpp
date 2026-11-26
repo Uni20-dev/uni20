@@ -485,6 +485,9 @@ TEST_F(CudaBufferTest, BlockingReadWaitsForPublishedWriterCompletion)
     uni20::cuda::ScopedDevice device(0);
     uni20::cuda::check(cudaMemcpy(write.data(), &initial, sizeof(initial), cudaMemcpyHostToDevice),
                        "cudaMemcpy initialize delayed writer test", 0);
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize delayed writer test", 0);
   }
 
   uni20::test::CudaStreamGate gate;
@@ -525,6 +528,9 @@ TEST_F(CudaBufferTest, BlockingWriteWaitsForPublishedReaderCompletion)
     uni20::cuda::ScopedDevice device(0);
     uni20::cuda::check(cudaMemcpy(write.data(), &initial, sizeof(initial), cudaMemcpyHostToDevice),
                        "cudaMemcpy initialize delayed reader test", 0);
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize delayed reader test", 0);
   }
 
   uni20::test::CudaStreamGate gate;

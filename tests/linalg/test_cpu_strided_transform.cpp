@@ -1,12 +1,76 @@
 #include "../helpers.hpp"
 #include "gtest/gtest.h"
+#include <cstdint>
 #include <numeric>
 #include <stdexcept>
 #include <uni20/linalg/backend_selector.hpp>
 #include <uni20/mdspan/iteration_plan.hpp>
+#include <uni20/mdspan/reverse.hpp>
+#include <uni20/mdspan/transform_view.hpp>
+#include <uni20/tensor/conjugate_inplace.hpp>
+#include <uni20/tensor/copy_into.hpp>
 #include <uni20/tensor/transform.hpp>
 
 using namespace uni20;
+
+namespace
+{
+template <class Element> struct WriteProxy
+{
+    Element* value;
+
+    operator Element() const { return *value; }
+    void operator=(Element replacement) && { *value = replacement; }
+};
+
+template <class Element> struct NarrowProxyAccessor
+{
+    using element_type = Element;
+    using data_handle_type = Element*;
+    using offset_type = std::int16_t;
+    using reference = WriteProxy<Element>;
+    using offset_policy = NarrowProxyAccessor;
+
+    reference access(data_handle_type data, offset_type offset) const { return {data + offset}; }
+    reference access(data_handle_type, std::ptrdiff_t) const = delete;
+    data_handle_type offset(data_handle_type data, offset_type offset) const { return data + offset; }
+};
+} // namespace
+
+template <class Element>
+inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor<Element>, uni20::host_access_domain> = true;
+
+TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
+{
+  using shape = uni20::extents<int, 3>;
+  using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor<int>>;
+  std::array<int, 3> storage{};
+  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}};
+  int values[]{4, 9, 12};
+  auto input = uni20::mdspan{values};
+  auto backend = uni20::linalg::CpuReferenceBackend{};
+
+  uni20::copy(backend, output, input);
+  EXPECT_EQ(storage, (std::array{12, 9, 4}));
+  uni20::transform_inplace(backend, output, [](int value) { return value + 1; });
+  EXPECT_EQ(storage, (std::array{13, 10, 5}));
+  uni20::fill(backend, output, 41);
+  EXPECT_EQ(storage, (std::array{41, 41, 41}));
+}
+
+TEST(CpuStridedTransformTest, ConjugatesSignedViewWithRvalueAssignableProxy)
+{
+  using shape = uni20::extents<int, 3>;
+  using value = uni20::complex<double>;
+  using span = uni20::mdspan<value, shape, uni20::layout_signed_stride, NarrowProxyAccessor<value>>;
+  std::array<value, 5> storage{{{1, 2}, {7, 8}, {3, 4}, {9, 10}, {5, 6}}};
+  span output{storage.data() + 4, span::mapping_type{shape{}, {-2}}};
+
+  uni20::conjugate_inplace(uni20::linalg::CpuReferenceBackend{}, output);
+
+  std::array<value, 5> const expected{{{1, -2}, {7, 8}, {3, -4}, {9, 10}, {5, -6}}};
+  EXPECT_EQ(storage, expected);
+}
 
 TEST(TransformInplace, MultiplyBy2_1DContiguous)
 {
@@ -55,6 +119,37 @@ TEST(TransformInplace, Square_Reversed1D)
   }
 }
 
+TEST(Transform, HostCopyAndLazyTransformsPreserveReversedOffsets)
+{
+  int values[]{1, 2, 3, 4, 5, 6};
+  auto input = uni20::mdspan{values, 2, 3};
+  auto reversed = uni20::reverse<1>(input);
+  static_assert(uni20::AffineMdspanLike<decltype(reversed)>);
+  static_assert(!uni20::StridedMdspanLike<decltype(reversed)>);
+  EXPECT_EQ(reversed.data_handle(), values + 2);
+  EXPECT_EQ(reversed.stride(1), -1);
+  EXPECT_EQ((reversed[1, 0]), 6);
+
+  std::array<int, 6> copied{};
+  auto output = uni20::mdspan{copied.data(), 2, 3};
+  uni20::copy(linalg::CpuReferenceBackend{}, output, reversed);
+  EXPECT_EQ(copied, (std::array{3, 2, 1, 6, 5, 4}));
+
+  auto unary = uni20::transform_view([](int x) { return 10 * x; }, reversed);
+  static_assert(!uni20::StridedMdspanLike<decltype(unary)>);
+  EXPECT_EQ((unary[0, 2]), 10);
+  auto binary = uni20::transform_view(std::minus<>{}, reversed, input);
+  EXPECT_EQ((binary[1, 2]), -2);
+}
+
+TEST(Transform, HostCopyOfAnEmptyReversedView)
+{
+  using shape = uni20::extents<index_t, 0, 3>;
+  uni20::mdspan<int, shape> output{nullptr};
+  auto reversed = uni20::reverse<1>(output);
+  EXPECT_NO_THROW(uni20::copy(linalg::CpuReferenceBackend{}, output, reversed));
+}
+
 TEST(TransformInplace, ScaleAndShiftMixedStrides)
 {
   // Create a 3×3 buffer, but view it with non‐unit stride in one dim:
@@ -64,11 +159,11 @@ TEST(TransformInplace, ScaleAndShiftMixedStrides)
     for (index_t c = 0; c < 3; ++c)
       buf[r * 5 + c * 2] = static_cast<double>(r * 3 + c);
 
-  using extents_t = stdex::dextents<index_t, 2>;
+  using extents_t = uni20::dextents<index_t, 2>;
   // extents = (3,3), strides = (5,2)  —  row step = 5, col step = 2
   std::array<std::ptrdiff_t, 2> strides{5, 2};
-  auto mapping = stdex::layout_stride::mapping<extents_t>(extents_t{3, 3}, strides);
-  stdex::mdspan<double, extents_t, stdex::layout_stride> m(buf.data(), mapping);
+  auto mapping = uni20::layout_stride::mapping<extents_t>(extents_t{3, 3}, strides);
+  uni20::mdspan<double, extents_t, uni20::layout_stride> m(buf.data(), mapping);
 
   transform_inplace(linalg::CpuReferenceBackend{}, m, [](double x) { return x * 10 - 1; });
 
@@ -85,16 +180,16 @@ TEST(TransformInplace, ScaleAndShiftMixedStrides)
 
 TEST(TransformInplace, NonMergeable4DDispatchesDynamically)
 {
-  using extents_t = stdex::dextents<index_t, 4>;
+  using extents_t = uni20::dextents<index_t, 4>;
   extents_t extents{2, 3, 4, 5};
   std::array<std::ptrdiff_t, 4> strides{500, 60, 7, 1};
-  auto mapping = stdex::layout_stride::mapping<extents_t>(extents, strides);
+  auto mapping = uni20::layout_stride::mapping<extents_t>(extents, strides);
   auto [plan, offset] = make_iteration_plan_with_offset(mapping);
   ASSERT_GE(plan.size(), 4u);
   EXPECT_EQ(offset, 0);
 
   std::vector<double> storage(mapping.required_span_size(), -1.0);
-  stdex::mdspan<double, extents_t, stdex::layout_stride> tensor(storage.data(), mapping);
+  uni20::mdspan<double, extents_t, uni20::layout_stride> tensor(storage.data(), mapping);
 
   for (index_t i0 = 0; i0 < extents.extent(0); ++i0)
     for (index_t i1 = 0; i1 < extents.extent(1); ++i1)
@@ -120,12 +215,12 @@ TEST(TransformInplace, NonMergeable4DDispatchesDynamically)
 
 TEST(Transform, UnaryMixedCanonicalLayouts)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> input_storage(12);
   std::vector<double> output_storage(12, 0.0);
-  stdex::mdspan<double, extents_type, stdex::layout_left> input(input_storage.data(), 3, 4);
-  stdex::mdspan<double, extents_type, stdex::layout_right> output(output_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_left> input(input_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_right> output(output_storage.data(), 3, 4);
 
   for (index_t row = 0; row < 3; ++row)
     for (index_t column = 0; column < 4; ++column)
@@ -143,14 +238,14 @@ TEST(Transform, UnaryMixedCanonicalLayouts)
 
 TEST(Transform, BinaryMixedLayouts)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> lhs_storage(12);
   std::vector<double> rhs_storage(24, 0.0);
   std::vector<double> output_storage(12, 0.0);
-  stdex::mdspan<double, extents_type, stdex::layout_left> lhs(lhs_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_left> lhs(lhs_storage.data(), 3, 4);
   auto rhs = make_mdspan_2d(rhs_storage, 3, 4, {8, 2});
-  stdex::mdspan<double, extents_type, stdex::layout_right> output(output_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_right> output(output_storage.data(), 3, 4);
 
   for (index_t row = 0; row < 3; ++row)
     for (index_t column = 0; column < 4; ++column)
@@ -172,12 +267,12 @@ TEST(Transform, BinaryMixedLayouts)
 
 TEST(TransformInplace, BinaryTracksOutputOnce)
 {
-  using extents_type = stdex::dextents<index_t, 2>;
+  using extents_type = uni20::dextents<index_t, 2>;
 
   std::vector<double> output_storage(12);
   std::vector<double> rhs_storage(12);
-  stdex::mdspan<double, extents_type, stdex::layout_right> output(output_storage.data(), 3, 4);
-  stdex::mdspan<double, extents_type, stdex::layout_left> rhs(rhs_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_right> output(output_storage.data(), 3, 4);
+  uni20::mdspan<double, extents_type, uni20::layout_left> rhs(rhs_storage.data(), 3, 4);
 
   for (index_t row = 0; row < 3; ++row)
     for (index_t column = 0; column < 4; ++column)
@@ -221,15 +316,15 @@ TEST(CpuStridedTransformTest, ZeroExtentDoesNotVisitStorage)
 
 TEST(CpuStridedTransformTest, RankZeroAppliesExactlyOnce)
 {
-  using extents_type = stdex::dextents<index_t, 0>;
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using extents_type = uni20::dextents<index_t, 0>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
 
   std::array<std::ptrdiff_t, 0> strides{};
   mapping_type mapping{extents_type{}, strides};
   double input_value = 11.0;
   double output_value = 2.0;
-  stdex::mdspan<double, extents_type, stdex::layout_stride> input{&input_value, mapping};
-  stdex::mdspan<double, extents_type, stdex::layout_stride> output{&output_value, mapping};
+  uni20::mdspan<double, extents_type, uni20::layout_stride> input{&input_value, mapping};
+  uni20::mdspan<double, extents_type, uni20::layout_stride> output{&output_value, mapping};
 
   assign_transform(linalg::CpuReferenceBackend{}, output, [](double value) { return value; }, input);
   EXPECT_DOUBLE_EQ(output_value, 11.0);
