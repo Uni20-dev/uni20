@@ -2,6 +2,8 @@
 # it. Uni20 links such a target as it is, so it must reject a known version below
 # its minimum, even when its own package hint names a newer installation, and
 # report the version it actually links.
+# A script sets no policies of its own; CMP0007 must keep the empty case fields.
+cmake_minimum_required(VERSION 3.28)
 file(REMOVE_RECURSE "${test_binary_dir}")
 set(packages "${test_binary_dir}/packages")
 
