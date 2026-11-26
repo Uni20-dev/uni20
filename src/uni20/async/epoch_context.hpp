@@ -163,8 +163,9 @@ template <typename T> class EpochContextWriter;
 // If there is a next_epoch_, then the cancellation and exception status is propogated forwards.
 //
 // A failure reaches a coroutine only through a value it reads or takes, whether or not the coroutine
-// suspended first. A writer on an epoch that inherited a failure still runs, take() rethrows the
-// failure, and the epoch keeps it for its readers. A coroutine that catches the failure finishes
+// suspended first. A writer on an epoch that inherited a failure still runs. take() and in-place
+// access through a write proxy rethrow the failure, an overwrite does not see it, and the epoch
+// keeps it for its readers. A coroutine that catches the failure finishes
 // normally (#166). Resuming a coroutine with a failure only notes it for task diagnostics.
 //
 
@@ -565,10 +566,19 @@ class EpochContext {
     }
 
     /// \brief Read the failure of the value currently held by the active writer.
+    /// \details In-place access checks this on every call, and most writers find no failure, so
+    ///          the exception-presence flag lets them skip the mutex. Debug builds still lock it to
+    ///          check the precondition.
     std::exception_ptr writer_exception() const noexcept
     {
+#if !defined(NDEBUG)
+      {
+        std::lock_guard lock(mtx_);
+        DEBUG_PRECONDITION(phase_ == Phase::Writing && writer_active_);
+      }
+#endif
+      if (!has_exception_.load(std::memory_order_acquire)) return {};
       std::lock_guard lock(mtx_);
-      DEBUG_PRECONDITION(phase_ == Phase::Writing && writer_active_);
       return eptr_;
     }
 
@@ -1222,7 +1232,8 @@ template <typename T> class EpochContextWriter {
     /// \brief Move constructor transferring the writer handle.
     /// \param other Writer being moved from.
     EpochContextWriter(EpochContextWriter&& other) noexcept
-        : storage_(std::move(other.storage_)), epoch_(std::move(other.epoch_)), acquired_(std::move(other.acquired_))
+        : storage_(std::move(other.storage_)), epoch_(std::move(other.epoch_)), acquired_(std::move(other.acquired_)),
+          inherited_failure_checked_(other.inherited_failure_checked_)
     {
       other.epoch_.reset();
     }
@@ -1238,6 +1249,7 @@ template <typename T> class EpochContextWriter {
         storage_ = std::move(other.storage_);
         epoch_ = std::move(other.epoch_);
         acquired_ = other.acquired_;
+        inherited_failure_checked_ = other.inherited_failure_checked_;
         uncaught_at_take_ = std::uncaught_exceptions();
         other.epoch_.reset();
       }
@@ -1338,6 +1350,33 @@ template <typename T> class EpochContextWriter {
     }
 
     /// \brief Consume the current value under the writer gate, propagating a failed producer.
+    /// \brief Rethrow a failure that the epoch inherited from a failed producer.
+    void rethrow_producer_failure() const
+    {
+      if (auto failure = epoch_->writer_exception()) std::rethrow_exception(failure);
+    }
+
+    /// \brief Rethrow a failure that the epoch inherited, before an in-place update.
+    /// \details The epoch inherits a failure before its writer becomes active, so a check that
+    ///          finds none is remembered and later updates skip it. `take()` checks every time.
+    void check_inherited_failure() const
+    {
+      if (inherited_failure_checked_) [[likely]]
+        return;
+      this->rethrow_producer_failure();
+      inherited_failure_checked_ = true;
+    }
+
+    /// \brief Access the stored value for an in-place update.
+    /// \details Rethrows a failure that the epoch inherited from a failed producer, as `take()`
+    ///          does, so an update never builds on a failed value (#166). Overwrites use `data()`.
+    /// \return Reference to the stored value.
+    T& existing_value() const
+    {
+      this->check_inherited_failure();
+      return this->data();
+    }
+
     T take()
     {
       this->rethrow_producer_failure();
@@ -1375,14 +1414,11 @@ template <typename T> class EpochContextWriter {
       }
     }
 
-    void rethrow_producer_failure() const
-    {
-      if (auto failure = epoch_->writer_exception()) std::rethrow_exception(failure);
-    }
-
     mutable shared_storage<T> storage_;
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
+    /// \brief Set once an in-place update has found no inherited failure.
+    mutable bool inherited_failure_checked_{false};
     /// \brief `std::uncaught_exceptions()` when this object took the writer.
     int uncaught_at_take_{std::uncaught_exceptions()};
 };
