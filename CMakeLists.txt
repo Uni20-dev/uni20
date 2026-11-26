@@ -488,7 +488,7 @@ if(NOT UNI20_DOCS_WEB)
   if(UNI20_BUILD_BENCH)
     uni20_add_dependency(
       NAME benchmark
-      VERSION 1.5.2
+      VERSION 1.6.1
       TARGET benchmark::benchmark
       REPO https://github.com/google/benchmark.git
       TAG v1.9.0
