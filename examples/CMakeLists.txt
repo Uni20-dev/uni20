@@ -126,8 +126,11 @@ if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
   add_test(NAME IsingHotrgCudaFlow COMMAND ising_hotrg_example --execution=cuda --bond=8 --rounds=6)
   add_test(NAME IsingHotrgCudaFloat32 COMMAND ising_hotrg_example --execution=cuda --precision=fp32 --bond=4 --rounds=2
                                               --onsager-points=16)
-  # The example exits with 77 when the CUDA device is not available, which CTest reports as skipped.
-  set_tests_properties(IsingHotrgCudaCheck IsingHotrgCudaFlow IsingHotrgCudaFloat32 PROPERTIES SKIP_RETURN_CODE 77)
+  # A step on a tensor held by a second device; skipped on a host with one usable device.
+  add_test(NAME IsingHotrgCudaSecondDevice COMMAND ising_hotrg_example --execution=cuda --second-cuda-device=1 --check)
+  # The example exits with 77 when a CUDA device is not available, which CTest reports as skipped.
+  set_tests_properties(IsingHotrgCudaCheck IsingHotrgCudaFlow IsingHotrgCudaFloat32 IsingHotrgCudaSecondDevice
+                       PROPERTIES SKIP_RETURN_CODE 77)
 else()
   add_test(NAME IsingHotrgRejectCuda COMMAND ising_hotrg_example --execution=cuda --bond=4 --rounds=1)
   set_tests_properties(IsingHotrgRejectCuda PROPERTIES WILL_FAIL TRUE)

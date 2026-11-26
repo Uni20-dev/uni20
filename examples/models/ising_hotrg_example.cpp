@@ -23,7 +23,9 @@
 //   I  with --execution=cuda: the step on CUDA tensors against the host, the gram and the update
 //      network entry by entry, one step along each axis, and two flows.  Coarse tensors are not
 //      compared entry by entry after a decomposition: two SVD codes may return a singular vector
-//      with either sign, which changes the tensor but nothing read from it.
+//      with either sign, which changes the tensor but nothing read from it.  With
+//      --second-cuda-device=N it also checks that a step on a tensor held by device N, which is
+//      not the default, keeps its results there.
 #include "dense_hotrg.hpp"
 #include "ising_hotrg_output.hpp"
 #include "ising_strip_reference.hpp"
@@ -623,27 +625,36 @@ void inputs_at_the_edge()
 // I  the step on CUDA tensors
 // ----------------------------------------------------------------------------------------------
 
-// A second usable device, enrolled for the checks when there is one (see on_cuda_device).
+// The device named by --second-cuda-device, enrolled beside the selected one for the placement check.
 std::optional<int> second_cuda_device;
 
+// The largest difference relative to the largest entry of `a`; infinite if any entry of either is not
+// finite, so that an unwritten or corrupted entry cannot pass.
 template <class A, class B> double relative_difference(A const& a, B const& b)
 {
   double worst = 0.0, scale = 0.0;
   auto other = b.storage().begin();
   for (auto const& value : a.storage())
   {
-    scale = std::max(scale, std::abs(static_cast<double>(value)));
-    worst = std::max(worst, std::abs(static_cast<double>(value) - static_cast<double>(*other)));
+    double const x = static_cast<double>(value), y = static_cast<double>(*other);
+    if (!std::isfinite(x) || !std::isfinite(y)) return HUGE_VAL;
+    scale = std::max(scale, std::abs(x));
+    worst = std::max(worst, std::abs(x - y));
     ++other;
   }
   return worst / scale;
 }
 
+// The largest difference between two lists; infinite if their lengths differ or an entry is not finite.
 double largest_difference(std::vector<double> const& a, std::vector<double> const& b)
 {
-  double worst = a.size() == b.size() ? 0.0 : HUGE_VAL;
-  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i)
+  if (a.size() != b.size()) return HUGE_VAL;
+  double worst = 0.0;
+  for (std::size_t i = 0; i < a.size(); ++i)
+  {
+    if (!std::isfinite(a[i]) || !std::isfinite(b[i])) return HUGE_VAL;
     worst = std::max(worst, std::abs(a[i] - b[i]));
+  }
   return worst;
 }
 
@@ -850,6 +861,7 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .row("--onsager-points=N", "Midpoint samples for the free-energy diagnostic (default 400000)")
       .row("--execution=E", "cpu|cuda (default cpu); cuda takes fp32 or fp64 and needs the CUDA backends")
       .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
+      .row("--second-cuda-device=N", "With --execution=cuda --check: also check a step on a tensor on device N")
       .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
       .row("-h, --help", "Show this help");
   d::emit(std::move(help), complaint ? d::stream::err : d::stream::out);
@@ -881,29 +893,32 @@ bool cuda_device_usable(int ordinal)
   return usable;
 }
 
-// Initialize the CUDA runtime on `device` for the lifetime of `run`.  For the checks it also
-// enrolls one other usable device, if there is one, so that they can place a tensor there.
-template <class Run> int on_cuda_device(int device, bool with_second_device, Run&& run)
+// Whether `device` is visible and usable; if not, say so.
+bool cuda_device_available(int device)
 {
   int count = 0;
   if (cudaError_t const status = cudaGetDeviceCount(&count); status != cudaSuccess || device >= count)
   {
     d::failure("ising_hotrg_example: CUDA device {} is not available ({})", device,
                status != cudaSuccess ? std::string(cudaGetErrorString(status)) : std::to_string(count) + " devices");
-    return no_cuda_device;
+    return false;
   }
   if (!cuda_device_usable(device))
   {
     d::failure("ising_hotrg_example: CUDA device {} is visible but not usable", device);
-    return no_cuda_device;
+    return false;
   }
+  return true;
+}
+
+// Initialize the CUDA runtime on `device` for the lifetime of `run`, enrolling `second` as well when
+// it is given (--second-cuda-device, for the placement check).
+template <class Run> int on_cuda_device(int device, std::optional<int> second, Run&& run)
+{
+  if (!cuda_device_available(device) || (second && !cuda_device_available(*second))) return no_cuda_device;
   std::vector<int> ordinals{device};
-  for (int other = 0; with_second_device && other < count && !second_cuda_device; ++other)
-    if (other != device && cuda_device_usable(other))
-    {
-      ordinals.push_back(other);
-      second_cuda_device = other;
-    }
+  if (second) ordinals.push_back(*second);
+  second_cuda_device = second;
   auto runtime = uni20::cuda::initialize(
       {.device_ordinals = std::move(ordinals), .default_device = device, .streams_per_device = 4});
   uni20::cuda::ScopedDevice const selected(device);
@@ -920,6 +935,7 @@ int main(int argc, char** argv)
   [[maybe_unused]] std::int64_t bits = 128;
   std::string_view temperature = "1", precision = "fp64", execution = "cpu";
   [[maybe_unused]] int cuda_device = 0;
+  [[maybe_unused]] std::optional<int> second_device;
   bool check = false, explicit_bits = false;
   try
   {
@@ -955,6 +971,8 @@ int main(int argc, char** argv)
         execution = value;
       else if (name == "--cuda-device")
         cuda_device = parse_integer<int>(value, 0);
+      else if (name == "--second-cuda-device")
+        second_device = parse_integer<int>(value, 0);
       else
         usage("unknown option");
     }
@@ -962,16 +980,18 @@ int main(int argc, char** argv)
     if (execution != "cpu" && execution != "cuda") usage("--execution is cpu or cuda");
     if (check && precision != "fp64")
       usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
+    if (second_device && (execution != "cuda" || !check || *second_device == cuda_device))
+      usage("--second-cuda-device names a device other than --cuda-device for --execution=cuda --check");
     if (execution == "cuda")
     {
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
-      if (check) return on_cuda_device(cuda_device, true, [] { return run_checks(true); });
+      if (check) return on_cuda_device(cuda_device, second_device, [] { return run_checks(true); });
       if (precision == "fp32")
-        return on_cuda_device(cuda_device, false, [&] {
+        return on_cuda_device(cuda_device, std::nullopt, [&] {
           return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points);
         });
       if (precision == "fp64")
-        return on_cuda_device(cuda_device, false, [&] {
+        return on_cuda_device(cuda_device, std::nullopt, [&] {
           return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points);
         });
       usage("--execution=cuda takes --precision=fp32 or fp64");

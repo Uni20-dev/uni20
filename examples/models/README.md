@@ -240,4 +240,5 @@ header has an overload for it:
 Each of these returns one host scalar or keeps its result on the device. With
 `--execution=cuda`, `--check` adds group I: the gram and the update network
 against the host entry by entry, one step along each axis, and two flows of the
-critical Ising model.
+critical Ising model. `--second-cuda-device=N` also enrolls device `N` and
+checks that a step on a tensor held there keeps its results on that device.
