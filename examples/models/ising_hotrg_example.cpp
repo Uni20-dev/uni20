@@ -835,9 +835,19 @@ template <class Integer> Integer parse_integer(std::string_view text, Integer le
 }
 
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// The exit status when the requested CUDA device does not exist; CTest reads it as a skip.
+constexpr int no_cuda_device = 77;
+
 // Initialize the CUDA runtime on one device for the lifetime of `run`.
 template <class Run> int on_cuda_device(int device, Run&& run)
 {
+  int count = 0;
+  if (cudaError_t const status = cudaGetDeviceCount(&count); status != cudaSuccess || device >= count)
+  {
+    d::failure("ising_hotrg_example: CUDA device {} is not available ({})", device,
+               status != cudaSuccess ? std::string(cudaGetErrorString(status)) : std::to_string(count) + " devices");
+    return no_cuda_device;
+  }
   auto runtime =
       uni20::cuda::initialize({.device_ordinals = {device}, .default_device = device, .streams_per_device = 4});
   uni20::cuda::ScopedDevice const selected(device);
