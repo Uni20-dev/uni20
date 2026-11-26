@@ -15,6 +15,8 @@
 #   1. UNI20_USE_SYSTEM_<NAME>=AUTO (default): try system package, then fetch.
 #   2. UNI20_USE_SYSTEM_<NAME>=ON: require a system package (fail if missing).
 #   3. UNI20_USE_SYSTEM_<NAME>=OFF: skip system package lookup and fetch.
+#   In every mode, a target that already exists is linked as it is, after the
+#   minimum-version check (docs/development/cmake_consumers.md).
 #   4. Apply DEFAULTS only for undefined variables, then required SETTINGS,
 #      before FetchContent_MakeAvailable(). Both are scoped to the dependency.
 #   5. Exports two cache variables:
@@ -147,7 +149,7 @@ function(uni20_dependency_option option_var dependency_label default_value)
   _uni20_normalize_dependency_mode("${default_value}" _default_mode)
 
   set(_help
-      "How to resolve ${dependency_label}: AUTO (prefer system, fallback fetch), ON (require system), OFF (always fetch)")
+      "How to resolve ${dependency_label}: AUTO (prefer system, fallback fetch), ON (require system), OFF (fetch unless the target already exists)")
 
   if(DEFINED ${option_var})
     set(_raw_mode "${${option_var}}")
