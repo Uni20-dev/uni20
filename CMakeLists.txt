@@ -100,7 +100,7 @@ endif()
 
 uni20_dependency_option(UNI20_USE_SYSTEM_TBB "oneTBB library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_FMT "fmt library" AUTO)
-uni20_dependency_option(UNI20_USE_SYSTEM_BENCHMARK "Google Benchmark library" OFF)
+uni20_dependency_option(UNI20_USE_SYSTEM_BENCHMARK "Google Benchmark library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_GTEST "Google Test library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_NANOBIND "nanobind library" AUTO)
 option(UNI20_BUILD_EXTERNAL_TESTS "Build tests for external dependencies" OFF)

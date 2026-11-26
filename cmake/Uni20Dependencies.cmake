@@ -142,7 +142,8 @@ function(uni20_dependency_option option_var dependency_label default_value)
     set(dependency_label "${option_var}")
   endif()
 
-  if(NOT default_value)
+  # Test for an empty argument: if(NOT) would also treat an OFF default as missing.
+  if("${default_value}" STREQUAL "")
     set(default_value "AUTO")
   endif()
 
