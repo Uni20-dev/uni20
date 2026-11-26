@@ -1,7 +1,7 @@
 # Configure small parents that create a dependency target before Uni20 resolves
 # it. Uni20 links such a target as it is, so it must reject a known version below
 # its minimum, even when its own package hint names a newer installation, and
-# report the version it actually links.
+# report the version it actually links, or none when that version is unknown.
 # A script sets no policies of its own; CMP0007 must keep the empty case fields.
 cmake_minimum_required(VERSION 3.28)
 file(REMOVE_RECURSE "${test_binary_dir}")
@@ -47,16 +47,17 @@ endif()
 set(UNI20_USE_SYSTEM_FIXTURE ${mode})
 uni20_add_dependency(NAME Fixture VERSION 2.0 TARGET Fixture::library
                      REPO "${packages}/unused" TAG unused)
-message(STATUS "Fixture resolved as ${UNI20_FIXTURE_SOURCE} ${UNI20_FIXTURE_VERSION}")
+message(STATUS "Fixture resolved as [${UNI20_FIXTURE_SOURCE}] [${UNI20_FIXTURE_VERSION}]")
 ]=])
 
 # case | mode | parent's version | child's package hint | expected output
 set(cases
   "older|AUTO|1.0||Uni20 requires Fixture >= 2.0, but target 'Fixture::library' already exists with Fixture 1.0"
   "older_child_hint|ON|1.0|2.5|Uni20 requires Fixture >= 2.0, but target 'Fixture::library' already exists with Fixture 1.0"
-  "newer|ON|3.0||Fixture resolved as system 3.0"
-  "newer_child_hint|ON|3.0|2.5|Fixture resolved as system 3.0"
-  "unversioned|ON|||Fixture resolved as system"
+  "newer|ON|3.0||Fixture resolved as [system] [3.0]"
+  "newer_child_hint|ON|3.0|2.5|Fixture resolved as [system] [3.0]"
+  "unversioned|ON|||Fixture resolved as [system] []"
+  "unversioned_child_hint|ON||2.5|Fixture resolved as [system] []"
   "cli_older|ON|2.6.0||Uni20 requires CLI11 >= 2.7.2, but target 'CLI11::CLI11' already exists with CLI11 2.6.0"
   "cli_newer|ON|2.8.0||")
 foreach(entry IN LISTS cases)

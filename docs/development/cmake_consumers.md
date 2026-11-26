@@ -127,7 +127,7 @@ when that version is below its minimum. It checks before its own package lookup,
 so a `<Name>_DIR` naming a newer installation does not hide the parent's older
 target, and `UNI20_<NAME>_VERSION` reports the version of the target it links. A
 target with no recorded version, such as one the parent built from source, is
-accepted unchecked.
+accepted unchecked, and `UNI20_<NAME>_VERSION` is then left unset.
 
 Uni20's FetchContent declarations mark dependency headers as `SYSTEM` and use
 `EXCLUDE_FROM_ALL` unless `UNI20_BUILD_EXTERNAL_TESTS=ON`. Linked dependency

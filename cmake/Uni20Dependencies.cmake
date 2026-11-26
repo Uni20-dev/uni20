@@ -176,8 +176,10 @@ function(uni20_add_dependency)
 
   # Check an existing target before package lookup, which can replace
   # <Name>_VERSION with the version of a different installation.
+  set(_uni20_existing_target FALSE)
   set(_uni20_existing_target_version "")
   if(TARGET ${DEP_TARGET})
+    set(_uni20_existing_target TRUE)
     _uni20_check_existing_dependency_target("${DEP_NAME}" "${DEP_VERSION}" "${DEP_TARGET}")
     if(DEFINED ${DEP_NAME}_VERSION)
       set(_uni20_existing_target_version "${${DEP_NAME}_VERSION}")
@@ -333,9 +335,14 @@ function(uni20_add_dependency)
 
     set(${source_var} "system" CACHE STRING "Source type for ${DEP_NAME} (system or fetched)" FORCE)
     set(${target_var} ${DEP_TARGET} CACHE STRING "CMake imported target name for ${DEP_NAME}" FORCE)
-    if(_uni20_existing_target_version)
-      # Report the version of the target Uni20 links, not of a later lookup.
-      set(${version_var} ${_uni20_existing_target_version} CACHE STRING "Detected ${DEP_NAME} version" FORCE)
+    if(_uni20_existing_target)
+      # Report the version of the target Uni20 links, not of a later lookup,
+      # and leave it unset when that target has no recorded version.
+      if(_uni20_existing_target_version)
+        set(${version_var} ${_uni20_existing_target_version} CACHE STRING "Detected ${DEP_NAME} version" FORCE)
+      else()
+        unset(${version_var} CACHE)
+      endif()
     elseif(DEFINED ${DEP_NAME}_VERSION)
       set(${version_var} ${${DEP_NAME}_VERSION} CACHE STRING "Detected ${DEP_NAME} version" FORCE)
     endif()
