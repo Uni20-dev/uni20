@@ -111,6 +111,26 @@ function(_uni20_select_best_external_considered_candidate dep_name output_versio
   set(${output_config} "${_best_config}" PARENT_SCOPE)
 endfunction()
 
+# A target that exists before Uni20 resolves the dependency is linked as it is,
+# because Uni20 cannot fetch a replacement under the same name. A parent's
+# find_package() leaves <Name>_VERSION visible in Uni20's scope, so a known
+# version below Uni20's minimum is rejected at configure time. A target with no
+# recorded version, such as one the parent built from source, is accepted.
+function(_uni20_check_existing_dependency_target dep_name dep_version dep_target)
+  if(NOT dep_version OR NOT TARGET ${dep_target} OR NOT DEFINED ${dep_name}_VERSION)
+    return()
+  endif()
+  set(_existing_version "${${dep_name}_VERSION}")
+  _uni20_is_numeric_version("${_existing_version}" _existing_version_is_numeric)
+  if(_existing_version_is_numeric AND _existing_version VERSION_LESS dep_version)
+    message(FATAL_ERROR
+      "Uni20 requires ${dep_name} >= ${dep_version}, but target '${dep_target}' already "
+      "exists with ${dep_name} ${_existing_version}. Uni20 cannot replace an existing "
+      "target, so provide ${dep_name} >= ${dep_version} before adding Uni20, or let "
+      "Uni20 resolve ${dep_name} itself.")
+  endif()
+endfunction()
+
 function(uni20_dependency_option option_var dependency_label default_value)
   if(NOT option_var)
     message(FATAL_ERROR "uni20_dependency_option() requires option_var")
@@ -153,6 +173,16 @@ function(uni20_add_dependency)
 
   string(TOUPPER "${DEP_NAME}" NAME_UPPER)
   string(TOLOWER "${DEP_NAME}" NAME_LOWER)
+
+  # Check an existing target before package lookup, which can replace
+  # <Name>_VERSION with the version of a different installation.
+  set(_uni20_existing_target_version "")
+  if(TARGET ${DEP_TARGET})
+    _uni20_check_existing_dependency_target("${DEP_NAME}" "${DEP_VERSION}" "${DEP_TARGET}")
+    if(DEFINED ${DEP_NAME}_VERSION)
+      set(_uni20_existing_target_version "${${DEP_NAME}_VERSION}")
+    endif()
+  endif()
 
   set(use_system_var "UNI20_USE_SYSTEM_${NAME_UPPER}")
   if(NOT DEFINED ${use_system_var})
@@ -303,7 +333,10 @@ function(uni20_add_dependency)
 
     set(${source_var} "system" CACHE STRING "Source type for ${DEP_NAME} (system or fetched)" FORCE)
     set(${target_var} ${DEP_TARGET} CACHE STRING "CMake imported target name for ${DEP_NAME}" FORCE)
-    if(DEFINED ${DEP_NAME}_VERSION)
+    if(_uni20_existing_target_version)
+      # Report the version of the target Uni20 links, not of a later lookup.
+      set(${version_var} ${_uni20_existing_target_version} CACHE STRING "Detected ${DEP_NAME} version" FORCE)
+    elseif(DEFINED ${DEP_NAME}_VERSION)
       set(${version_var} ${${DEP_NAME}_VERSION} CACHE STRING "Detected ${DEP_NAME} version" FORCE)
     endif()
     if(DEFINED ${DEP_NAME}_DIR)

@@ -119,6 +119,16 @@ provider settings still apply when Uni20 populates that provider. FetchContent
 populates a shared dependency once, so parents should declare their dependency
 choices before adding Uni20.
 
+If the parent has already created a dependency's target, such as `fmt::fmt`,
+`TBB::tbb` or `benchmark::benchmark`, Uni20 links that target and cannot fetch
+a replacement. A parent that imported it with `find_package()` leaves the
+package's `<Name>_VERSION` visible to Uni20, and Uni20 stops at configure time
+when that version is below its minimum. It checks before its own package lookup,
+so a `<Name>_DIR` naming a newer installation does not hide the parent's older
+target, and `UNI20_<NAME>_VERSION` reports the version of the target it links. A
+target with no recorded version, such as one the parent built from source, is
+accepted unchecked.
+
 Uni20's FetchContent declarations mark dependency headers as `SYSTEM` and use
 `EXCLUDE_FROM_ALL` unless `UNI20_BUILD_EXTERNAL_TESTS=ON`. Linked dependency
 targets still build when needed; unrelated dependency targets and install rules

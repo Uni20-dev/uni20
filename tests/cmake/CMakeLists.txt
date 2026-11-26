@@ -58,6 +58,12 @@ add_test(NAME CMakeSubproject.dependency_arguments
     -P "${CMAKE_CURRENT_SOURCE_DIR}/check_dependency_arguments.cmake")
 set_tests_properties(CMakeSubproject.dependency_arguments PROPERTIES LABELS cmake TIMEOUT 60)
 
+add_test(NAME CMakeSubproject.existing_target_versions
+  COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-Dtest_binary_dir=${CMAKE_CURRENT_BINARY_DIR}/existing_target_versions"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_existing_targets.cmake")
+set_tests_properties(CMakeSubproject.existing_target_versions PROPERTIES LABELS cmake TIMEOUT 120)
+
 if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
   add_test(NAME CMakeSubproject.tbb_sanitizers
     COMMAND "${CMAKE_COMMAND}" "-DUNI20_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
