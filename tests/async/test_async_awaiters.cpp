@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -163,6 +164,28 @@ struct AlreadyReady
 
     [[nodiscard]] int await_resume() const noexcept { return 2; }
 };
+
+int resumptions = 0;
+
+// Ready at once, and counts its resumptions.
+struct CountsResumption
+{
+    [[nodiscard]] bool await_ready() const noexcept { return true; }
+    void await_suspend(BasicTask) const noexcept {}
+
+    [[nodiscard]] int await_resume() const noexcept
+    {
+      ++resumptions;
+      return 3;
+    }
+};
+
+AsyncTask fail_writer(WriteBuffer<int> writer)
+{
+  static_cast<void>(writer);
+  throw std::runtime_error("producer failure");
+  co_return;
+}
 
 ZeroedFrameTask join_child_that_resumes_at_once(int& sum)
 {
@@ -510,6 +533,61 @@ TEST(AsyncAwaitersTest, AllAwaiterNoneBlocked)
   sched.schedule(std::move(task));
   sched.run_all();
   EXPECT_EQ(count, 3);
+}
+
+// all(...) resumes the children after one that throws, and then rethrows the first failure.
+TEST(AsyncAwaitersTest, AllAwaiterResumesEveryChildAfterOneThrows)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> failed = 0;
+  schedule(fail_writer(failed.write()));
+  sched.run_all();
+  resumptions = 0;
+  bool caught = false;
+  schedule([](ReadBuffer<int> reader, bool& caught) static -> AsyncTask {
+    try
+    {
+      static_cast<void>(co_await all(reader, CountsResumption{}));
+    }
+    catch (std::runtime_error const&)
+    {
+      caught = true;
+    }
+  }(failed.read(), caught));
+  sched.run_all();
+  EXPECT_TRUE(caught);
+  EXPECT_EQ(resumptions, 1);
+}
+
+// A writer that the join waited for is acquired even when an earlier child throws. Released
+// unacquired, it would cancel a writer its epoch had already started, which Debug builds reject
+// with DEBUG_CHECK(!writer_active_). The epoch must still let a later writer run.
+TEST(AsyncAwaitersTest, AllAwaiterAcquiresAWaitingWriterAfterAnEarlierChildThrows)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> failed = 0;
+  Async<int> out = 0;
+  schedule(fail_writer(failed.write()));
+  sched.run_all();
+  auto first_writer = [](WriteBuffer<int> w) static -> AsyncTask { co_await w = 5; }(out.write());
+  schedule([](ReadBuffer<int> reader, WriteBuffer<int> writer) static -> AsyncTask {
+    auto [value, proxy] = co_await all(reader, writer);
+    proxy = value;
+  }(failed.read(), out.write()));
+  sched.run_all(); // the join waits for the first writer
+  schedule(std::move(first_writer));
+  sched.run_all();
+  EXPECT_THROW((void)out.get_wait(), std::runtime_error);
+
+  bool wrote = false;
+  schedule([](WriteBuffer<int> w, bool& wrote) static -> AsyncTask {
+    co_await w = 7;
+    wrote = true;
+  }(out.write(), wrote));
+  sched.run_all();
+  EXPECT_TRUE(wrote);
 }
 
 // The last pending child of all(...) can resume the coroutine before await_suspend() returns, and
