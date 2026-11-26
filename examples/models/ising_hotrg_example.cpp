@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <optional>
 #include <string_view>
 
 using namespace uni20::examples::dense_hotrg;
@@ -622,6 +623,9 @@ void inputs_at_the_edge()
 // I  the step on CUDA tensors
 // ----------------------------------------------------------------------------------------------
 
+// A second usable device, enrolled for the checks when there is one (see on_cuda_device).
+std::optional<int> second_cuda_device;
+
 template <class A, class B> double relative_difference(A const& a, B const& b)
 {
   double worst = 0.0, scale = 0.0;
@@ -699,10 +703,10 @@ void the_step_on_cuda_tensors()
             d::stream::out);
     report(lnz < 1e-11 && cut < 1e-9, "bond " + std::to_string(D) + ": the flow on CUDA tensors is the host's");
   }
-  if (int count = 0; cudaGetDeviceCount(&count) == cudaSuccess && count > 1)
+  if (second_cuda_device)
   {
     // A step on a tensor held by a device that is not the runtime's default stays on that device.
-    int const other = (uni20::cuda::device_resources().device().ordinal() + 1) % count;
+    int const other = *second_cuda_device;
     flow_record const start = flow(vertex(model::clock, 2, K), 4, 2);
     auto const t_other = uni20::to_device(start.T0, other);
     step_result const expected = coarse_grain(start.T0, axis::x, 6);
@@ -865,9 +869,21 @@ template <class Integer> Integer parse_integer(std::string_view text, Integer le
 // The exit status when the requested CUDA device does not exist; CTest reads it as a skip.
 constexpr int no_cuda_device = 77;
 
-// Initialize the CUDA runtime for the lifetime of `run`, with `device` as the default.  The
-// checks enroll every visible device, so that they can place a tensor on another one.
-template <class Run> int on_cuda_device(int device, bool every_device, Run&& run)
+// Whether a context can be made on a visible device: a device in exclusive-process mode that
+// another process holds, for one, is visible but not usable.
+bool cuda_device_usable(int ordinal)
+{
+  int previous = 0;
+  if (cudaGetDevice(&previous) != cudaSuccess) previous = 0;
+  bool const usable = cudaSetDevice(ordinal) == cudaSuccess && cudaFree(nullptr) == cudaSuccess;
+  static_cast<void>(cudaGetLastError());
+  static_cast<void>(cudaSetDevice(previous));
+  return usable;
+}
+
+// Initialize the CUDA runtime on `device` for the lifetime of `run`.  For the checks it also
+// enrolls one other usable device, if there is one, so that they can place a tensor there.
+template <class Run> int on_cuda_device(int device, bool with_second_device, Run&& run)
 {
   int count = 0;
   if (cudaError_t const status = cudaGetDeviceCount(&count); status != cudaSuccess || device >= count)
@@ -876,8 +892,18 @@ template <class Run> int on_cuda_device(int device, bool every_device, Run&& run
                status != cudaSuccess ? std::string(cudaGetErrorString(status)) : std::to_string(count) + " devices");
     return no_cuda_device;
   }
-  std::vector<int> ordinals; // empty: every visible device
-  if (!every_device) ordinals.push_back(device);
+  if (!cuda_device_usable(device))
+  {
+    d::failure("ising_hotrg_example: CUDA device {} is visible but not usable", device);
+    return no_cuda_device;
+  }
+  std::vector<int> ordinals{device};
+  for (int other = 0; with_second_device && other < count && !second_cuda_device; ++other)
+    if (other != device && cuda_device_usable(other))
+    {
+      ordinals.push_back(other);
+      second_cuda_device = other;
+    }
   auto runtime = uni20::cuda::initialize(
       {.device_ordinals = std::move(ordinals), .default_device = device, .streams_per_device = 4});
   uni20::cuda::ScopedDevice const selected(device);
