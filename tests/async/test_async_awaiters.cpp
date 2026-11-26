@@ -84,6 +84,92 @@ struct RefQualifiedResultAwaiter
     }
 };
 
+// Resumes a task as soon as it is rescheduled, so a coroutine can finish inside the
+// await_suspend() that released its last claim.
+class InlineScheduler final : public IAsyncScheduler {
+  public:
+    void schedule_host(BasicTask&& task) override
+    {
+      if (task.set_scheduler(this)) task.resume();
+    }
+
+    void pause() override {}
+    void resume() override {}
+
+  private:
+    bool accepts_route(TaskRoute route) const noexcept override
+    {
+      return route.domain == TaskDomain::host && !route.cuda_device;
+    }
+
+    bool can_direct_transfer(TaskHandle, TaskHandle) const noexcept override { return false; }
+    void reschedule(BasicTask&& task) override { task.resume(); }
+};
+
+class ZeroedFramePromise;
+class ZeroedFrameTask final : public BasicTask {
+  public:
+    using promise_type = ZeroedFramePromise;
+    ZeroedFrameTask(ZeroedFrameTask&&) = default;
+
+  private:
+    explicit ZeroedFrameTask(TaskHandle handle) : BasicTask(handle, construction_key{}) {}
+    friend ZeroedFramePromise;
+};
+
+// Zeroes the frame when it is freed, so a read of a destroyed frame sees cleared flags. The stores
+// go through a volatile pointer because a compiler may drop a memset before a deallocation.
+class ZeroedFramePromise final : public TaskPromiseBase {
+  public:
+    static constexpr TaskDomain task_domain = TaskDomain::host;
+    template <class... Args> explicit ZeroedFramePromise(Args&... args) : TaskPromiseBase(args...) {}
+
+    ZeroedFrameTask get_return_object() noexcept
+    {
+      return ZeroedFrameTask(this->initialize_task(std::coroutine_handle<ZeroedFramePromise>::from_promise(*this)));
+    }
+
+    static void* operator new(std::size_t size) { return ::operator new(size); }
+
+    static void operator delete(void* frame, std::size_t size) noexcept
+    {
+      auto* bytes = static_cast<unsigned char volatile*>(frame);
+      for (std::size_t i = 0; i < size; ++i)
+        bytes[i] = 0;
+      ::operator delete(frame, size);
+    }
+};
+
+// Releases its claim through the scheduler, which resumes the coroutine at once.
+struct ResumesAtOnce
+{
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
+    void await_suspend(BasicTask task) noexcept { BasicTask::reschedule(std::move(task)); }
+    [[nodiscard]] int await_resume() const noexcept { return 1; }
+};
+
+int ready_child_suspends = 0;
+
+// Ready at once, so all(...) must never suspend on it.
+struct AlreadyReady
+{
+    [[nodiscard]] bool await_ready() const noexcept { return true; }
+
+    void await_suspend(BasicTask task) noexcept
+    {
+      ++ready_child_suspends;
+      static_cast<void>(task.release_handle());
+    }
+
+    [[nodiscard]] int await_resume() const noexcept { return 2; }
+};
+
+ZeroedFrameTask join_child_that_resumes_at_once(int& sum)
+{
+  auto [a, b] = co_await all(ResumesAtOnce{}, AlreadyReady{});
+  sum = a + b;
+}
+
 } // namespace
 
 TEST(AsyncAwaitersTest, TryAwaitReady)
@@ -424,6 +510,20 @@ TEST(AsyncAwaitersTest, AllAwaiterNoneBlocked)
   sched.schedule(std::move(task));
   sched.run_all();
   EXPECT_EQ(count, 3);
+}
+
+// The last pending child of all(...) can resume the coroutine before await_suspend() returns, and
+// the coroutine can finish and free its frame. A ready child after it must not be suspended on
+// because its flag in the freed frame no longer reads as ready.
+TEST(AsyncAwaitersTest, AllAwaiterLeavesTheFrameAloneAfterTheLastClaim)
+{
+  InlineScheduler scheduler;
+  IAsyncScheduler& interface = scheduler;
+  int sum = 0;
+  ready_child_suspends = 0;
+  interface.schedule(join_child_that_resumes_at_once(sum));
+  EXPECT_EQ(sum, 3);
+  EXPECT_EQ(ready_child_suspends, 0);
 }
 
 TEST(AsyncAwaitersTest, BufferAwaitersSupportRepeatedCoAwait)
