@@ -42,6 +42,15 @@ Defined in `src/uni20/async/async_errors.hpp`.
 - consuming a value through `take()`, `take_release()`, or `move_from_wait()`
   rethrows the producer's exception before checking for a constructed value.
   Empty storage with no producer failure raises `buffer_write_uninitialized`.
+- in-place updates also rethrow a failure that the epoch inherited, so an
+  update never builds on a failed value. That covers value access through a
+  write proxy (`get()`, `operator->`, conversion to `T&`, and compound
+  assignment such as `+=`) and `Async<T>`'s compound operators.
+- assignment, `emplace(...)`, `storage()` and an async alias's descriptor are
+  not checked, because overwrites use them too. Linalg kernels reach their
+  outputs through `storage()` or a descriptor, so they do not check. Code that
+  updates through `storage()` can call `WriteBuffer::check_inherited_failure()`
+  first.
 
 ## Suspension Registration
 
@@ -90,9 +99,10 @@ the same whether the value was ready when the coroutine awaited it or the epoch
 resumed the coroutine after the producer failed (#166).
 
 - The source epoch keeps the failure, so its other consumers still receive it.
-- A writer on an epoch that inherited a failure still runs. `take()` rethrows
-  the failure, and a writer that only overwrites the value never sees it.
-  Readers of that epoch still receive the inherited failure.
+- A writer on an epoch that inherited a failure still runs. `take()` and
+  in-place access through a write proxy rethrow the failure. A writer that
+  only overwrites the value never sees it. Readers of that epoch still receive
+  the inherited failure.
 - If an exception escapes the coroutine, the parent receives that exception,
   not an upstream failure the coroutine caught earlier.
 

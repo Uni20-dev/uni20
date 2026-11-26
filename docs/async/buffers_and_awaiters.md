@@ -179,7 +179,9 @@ the operation is valid in either storage state.
 For more specific requirements, use an explicit operation:
 
 - `proxy.emplace(args...)` always reconstructs inside the current storage and queue
-- `proxy.get() = rhs` requires an existing value and uses its assignment operator
+- `proxy.get() = rhs` requires an existing value and uses its assignment operator.
+  Like every in-place access, it rethrows a failure the epoch inherited from a
+  failed producer, while `proxy = rhs` overwrites without looking.
 
 Direct assignment to an independent `Async<T>` handle creates a fresh timeline.
 For an async alias, assignment is available only when ADL finds a matching

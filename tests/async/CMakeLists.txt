@@ -17,6 +17,7 @@ add_test_module(async
 add_test_module(async_tbb
   SOURCES test_tbb_numa_scheduler.cpp test_scheduler_stress.cpp test_tbb_scheduler.cpp
           test_tbb_single_concurrency.cpp test_tbb_wait.cpp test_async_unwinding_threads.cpp
+          test_async_write_proxy_threads.cpp
   LIBS uni20_common uni20_async TBB::tbb
 )
 

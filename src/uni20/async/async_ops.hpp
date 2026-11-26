@@ -240,6 +240,8 @@ template <typename T, typename U, typename Op> void async_compound_op(Async<T>& 
     auto awaited = co_await all(output_storage, rhs_);
     auto& storage = std::get<0>(awaited);
     auto& rhs_value = std::get<1>(awaited);
+    // Like `co_await w += rhs`, the update must not build on a failed value (#166).
+    out_.check_inherited_failure();
     if (!storage.constructed()) throw buffer_write_uninitialized{};
     op_(*storage, rhs_value);
     co_return;

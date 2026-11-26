@@ -3,6 +3,7 @@
 # Create a benchmark executable.
 add_executable(uni20_benchmarks
 #    benchmark_dummy.cpp
+    benchmark_async_access.cpp
     benchmark_coroutine_overhead.cpp
     benchmark_linalg_dispatch.cpp
     benchmark_tensor_tbb_scaling.cpp

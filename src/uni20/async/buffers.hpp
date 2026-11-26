@@ -1025,6 +1025,18 @@ template <typename T> class WriteBuffer {
       return OwningTakeAwaiter<T>(std::move(writer_));
     }
 
+    /// \brief Rethrow a failure that the epoch inherited, before an update through `storage()`.
+    /// \details `storage()` itself does not check, because overwrites use it too (#166).
+    /// \pre The writer is active, for example after `co_await` on this buffer or on a join that
+    ///      includes it, and this buffer still holds it. After `co_await std::move(buffer).storage()`
+    ///      the owning storage proxy holds the writer instead.
+    void check_inherited_failure() const
+    {
+      DEBUG_CHECK(writer_.epoch_context_shared(),
+                  "WriteBuffer::check_inherited_failure on a buffer whose writer moved");
+      writer_.check_inherited_failure();
+    }
+
     /// \brief Awaiter yielding direct access to writer shared storage.
     /// \return Storage awaiter.
     auto storage() &
@@ -1268,6 +1280,11 @@ void assign_write_proxy_value(EpochContextWriter<T>& writer, U&& source)
 
 /// \brief Non-owning proxy returned by `co_await` on an lvalue `WriteBuffer<T>`.
 /// \details This proxy references the underlying writer held by the buffer.
+/// \note For a value payload, in-place access (`get()`, `operator->`, conversion to `T&` and
+///       compound assignment) rethrows a failure that the epoch inherited from a failed producer,
+///       as `take()` does. Assignment and `emplace(...)` overwrite the value and do not. An async
+///       alias's descriptor, which kernels use to overwrite as well as to update, is not checked
+///       (#166).
 template <typename T> class WriteAccessProxy {
   public:
     using value_type = T;
@@ -1316,10 +1333,11 @@ template <typename T> class WriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value += std::forward<U>(x); }
     WriteAccessProxy& operator+=(U&& x)
     {
+      this->writer().check_inherited_failure();
       auto& storage = this->writer().storage();
       if (storage.constructed())
       {
-        this->get() += std::forward<U>(x);
+        this->writer().data() += std::forward<U>(x);
       }
       else if constexpr (std::constructible_from<T, U&&>)
       {
@@ -1327,7 +1345,7 @@ template <typename T> class WriteAccessProxy {
       }
       else
       {
-        this->get() += std::forward<U>(x);
+        this->writer().data() += std::forward<U>(x);
       }
       return *this;
     }
@@ -1340,10 +1358,11 @@ template <typename T> class WriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value -= std::forward<U>(x); }
     WriteAccessProxy& operator-=(U&& x)
     {
+      this->writer().check_inherited_failure();
       auto& storage = this->writer().storage();
       if (storage.constructed())
       {
-        this->get() -= std::forward<U>(x);
+        this->writer().data() -= std::forward<U>(x);
       }
       else if constexpr (requires { -std::declval<U&&>(); } &&
                          std::constructible_from<T, decltype(-std::declval<U&&>())>)
@@ -1353,7 +1372,7 @@ template <typename T> class WriteAccessProxy {
       }
       else
       {
-        this->get() -= std::forward<U>(x);
+        this->writer().data() -= std::forward<U>(x);
       }
       return *this;
     }
@@ -1421,7 +1440,7 @@ template <typename T> class WriteAccessProxy {
     [[nodiscard]] T& get() const
       requires(!is_async_alias_v<T>)
     {
-      return this->writer().data();
+      return this->writer().existing_value();
     }
 
     /// \brief Inspect an async alias descriptor without permitting retargeting.
@@ -1498,6 +1517,11 @@ template <typename T> class WriteAccessProxy {
 
 /// \brief Owning proxy returned by `co_await write_buffer.transfer()`.
 /// \details Ownership of the writer handle is transferred into this proxy.
+/// \note For a value payload, in-place access (`get()`, `operator->`, conversion to `T&` and
+///       compound assignment) rethrows a failure that the epoch inherited from a failed producer,
+///       as `take()` does. Assignment and `emplace(...)` overwrite the value and do not. An async
+///       alias's descriptor, which kernels use to overwrite as well as to update, is not checked
+///       (#166).
 template <typename T> class OwningWriteAccessProxy {
   public:
     using value_type = T;
@@ -1546,10 +1570,11 @@ template <typename T> class OwningWriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value += std::forward<U>(x); }
     OwningWriteAccessProxy& operator+=(U&& x)
     {
+      writer_.check_inherited_failure();
       auto& storage = writer_.storage();
       if (storage.constructed())
       {
-        this->get() += std::forward<U>(x);
+        writer_.data() += std::forward<U>(x);
       }
       else if constexpr (std::constructible_from<T, U&&>)
       {
@@ -1557,7 +1582,7 @@ template <typename T> class OwningWriteAccessProxy {
       }
       else
       {
-        this->get() += std::forward<U>(x);
+        writer_.data() += std::forward<U>(x);
       }
       return *this;
     }
@@ -1570,10 +1595,11 @@ template <typename T> class OwningWriteAccessProxy {
       requires(!is_async_alias_v<T>) && requires(T& value, U&& x) { value -= std::forward<U>(x); }
     OwningWriteAccessProxy& operator-=(U&& x)
     {
+      writer_.check_inherited_failure();
       auto& storage = writer_.storage();
       if (storage.constructed())
       {
-        this->get() -= std::forward<U>(x);
+        writer_.data() -= std::forward<U>(x);
       }
       else if constexpr (requires { -std::declval<U&&>(); } &&
                          std::constructible_from<T, decltype(-std::declval<U&&>())>)
@@ -1583,7 +1609,7 @@ template <typename T> class OwningWriteAccessProxy {
       }
       else
       {
-        this->get() -= std::forward<U>(x);
+        writer_.data() -= std::forward<U>(x);
       }
       return *this;
     }
@@ -1617,11 +1643,17 @@ template <typename T> class OwningWriteAccessProxy {
     T& get()
       requires(!is_async_alias_v<T>)
     {
-      return writer_.data();
+      return writer_.existing_value();
     }
     /// \brief Access const stored value.
     /// \return Const reference to the stored value.
-    T const& get() const { return writer_.data(); }
+    T const& get() const
+    {
+      if constexpr (is_async_alias_v<T>)
+        return writer_.data();
+      else
+        return writer_.existing_value();
+    }
 
     /// \brief Move out the stored value.
     /// \return Moved value.
