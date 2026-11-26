@@ -9,6 +9,8 @@
 #include <array>
 #include <concepts>
 #include <coroutine>
+#include <cstddef>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -161,16 +163,62 @@ struct AllAwaiter //: public AsyncAwaiter
       ((ready[I] ? void() : std::get<I>(bufs_).await_suspend(f.take_next())), ...);
     }
 
-    template <std::size_t I> decltype(auto) await_resume_child()
+    using result_type = std::tuple<detail::all_result_t<Aw>...>;
+
+    struct NoResult
+    {};
+    /// \brief Holds a discarded child result until the join's failure propagates. A reference
+    ///        result needs no holder.
+    template <std::size_t I>
+    using discarded_result_t = std::conditional_t<std::is_reference_v<std::tuple_element_t<I, result_type>>, NoResult,
+                                                  std::optional<std::tuple_element_t<I, result_type>>>;
+
+    template <std::size_t I> decltype(auto) await_resume_child(std::size_t& current)
     {
+      current = I;
       using awaiter_type = std::tuple_element_t<I, std::tuple<Aw...>>;
       return std::forward<awaiter_type>(std::get<I>(bufs_)).await_resume();
     }
 
-    template <std::size_t... I> auto await_resume_impl(std::index_sequence<I...>)
+    template <std::size_t... I> result_type await_resume_impl(std::index_sequence<I...> children)
     {
-      using result_type = std::tuple<detail::all_result_t<Aw>...>;
-      return result_type{this->template await_resume_child<I>()...};
+      std::size_t current = 0;
+      try
+      {
+        return result_type{this->template await_resume_child<I>(current)...};
+      }
+      catch (...)
+      {
+        this->resume_rest_and_rethrow(current, std::current_exception(), children);
+      }
+    }
+
+    /// \brief Resume the children after one that threw, then rethrow its failure.
+    /// \details A writer among them may already be active in its epoch, and a writer released
+    ///          without being resumed cancels a writer that the epoch started. Their results are kept
+    ///          until the failure propagates, so owning holders release as they would when an
+    ///          exception passes through local variables. The first failure wins.
+    template <std::size_t... I>
+    [[noreturn]] void resume_rest_and_rethrow(std::size_t failed, std::exception_ptr failure, std::index_sequence<I...>)
+    {
+      std::tuple<discarded_result_t<I>...> rest;
+      (this->template resume_discarded<I>(failed, std::get<I>(rest)), ...);
+      std::rethrow_exception(std::move(failure));
+    }
+
+    template <std::size_t I> void resume_discarded(std::size_t failed, discarded_result_t<I>& holder) noexcept
+    {
+      if (I <= failed) return;
+      std::size_t current = 0;
+      try
+      {
+        if constexpr (std::is_reference_v<std::tuple_element_t<I, result_type>>)
+          static_cast<void>(this->template await_resume_child<I>(current));
+        else
+          holder.emplace(this->template await_resume_child<I>(current));
+      }
+      catch (...)
+      {}
     }
 };
 
