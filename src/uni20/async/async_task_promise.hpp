@@ -135,6 +135,12 @@ class TaskPromiseBase {
     std::atomic<bool> exception_{false};
     std::exception_ptr eptr_ = nullptr;
 
+    /// \brief Set when an exception other than `task_cancelled` escaped the coroutine body.
+    /// \details `exception_` also records a failure that an epoch injected when it resumed the
+    ///          coroutine, which the body may have caught (#166). `unhandled_exception()` and
+    ///          final suspension run in the same resumption, so this flag needs no atomic.
+    bool body_failed_{false};
+
     /// \brief If true, then when the coroutine is next resumed (i.e. transferred to the scheduler)
     /// it is destroyed (stack unwound and coroutine frame freed).
     std::atomic<bool> cancel_on_resume_{false};
@@ -197,10 +203,13 @@ class TaskPromiseBase {
       return c;
     }
 
+    /// \brief Unlink the remaining sinks: parameter copies, which own them, outlive the promise.
     ~TaskPromiseBase() noexcept
     {
       DEBUG_CHECK(!continuation_);
       DEBUG_CHECK(continuation_exception_ == nullptr);
+      while (exception_sinks_head_)
+        this->unregister_exception_sink(*exception_sinks_head_, false);
     }
 
     /// \brief Decrease the number of active awaiters by one.
@@ -252,13 +261,27 @@ class TaskPromiseBase {
       exception_sinks_head_ = &node;
     }
 
+    /// \brief Report whether another linked sink delivers to the same epoch as `node`.
+    /// \param node Linked sink node.
+    /// \return true if removing `node` leaves delivery to its epoch unchanged.
+    bool has_other_sink_like(ExceptionSinkNode const& node) const noexcept
+    {
+      for (auto const* other = exception_sinks_head_; other; other = other->next)
+      {
+        if (other != &node && other->epoch == node.epoch && other->requires_writer == node.requires_writer) return true;
+      }
+      return false;
+    }
+
     /// \brief Unregister one exception propagation sink from this promise.
     /// \param node Intrusive node currently linked into this promise.
     /// \param from_destructor true when called from buffer destruction.
     void unregister_exception_sink(ExceptionSinkNode& node, bool from_destructor) noexcept
     {
       if (node.owner != this) return;
-      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0)
+      // A copy of a registered buffer, such as one passed to a failed child coroutine whose frame
+      // is destroyed during a rethrow, loses nothing while an equivalent sink remains.
+      if (from_destructor && node.explicit_sink && std::uncaught_exceptions() > 0 && !this->has_other_sink_like(node))
       {
         CHECK(
             false,
@@ -412,6 +435,34 @@ class TaskPromiseBase {
       handle.coroutine().destroy();
     }
 
+    /// \brief Destroy a finished coroutine frame, during unwinding if the coroutine failed.
+    /// \details Parameter copies are destroyed with the frame, after `unhandled_exception()` has
+    ///          returned. Destroying the frame while its exception is rethrown lets their destructors
+    ///          see the failure through `std::uncaught_exceptions()`, as the coroutine's locals did.
+    ///          An owning writer held by a parameter then keeps exception delivery open (#163).
+    /// \param handle Finished task.
+    /// \param eptr The promise's exception if one escaped the coroutine body, or null.
+    static void destroy_finished(TaskHandle handle, std::exception_ptr const& eptr) noexcept
+    {
+      if (!eptr)
+      {
+        destroy_and_track(handle);
+        return;
+      }
+      struct DestroyOnUnwind
+      {
+          TaskHandle handle;
+          ~DestroyOnUnwind() { destroy_and_track(handle); }
+      };
+      try
+      {
+        DestroyOnUnwind destroy{handle};
+        std::rethrow_exception(eptr);
+      }
+      catch (...)
+      {}
+    }
+
     /// \brief Complete an unbound child's route before nested execution.
     /// \details Scheduler inheritance is allowed across task domains only when
     ///          the parent scheduler accepts the child's complete route.
@@ -544,7 +595,8 @@ class TaskPromiseBase {
             TRACE_MODULE(ASYNC, "Final suspend of coroutine", completed.coroutine(), continuation.coroutine(),
                          cancelled);
 
-            TaskPromiseBase::destroy_and_track(completed);
+            bool const body_failed = promise->body_failed_;
+            TaskPromiseBase::destroy_finished(completed, body_failed ? eptr : nullptr);
 
             TRACE_MODULE(ASYNC, "Destroy is done");
 
@@ -601,6 +653,7 @@ class TaskPromiseBase {
       {
         bool const originating_failure = !exception_.load(std::memory_order_acquire);
         auto eptr = std::current_exception();
+        body_failed_ = true;
         TaskRegistry::record_unhandled_exception(this->self().coroutine(), eptr, originating_failure);
         this->set_exception(eptr);
         for (auto* node = exception_sinks_head_; node; node = node->next)

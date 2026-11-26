@@ -92,6 +92,47 @@ delivery through that writer. A later failure still reaches the coroutine's
 remaining output writers. An output can also fail while waiting for an earlier
 epoch to finish. A successful predecessor preserves that failure.
 
+### Owning writers
+
+A `WriteBuffer` parameter stays registered as a sink when an owning form takes
+its writer: `co_await buffer.transfer()`, `buffer.transfer().storage()`, an
+owning `take()`, or `write_to(buffer.transfer(), value)`. An exception thrown
+while one of these holds the writer therefore reaches the epoch. That includes
+an exception from constructing the value
+([#169](https://github.com/Uni20-dev/uni20/issues/169)).
+
+An owning holder that finishes normally, at the end of its scope or when
+`write_to` has emplaced its value, ends exception delivery to the epoch, as
+`release()` does. So does a `write_to` dropped without being awaited, which
+publishes the previous value. A later exception escaping the coroutine then leaves that
+value alone.
+
+A coroutine that receives an owning holder by value, as in
+`co_await child(co_await buffer.transfer())`, destroys its parameters after the
+promise has handled an escaping exception. When an exception has escaped the
+coroutine body, its frame is destroyed while that exception is rethrown, so the
+holder counts as destroyed by the exception, wherever it sits among the
+parameters. A failure that the body caught does not count. The failure then reaches
+the epoch from the caller's `WriteBuffer` sink, as described next.
+
+An owning holder that an exception destroys publishes the epoch at that point.
+That happens before the promise reaches `unhandled_exception()` and delivers the
+failure ([#163](https://github.com/Uni20-dev/uni20/issues/163)).
+- Readers that still hold the epoch when the failure arrives see it, and so
+  does a successor that starts after them.
+- A successor that starts in between keeps its own value, and a reader on
+  another thread can see the previous value.
+- A failure that arrives after the epoch has finished is dropped. Builds with
+  task diagnostics (`UNI20_DEBUG_ASYNC_TASKS`) still record the exception in the
+  task registry when it escapes the coroutine.
+- If the coroutine catches that exception, delivery stays open. A later
+  exception escaping the coroutine can still fail the epoch while it is being
+  read.
+
+If a failing producer must always fail its value, hold the writer through the
+non-owning `co_await buffer` instead. That form keeps the writer until the
+coroutine finishes.
+
 ### Explicit path
 
 Use:
@@ -105,7 +146,15 @@ This is useful when errors should be routed to additional buffers (including rea
 ### Explicit sink lifetime guard
 
 If an explicit sink is destroyed during stack unwinding before promise
-`unhandled_exception()` runs, runtime aborts intentionally (`CHECK`).
+`unhandled_exception()` runs, and the promise has no other sink for that epoch,
+the runtime aborts intentionally (`CHECK`).
+
+- A copy of a registered buffer registers with the same promise. Destroying the
+  copy while the original remains loses nothing and does not abort.
+- A failed coroutine's parameters are destroyed during a rethrow of its
+  exception (see "Owning writers" above). Moving the only registered sink into
+  a child coroutine that fails therefore aborts, even if the parent catches the
+  exception.
 
 This fail-fast behavior prevents silent loss of exception routing in hard-to-debug cases.
 

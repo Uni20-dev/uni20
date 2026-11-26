@@ -301,6 +301,22 @@ class EpochContext {
       this->advance_start_locked(std::move(lock));
     }
 
+    /// \brief Start the epoch and count it as written, with or without a writer.
+    /// \details A reverse queue starts its first epoch this way. It is one locked step that takes no
+    ///          writer reservation, so a writer released concurrently always makes the final release
+    ///          and its decision whether to end exception delivery stands.
+    void start_as_written()
+    {
+      std::unique_lock lock(mtx_);
+      DEBUG_TRACE_MODULE(ASYNC, "EpochContext::start_as_written", this, counter_, phase_);
+      DEBUG_CHECK(phase_ <= Phase::Started);
+      ++total_writers_;
+      if (phase_ == Phase::Pending)
+        this->advance_start_locked(std::move(lock));
+      else if (phase_ == Phase::Started)
+        this->advance_writing_locked(std::move(lock));
+    }
+
     // start executing the epoch, propogating the exception and cancellation state from a previous epoch
     void start(std::exception_ptr eptr)
     {
@@ -557,7 +573,15 @@ class EpochContext {
       if (requires_writer && writer_sink_retired_) return;
       // An owning take can rethrow an already published producer failure.
       if (eptr_) return;
-      DEBUG_CHECK(phase_ <= Phase::Reading);
+      // An owning holder that an exception destroyed published the epoch before the promise
+      // reached unhandled_exception(). Readers still holding the epoch receive the failure. Once
+      // they have all finished, its consumers have already seen the value and the failure is
+      // dropped. Builds with task diagnostics record it in the task registry (#163).
+      if (phase_ > Phase::Reading)
+      {
+        DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_set_exception after the epoch finished", this, counter_);
+        return;
+      }
       eptr_ = std::move(e);
     }
 
@@ -571,8 +595,10 @@ class EpochContext {
 
     /// \brief Release a writer without it executing
     /// \pre Must follow writer_acquire()
+    /// \param retire_sink Whether releasing the final writer ends exception delivery, as for a
+    ///        writer that is dropped normally. `false` leaves an earlier decision in place.
     /// \return true if this call released the final writer.
-    bool writer_cancel() noexcept
+    bool writer_cancel(bool retire_sink) noexcept
     {
       std::unique_lock lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::writer_release", this, counter_, phase_);
@@ -580,6 +606,7 @@ class EpochContext {
       DEBUG_CHECK(num_writers_ >= 1);
 
       --num_writers_;
+      if (num_writers_ == 0 && retire_sink) writer_sink_retired_ = true;
 
       if (num_writers_ == 0 && phase_ == Phase::Writing)
       {
@@ -695,6 +722,9 @@ class EpochContext {
     /// \brief Returns the exception object.
     std::exception_ptr reader_exception() const noexcept
     {
+      // A failure can still arrive while readers hold the epoch: an owning holder that an
+      // exception destroyed published it before the promise delivered the failure (#163).
+      std::lock_guard lock(mtx_);
       DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_exception", this, counter_);
       DEBUG_PRECONDITION(phase_ == Phase::Reading);
 
@@ -1197,14 +1227,24 @@ template <typename T> class EpochContextWriter {
         storage_ = std::move(other.storage_);
         epoch_ = std::move(other.epoch_);
         acquired_ = other.acquired_;
+        uncaught_at_take_ = std::uncaught_exceptions();
         other.epoch_.reset();
       }
       return *this;
     }
 
     /// \brief Release the writer on destruction.
-    /// \note A proxy can unwind before its registered coroutine parameter receives an exception.
-    ~EpochContextWriter() { this->release(false); }
+    /// \details A holder destroyed normally has finished writing, so it ends exception delivery to
+    ///          the epoch, as `release()` does. A later exception escaping the coroutine then
+    ///          leaves the published value alone. A holder destroyed by an exception keeps
+    ///          delivery open: it publishes before the promise reaches `unhandled_exception()`,
+    ///          and the failure still reaches readers that hold the epoch (#163). A failed
+    ///          coroutine destroys its frame while rethrowing its exception, so a holder among its
+    ///          parameters also counts as destroyed by the exception. The two cases
+    ///          are told apart by `std::uncaught_exceptions()` against its value when this object
+    ///          took the writer. A coroutine step resumed during an unrelated exception can
+    ///          misclassify, which affects only that best-effort delivery.
+    ~EpochContextWriter() { this->release(std::uncaught_exceptions() <= uncaught_at_take_); }
 
 #if UNI20_DEBUG_DAG
     /// \brief Get the debug node pointer of the object
@@ -1315,7 +1355,7 @@ template <typename T> class EpochContextWriter {
         if (acquired_)
           epoch_->writer_release_active(retire_sink);
         else
-          epoch_->writer_cancel(); // releasing without ever
+          epoch_->writer_cancel(retire_sink); // releasing without ever
         epoch_.reset();
         storage_.reset();
       }
@@ -1329,6 +1369,8 @@ template <typename T> class EpochContextWriter {
     mutable shared_storage<T> storage_;
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
+    /// \brief `std::uncaught_exceptions()` when this object took the writer.
+    int uncaught_at_take_{std::uncaught_exceptions()};
 };
 
 } // namespace uni20::async
