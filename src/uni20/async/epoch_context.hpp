@@ -1233,7 +1233,7 @@ template <typename T> class EpochContextWriter {
     /// \param other Writer being moved from.
     EpochContextWriter(EpochContextWriter&& other) noexcept
         : storage_(std::move(other.storage_)), epoch_(std::move(other.epoch_)), acquired_(std::move(other.acquired_)),
-          inherited_failure_checked_(other.inherited_failure_checked_)
+          inherited_failure_checked_(other.inherited_failure_checked_.load(std::memory_order_relaxed))
     {
       other.epoch_.reset();
     }
@@ -1249,7 +1249,8 @@ template <typename T> class EpochContextWriter {
         storage_ = std::move(other.storage_);
         epoch_ = std::move(other.epoch_);
         acquired_ = other.acquired_;
-        inherited_failure_checked_ = other.inherited_failure_checked_;
+        inherited_failure_checked_.store(other.inherited_failure_checked_.load(std::memory_order_relaxed),
+                                         std::memory_order_relaxed);
         uncaught_at_take_ = std::uncaught_exceptions();
         other.epoch_.reset();
       }
@@ -1302,24 +1303,28 @@ template <typename T> class EpochContextWriter {
     T& data() const
     {
       auto* ptr = storage_.get();
-      if (!ptr)
-      {
-#if UNI20_DEBUG_ASYNC_TASKS
-        constexpr char const* reason = "EpochContextWriter::data access on uninitialized storage";
-        auto const mode = TaskRegistry::dump_mode();
-        if (mode != TaskRegistry::DumpMode::None)
-        {
-          auto const epoch_counter = epoch_ ? epoch_->counter_ : -1;
-          TRACE_STACK(reason, this, epoch_.get(), epoch_counter);
-          if (mode == TaskRegistry::DumpMode::Full)
-            TaskRegistry::dump();
-          else
-            TaskRegistry::dump_epoch_context(epoch_.get(), reason);
-        }
-#endif
-        throw buffer_write_uninitialized{};
-      }
+      if (!ptr) [[unlikely]]
+        this->throw_uninitialized_data();
       return *ptr;
+    }
+
+    /// \brief Report access to storage that holds no value. Kept out of line so `data()` inlines.
+    [[noreturn, gnu::cold, gnu::noinline]] void throw_uninitialized_data() const
+    {
+#if UNI20_DEBUG_ASYNC_TASKS
+      constexpr char const* reason = "EpochContextWriter::data access on uninitialized storage";
+      auto const mode = TaskRegistry::dump_mode();
+      if (mode != TaskRegistry::DumpMode::None)
+      {
+        auto const epoch_counter = epoch_ ? epoch_->counter_ : -1;
+        TRACE_STACK(reason, this, epoch_.get(), epoch_counter);
+        if (mode == TaskRegistry::DumpMode::Full)
+          TaskRegistry::dump();
+        else
+          TaskRegistry::dump_epoch_context(epoch_.get(), reason);
+      }
+#endif
+      throw buffer_write_uninitialized{};
     }
 
     template <typename... Args>
@@ -1360,12 +1365,12 @@ template <typename T> class EpochContextWriter {
     ///          finds none is remembered and later updates skip it. `take()` checks every time.
     void check_inherited_failure() const
     {
-      if (inherited_failure_checked_) [[likely]]
+      if (inherited_failure_checked_.load(std::memory_order_relaxed)) [[likely]]
         return;
       // A released handle has no epoch; data() then reports the missing value as before.
       if (!epoch_) return;
       this->rethrow_producer_failure();
-      inherited_failure_checked_ = true;
+      inherited_failure_checked_.store(true, std::memory_order_relaxed);
     }
 
     /// \brief Access the stored value for an in-place update.
@@ -1420,7 +1425,10 @@ template <typename T> class EpochContextWriter {
     std::shared_ptr<EpochContext> epoch_;
     mutable bool acquired_{false};
     /// \brief Set once an in-place update has found no inherited failure.
-    mutable bool inherited_failure_checked_{false};
+    /// \details Batch items may update disjoint parts of one value through one write proxy, so
+    ///          their first accesses can check concurrently. Each finds the same answer and may
+    ///          store `true`, so relaxed operations are enough.
+    mutable std::atomic<bool> inherited_failure_checked_{false};
     /// \brief `std::uncaught_exceptions()` when this object took the writer.
     int uncaught_at_take_{std::uncaught_exceptions()};
 };

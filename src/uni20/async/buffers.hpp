@@ -1028,8 +1028,14 @@ template <typename T> class WriteBuffer {
     /// \brief Rethrow a failure that the epoch inherited, before an update through `storage()`.
     /// \details `storage()` itself does not check, because overwrites use it too (#166).
     /// \pre The writer is active, for example after `co_await` on this buffer or on a join that
-    ///      includes it.
-    void check_inherited_failure() const { writer_.check_inherited_failure(); }
+    ///      includes it, and this buffer still holds it. After `co_await std::move(buffer).storage()`
+    ///      the owning storage proxy holds the writer instead.
+    void check_inherited_failure() const
+    {
+      DEBUG_CHECK(writer_.epoch_context_shared(),
+                  "WriteBuffer::check_inherited_failure on a buffer whose writer moved");
+      writer_.check_inherited_failure();
+    }
 
     /// \brief Awaiter yielding direct access to writer shared storage.
     /// \return Storage awaiter.
