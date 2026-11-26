@@ -720,19 +720,23 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
           observe(record, T);
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
         else
-          observe(record, uni20::to_host(T));
+        {
+          // The record's T0 is the latest tensor in both places when the observer runs.
+          record.T0 = uni20::to_host(T);
+          observe(record, record.T0);
+        }
 #endif
       }
     }
   };
-  if constexpr (std::same_as<Place, host_place>)
-    rounds(record.T0);
+  if constexpr (std::same_as<Place, host_place>) rounds(record.T0);
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
   else
   {
     auto T = Place::upload(record.T0);
     rounds(T);
-    record.T0 = uni20::to_host(T);
+    // With an observer, every round has already downloaded T into T0.
+    if constexpr (std::same_as<Observer, std::nullptr_t>) record.T0 = uni20::to_host(T);
   }
 #endif
   return record;

@@ -699,6 +699,16 @@ void the_step_on_cuda_tensors()
             d::stream::out);
     report(lnz < 1e-11 && cut < 1e-9, "bond " + std::to_string(D) + ": the flow on CUDA tensors is the host's");
   }
+  {
+    // The observer of a CUDA flow sees the same record as on the host: T0 is the tensor it is given.
+    bool consistent = true;
+    int observed = 0;
+    static_cast<void>(flow<device_place>(vertex(model::clock, 2, K), 4, 3, [&](auto const& r, auto const& t) {
+      consistent = consistent && &r.T0 == &t;
+      ++observed;
+    }));
+    report(consistent && observed == 3, "the observer of a CUDA flow reads the latest tensor in record.T0");
+  }
 }
 #endif
 
