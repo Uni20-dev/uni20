@@ -20,6 +20,10 @@
 #include <uni20/tensor/output.hpp>
 #include <uni20/tensor/tensor.hpp>
 
+#if UNI20_BACKEND_CUSOLVER
+#include <uni20/linalg/backends/cusolver/self_adjoint_eigh.hpp>
+#endif
+
 #include <array>
 #include <concepts>
 #include <type_traits>
@@ -57,10 +61,12 @@ void dispatch_self_adjoint_eigh(BackendSelector&& selector, self_adjoint_eigh_op
 } // namespace detail
 
 /// \brief Compute an in-place self-adjoint eigensystem through an explicit selector.
-/// \details The selected triangle of `matrix_work` is read. LAPACK destroys the
+/// \details The selected triangle of `matrix_work` is read. The solver destroys the
 ///          matrix input; when vectors are requested, its columns contain the
-///          normalized eigenvectors on return. `eigenvalues` is resized when
-///          its output policy permits.
+///          normalized eigenvectors on return, ordered by ascending eigenvalue.
+///          `eigenvalues` is resized when its output policy permits. cuSOLVER
+///          requires column-major CUDA work and contiguous CUDA eigenvalues on
+///          the same device.
 /// \pre Eigenvalue and matrix storage do not overlap.
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> EigenvalueTensor,
           uni20::MutableRankedTensorView<2> MatrixTensor>
@@ -95,6 +101,33 @@ template <class EigenvalueTensor, class EigenvectorTensor> struct SelfAdjointEig
 
 namespace detail
 {
+#if UNI20_BACKEND_CUSOLVER
+template <class MatrixTensor> consteval bool cuda_resident_eigh()
+{
+  if constexpr (std::same_as<uni20::tensor_storage_policy_t<MatrixTensor>, uni20::CudaStorage>)
+    return uni20::cuda::BufferMdspec<uni20::tensor_mdspec_t<MatrixTensor>> &&
+           cusolver_backend::CusolverRealScalar<uni20::tensor_element_t<MatrixTensor>>;
+  else
+    return false;
+}
+
+template <KernelBackendSelector Selector, uni20::RankedTensorView<2> MatrixTensor>
+[[nodiscard]] auto cuda_eigh_from_copy(Selector&& selector, MatrixTensor const& matrix, MatrixTriangle triangle,
+                                       Precision p)
+{
+  using scalar = uni20::tensor_element_t<MatrixTensor>;
+  auto& resources = uni20::mdspec_of(matrix).data_descriptor().buffer().resources();
+  auto const n = matrix.extent(0);
+  uni20::CudaTensor<scalar, 1> eigenvalues(uni20::uninitialized, resources, n);
+  uni20::CudaMatrix<scalar, uni20::ColumnMajor> eigenvectors(uni20::uninitialized, resources, n, n);
+  if (n != 0) uni20::copy(eigenvectors, matrix);
+  self_adjoint_eigh(std::forward<Selector>(selector), eigenvalues, eigenvectors,
+                    SelfAdjointEighOptions{.compute_vectors = true, .triangle = triangle}, p);
+  return SelfAdjointEighResult<decltype(eigenvalues), decltype(eigenvectors)>{.eigenvalues = std::move(eigenvalues),
+                                                                              .eigenvectors = std::move(eigenvectors)};
+}
+#endif
+
 template <class MatrixTensor>
 using self_adjoint_eigh_reuse_matrix_t =
     std::conditional_t<std::same_as<typename std::remove_cvref_t<MatrixTensor>::layout_type, uni20::ColumnMajor>,
@@ -236,23 +269,42 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Matr
 {
   auto const p = detail::decomposition_precision(matrix, requested);
   ERROR_IF(matrix.extent(0) != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
-  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
-  return detail::eigh_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), triangle, p);
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (detail::cuda_resident_eigh<MatrixTensor>())
+    return detail::cuda_eigh_from_copy(std::forward<BackendSelector>(selector), matrix, triangle, p);
+  else
+#endif
+  {
+    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+    return detail::eigh_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), triangle, p);
+  }
 }
 
 /// \brief Preserve a matrix and return its complete self-adjoint eigensystem.
 /// \details This explicit value operation materializes a column-major work
 ///          matrix through `copy_op`, then calls the destructive in-place
-///          eigensolver with eigenvectors enabled.
+///          eigensolver with eigenvectors enabled. Real float and double CUDA
+///          matrices use cuSOLVER and return both results on the input device.
 template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto eigh(MatrixTensor const& matrix, MatrixTriangle triangle = MatrixTriangle::Upper,
                         std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
   ERROR_IF(matrix.extent(0) != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
-  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
-  auto selector = detail::select_self_adjoint_eigh_backend<decltype(matrix_work)>(triangle);
-  return detail::eigh_from_work_matrix(std::move(selector), std::move(matrix_work), triangle, p);
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (detail::cuda_resident_eigh<MatrixTensor>())
+  {
+    auto selector = select_backend_for_storage<uni20::CudaStorage>(
+        self_adjoint_eigh_op{.compute_vectors = true, .triangle = triangle});
+    return detail::cuda_eigh_from_copy(std::move(selector), matrix, triangle, p);
+  }
+  else
+#endif
+  {
+    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+    auto selector = detail::select_self_adjoint_eigh_backend<decltype(matrix_work)>(triangle);
+    return detail::eigh_from_work_matrix(std::move(selector), std::move(matrix_work), triangle, p);
+  }
 }
 
 /// \brief Consume an owning matrix and return its complete self-adjoint eigensystem through an explicit selector.

@@ -946,7 +946,7 @@ template <BlockTensorView Tensor, class Measurements, class Event>
   requires(!ImmediateBlockTensorView<Tensor>) &&
           CompleteBlockStorage<typename block_tensor_type_t<Tensor>::storage_policy> &&
           (block_tensor_type_t<Tensor>::dense_block_order() == 2) &&
-          linalg::detail::cusolver_backend::CusolverSvdScalar<block_tensor_value_t<Tensor>> &&
+          linalg::detail::cusolver_backend::CusolverRealScalar<block_tensor_value_t<Tensor>> &&
           cuda::BufferMdspec<tensor_mdspec_t<block_tensor_const_block_t<Tensor>>> &&
           requires(Tensor const& tensor) {
             { tensor.allocation_context() } -> std::same_as<cuda::DeviceResources&>;
@@ -1060,7 +1060,7 @@ template <BlockTensorView Tensor, class Measurements, class Event>
 template <BlockTensorView Tensor>
   requires(!ImmediateBlockTensorView<Tensor>) &&
           CompleteBlockStorage<typename block_tensor_type_t<Tensor>::storage_policy> &&
-          linalg::detail::cusolver_backend::CusolverSvdScalar<block_tensor_value_t<Tensor>> &&
+          linalg::detail::cusolver_backend::CusolverRealScalar<block_tensor_value_t<Tensor>> &&
           cuda::BufferMdspec<tensor_mdspec_t<block_tensor_const_block_t<Tensor>>>
 [[nodiscard]] auto block_svd(Tensor const& tensor, linalg::SvdOptions options = {})
 {

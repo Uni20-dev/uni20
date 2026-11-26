@@ -11,7 +11,12 @@ The same file implements values-only `singular_values_op` for real and complex
 It accepts tall column-major workspace or wide row-major workspace read as its
 tall transpose, and returns immediately for empty matrices.
 
-Both operations select the operand device around the provider calls, since
+The `self_adjoint_eigh.hpp` adapter uses `syevd` for real `float` and
+`double` with column-major CUDA work and contiguous eigenvalues on the same
+device. It returns eigenvalues in ascending order and can overwrite the work
+matrix with the corresponding eigenvectors.
+
+These operations select the operand device around the provider calls, since
 cuSOLVER launches into the calling thread's current device.
 
 Execution acquires buffer access on the cuSOLVER stream and synchronizes before

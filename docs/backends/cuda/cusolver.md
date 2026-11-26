@@ -2,8 +2,9 @@
 
 **Status:** the first native Tensor backend is implemented. It provides a
 blocking real `float`/`double` exact SVD for tall column-major CUDA matrices,
-blocking real and complex singular values, and a device-resident BlockTensor
-sector bridge used by the first CUDA two-site DMRG sweep path.
+blocking real and complex singular values, real symmetric eigensystems, and
+a device-resident BlockTensor sector bridge used by the first CUDA two-site
+DMRG sweep path.
 
 The generic host-execution and dispatch contract is defined in
 [CUDA Kernel Dispatch and Device Scheduling](kernel_dispatch.md). This note
