@@ -566,9 +566,9 @@ class EpochContext {
     }
 
     /// \brief Read the failure of the value currently held by the active writer.
-    /// \details In-place access checks this on every call, and most writers find no failure, so
-    ///          the exception-presence flag lets them skip the mutex. Debug builds still lock it to
-    ///          check the precondition.
+    /// \details `take()` checks this on every call, and in-place access once per writer handle.
+    ///          Most writers find no failure, so the exception-presence flag lets them skip the
+    ///          mutex. Debug builds still lock it to check the precondition.
     std::exception_ptr writer_exception() const noexcept
     {
 #if !defined(NDEBUG)
@@ -1349,7 +1349,6 @@ template <typename T> class EpochContextWriter {
       }
     }
 
-    /// \brief Consume the current value under the writer gate, propagating a failed producer.
     /// \brief Rethrow a failure that the epoch inherited from a failed producer.
     void rethrow_producer_failure() const
     {
@@ -1363,6 +1362,8 @@ template <typename T> class EpochContextWriter {
     {
       if (inherited_failure_checked_) [[likely]]
         return;
+      // A released handle has no epoch; data() then reports the missing value as before.
+      if (!epoch_) return;
       this->rethrow_producer_failure();
       inherited_failure_checked_ = true;
     }
@@ -1377,6 +1378,7 @@ template <typename T> class EpochContextWriter {
       return this->data();
     }
 
+    /// \brief Consume the current value under the writer gate, propagating a failed producer.
     T take()
     {
       this->rethrow_producer_failure();

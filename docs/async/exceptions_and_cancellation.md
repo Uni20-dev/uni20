@@ -42,10 +42,15 @@ Defined in `src/uni20/async/async_errors.hpp`.
 - consuming a value through `take()`, `take_release()`, or `move_from_wait()`
   rethrows the producer's exception before checking for a constructed value.
   Empty storage with no producer failure raises `buffer_write_uninitialized`.
-- in-place access through a write proxy (`get()`, `operator->`, conversion to
-  `T&`, and compound assignment such as `+=`) also rethrows a failure that the
-  epoch inherited, so an update never builds on a failed value. Assignment,
-  `emplace(...)` and `storage()` overwrite without checking.
+- in-place updates also rethrow a failure that the epoch inherited, so an
+  update never builds on a failed value. That covers value access through a
+  write proxy (`get()`, `operator->`, conversion to `T&`, and compound
+  assignment such as `+=`) and `Async<T>`'s compound operators.
+- assignment, `emplace(...)`, `storage()` and an async alias's descriptor are
+  not checked, because overwrites use them too. Linalg kernels reach their
+  outputs through `storage()` or a descriptor, so they do not check. Code that
+  updates through `storage()` can call `WriteBuffer::check_inherited_failure()`
+  first.
 
 ## Suspension Registration
 

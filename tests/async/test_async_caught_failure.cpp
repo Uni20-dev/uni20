@@ -1,6 +1,7 @@
 // A coroutine that catches a producer's failure finishes normally, whichever task ran first (#166).
 #include <gtest/gtest.h>
 #include <uni20/async/async.hpp>
+#include <uni20/async/async_ops.hpp>
 #include <uni20/async/awaiters.hpp>
 #include <uni20/async/debug_scheduler.hpp>
 
@@ -152,6 +153,50 @@ AsyncTask add_through_owning_proxy(WriteBuffer<int> w, bool& caught)
 
 AsyncTask add_uncaught(WriteBuffer<int> w) { co_await w += 10; }
 
+// A descriptor of the parent's value, as a view is of a tensor.
+struct IntView
+{
+    using async_alias_tag = void;
+
+    explicit IntView(int* value_in) : value(value_in) {}
+
+    int* value;
+};
+
+AsyncTask read_borrowed_descriptor(WriteBuffer<IntView> w, bool& reached)
+{
+  auto proxy = co_await w;
+  static_cast<void>(proxy.get().value);
+  reached = true;
+}
+
+AsyncTask read_owning_descriptor(WriteBuffer<IntView> w, bool& reached)
+{
+  auto proxy = co_await w.transfer();
+  static_cast<void>(proxy.get().value);
+  reached = true;
+}
+
+// Counts the updates applied to it.
+struct CountedValue
+{
+    int value = 0;
+    static inline int updates = 0;
+
+    CountedValue& operator+=(int x)
+    {
+      ++updates;
+      value += x;
+      return *this;
+    }
+};
+
+AsyncTask fail_after_writing_counted(WriteBuffer<CountedValue> writer)
+{
+  co_await writer = CountedValue{1};
+  throw ProducerFailure{};
+}
+
 // Writes 42 only after the child has returned.
 AsyncTask parent(AsyncTask child, WriteBuffer<int> out)
 {
@@ -238,6 +283,61 @@ TEST(AsyncCaughtFailureTest, InPlaceAccessAfterAFailedPredecessorRethrowsTheFail
       EXPECT_NO_THROW(EXPECT_EQ(out.get_wait(), 42));
       EXPECT_THROW((void)input.get_wait(), ProducerFailure);
     }
+  }
+}
+
+// Kernels overwrite as well as update through an async alias's descriptor, so reading the
+// descriptor does not rethrow an inherited failure.
+TEST(AsyncCaughtFailureTest, AliasDescriptorAccessAfterAFailedPredecessorDoesNotThrow)
+{
+  using MakeChild = AsyncTask (*)(WriteBuffer<IntView>, bool&);
+  for (auto order : orders)
+  {
+    SCOPED_TRACE(name(order));
+    for (MakeChild make_child : {read_borrowed_descriptor, read_owning_descriptor})
+    {
+      DebugScheduler sched;
+      ScopedScheduler scoped(&sched);
+      Async<int> input = 0;
+      auto view = make_async_alias<IntView>(input, input.storage_address());
+      Async<int> out = 0;
+      bool reached = false;
+      run_in_order(order, sched, input, [&] { return parent(make_child(view.write(), reached), out.write()); });
+      EXPECT_TRUE(reached);
+      EXPECT_NO_THROW(EXPECT_EQ(out.get_wait(), 42));
+      EXPECT_THROW((void)input.get_wait(), ProducerFailure);
+    }
+  }
+}
+
+// `x += y` updates the old value, like `co_await w += y`, so it never applies the update to the
+// value a failed producer left.
+TEST(AsyncCaughtFailureTest, AsyncCompoundAssignmentAfterAFailedPredecessorDoesNotUpdate)
+{
+  for (auto order : orders)
+  {
+    SCOPED_TRACE(name(order));
+    DebugScheduler sched;
+    ScopedScheduler scoped(&sched);
+    Async<CountedValue> x;
+    CountedValue::updates = 0;
+    auto producer = fail_after_writing_counted(x.write());
+    if (order == Order::ProducerFirst)
+    {
+      schedule(std::move(producer));
+      sched.run_all();
+      x += 5;
+      sched.run_all();
+    }
+    else
+    {
+      x += 5;
+      sched.run_all(); // the update waits for the producer
+      schedule(std::move(producer));
+      sched.run_all();
+    }
+    EXPECT_EQ(CountedValue::updates, 0);
+    EXPECT_THROW((void)x.get_wait(), ProducerFailure);
   }
 }
 
