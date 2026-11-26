@@ -87,7 +87,6 @@ consteval auto kernel_accepts_types(CusolverBackend const&, self_adjoint_eigh_op
 
 /// \brief Compute a symmetric eigensystem in real, column-major CUDA workspace.
 template <uni20::MutableRankedStridedMdspecLike<1> Values, uni20::MutableRankedStridedMdspecLike<2> Matrix>
-  requires detail::cusolver_backend::CusolverEighMdspecs<Values, Matrix>
 KernelAttempt try_kernel(CusolverBackend, self_adjoint_eigh_op const& operation, Values& values, Matrix& matrix)
 {
   using namespace detail::cusolver_backend;
