@@ -2,6 +2,8 @@
 # it. Uni20 links such a target as it is, so it must reject a known version below
 # its minimum, even when its own package hint names a newer installation, and
 # report the version it actually links, or none when that version is unknown.
+# This holds with UNI20_USE_SYSTEM_<NAME>=OFF too, since Uni20 cannot fetch a
+# second copy under the same name.
 # A script sets no policies of its own; CMP0007 must keep the empty case fields.
 cmake_minimum_required(VERSION 3.28)
 file(REMOVE_RECURSE "${test_binary_dir}")
@@ -39,8 +41,12 @@ file(WRITE "${parent}/child/CMakeLists.txt" [=[
 include("${UNI20_SOURCE_DIR}/cmake/Uni20Dependencies.cmake")
 if(case MATCHES "^cli")
   include("${UNI20_SOURCE_DIR}/cmake/Uni20CLI.cmake")
+  message(STATUS "CLI11 resolved as [${UNI20_CLI11_SOURCE}] [${UNI20_CLI11_VERSION}]")
   return()
 endif()
+# Keep any fetch attempt inside this build tree. Linking an existing target fetches nothing.
+set(UNI20_FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/uni20-deps")
+set(UNI20_FETCHCONTENT_SOURCE_BASE_DIR "${UNI20_FETCHCONTENT_BASE_DIR}")
 if(child_version)
   set(Fixture_DIR "${packages}/${child_version}")
 endif()
@@ -58,8 +64,11 @@ set(cases
   "newer_child_hint|ON|3.0|2.5|Fixture resolved as [system] [3.0]"
   "unversioned|ON|||Fixture resolved as [system] []"
   "unversioned_child_hint|ON||2.5|Fixture resolved as [system] []"
+  "off_older|OFF|1.0||Uni20 requires Fixture >= 2.0, but target 'Fixture::library' already exists with Fixture 1.0"
+  "off_newer|OFF|3.0||Fixture resolved as [system] [3.0]"
+  "off_unversioned|OFF|||Fixture resolved as [system] []"
   "cli_older|ON|2.6.0||Uni20 requires CLI11 >= 2.7.2, but target 'CLI11::CLI11' already exists with CLI11 2.6.0"
-  "cli_newer|ON|2.8.0||")
+  "cli_newer|ON|2.8.0||CLI11 resolved as [parent] [2.8.0]")
 foreach(entry IN LISTS cases)
   string(REPLACE "|" ";" fields "${entry}")
   list(GET fields 0 case)

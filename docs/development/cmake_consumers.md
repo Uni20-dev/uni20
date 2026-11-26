@@ -121,7 +121,8 @@ choices before adding Uni20.
 
 If the parent has already created a dependency's target, such as `fmt::fmt`,
 `TBB::tbb` or `benchmark::benchmark`, Uni20 links that target and cannot fetch
-a replacement. A parent that imported it with `find_package()` leaves the
+a replacement. This holds for every `UNI20_USE_SYSTEM_<NAME>` setting, including
+`OFF`. A parent that imported it with `find_package()` leaves the
 package's `<Name>_VERSION` visible to Uni20, and Uni20 stops at configure time
 when that version is below its minimum. It checks before its own package lookup,
 so a `<Name>_DIR` naming a newer installation does not hide the parent's older

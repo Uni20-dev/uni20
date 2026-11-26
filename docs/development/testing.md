@@ -443,7 +443,8 @@ An existing-target check gives Uni20 targets that a parent created with an older
 a newer, or no recorded version. It requires configure-time rejection of the
 older ones, including CLI11 and a case where Uni20's own package hint names a
 newer installation. The version reported must be the parent's, or none when
-the parent's target has no recorded version.
+the parent's target has no recorded version. With `UNI20_USE_SYSTEM_<NAME>=OFF`,
+the parent's target must still be linked rather than fetched again.
 Vendor-detection checks cover imported configuration mappings, fallback
 locations, and import libraries, using CMake's resolved locations as an
 independent oracle. The configuration-only vendor fixture models a Windows

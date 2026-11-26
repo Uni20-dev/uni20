@@ -330,8 +330,18 @@ function(uni20_add_dependency)
     endforeach()
   endif()
 
+  # An existing target is linked in every mode. With OFF, Uni20 cannot fetch a
+  # second copy under the same name.
+  if(_uni20_existing_target)
+    set(_uni20_found_system_package TRUE)
+  endif()
+
   if(_uni20_found_system_package)
-    message(STATUS "Using system ${DEP_NAME}: ${${DEP_NAME}_DIR}")
+    if(_uni20_existing_target)
+      message(STATUS "Using existing ${DEP_NAME} target ${DEP_TARGET}")
+    else()
+      message(STATUS "Using system ${DEP_NAME}: ${${DEP_NAME}_DIR}")
+    endif()
 
     set(${source_var} "system" CACHE STRING "Source type for ${DEP_NAME} (system or fetched)" FORCE)
     set(${target_var} ${DEP_TARGET} CACHE STRING "CMake imported target name for ${DEP_NAME}" FORCE)
