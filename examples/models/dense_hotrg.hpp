@@ -126,7 +126,6 @@ struct host_place
     {
       return tensor<R, sizeof...(Extents)>(uni20::uninitialized, static_cast<idx>(extents)..., p);
     }
-    void drain() const {}
 };
 
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
@@ -147,8 +146,6 @@ struct device_place
     {
       return uni20::to_device(t, *resources);
     }
-    // Device work is queued; a timer waits for the queue so that it sees the work it measures.
-    void drain() const { resources->streams().synchronize(); }
 };
 #endif
 
@@ -167,26 +164,30 @@ template <class Tensor> [[nodiscard]] auto place_of([[maybe_unused]] Tensor cons
 
 template <class Tensor> using place_type = decltype(place_of(std::declval<Tensor const&>()));
 
+// Wait until the work that writes `t` has finished, so that a timer sees it.  Host work has
+// finished already.  A CUDA tensor's buffer waits for the submitted operations that involve it,
+// and for nothing else submitted to the device.
+template <class Tensor> void wait_for([[maybe_unused]] Tensor const& t)
+{
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+  if constexpr (std::same_as<uni20::tensor_storage_policy_t<std::remove_cvref_t<Tensor>>, uni20::CudaStorage>)
+    uni20::mdspec_of(t).data_descriptor().buffer().synchronize();
+#endif
+}
+
 namespace detail
 {
 
-template <class Place> struct lap
+// Wall time spent in a scope.  A timed scope that queues device work ends with `wait_for` on the
+// tensor that work writes; each scope's inputs were waited for by the scope that wrote them.
+struct lap
 {
-    Place place;
     double& slot;
-    std::chrono::steady_clock::time_point start;
-    lap(Place where, double& target) : place(where), slot(target)
-    {
-      place.drain();
-      start = std::chrono::steady_clock::now();
-    }
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    explicit lap(double& target) : slot(target) {}
     lap(lap const&) = delete;
     lap& operator=(lap const&) = delete;
-    ~lap()
-    {
-      place.drain();
-      slot += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    }
+    ~lap() { slot += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(); }
 };
 
 // The tensor with its axes regrouped, as an owning column-major tensor in the same place, at
@@ -194,9 +195,10 @@ template <class Place> struct lap
 template <std::size_t... Axis, class Source> [[nodiscard]] auto permuted(Source const& t, uni20::Precision p)
 {
   auto const place = place_of(t);
-  lap const timer(place, spent().regroup);
+  lap const timer(spent().regroup);
   auto result = place.template make<typename Source::value_type>(p, t.extent(Axis)...);
   uni20::copy(result, uni20::permute<Axis...>(t));
+  wait_for(result);
   return result;
 }
 
@@ -423,24 +425,27 @@ template <class Tensor4> [[nodiscard]] inline auto gram_y(Tensor4 const& t)
   // Each contraction output is written by a beta = 0 contraction before it is read.
   auto upper = place.template make<R>(p, n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
   {
-    detail::lap const timer(place, spent().contract);
+    detail::lap const timer(spent().contract);
     uni20::linalg::contract(upper, uni20::scalar_at_precision<R>(1, p), t_ld_ur, t_ld_ur,
                             array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(upper);
   }
   auto lower = place.template make<R>(p, n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
   {
-    detail::lap const timer(place, spent().contract);
+    detail::lap const timer(spent().contract);
     uni20::linalg::contract(lower, uni20::scalar_at_precision<R>(1, p), t_lu_rd, t_lu_rd,
                             array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(lower);
   }
   auto const a = detail::permuted<0, 2, 1, 3>(upper, p); // [l1, l1', s, s']
   auto const b = detail::permuted<1, 3, 0, 2>(lower, p); // [s, s', l2, l2']
 
   auto paired = place.template make<R>(p, n, n, n, n); // [l1, l1', l2, l2']
   {
-    detail::lap const timer(place, spent().contract);
+    detail::lap const timer(spent().contract);
     uni20::linalg::contract(paired, uni20::scalar_at_precision<R>(1, p), a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}},
                             uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(paired);
   }
   return detail::permuted<0, 2, 1, 3>(paired, p); // [l1, l2, l1', l2']
 }
@@ -485,17 +490,19 @@ template <class Tensor4, class Tensor3>
     auto const h1 = [&] {
       auto first = place.template make<R>(p, mu, n, ms, n, k);
       {
-        detail::lap const timer(place, spent().contract);
+        detail::lap const timer(spent().contract);
         uni20::linalg::contract(first, uni20::scalar_at_precision<R>(1, p), tu, iso, array<axis_pair, 1>{{{3, 0}}},
                                 uni20::scalar_at_precision<R>(0, p), p);
+        wait_for(first);
       }
       return detail::permuted<0, 1, 4, 3, 2>(first, p);
     }();
     auto held = place.template make<R>(p, mu, n, k, n, md);
     {
-      detail::lap const timer(place, spent().contract);
+      detail::lap const timer(spent().contract);
       uni20::linalg::contract(held, uni20::scalar_at_precision<R>(1, p), h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
                               uni20::scalar_at_precision<R>(0, p), p);
+      wait_for(held);
     }
     return held;
   }();
@@ -504,9 +511,10 @@ template <class Tensor4, class Tensor3>
   // [k1, d, u, k2] = sum_{r1, r2} H2 U
   auto third = place.template make<R>(p, k, md, mu, k);
   {
-    detail::lap const timer(place, spent().contract);
+    detail::lap const timer(spent().contract);
     uni20::linalg::contract(third, uni20::scalar_at_precision<R>(1, p), h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
                             uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(third);
   }
   return detail::permuted<2, 0, 3, 1>(third, p); // [u, k1, k2, d]
 }
@@ -544,7 +552,7 @@ template <uni20::Real R> [[nodiscard]] inline gram_cut<R, host_place> cut_gram(t
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
   auto decomposition = [&] {
-    lap const timer(host_place{}, spent().svd);
+    lap const timer(spent().svd);
     return uni20::linalg::truncated_svd(
         uni20::reshape_view(theta, n * n, n * n),
         uni20::linalg::SvdTruncationPolicy<R>{.maximum_retained_extent = std::min(D, rows)}, p);
@@ -593,7 +601,7 @@ template <uni20::Real R>
   uni20::CudaTensor<R, 1> values(uni20::uninitialized, resources, rows);
   auto U = place.template make<R>(p, n, n, k);
   {
-    lap const timer(place, spent().svd);
+    lap const timer(spent().svd);
     auto matrix = uni20::reshape(std::move(theta), rows, rows);
     uni20::linalg::singular_value_decomposition(values, left, right_adjoint, matrix);
     uni20::Tensor<R, 2> leading(rows, k, p); // zero-initialized
@@ -602,6 +610,7 @@ template <uni20::Real R>
     auto const selector = place.upload(leading);
     uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, left, selector, std::array<axis_pair, 1>{{{1, 0}}},
                             R{0}, p);
+    wait_for(U);
   }
   auto const s = uni20::to_host(values);
 
@@ -703,7 +712,7 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
   R const unit_lnz = initial + uni20::math::log(torus_trace(unit.tensor));
   flow_record<R> record{.initial_log_scale = initial, .unit_lnz = unit_lnz, .T0 = std::move(unit.tensor)};
   R sum = initial, weight = uni20::scalar_at_precision<R>(1, p);
-  Place const place{};
+  [[maybe_unused]] Place const place{}; // where a host input is placed
   auto rounds = [&](auto& T) {
     for (int step = 0; step < steps; ++step)
     {
@@ -722,7 +731,7 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
       record.discarded_x.push_back(along_x.discarded);
       record.gap_y.push_back(along_y.gap);
       record.gap_x.push_back(along_x.gap);
-      place.drain();
+      wait_for(T);
       record.seconds.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
       record.seconds_contract.push_back(spent().contract - before.contract);
       record.seconds_regroup.push_back(spent().regroup - before.regroup);
