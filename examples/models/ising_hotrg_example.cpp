@@ -648,7 +648,7 @@ void the_step_on_cuda_tensors()
   d::emit(p::report_builder("I  the step on CUDA tensors against the host"), d::stream::out);
   {
     tensor4 const t = random4(3, 4, 4, 3, 4321);
-    double const off = relative_difference(gram_y(t), uni20::to_host(gram_y(device_place::upload(t))));
+    double const off = relative_difference(gram_y(t), uni20::to_host(gram_y(device_place{}.upload(t))));
     d::emit(text("gram of a (3, 4, 4, 3) tensor: off the host by {:.2e} of its largest entry", off), d::stream::out);
     report(off < 1e-13, "the gram of a CUDA tensor is the host's");
   }
@@ -659,7 +659,7 @@ void the_step_on_cuda_tensors()
     for (auto& value : iso.storage())
       value = g.next();
     auto const on_device =
-        apply_isometry(device_place::upload(upper), device_place::upload(lower), device_place::upload(iso));
+        apply_isometry(device_place{}.upload(upper), device_place{}.upload(lower), device_place{}.upload(iso));
     double const off = relative_difference(apply_isometry(upper, lower, iso), uni20::to_host(on_device));
     d::emit(text("update network, upper (3, 4, 4, 5), lower (5, 4, 4, 2), isometry (4, 4, 6): off by {:.2e}", off),
             d::stream::out);
@@ -668,7 +668,7 @@ void the_step_on_cuda_tensors()
   double const K = critical_coupling<double>(model::clock, 2, uni20::native_precision<double>());
   {
     flow_record const start = flow(vertex(model::clock, 2, K), 4, 2); // a generic 4^4 tensor
-    auto const t_device = device_place::upload(start.T0);
+    auto const t_device = device_place{}.upload(start.T0);
     for (axis along : {axis::y, axis::x})
     {
       char const* const name = along == axis::y ? "y" : "x";
@@ -698,6 +698,23 @@ void the_step_on_cuda_tensors()
                  got.lnz.back(), lnz, cut),
             d::stream::out);
     report(lnz < 1e-11 && cut < 1e-9, "bond " + std::to_string(D) + ": the flow on CUDA tensors is the host's");
+  }
+  if (int count = 0; cudaGetDeviceCount(&count) == cudaSuccess && count > 1)
+  {
+    // A step on a tensor held by a device that is not the runtime's default stays on that device.
+    int const other = (uni20::cuda::device_resources().device().ordinal() + 1) % count;
+    flow_record const start = flow(vertex(model::clock, 2, K), 4, 2);
+    auto const t_other = uni20::to_device(start.T0, other);
+    step_result const expected = coarse_grain(start.T0, axis::x, 6);
+    auto const got = coarse_grain(t_other, axis::x, 6);
+    bool const placed = place_of(got.T).resources->device().ordinal() == other &&
+                        place_of(got.U).resources->device().ordinal() == other;
+    double const spectrum = largest_difference(expected.S, got.S) / expected.S.front();
+    d::emit(text("x step on device {}: results on devices {} and {}, spectrum off the host by {:.1e}", other,
+                 place_of(got.T).resources->device().ordinal(), place_of(got.U).resources->device().ordinal(),
+                 spectrum),
+            d::stream::out);
+    report(placed && spectrum < 1e-12, "a step on another device keeps its results there");
   }
   {
     // The observer of a CUDA flow sees the same record as on the host: T0 is the tensor it is given.
@@ -848,8 +865,9 @@ template <class Integer> Integer parse_integer(std::string_view text, Integer le
 // The exit status when the requested CUDA device does not exist; CTest reads it as a skip.
 constexpr int no_cuda_device = 77;
 
-// Initialize the CUDA runtime on one device for the lifetime of `run`.
-template <class Run> int on_cuda_device(int device, Run&& run)
+// Initialize the CUDA runtime for the lifetime of `run`, with `device` as the default.  The
+// checks enroll every visible device, so that they can place a tensor on another one.
+template <class Run> int on_cuda_device(int device, bool every_device, Run&& run)
 {
   int count = 0;
   if (cudaError_t const status = cudaGetDeviceCount(&count); status != cudaSuccess || device >= count)
@@ -858,8 +876,10 @@ template <class Run> int on_cuda_device(int device, Run&& run)
                status != cudaSuccess ? std::string(cudaGetErrorString(status)) : std::to_string(count) + " devices");
     return no_cuda_device;
   }
-  auto runtime =
-      uni20::cuda::initialize({.device_ordinals = {device}, .default_device = device, .streams_per_device = 4});
+  std::vector<int> ordinals; // empty: every visible device
+  if (!every_device) ordinals.push_back(device);
+  auto runtime = uni20::cuda::initialize(
+      {.device_ordinals = std::move(ordinals), .default_device = device, .streams_per_device = 4});
   uni20::cuda::ScopedDevice const selected(device);
   return run();
 }
@@ -919,13 +939,13 @@ int main(int argc, char** argv)
     if (execution == "cuda")
     {
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
-      if (check) return on_cuda_device(cuda_device, [] { return run_checks(true); });
+      if (check) return on_cuda_device(cuda_device, true, [] { return run_checks(true); });
       if (precision == "fp32")
-        return on_cuda_device(cuda_device, [&] {
+        return on_cuda_device(cuda_device, false, [&] {
           return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points);
         });
       if (precision == "fp64")
-        return on_cuda_device(cuda_device, [&] {
+        return on_cuda_device(cuda_device, false, [&] {
           return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points);
         });
       usage("--execution=cuda takes --precision=fp32 or fp64");
