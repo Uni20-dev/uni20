@@ -162,7 +162,10 @@ template <typename T> class EpochContextWriter;
 //
 // If there is a next_epoch_, then the cancellation and exception status is propogated forwards.
 //
-// co_await on a WriteBuffer on a cancelled or exception EpochContext passes the error into the coroutine.
+// A failure reaches a coroutine only through a value it reads or takes, whether or not the coroutine
+// suspended first. A writer on an epoch that inherited a failure still runs, take() rethrows the
+// failure, and the epoch keeps it for its readers. A coroutine that catches the failure finishes
+// normally (#166). Resuming a coroutine with a failure only notes it for task diagnostics.
 //
 
 class EpochQueue;
@@ -715,7 +718,7 @@ class EpochContext {
         DEBUG_TRACE_MODULE(ASYNC, "EpochContext::reader_bind is scheduling the task immediately", this, counter_);
         std::exception_ptr my_eptr = eptr_;
         lock.unlock();
-        if (my_eptr) h.exception_on_resume(my_eptr);
+        if (my_eptr) h.note_upstream_failure(my_eptr);
         BasicTask::reschedule(std::move(h));
       }
       else
@@ -827,7 +830,7 @@ class EpochContext {
       DEBUG_CHECK(phase_ == Phase::Writing);
       DEBUG_CHECK(!writer_active_);
 
-      if (eptr_) task.task.exception_on_resume(eptr_);
+      if (eptr_) task.task.note_upstream_failure(eptr_);
       writer_active_ = true;
       lock.unlock();
       BasicTask::reschedule(std::move(task.task));
@@ -867,7 +870,7 @@ class EpochContext {
 
       for (auto&& task : my_reader_tasks)
       {
-        if (my_eptr) task.task.exception_on_resume(my_eptr);
+        if (my_eptr) task.task.note_upstream_failure(my_eptr);
         BasicTask::reschedule(std::move(task.task));
       }
     }

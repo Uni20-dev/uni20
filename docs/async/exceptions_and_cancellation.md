@@ -78,7 +78,27 @@ live registry report and optional DOT artifact. This policy is off by default
 because an exception escaping one coroutine may still be expected and observed
 at a downstream `Async<T>` boundary.
 
-At continuation/final-suspend boundaries, stored exceptions are forwarded to continuation promises.
+At final suspension, the stored exception goes to the awaiting coroutine, which
+receives it at `co_await child`.
+
+## Caught Upstream Failures
+
+A coroutine sees a producer's failure only through a value it reads or takes,
+and ordinary C++ `catch` rules apply. If the coroutine catches the failure and
+returns normally, its parent continues past `co_await child`. The outcome is
+the same whether the value was ready when the coroutine awaited it or the epoch
+resumed the coroutine after the producer failed (#166).
+
+- The source epoch keeps the failure, so its other consumers still receive it.
+- A writer on an epoch that inherited a failure still runs. `take()` rethrows
+  the failure, and a writer that only overwrites the value never sees it.
+  Readers of that epoch still receive the inherited failure.
+- If an exception escapes the coroutine, the parent receives that exception,
+  not an upstream failure the coroutine caught earlier.
+
+An epoch that resumes a coroutine with a stored failure only notes the failure
+for task diagnostics. The debug registry uses that note to tell an exception
+the coroutine passed on from one it raised.
 
 ## Exception Sink Registration
 
@@ -200,6 +220,9 @@ Important tests in `tests/async/test_async_basic.cpp` cover:
 - explicit routing with `propagate_exceptions_to(...)`
 - duplicate explicit registration no-op behavior
 - fail-fast path for destroyed explicit sinks during unwind
+
+`tests/async/test_async_caught_failure.cpp` runs caught and uncaught upstream
+failures in both scheduling orders.
 
 ## Related References
 

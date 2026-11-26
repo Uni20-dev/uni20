@@ -293,9 +293,9 @@ TEST(AsyncUnwindingTest, CoroutineHoldingAnOwningParameterDeliversItsFailure)
   EXPECT_EQ(value.get_wait(), 5);
 }
 
-// An epoch that resumes a waiting coroutine with an upstream failure records it on the promise,
-// and the parent still receives it after the child has handled it (#166). Only an exception that
-// escapes the body destroys the frame as failed, so the value the child wrote stays.
+// An epoch that resumes a waiting coroutine with an upstream failure doesn't fail the coroutine
+// (#166). The child handles the failure, so its frame is destroyed as finished and the value it
+// wrote stays.
 TEST(AsyncUnwindingTest, ChildThatHandledAnUpstreamFailureKeepsItsOwningParameterValue)
 {
   {
@@ -322,7 +322,7 @@ TEST(AsyncUnwindingTest, ChildThatHandledAnUpstreamFailureKeepsItsOwningParamete
     EXPECT_NO_THROW(EXPECT_EQ(value.get_wait(), -1));
   }
   {
-    // A writer waiting for a failed predecessor is resumed with the failure, with nothing to catch.
+    // A writer waiting for a failed predecessor never sees the failure.
     DebugScheduler sched;
     ScopedScheduler scoped(&sched);
     Async<int> other = 0;
