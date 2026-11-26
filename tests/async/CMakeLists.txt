@@ -7,7 +7,8 @@ add_test_module(async
           test_async_destroy.cpp test_async_task_lifetime.cpp test_future_value.cpp test_reverse_value.cpp test_var.cpp
           test_async_deferred.cpp test_async_emplace.cpp test_async_default_init_threads.cpp
           test_async_move.cpp test_async_alias.cpp test_async_toys.cpp test_shared_storage.cpp
-          test_task_registry.cpp
+          test_task_registry.cpp test_task_registry_lifetime.cpp
+          test_async_unwinding.cpp test_async_caught_failure.cpp
   LIBS uni20_common uni20_async
 )
 
@@ -15,7 +16,8 @@ add_test_module(async
 # https://github.com/google/googletest/blob/main/docs/advanced.md#death-tests-and-threads
 add_test_module(async_tbb
   SOURCES test_tbb_numa_scheduler.cpp test_scheduler_stress.cpp test_tbb_scheduler.cpp
-          test_tbb_single_concurrency.cpp test_tbb_wait.cpp
+          test_tbb_single_concurrency.cpp test_tbb_wait.cpp test_async_unwinding_threads.cpp
+          test_async_write_proxy_threads.cpp
   LIBS uni20_common uni20_async TBB::tbb
 )
 
@@ -26,6 +28,7 @@ if(UNI20_DEBUG_ASYNC_TASKS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     NAME TaskRegistryDebugTest.SignalEnvironmentStartsDiagnosticsServiceAtStartup
     COMMAND
       ${CMAKE_COMMAND} -E env
+      --unset=UNI20_DEBUG_DAG_REQUEST_FILE
       UNI20_DEBUG_DAG_SIGNAL=SIGUSR1
       UNI20_DEBUG_DAG_POLL_MS=10
       UNI20_DEBUG_DAG_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/task_registry_signal_startup

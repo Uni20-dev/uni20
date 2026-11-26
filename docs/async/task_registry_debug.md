@@ -165,7 +165,61 @@ Shape-like objects that expose `mdspan().extents()` or `extents()` may also show
 `value=shape=(...)`; built-in scalar values show their value. Other constructed
 objects omit the `value=...` line by default. Custom types can provide a one-line
 `uni20_async_debug_value(T const&)` overload in their own namespace to override
-the default.
+the default. If it throws, the dump shows `value=(debug value threw: ...)` for that
+value and continues. `state=expired` means the storage has since been released;
+see below.
+
+#### Reading live values
+
+A snapshot may run while the program is running: on the diagnostics service
+thread, at a scheduler progress point, or from another thread. It never keeps
+anything alive for history, and it never reads anything that may already be gone:
+
+- **Released values.** A value node outlives its value, for example in the await
+  history of a task. Once the storage has been released, the node keeps its edges
+  and shows `state=expired`.
+- **Values released during the snapshot.** While a snapshot reads an epoch or a
+  value, it holds a reference to it. If the program drops the last owner at that
+  moment, the epoch or value is destroyed when the snapshot finishes reading it,
+  on the snapshotting thread. Its destructor, or that of an exception the epoch
+  stores, may release async buffers and so wake waiting tasks. Until the snapshot
+  has released everything, `TaskRegistry::snapshots_in_progress()` reports it,
+  and `DebugScheduler` does not report a deadlock while it does.
+- **Values being written.** A snapshot formats a value only after joining the
+  value's current epoch as a reader, and only while that epoch is in its reading
+  phase. Its writers have then finished, and the next writer waits for the
+  snapshot as it waits for any reader, for as long as the formatter runs. When
+  the read ends, the snapshotting thread reschedules that writer, possibly after
+  a `run_all()` that found nothing runnable has returned; `get_wait()` on a
+  result waits for it. The snapshot never waits for a writer. If it cannot
+  join, the label shows `value not read: <reason>` in place of the value, and
+  the state and address are still shown. The reasons are `writer active`,
+  `epoch busy` (a best-effort snapshot found the epoch's lock taken),
+  `not in a reading phase`, and `no live epoch`.
+- **Writers already waiting.** A snapshot also joins an epoch whose next writer
+  is already queued behind its ordinary readers. If the snapshot is still
+  formatting when those readers finish, it extends that writer's wait, and
+  overlapping snapshots can extend it further. Each extension is bounded by one
+  formatting. Values with a waiting writer are often the ones a deadlock dump
+  needs to show, so the snapshot still reads them. If this delay ever matters,
+  admission could instead refuse an epoch that already has a successor.
+
+No registry or epoch lock is held while a value's formatter runs, so a custom
+`uni20_async_debug_value` may use the synchronized accessors of an epoch it
+already holds, such as `EpochContext::node()`, even for the epoch the snapshot
+joined. It must only observe: it must not write or wait for async values, and a
+hook that waited for a writer of the value it is formatting would wait for
+itself. Nor may it walk an `Async` or its epoch queue: the program serializes
+queue-head operations, such as enrolling the next writer, on its own threads, and
+the snapshot does not take part in that.
+
+Writes that bypass the epochs are not synchronized with a live snapshot: through
+`Async<T>::value_ptr()`, a copied `storage()` handle, `unsafe_set()` or
+`unsafe_value_ref()`. Avoid them while snapshots may run, or expect a snapshot to
+race with them.
+
+A node created from a raw `T const*` pointer, rather than from async storage, has
+no lifetime guarantee. A snapshot shows only its identity and never formats it.
 
 Async values and coroutine tasks can be labelled explicitly for diagnostic output:
 
@@ -239,8 +293,8 @@ uni20::TaskRegistry::set_coroutine_exception_diagnostics_options({
 
 The policy is process-wide rather than thread-local because a coroutine may resume
 on a different worker thread. Only the coroutine that originates an exception
-triggers automatic capture; downstream coroutines that merely rethrow the injected
-exception are still marked failed in later live snapshots but do not each write a
+triggers automatic capture; downstream coroutines that rethrow a failure an epoch
+reported when it resumed them are still marked failed in later live snapshots but do not each write a
 duplicate file. “Unhandled” here has the standard coroutine meaning of escaping
 one coroutine body. The exception may still be intentionally observed later at an
 `Async<T>` boundary.
@@ -274,14 +328,51 @@ options.signal_number = SIGUSR1; // Linux/POSIX use only
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
-The service owns a background thread. It writes best-effort DOT files when a request
-file appears, when the configured signal is received, or when program code calls
-`request_graphviz_dump()`. A signal is consumed with `sigtimedwait` on Linux rather
-than by doing work inside a signal handler. Setting `UNI20_DEBUG_DAG_SIGNAL`
-automatically starts the service during program initialization, allowing the signal
-to be blocked before namespace-scope users and worker threads are created. Without
-that environment variable, callers must start the service explicitly before creating
-threads that should inherit the blocked signal mask.
+The service owns a background thread. At each poll it checks for a signal request
+or a request file and writes a best-effort DOT dump with the service's output
+options if either is present. It also services queued `request_graphviz_dump()` calls.
+
+On Linux the service installs a process-wide signal handler, so it can start
+after worker threads already exist. For a signal sent to the process (for
+example, `kill -USR1 <pid>`), the kernel chooses a thread that has the signal
+unblocked. The handler only increments a lock-free counter. If it interrupts a
+system call on that thread, `SA_RESTART` restarts some calls automatically.
+Calls such as `poll()` and `select()` can still return `-1` with `errno` set
+to `EINTR`.
+
+To confine delivery to the diagnostics thread, block the configured signal with
+`pthread_sigmask()` in the main thread before creating other threads. New threads
+inherit that mask, and the diagnostics thread explicitly unblocks the signal for
+itself. Any existing thread that also needs to block the signal must update its
+own mask.
+
+The signal must be `SIGUSR1` or `SIGUSR2`, the two signals POSIX reserves for
+applications, and `start_diagnostics_service()` returns false for any other. The
+kernel raises a fault signal such as `SIGFPE` at the faulting instruction, which
+traps again as soon as a handler returns. Reserve an unused signal for diagnostics.
+The service checks the disposition with `sigaction()` and refuses to replace an
+installed handler. A program can also receive a blocked signal through `sigwait()`
+or `signalfd()` while leaving its disposition at the default. Uni20 cannot detect
+those consumers. For example, if a checkpoint thread waits for `SIGUSR1`, reserve
+`SIGUSR2` for diagnostics if it is free. Sharing `SIGUSR1` would allow the
+diagnostics thread to receive a signal intended for checkpointing.
+
+A program that installs its own handler after the service starts takes the signal
+back, and stopping the service then leaves that handler in place.
+
+The service reads and changes the signal's action in separate steps, so install the
+program's own handlers before starting the service, not concurrently with
+`start_diagnostics_service()` or `stop_diagnostics_service()`.
+
+A process gives a signal to the service once: stopping the service restores the
+signal's previous action, and a later start with a signal returns false. A service
+without a signal can still be started again. Setting `UNI20_DEBUG_DAG_SIGNAL` starts
+the service during program initialization.
+
+After `fork()`, only the parent retains the diagnostics thread. The child's
+diagnostics finalizer skips shutdown of the inherited service. In the child of a
+multithreaded process, use only async-signal-safe operations until `exec()` or
+`_exit()`. See [fork(2)](https://man7.org/linux/man-pages/man2/fork.2.html).
 
 Default output and service settings can be configured with environment variables:
 
@@ -291,7 +382,7 @@ Default output and service settings can be configured with environment variables
 | `UNI20_DEBUG_DAG_FILE_PREFIX` | Default DOT filename prefix; defaults to `uni20-dag` |
 | `UNI20_DEBUG_DAG_DUMP_ON_EXCEPTION` | Enable a live registry report and DOT snapshot when an exception originates in an async coroutine; defaults to off |
 | `UNI20_DEBUG_DAG_REQUEST_FILE` | Control file consumed by `start_diagnostics_service()` |
-| `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service, e.g. `SIGUSR1`, `USR2`, or a number; setting it starts the service during program initialization |
+| `UNI20_DEBUG_DAG_SIGNAL` | Signal for the service: `SIGUSR1` or `SIGUSR2`, also written `USR1`, `USR2` or as the signal's number; setting it starts the service during program initialization, and any other signal is reported on stderr |
 | `UNI20_DEBUG_DAG_POLL_MS` | Diagnostics-service poll interval in milliseconds |
 | `UNI20_DEBUG_DAG_STACKTRACE_FRAMES` | Maximum stack frames retained in snapshots and DOT tooltips; `0` hides trace text, `all`/`full`/`unlimited`/`max` disables the cap |
 | `UNI20_DEBUG_DAG_STACKTRACE_INTERNAL_FRAMES` | Whether stacktrace text includes internal Uni20/libstdc++ frames; defaults to `true` |

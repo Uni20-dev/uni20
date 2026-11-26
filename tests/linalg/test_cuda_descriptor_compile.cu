@@ -1,7 +1,10 @@
 #include <uni20/core/compiler_attributes.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
+#include <uni20/mdspan/diagonal_view.hpp>
 #include <uni20/mdspan/generated_accessor.hpp>
 #include <uni20/mdspan/generated_layout.hpp>
+#include <uni20/mdspan/mdspan.hpp>
+#include <uni20/mdspan/reverse.hpp>
 #include <uni20/mdspan/transform_view.hpp>
 #include <uni20/mdspan/zip_layout.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
@@ -17,14 +20,22 @@
 namespace
 {
 
-using extents_type = stdex::dextents<uni20::index_type, 2>;
-using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-using left_mapping = stdex::layout_left::mapping<extents_type>;
-using right_mapping = stdex::layout_right::mapping<extents_type>;
-using stride_mapping = stdex::layout_stride::mapping<extents_type>;
+using extents_type = uni20::dextents<uni20::index_type, 2>;
+using vector_extents_type = uni20::dextents<uni20::index_type, 1>;
+using mixed_extents_type = uni20::extents<uni20::index_type, 2, uni20::dynamic_extent>;
+static_assert(mixed_extents_type{3}.extent(1) == 3);
+
+[[maybe_unused]] __global__ void read_mixed_extents(mixed_extents_type shape, uni20::index_type* output)
+{
+  *output = shape.extent(1);
+}
+
+using left_mapping = uni20::layout_left::mapping<extents_type>;
+using right_mapping = uni20::layout_right::mapping<extents_type>;
+using stride_mapping = uni20::layout_stride::mapping<extents_type>;
 using generated_mapping = uni20::GeneratedLayout::mapping<extents_type>;
 using strided_zip_mapping = uni20::StridedZipLayout<2>::mapping<extents_type>;
-using general_zip_mapping = uni20::GeneralZipLayout<uni20::GeneratedLayout, stdex::layout_left>::mapping<extents_type>;
+using general_zip_mapping = uni20::GeneralZipLayout<generated_mapping, left_mapping>::mapping<extents_type>;
 
 struct DeviceScale
 {
@@ -63,11 +74,11 @@ struct DeviceGeneratedValue
 
 using cuda_input_accessor = uni20::cuda::CudaPointerAccessor<double const>;
 using cuda_output_accessor = uni20::cuda::CudaPointerAccessor<double>;
-using cuda_input_span = stdex::mdspan<double const, vector_extents_type, stdex::layout_left, cuda_input_accessor>;
+using cuda_input_span = uni20::mdspan<double const, vector_extents_type, uni20::layout_left, cuda_input_accessor>;
 using unary_transform_span = decltype(uni20::transform_view(DeviceScale{}, std::declval<cuda_input_span const&>()));
 using binary_transform_span = decltype(uni20::transform_view(DeviceAdd{}, std::declval<cuda_input_span const&>(),
                                                              std::declval<cuda_input_span const&>()));
-using complex_cuda_input_span = stdex::mdspan<uni20::cfloat const, vector_extents_type, stdex::layout_left,
+using complex_cuda_input_span = uni20::mdspan<uni20::cfloat const, vector_extents_type, uni20::layout_left,
                                               uni20::cuda::CudaPointerAccessor<uni20::cfloat const>>;
 using complex_transform_span =
     decltype(uni20::transform_view(DeviceComplexScale{}, std::declval<complex_cuda_input_span const&>()));
@@ -140,11 +151,47 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   if (unary_value == binary_value && complex_value.real() == 0.0F) return;
 }
 
+[[maybe_unused]] __global__ void diagonal_mapping_probe(double* output)
+{
+  using layout_type = uni20::detail::DiagonalLayout;
+  layout_type::mapping<extents_type> mapping(extents_type{3, 2}, {4, 3});
+  output[0] = static_cast<double>(mapping(2, 1) + mapping.required_span_size() + mapping.stride(0));
+}
+
+using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left, cuda_output_accessor, int>;
+
+[[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
+{
+  static_assert(shape_descriptor::is_base_offset_always_zero());
+  *result = descriptor->empty() ? 0 : descriptor->size();
+}
+
+[[maybe_unused]] __global__ void native_mdspan_probe(double* output)
+{
+  uni20::layout_stride::mapping<extents_type> const mapping{extents_type{3, 2}, {4, 3}};
+  auto span = uni20::mdspan{output, mapping};
+  static_assert(decltype(span)::is_base_offset_always_zero());
+  std::array<int, 2> const last{2, 1};
+  span[last] = static_cast<double>(span.size() + span.mapping().required_span_size() + span.mapping().base_offset());
+
+  using scalar_shape = uni20::extents<uni20::index_type>;
+  auto scalar = uni20::mdspan{output, uni20::layout_left::mapping<scalar_shape>{}};
+  scalar[std::array<int, 0>{}] = span[last];
+}
+
 [[maybe_unused]] __global__ void conjugate_proxy_probe(uni20::cfloat* value)
 {
   uni20::cuda::CudaPointerAccessor<uni20::cfloat> accessor;
   auto reference = accessor.access(value, 0);
   reference = uni20::cuda::CudaConjugate{}(reference);
+}
+
+[[maybe_unused]] __global__ void signed_stride_probe(double* output, double const* input)
+{
+  auto const reversed = uni20::reverse<1>(uni20::mdspan{input, 2, 3});
+  auto const& mapping = reversed.mapping();
+  output[0] =
+      reversed[std::array<int, 2>{0, 2}] + static_cast<double>(mapping.base_offset() + mapping.required_span_size());
 }
 
 } // namespace

@@ -100,7 +100,7 @@ endif()
 
 uni20_dependency_option(UNI20_USE_SYSTEM_TBB "oneTBB library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_FMT "fmt library" AUTO)
-uni20_dependency_option(UNI20_USE_SYSTEM_BENCHMARK "Google Benchmark library" OFF)
+uni20_dependency_option(UNI20_USE_SYSTEM_BENCHMARK "Google Benchmark library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_GTEST "Google Test library" AUTO)
 uni20_dependency_option(UNI20_USE_SYSTEM_NANOBIND "nanobind library" AUTO)
 option(UNI20_BUILD_EXTERNAL_TESTS "Build tests for external dependencies" OFF)
@@ -235,9 +235,20 @@ if(NOT UNI20_BUILD_EXTERNAL_TESTS)
 endif()
 
 if(UNI20_ENABLE_WARNINGS)
-  set(UNI20_WARN_FLAGS "-Wall;-Wextra;-Wattributes;-pedantic;-pedantic-errors;-fstrict-aliasing;-Wstrict-aliasing;-Wno-unused-parameter;-Wno-array-bounds")
+  # -Wtype-limits is off: GCC reports `axis < rank` as always false when a generic
+  # lambda inside a template loops to a rank that is zero, so rank-generic code
+  # would otherwise need rank-zero guards that change nothing.
+  set(UNI20_WARN_FLAGS "-Wall;-Wextra;-Wattributes;-pedantic;-pedantic-errors;-fstrict-aliasing;-Wstrict-aliasing;-Wno-unused-parameter;-Wno-array-bounds;-Wno-type-limits")
 
   set(UNI20_WARN_FLAGS_INTERNAL "${UNI20_WARN_FLAGS};-Werror")
+
+  # Clang's narrower warning keeps the unsigned-compared-with-zero check that
+  # -Wno-type-limits gives up, without GCC's rank-zero false positive. It applies
+  # to C++ sources only: nvcc's host compiler may be GCC, which rejects it.
+  set(UNI20_CXX_ONLY_WARN_FLAGS "")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(UNI20_CXX_ONLY_WARN_FLAGS "-Wtautological-unsigned-zero-compare")
+  endif()
 
   if(UNI20_EXTERNAL_NO_WARN)
     set(UNI20_WARN_FLAGS_EXTERNAL "")
@@ -247,6 +258,7 @@ if(UNI20_ENABLE_WARNINGS)
 else()
   set(UNI20_WARN_FLAGS_INTERNAL "")
   set(UNI20_WARN_FLAGS_EXTERNAL "")
+  set(UNI20_CXX_ONLY_WARN_FLAGS "")
 endif()
 
 function(relax_warnings target)
@@ -301,6 +313,9 @@ foreach(_uni20_warning_flag IN LISTS UNI20_WARN_FLAGS_INTERNAL)
     add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_uni20_warning_flag}>)
   endif()
 endforeach()
+foreach(_uni20_warning_flag IN LISTS UNI20_CXX_ONLY_WARN_FLAGS)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_uni20_warning_flag}>)
+endforeach()
 
 if(UNI20_SANITIZE)
   message(STATUS "Enabling sanitizers: ${UNI20_SANITIZE}")
@@ -347,6 +362,9 @@ if(NOT UNI20_DOCS_WEB AND UNI20_ENABLE_CUDA)
   add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
   set(UNI20_BACKEND_CUDA_DEFAULT ON)
 endif()
+
+include(Uni20Extents)
+uni20_select_extents()
 
 # Backends
 option(UNI20_BACKEND_BLAS     "Enable the BLAS backend" ON)
@@ -431,28 +449,6 @@ if(NOT UNI20_DOCS_WEB)
     include(Uni20CLI)
   endif()
 
-  # mdspan reference implementation, put it into stdex namespace to prevent possible conflict with standard library version
-  # and set up the uni20_mdspan_base interface target for configured consumers
-  set(_uni20_mdspan_fetchcontent_paths
-    SOURCE_DIR "${UNI20_FETCHCONTENT_SOURCE_BASE_DIR}/mdspan-src"
-    BINARY_DIR "${UNI20_FETCHCONTENT_BASE_DIR}/mdspan-build")
-
-  set(_uni20_dependency_build_options)
-  if(NOT UNI20_BUILD_EXTERNAL_TESTS)
-    list(APPEND _uni20_dependency_build_options EXCLUDE_FROM_ALL)
-  endif()
-  FetchContent_Declare(
-    mdspan
-    GIT_REPOSITORY https://github.com/kokkos/mdspan.git
-    GIT_TAG stable
-    SYSTEM
-    ${_uni20_dependency_build_options}
-    ${_uni20_mdspan_fetchcontent_paths}
-  )
-  FetchContent_MakeAvailable(mdspan)
-  target_compile_definitions(mdspan INTERFACE MDSPAN_IMPL_STANDARD_NAMESPACE=stdex)
-  relax_warnings(mdspan)
-
   # oneTBB
   uni20_add_dependency(
     NAME TBB
@@ -492,7 +488,7 @@ if(NOT UNI20_DOCS_WEB)
   if(UNI20_BUILD_BENCH)
     uni20_add_dependency(
       NAME benchmark
-      VERSION 1.5.2
+      VERSION 1.6.1
       TARGET benchmark::benchmark
       REPO https://github.com/google/benchmark.git
       TAG v1.9.0

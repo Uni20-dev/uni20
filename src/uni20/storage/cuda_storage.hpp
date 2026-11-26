@@ -10,6 +10,8 @@
 #include <uni20/backend/cuda/initialization.hpp>
 #include <uni20/common/initialization.hpp>
 #include <uni20/linalg/backend_selector.hpp>
+#include <uni20/linalg/backends/cuda/staging_backends.hpp>
+#include <uni20/linalg/operation_tags.hpp>
 #include <uni20/mdspan/concepts.hpp>
 #include <uni20/storage/cuda_accessor.hpp>
 
@@ -19,7 +21,9 @@
 #include <cstdint>
 #include <span>
 #include <stdexcept>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace uni20::cuda
@@ -199,6 +203,22 @@ struct CudaStorage
       return result;
     }
 
+    /// \brief Allocate and initialize Tensor storage on an already leased stream.
+    struct StreamAllocation
+    {
+        context_type& resources;
+        cuda::Stream const& stream;
+    };
+
+    template <class ElementType>
+    [[nodiscard]] static auto make_storage(StreamAllocation const& allocation, std::size_t size,
+                                           StorageInitialization initialization) -> storage_t<ElementType>
+    {
+      storage_t<ElementType> result{allocation.resources, size, allocation.stream};
+      initialize_storage(result, initialization, allocation.stream);
+      return result;
+    }
+
     template <class ElementType>
     [[nodiscard]] static auto
     make_storage(cuda::Device device, std::size_t size,
@@ -345,7 +365,9 @@ struct CudaStorage
     }
 
   private:
-    template <class Buffer> static void initialize_storage(Buffer& storage, StorageInitialization initialization)
+    template <class Buffer>
+    static void initialize_storage(Buffer& storage, StorageInitialization initialization,
+                                   cuda::Stream const& leased = {})
     {
       using element_type = typename Buffer::element_type;
       if (storage.size() == 0) return;
@@ -354,7 +376,7 @@ struct CudaStorage
       {
         if constexpr (cuda::detail::has_zero_object_representation_v<element_type>)
         {
-          auto stream = storage.resources().streams().acquire();
+          auto stream = leased ? leased : storage.resources().streams().acquire();
           auto access = storage.write_synchronized_with(stream);
           cuda::ScopedDevice guard(storage.device().ordinal());
           cuda::check(cudaMemsetAsync(access.data(), 0, storage.size() * sizeof(element_type), stream.native_handle()),
@@ -377,7 +399,7 @@ struct CudaStorage
         {
           using word_type = std::conditional_t<sizeof(real_type) == 4, std::uint32_t, std::uint64_t>;
           auto const pattern = std::bit_cast<word_type>(detail::signaling_nan_value<real_type>());
-          auto stream = storage.resources().streams().acquire();
+          auto stream = leased ? leased : storage.resources().streams().acquire();
           auto access = storage.write_synchronized_with(stream);
           cuda::ScopedDevice guard(storage.device().ordinal());
           cuda::detail::enqueue_initialization_pattern(access.data(), storage.size() * sizeof(element_type), pattern,
@@ -387,6 +409,28 @@ struct CudaStorage
 #endif
     }
 };
+
+namespace linalg
+{
+/// \brief Append peer staging to the CUDA storage selector for `copy`.
+/// \details The staging backend retains the storage selector for its own steps,
+///          so it never appears in its own nested list. A user
+///          `backend_selector_override` for `copy_op` replaces this list.
+template <> struct backend_selector_default<copy_op, CudaStorage>
+{
+    template <class StorageSelector>
+    [[nodiscard]] static constexpr auto select(copy_op const&, StorageSelector storage_selector)
+    {
+      auto backends = normalize_backend_selector(storage_selector);
+      return std::apply(
+          [&]<class... Backends>(Backends&&... backend) {
+            return backend_list{std::forward<Backends>(backend)...,
+                                CudaPeerStagingBackend{std::move(storage_selector)}};
+          },
+          std::move(backends.entries));
+    }
+};
+} // namespace linalg
 
 namespace detail
 {

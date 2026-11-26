@@ -41,7 +41,7 @@ template <class Tensor>
 {
   using scalar_type = uni20::tensor_element_t<Tensor>;
   CHECK_EQUAL(logical.size(), static_cast<std::size_t>(tensor.extent(0) * tensor.extent(1)));
-  std::vector<scalar_type> physical(tensor.size());
+  std::vector<scalar_type> physical(tensor.mapping().required_span_size());
   for (uni20::index_type row = 0; row < tensor.extent(0); ++row)
   {
     for (uni20::index_type col = 0; col < tensor.extent(1); ++col)
@@ -57,7 +57,7 @@ template <class Tensor>
     -> std::vector<uni20::tensor_element_t<Tensor>>
 {
   using scalar_type = uni20::tensor_element_t<Tensor>;
-  CHECK_EQUAL(physical.size(), static_cast<std::size_t>(tensor.size()));
+  CHECK_EQUAL(physical.size(), static_cast<std::size_t>(tensor.mapping().required_span_size()));
   std::vector<scalar_type> logical(static_cast<std::size_t>(tensor.extent(0) * tensor.extent(1)));
   for (uni20::index_type row = 0; row < tensor.extent(0); ++row)
   {

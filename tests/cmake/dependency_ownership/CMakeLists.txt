@@ -25,6 +25,20 @@ if(NOT owned)
   message(FATAL_ERROR "Uni20-managed stale package paths must still be recognized")
 endif()
 
+# Each mode given as a default must be kept. An OFF default used to become AUTO.
+foreach(default IN ITEMS OFF ON AUTO "")
+  unset(UNI20_USE_SYSTEM_DEFAULTFIXTURE CACHE)
+  unset(UNI20_USE_SYSTEM_DEFAULTFIXTURE)
+  uni20_dependency_option(UNI20_USE_SYSTEM_DEFAULTFIXTURE "Default fixture" "${default}")
+  set(expected "${default}")
+  if(expected STREQUAL "")
+    set(expected AUTO)
+  endif()
+  if(NOT UNI20_USE_SYSTEM_DEFAULTFIXTURE STREQUAL expected)
+    message(FATAL_ERROR "Default '${default}' became '${UNI20_USE_SYSTEM_DEFAULTFIXTURE}'")
+  endif()
+endforeach()
+
 # FetchContent configures a shared dependency only once. Verify its actual
 # targets, not just the parent's unchanged cache text.
 set(fixture "${CMAKE_CURRENT_BINARY_DIR}/dependency-source")

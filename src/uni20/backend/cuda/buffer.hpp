@@ -114,14 +114,17 @@ inline void synchronize_after_failed_publication(cudaStream_t stream, int device
 
 template <typename T> class CudaAllocation {
   public:
-    CudaAllocation(DeviceResources& resources, std::size_t size) : resources_(&resources), size_(size)
+    CudaAllocation(DeviceResources& resources, std::size_t size, Stream const& stream)
+        : resources_(&resources), size_(size)
     {
+      CHECK(!stream || stream.device() == resources.device().ordinal(),
+            "CUDA allocation stream belongs to a different device");
       CHECK(size <= std::numeric_limits<std::size_t>::max() / sizeof(T), size, sizeof(T));
       std::size_t const bytes = size * sizeof(T);
       if (size != 0)
       {
         if (resources.device().capabilities().memory_pools_supported)
-          this->allocate_stream_ordered(bytes);
+          this->allocate_stream_ordered(bytes, stream ? stream : resources.streams().acquire());
         else
           this->allocate_blocking(bytes);
       }
@@ -158,9 +161,8 @@ template <typename T> class CudaAllocation {
       data_ = static_cast<T*>(raw_data);
     }
 
-    void allocate_stream_ordered(std::size_t bytes)
+    void allocate_stream_ordered(std::size_t bytes, Stream const& stream)
     {
-      auto stream = resources_->streams().acquire();
       void* raw_data = nullptr;
       ScopedDevice guard(resources_->device().ordinal());
       check(cudaMallocAsync(&raw_data, bytes, stream.native_handle()), "cudaMallocAsync",
@@ -234,8 +236,10 @@ class CudaBuffer {
     explicit CudaBuffer(std::size_t size) : CudaBuffer(device_resources(), size) {}
 
     /// \brief Allocate `size` elements from one CUDA device's resources.
-    CudaBuffer(DeviceResources& resources, std::size_t size)
-        : allocation_(std::make_shared<detail::CudaAllocation<T>>(resources, size)), size_(size),
+    /// \details Stream-ordered allocation uses the supplied lease on this device. With an empty handle,
+    ///          the allocator acquires a stream from the pool.
+    CudaBuffer(DeviceResources& resources, std::size_t size, Stream const& stream = {})
+        : allocation_(std::make_shared<detail::CudaAllocation<T>>(resources, size, stream)), size_(size),
           writer_completion_(allocation_->initial_completion())
     {}
 

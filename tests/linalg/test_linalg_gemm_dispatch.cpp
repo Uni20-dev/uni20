@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -23,16 +24,16 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
-using extents_1d = stdex::dextents<uni20::index_type, 1>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
+using extents_1d = uni20::dextents<uni20::index_type, 1>;
 
 struct DoubleValue
 {
     template <class Scalar> constexpr auto operator()(Scalar value) const { return Scalar{2} * value; }
 };
 
-template <class Scalar> using left_mdspan = stdex::mdspan<Scalar, extents_2d, stdex::layout_left>;
-template <class Scalar> using vector_mdspan = stdex::mdspan<Scalar, extents_1d, stdex::layout_left>;
+template <class Scalar> using left_mdspan = uni20::mdspan<Scalar, extents_2d, uni20::layout_left>;
+template <class Scalar> using vector_mdspan = uni20::mdspan<Scalar, extents_1d, uni20::layout_left>;
 
 using host_backend_selector =
     uni20::linalg::backend_list<uni20::linalg::BlasBackend, uni20::linalg::CpuReferenceBackend>;
@@ -153,9 +154,10 @@ template <class Scalar> class NonStridedMdspan {
     using element_type = Scalar;
     using value_type = std::remove_cv_t<element_type>;
     using extents_type = extents_2d;
-    using layout_type = stdex::layout_left;
+    using layout_type = uni20::layout_left;
     using mapping_type = typename layout_type::template mapping<extents_type>;
-    using accessor_type = stdex::default_accessor<element_type>;
+    using accessor_type = uni20::default_accessor<element_type>;
+    using offset_type = typename accessor_type::offset_type;
     using data_handle_type = typename accessor_type::data_handle_type;
     using reference = typename accessor_type::reference;
     using index_type = typename extents_type::index_type;
@@ -318,22 +320,22 @@ class DeferredMatrix {
     };
 
     using mutable_mdspec_type =
-        uni20::mdspec<double, extents_type, layout_type, stdex::default_accessor<double>, DataDescriptor>;
+        uni20::mdspec<double, extents_type, layout_type, uni20::default_accessor<double>, DataDescriptor>;
     using const_mdspec_type =
-        uni20::mdspec<double const, extents_type, layout_type, stdex::default_accessor<double const>, DataDescriptor>;
+        uni20::mdspec<double const, extents_type, layout_type, uni20::default_accessor<double const>, DataDescriptor>;
 
     DeferredMatrix(tensor_type& tensor, AccessCounts& counts) noexcept : tensor_(&tensor), counts_(&counts) {}
 
     [[nodiscard]] auto mdspec() -> mutable_mdspec_type
     {
       return mutable_mdspec_type{DataDescriptor{tensor_, counts_}, mapping_type{tensor_->extents()},
-                                 stdex::default_accessor<double>{}};
+                                 uni20::default_accessor<double>{}};
     }
 
     [[nodiscard]] auto mdspec() const -> const_mdspec_type
     {
       return const_mdspec_type{DataDescriptor{tensor_, counts_}, mapping_type{tensor_->extents()},
-                               stdex::default_accessor<double const>{}};
+                               uni20::default_accessor<double const>{}};
     }
 
     [[nodiscard]] static constexpr auto backend_selector() noexcept { return StoragePolicy::backend_selector(); }
@@ -361,7 +363,7 @@ template <class Element, class Extents, class Layout, class Accessor>
     uni20::mdspec<Element, Extents, Layout, Accessor, DeferredMatrix::DataDescriptor> const& span)
 {
   ++span.data_descriptor().counts->reads;
-  using mdspan_type = stdex::mdspan<Element, Extents, Layout, Accessor>;
+  using mdspan_type = uni20::mdspan<Element, Extents, Layout, Accessor>;
   mdspan_type resolved{span.data_descriptor().tensor->storage().data(), span.mapping(), span.accessor()};
   return uni20::acquire_host_read_access_sync(resolved);
 }
@@ -372,7 +374,7 @@ template <class Element, class Extents, class Layout, class Accessor>
 acquire_host_write_access_sync(uni20::mdspec<Element, Extents, Layout, Accessor, DeferredMatrix::DataDescriptor>& span)
 {
   ++span.data_descriptor().counts->writes;
-  using mdspan_type = stdex::mdspan<Element, Extents, Layout, Accessor>;
+  using mdspan_type = uni20::mdspan<Element, Extents, Layout, Accessor>;
   mdspan_type resolved{span.data_descriptor().tensor->storage().data(), span.mapping(), span.accessor()};
   return uni20::acquire_host_write_access_sync(resolved);
 }
@@ -1026,4 +1028,26 @@ TEST(LinalgGemmDispatchTest, TensorOperandsUseGlobalStoragePolicyOverride)
   EXPECT_DOUBLE_EQ((c.span[0, 1]), 22.0);
   EXPECT_DOUBLE_EQ((c.span[1, 0]), 43.0);
   EXPECT_DOUBLE_EQ((c.span[1, 1]), 50.0);
+}
+
+// The contracted axis belongs to the inputs. A narrow output index type must not bound it (#170).
+TEST(LinalgGemmDispatchTest, CpuReferenceContractsBeyondTheOutputIndexRange)
+{
+  using narrow_output = uni20::BasicTensor<double, uni20::dextents<std::int16_t, 2>>;
+  using lhs_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::ColumnMajor>;
+  using rhs_type = uni20::Tensor<double, 2, uni20::HostStorage, uni20::RowMajor>;
+  for (uni20::index_type const inner : {uni20::index_type{32767}, uni20::index_type{32768}})
+  {
+    lhs_type lhs(lhs_type::extents_type{1, inner});
+    rhs_type rhs(rhs_type::extents_type{inner, 1});
+    for (uni20::index_type k = 0; k < inner; ++k)
+    {
+      lhs[0, k] = 1.0;
+      rhs[k, 0] = 1.0;
+    }
+    narrow_output output(narrow_output::extents_type{1, 1});
+
+    uni20::linalg::gemm(uni20::linalg::CpuReferenceBackend{}, output, 1.0, lhs, rhs, 0.0);
+    EXPECT_DOUBLE_EQ((output[0, 0]), static_cast<double>(inner)) << "contracted extent " << inner;
+  }
 }

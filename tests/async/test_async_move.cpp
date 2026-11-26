@@ -47,7 +47,7 @@ TEST(AsyncMoveTest, MoveAssignPreservesQueue)
 TEST(AsyncMoveTest, AsyncMoveTransfersValue)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Async<Ptr> src = std::make_unique<int>(42);
@@ -62,14 +62,12 @@ TEST(AsyncMoveTest, AsyncMoveTransfersValue)
   EXPECT_EQ(*received, 42);
 
   EXPECT_THROW((void)src.move_from_wait(), buffer_write_uninitialized);
-
-  reset_global_scheduler();
 }
 
 TEST(AsyncMoveTest, AsyncMoveFromRvalueAsync)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Async<Ptr> dst;
@@ -81,14 +79,12 @@ TEST(AsyncMoveTest, AsyncMoveFromRvalueAsync)
   Ptr received = dst.move_from_wait();
   ASSERT_TRUE(received);
   EXPECT_EQ(*received, 11);
-
-  reset_global_scheduler();
 }
 
 TEST(AsyncMoveTest, AsyncMoveFromValueBuffersOnStack)
 {
   DebugScheduler sched;
-  set_global_scheduler(&sched);
+  ScopedScheduler scoped(&sched);
 
   using Ptr = std::unique_ptr<int>;
   Ptr payload = std::make_unique<int>(7);
@@ -102,6 +98,149 @@ TEST(AsyncMoveTest, AsyncMoveFromValueBuffersOnStack)
   ASSERT_TRUE(received);
   EXPECT_EQ(*received, 7);
   EXPECT_FALSE(payload);
+}
 
-  reset_global_scheduler();
+TEST(AsyncMoveTest, SourceWriterOnDestinationQueueReleasesBeforeDestinationWrite)
+{
+  using Ptr = std::unique_ptr<int>;
+  struct Writer
+  {
+      Async<Ptr>& source;
+      auto write() { return source.write(); }
+  };
+
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<Ptr> value;
+  auto expected = std::make_unique<int>(17);
+  auto const* address = expected.get();
+  async_move(value, std::move(expected));
+  Writer source{value};
+  async_move(value, source);
+  EXPECT_EQ(value.get_wait().get(), address);
+}
+
+TEST(AsyncMoveTest, ImmediateConversionCanReadPreviousDestinationValue)
+{
+  struct NextValue
+  {
+      Async<int> const& source;
+      operator int() const { return source.get_wait() + 1; }
+  };
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  async_move(value, NextValue{value});
+  EXPECT_EQ(value.get_wait(), 5);
+}
+
+TEST(AsyncMoveTest, ThrowingImmediateConversionLeavesDestinationEpochAlone)
+{
+  struct Failure
+  {};
+  struct Operand
+  {
+      explicit operator int() const { throw Failure{}; }
+  };
+  Async<int> value = 4;
+  auto previous = value.queue().latest();
+  EXPECT_THROW(async_move(value, Operand{}), Failure);
+  EXPECT_EQ(value.queue().latest(), previous);
+  EXPECT_EQ(value.get_wait(), 4);
+}
+
+TEST(AsyncMoveTest, MovePropagatesProducerFailureWithOrWithoutAnOldValue)
+{
+  struct ProducerFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  for (bool initialized : {false, true})
+  {
+    for (bool producer_finished : {false, true})
+    {
+      SCOPED_TRACE(::testing::Message() << "initialized=" << initialized
+                                        << ", producer_finished=" << producer_finished);
+      Async<int> source;
+      if (initialized) async_move(source, 4);
+      schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+        (void)(co_await writer);
+        throw ProducerFailure{};
+      }(source.write()));
+      if (producer_finished) sched.run_all();
+      Async<int> destination;
+      async_move(destination, source);
+      EXPECT_THROW((void)destination.get_wait(), ProducerFailure);
+      EXPECT_THROW((void)source.move_from_wait(), ProducerFailure);
+    }
+  }
+}
+
+TEST(AsyncMoveTest, OwningTakeCanRethrowAFailureFromAFinishedSourceEpoch)
+{
+  struct ProducerFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  schedule([](WriteBuffer<int> writer) static -> AsyncTask {
+    (void)(co_await writer);
+    throw ProducerFailure{};
+  }(value.write()));
+
+  auto source = value.write();
+  auto destination = value.write();
+  schedule([](WriteBuffer<int> source, WriteBuffer<int> destination) static -> AsyncTask {
+    auto taken = co_await std::move(source).take();
+    ADD_FAILURE() << "take must rethrow the producer's failure";
+    co_await destination = taken + 1;
+  }(std::move(source), std::move(destination)));
+
+  EXPECT_THROW((void)value.get_wait(), ProducerFailure);
+}
+
+TEST(AsyncMoveTest, TakingAnUninitializedValueReportsTheAccessError)
+{
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> source;
+  Async<int> destination;
+  async_move(destination, source);
+  EXPECT_THROW((void)destination.get_wait(), buffer_write_uninitialized);
+}
+
+TEST(AsyncMoveTest, DestinationFailureDoesNotReachReleasedSourceWriter)
+{
+  struct DestinationFailure
+  {};
+  struct Value
+  {
+      explicit Value(int) {}
+      Value(Value&&) = default;
+      Value& operator=(Value&&) { throw DestinationFailure{}; }
+  };
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<Value> source(1);
+  Async<Value> destination(2);
+  async_move(destination, source);
+  EXPECT_THROW((void)destination.get_wait(), DestinationFailure);
+  EXPECT_THROW((void)source.get_wait(), buffer_read_uninitialized);
+}
+
+TEST(AsyncMoveTest, FailureAfterTakeReleaseOnlyReachesThePendingWriter)
+{
+  struct DestinationFailure
+  {};
+  DebugScheduler sched;
+  ScopedScheduler scoped(&sched);
+  Async<int> value = 4;
+  auto source = value.write();
+  auto destination = value.write();
+  schedule([](WriteBuffer<int> source, WriteBuffer<int> destination) static -> AsyncTask {
+    EXPECT_EQ(co_await source.take_release(), 4);
+    (void)(co_await destination);
+    throw DestinationFailure{};
+  }(std::move(source), std::move(destination)));
+  EXPECT_THROW((void)value.get_wait(), DestinationFailure);
 }

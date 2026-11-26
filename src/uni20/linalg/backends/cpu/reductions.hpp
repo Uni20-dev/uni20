@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -41,7 +42,7 @@ template <class Output> consteval bool reduction_output_is_column_major()
 {
   using output_type = std::remove_cvref_t<Output>;
   if constexpr (uni20::MdspanLike<output_type>)
-    return std::same_as<typename output_type::layout_type, stdex::layout_left>;
+    return std::same_as<typename output_type::layout_type, uni20::layout_left>;
   else
     return false;
 }
@@ -68,14 +69,11 @@ void check_reduction_extents(Reference const& reference, Others const&... others
   if constexpr (sizeof...(Others) > 0)
   {
     constexpr std::size_t rank = std::remove_cvref_t<Reference>::rank();
-    if constexpr (rank > 0)
-    {
-      auto check_one = [&](auto const& other) {
-        for (std::size_t axis = 0; axis < rank; ++axis)
-          CHECK_EQUAL(reference.extent(axis), other.extent(axis));
-      };
-      (check_one(others), ...);
-    }
+    auto check_one = [&](auto const& other) {
+      for (std::size_t axis = 0; axis < rank; ++axis)
+        CHECK_EQUAL(reference.extent(axis), other.extent(axis));
+    };
+    (check_one(others), ...);
   }
 }
 
@@ -162,7 +160,7 @@ void reference_reduce_axes(Output& output, ReductionAxes<InputRank, ReducedRank>
   std::array<typename first_type::index_type, InputRank - ReducedRank> output_index{};
   std::array<typename first_type::index_type, InputRank> input_index{};
   constexpr bool output_column_major = reduction_output_is_column_major<Output>();
-  constexpr bool input_column_major = std::same_as<typename first_type::layout_type, stdex::layout_left>;
+  constexpr bool input_column_major = std::same_as<typename first_type::layout_type, uni20::layout_left>;
   auto initialize_operation = std::forward<Initialize>(initialize);
   auto accumulate_operation = std::forward<Accumulate>(accumulate);
   auto finalize_operation = std::forward<Finalize>(finalize);
@@ -402,6 +400,43 @@ KernelAttempt try_kernel(CpuReferenceBackend, norm_op const&, Output& output, In
     detail::reference_norm(resolved_output, input_span);
     return KernelAttempt::success;
   });
+}
+
+/// \brief Report whether the CPU can return the signed maximum as a host scalar.
+template <class Output, uni20::HostReadableMdspec Input>
+consteval auto kernel_accepts_types(CpuReferenceBackend const&, maximum_op const&, Output&, Input&)
+{
+  using input_span = uni20::host_read_mdspan_t<Input>;
+  using scalar_type = typename input_span::value_type;
+  if constexpr (uni20::Real<scalar_type> && (!uni20::MdspecLike<Output>) &&
+                reduction_detail::output_is_supported<Output, scalar_type, 0>() &&
+                detail::reduction_value_is_readable<input_span>())
+    return kernel_types_yes;
+  else
+    return kernel_types_no;
+}
+
+/// \brief Return the largest real entry while honoring the input accessor.
+template <class Output, uni20::HostReadableMdspec Input>
+KernelAttempt try_kernel(CpuReferenceBackend, maximum_op const&, Output& output, Input& input)
+{
+  auto access = acquire_host_read_access_sync(input);
+  auto span = access.mdspan();
+  using span_type = decltype(span);
+  using scalar_type = typename span_type::value_type;
+  using state_type = std::optional<scalar_type>;
+  auto initialize = [] { return state_type{}; };
+  auto accumulate = [](state_type& state, auto&& element) {
+    auto value = static_cast<scalar_type>(element);
+    if (!state || uni20::math::isnan(value) || value > *state) state.emplace(std::move(value));
+  };
+  auto finalize = [](state_type& state) {
+    ERROR_IF(!state, "maximum requires a nonempty tensor");
+    return std::move(*state);
+  };
+  detail::reference_reduce_axes(output, all_reduction_axes<span_type::rank()>(), initialize, accumulate, finalize,
+                                span);
+  return KernelAttempt::success;
 }
 
 /// \brief Report eligibility for a host-accessible mdspec sum reduction.

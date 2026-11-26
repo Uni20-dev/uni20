@@ -87,9 +87,9 @@ Rules:
 | Expression | Meaning |
 |---|---|
 | `owning = value` | Rebind: detach and create fresh storage plus a fresh `EpochQueue`. |
-| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. |
+| `mutable_alias = value_or_alias` | Write through: retain descriptor, owner, and queue, including for an exact-type source. An identical descriptor is a no-op. For distinct aliases on the same queue, supply an explicit owning snapshot. |
 | `read_only_alias = anything` | Ill-formed: assignment to const or transforming read-only proxies is forbidden. |
-| `async_assign(destination, source)` | Enroll assignment in the destination's current queue. |
+| `async_assign(destination, source)` | Keep the destination timeline. Owning assignment enrolls its source read first. A write-through alias needs an independent source or the identical descriptor. |
 
 `is_async_alias_v<T>` distinguishes aliases from independent values. Mutable
 aliases provide an ADL-visible `assign_through(target, source)` operation;
@@ -141,8 +141,9 @@ Critical write rule:
 - value-proxy `get()`, `operator->`, or conversion to `T&` throws `buffer_write_uninitialized` before initialization
 - alias-proxy `get()` and `operator->` expose only the const descriptor
 - use one writer, without a separate reader, to inspect and mutate an existing value
-- reject any distinct input whose queue is the output queue; an update output
-  is one read/write operand, not an aliased input plus output
+- operations that need a simultaneous reader and writer require distinct queues
+  for those leases. Sequential accesses can reuse a queue. See the
+  [deadlock diagnostics policy](runtime_model.md#deadlock-diagnostics).
 
 Explicit alternatives:
 
@@ -155,9 +156,9 @@ Explicit alternatives:
 | Helper | Typical use |
 |---|---|
 | `async_assign(dst, src)` | copy-like value propagation |
-| `async_move(dst, src)` | move-like value transfer |
-| `async_binary_op(out, a, b, op)` | schedule `out = op(a, b)` |
-| `async_compound_op(lhs, rhs, op)` | schedule in-place-style update to async lhs |
+| `async_move(dst, src)` | For an owning destination, convert an immediate source before enrolling the writer. An async source enrolls its own writer first. |
+| `async_binary_op(out, a, b, op)` | Construct the output's `value_type` while both inputs are readable, then write it. An ordinary owning output may also be an input. |
+| `async_compound_op(lhs, rhs, op)` | Update in place using a writer for `lhs` and a distinct reader or immediate value for `rhs`. |
 
 Helper awaiters:
 
@@ -187,11 +188,16 @@ Sink registration:
 
 ## Scheduler Choice
 
-| Scheduler | When to use |
-|---|---|
-| `DebugScheduler` | deterministic tests and semantics debugging |
-| `TbbScheduler` | general parallel execution |
-| `TbbNumaScheduler` | NUMA-aware execution |
+| Workload | Production (oneTBB) | Single-threaded testing and debugging |
+|---|---|---|
+| Host tasks only | `TbbScheduler` or NUMA-aware `TbbNumaScheduler` | `DebugScheduler` |
+| Includes CUDA tasks | `TbbCudaScheduler` | `DebugCudaScheduler` |
+
+Production applications install one scheduler in `main()` with
+`set_global_scheduler(&scheduler)` and keep it for the entire run.
+Tests use `ScopedScheduler` around APIs that submit globally, or supply the
+scheduler explicitly for each submission and wait. Both CUDA schedulers also
+run host tasks. See [Choosing a Scheduler](schedulers.md#choosing-a-scheduler).
 
 ## TaskRegistry Debugging
 
@@ -277,10 +283,15 @@ options.signal_number = SIGUSR1;
 uni20::TaskRegistry::start_diagnostics_service(options);
 ```
 
+Reserve an unused `SIGUSR1` or `SIGUSR2` for diagnostics. Uni20 detects installed
+handlers. If your program consumes a signal through `sigwait()` or `signalfd()`,
+choose a different signal for diagnostics.
+
 Alternatively, setting `UNI20_DEBUG_DAG_SIGNAL=SIGUSR1` before launching the
-program starts the service during program initialization. Uni20 blocks and
-consumes the signal with `sigtimedwait`; it does not run diagnostics from an
-asynchronous signal handler.
+program starts the service during program initialization. Uni20's signal handler
+only records the request, and the service thread writes the dump at its next poll;
+no diagnostics run in the handler. See [the task registry guide](task_registry_debug.md)
+for the details.
 
 Useful environment defaults:
 
@@ -310,6 +321,7 @@ Presentation controls also apply to terminal task-registry reports:
 
 | Symptom | Likely cause | First check |
 |---|---|---|
+| `scheduler does not accept task route` when a CUDA operation starts | the parent uses a host-only scheduler or the device is outside the scheduler's device set | check the installed scheduler and the input device |
 | `buffer_write_uninitialized` | requested mutable reference before construction | replace with proxy assignment (`co_await writer = value`) or proxy `emplace(...)` |
 | reader blocks forever | read/write dependency cycle or missing release | verify epoch ordering and `reader.release()` placement |
 | cancellation unexpectedly propagates | `or_cancel()` path used and no value present | inspect upstream writer and exception sink routing |

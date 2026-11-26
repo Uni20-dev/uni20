@@ -24,7 +24,7 @@ Related notes:
 
 ## Problem Statement
 
-A resolved `stdex::mdspan` does not carry the ownership and epoch state required
+A resolved `uni20::mdspan` does not carry the ownership and epoch state required
 by an async tensor value. Such a descriptor is sufficient only after a buffer
 has been awaited and while the owning access proxy remains alive.
 

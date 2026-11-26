@@ -11,9 +11,9 @@
 
 namespace
 {
-using extents_2d = stdex::dextents<uni20::index_type, 2>;
-using mutable_mdspan = stdex::mdspan<double, extents_2d, stdex::layout_left>;
-using const_mdspan = stdex::mdspan<double const, extents_2d, stdex::layout_left>;
+using extents_2d = uni20::dextents<uni20::index_type, 2>;
+using mutable_mdspan = uni20::mdspan<double, extents_2d, uni20::layout_left>;
+using const_mdspan = uni20::mdspan<double const, extents_2d, uni20::layout_left>;
 
 struct FixedTensorView
 {

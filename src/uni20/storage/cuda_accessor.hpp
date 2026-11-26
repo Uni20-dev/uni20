@@ -19,6 +19,18 @@
 namespace uni20::cuda
 {
 
+/// \brief Physical span of elements within a CUDA buffer.
+struct BufferStorageSpan
+{
+    std::size_t start;
+    std::size_t size;
+};
+
+/// \brief Opt in to using a mapping's storage span when acquiring this accessor.
+/// \details Specialize to true only when the mapping's element offsets bound
+///          every read and write through the accessor.
+template <class Accessor> inline constexpr bool enable_mapping_storage_span = false;
+
 /// \brief Assignable CUDA execution proxy over one persistent complex value.
 /// \details Persistent storage remains `uni20::complex<Real>`. Device reads and
 ///          writes use `cuda::std::complex<Real>` without treating the two
@@ -30,7 +42,7 @@ class CudaComplexReference {
     using logical_type = uni20::complex<Real>;
     using execution_type = ::cuda::std::complex<Real>;
 
-    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::size_t offset) noexcept
+    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::ptrdiff_t offset) noexcept
         : components_(reinterpret_cast<Real*>(storage) + 2 * offset)
     {}
 
@@ -82,7 +94,7 @@ struct CudaPointerAccessor
     using data_handle_type = element_type*;
     using reference = element_type&;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -105,7 +117,7 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = CudaComplexReference<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -128,7 +140,7 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -173,7 +185,7 @@ struct CudaConjugatingPointerAccessor
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaConjugatingPointerAccessor;
-    using offset_type = std::size_t;
+    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
                                                                offset_type offset) const noexcept
@@ -219,3 +231,12 @@ template <class Real>
 inline constexpr bool enable_accessor_in_domain<cuda::CudaConjugatingPointerAccessor<Real>, cuda_access_domain> = true;
 
 } // namespace uni20
+
+namespace uni20::cuda
+{
+template <class ElementType>
+inline constexpr bool enable_mapping_storage_span<CudaPointerAccessor<ElementType>> = true;
+
+template <class Real>
+inline constexpr bool enable_mapping_storage_span<CudaConjugatingPointerAccessor<Real>> = true;
+} // namespace uni20::cuda

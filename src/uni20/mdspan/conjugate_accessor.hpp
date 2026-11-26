@@ -67,7 +67,7 @@ class conjugated_accessor {
     using reference = std::invoke_result_t<detail::conjugate_function, typename Accessor::reference>;
     using data_handle_type = typename Accessor::data_handle_type;
     using offset_policy = conjugated_accessor;
-    using offset_type = span_offset_t<Accessor>;
+    using offset_type = typename Accessor::offset_type;
 
     UNI20_HOST_DEVICE constexpr conjugated_accessor()
       requires std::default_initializable<Accessor>
@@ -124,7 +124,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 
@@ -157,7 +157,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 
@@ -189,7 +189,7 @@ template <MdspanLike Span>
   using layout_type = typename Span::layout_type;
   using element_type = typename accessor_type::element_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{span.data_handle(), span.mapping(),
                                                                                std::move(accessor)};
 }
 

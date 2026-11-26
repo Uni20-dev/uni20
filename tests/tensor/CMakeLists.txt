@@ -10,10 +10,11 @@ add_test_module(tensor
     test_tensor_conjugate.cpp
     test_tensor_output.cpp
     test_tensor_initialization.cpp
+    test_tensor_permute.cpp
   LIBS uni20_common uni20_core uni20_linalg
 )
 
 add_test_module(tensor_async
-  SOURCES test_tensor_async.cpp
+  SOURCES test_tensor_async.cpp test_tensor_permute_async.cpp
   LIBS uni20_linalg uni20_async
 )

@@ -39,6 +39,11 @@ explicit bulk conversion. Fixed-precision storage and views have no correspondin
 runtime state. See [tensor construction defaults](mpreal.md#tensor-construction-defaults)
 for output allocation and view metadata semantics.
 
+Dense `permute<Axes...>` views carry the same live default binding through
+copied and nested descriptors. Their default cannot be set independently;
+`Tensor(view)` creates an owner with the current source default. Permuting
+indices never changes the precision of stored values.
+
 This page records the project scalar spelling and concept policy. The concrete
 aliases live in `src/uni20/core/types.hpp`; scalar traits and concepts live in
 `src/uni20/core/scalar_traits.hpp` and `src/uni20/core/scalar_concepts.hpp`.
@@ -274,9 +279,22 @@ unsupported requests, rather than silently narrowing. Native fp80 availability
 does not extend the supported precisions of the projected LAPACK-based Krylov
 solvers or DMRG.
 
-Reference sums and inner products use compensated accumulation in the input
-scalar field. Norms use scaled sum-of-squares arithmetic in the associated real
-field. Algorithms must choose their numerical accumulation method explicitly;
+CPU reference sums and inner products use compensated accumulation in the input
+scalar field. CPU reference norms use scaled sum-of-squares arithmetic in the
+associated real field.
+
+CUDA reference `sum_host` uses Neumaier compensation for each real and
+imaginary component. Each thread accumulates in `double`, and the fixed
+reduction tree carries the corrections through the final merge. The result
+is converted to the output type after adding the correction. CPU and CUDA
+can round differently because their accumulation order and, for single-precision
+inputs, their accumulator precision differ. Intermediate sums can still overflow.
+
+CUDA reference `inner_product_host` combines its partials with ordinary
+double-precision addition. cuBLAS inner products follow the provider's
+accumulation policy.
+
+Algorithms must choose their numerical accumulation method explicitly;
 Uni20 does not define a universal "next wider" scalar because no such type
 exists for the widest configured precision, and silent promotion would make
 result and performance behavior depend on the input dtype. Integer sums are not

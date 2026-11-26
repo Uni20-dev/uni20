@@ -3,7 +3,7 @@
 /**
  * \file reductions.hpp
  * \ingroup tensor
- * \brief Tensor sums, inner products, and Euclidean norms with explicit result residency.
+ * \brief Tensor sums, maxima, inner products, and Euclidean norms.
  */
 
 #include <uni20/common/trace.hpp>
@@ -19,6 +19,9 @@
 
 #if UNI20_BACKEND_CUBLAS
 #include <uni20/linalg/backends/cublas/reductions.hpp>
+#endif
+#if UNI20_BACKEND_CUDA
+#include <uni20/linalg/backends/cuda/reductions.hpp>
 #endif
 
 #include <cstddef>
@@ -70,7 +73,7 @@ template <TensorView InputTensor, std::size_t InputRank, std::size_t ReducedRank
                                             linalg::ReductionAxes<InputRank, ReducedRank> const& axes,
                                             std::index_sequence<OutputAxis...>)
 {
-  using extents_type = stdex::dextents<uni20::index_type, InputRank - ReducedRank>;
+  using extents_type = uni20::dextents<uni20::index_type, InputRank - ReducedRank>;
   return extents_type{static_cast<uni20::index_type>(input.extent(axes.surviving[OutputAxis]))...};
 }
 
@@ -94,14 +97,11 @@ template <class Reference, class... Others>
 void require_reduction_extents(Reference const& reference, Others const&... others)
 {
   constexpr std::size_t rank = tensor_mdspec_t<Reference>::rank();
-  if constexpr (rank > 0)
-  {
-    auto require_one = [&](auto const& other) {
-      for (std::size_t axis = 0; axis < rank; ++axis)
-        ERROR_IF(reference.extent(axis) != other.extent(axis), "reduction operands have different extents");
-    };
-    (require_one(others), ...);
-  }
+  auto require_one = [&](auto const& other) {
+    for (std::size_t axis = 0; axis != rank; ++axis)
+      ERROR_IF(reference.extent(axis) != other.extent(axis), "reduction operands have different extents");
+  };
+  (require_one(others), ...);
 }
 
 } // namespace detail
@@ -294,6 +294,8 @@ template <linalg::KernelBackendSelector BackendSelector, TensorView InputTensor>
 }
 
 /// \brief Return a full Tensor sum as a host C++ scalar using storage policy.
+/// \details With supported CUDA operands, the reduction reads the input in
+///          device storage and transfers one result to the host.
 template <TensorView InputTensor>
   requires RealOrComplex<tensor_element_t<InputTensor>>
 [[nodiscard]] auto sum_host(InputTensor const& input) -> tensor_element_t<InputTensor>
@@ -302,6 +304,21 @@ template <TensorView InputTensor>
   auto operation = linalg::sum_reduction_op<input_rank, input_rank>{.axes = linalg::all_reduction_axes<input_rank>()};
   auto selector = linalg::select_backend(operation, input);
   return sum_host(selector, input);
+}
+
+/// \brief Return the largest real tensor entry as a host scalar.
+/// \details The signed order is used for negative entries. A NaN propagates.
+/// \pre The tensor is nonempty.
+template <TensorView InputTensor>
+  requires Real<tensor_element_t<InputTensor>>
+[[nodiscard]] auto maximum_host(InputTensor const& input) -> tensor_element_t<InputTensor>
+{
+  tensor_element_t<InputTensor> result{};
+  auto operation = linalg::maximum_op{};
+  auto selector = linalg::select_backend(operation, input);
+  auto descriptor = mdspec_of(input);
+  linalg::dispatch_kernel(selector, operation, result, descriptor);
+  return result;
 }
 
 /// \brief Compute an mdspan inner product into a rank-zero output.

@@ -39,6 +39,18 @@ Defined in `src/uni20/async/async_errors.hpp`.
 - awaiting an unconstructed writer still returns `WriteAccessProxy<T>`
 - requesting `get()`, `operator->`, or conversion to `T&` from that proxy: `buffer_write_uninitialized`
 - preferred fix: `co_await writer = value` (or proxy `emplace(...)`)
+- consuming a value through `take()`, `take_release()`, or `move_from_wait()`
+  rethrows the producer's exception before checking for a constructed value.
+  Empty storage with no producer failure raises `buffer_write_uninitialized`.
+- in-place updates also rethrow a failure that the epoch inherited, so an
+  update never builds on a failed value. That covers value access through a
+  write proxy (`get()`, `operator->`, conversion to `T&`, and compound
+  assignment such as `+=`) and `Async<T>`'s compound operators.
+- assignment, `emplace(...)`, `storage()` and an async alias's descriptor are
+  not checked, because overwrites use them too. Linalg kernels reach their
+  outputs through `storage()` or a descriptor, so they do not check. Code that
+  updates through `storage()` can call `WriteBuffer::check_inherited_failure()`
+  first.
 
 ## Suspension Registration
 
@@ -75,7 +87,28 @@ live registry report and optional DOT artifact. This policy is off by default
 because an exception escaping one coroutine may still be expected and observed
 at a downstream `Async<T>` boundary.
 
-At continuation/final-suspend boundaries, stored exceptions are forwarded to continuation promises.
+At final suspension, the stored exception goes to the awaiting coroutine, which
+receives it at `co_await child`.
+
+## Caught Upstream Failures
+
+A coroutine sees a producer's failure only through a value it reads or takes,
+and ordinary C++ `catch` rules apply. If the coroutine catches the failure and
+returns normally, its parent continues past `co_await child`. The outcome is
+the same whether the value was ready when the coroutine awaited it or the epoch
+resumed the coroutine after the producer failed (#166).
+
+- The source epoch keeps the failure, so its other consumers still receive it.
+- A writer on an epoch that inherited a failure still runs. `take()` and
+  in-place access through a write proxy rethrow the failure. A writer that
+  only overwrites the value never sees it. Readers of that epoch still receive
+  the inherited failure.
+- If an exception escapes the coroutine, the parent receives that exception,
+  not an upstream failure the coroutine caught earlier.
+
+An epoch that resumes a coroutine with a stored failure only notes the failure
+for task diagnostics. The debug registry uses that note to tell an exception
+the coroutine passed on from one it raised.
 
 ## Exception Sink Registration
 
@@ -84,7 +117,51 @@ At continuation/final-suspend boundaries, stored exceptions are forwarded to con
 `WriteBuffer` coroutine parameters are auto-registered as sinks.
 
 This covers the normal kernel pattern where output buffers should receive failures
-from the coroutine computing them.
+from the coroutine computing them. Explicitly releasing a writer ends exception
+delivery through that writer. A later failure still reaches the coroutine's
+remaining output writers. An output can also fail while waiting for an earlier
+epoch to finish. A successful predecessor preserves that failure.
+
+### Owning writers
+
+A `WriteBuffer` parameter stays registered as a sink when an owning form takes
+its writer: `co_await buffer.transfer()`, `buffer.transfer().storage()`, an
+owning `take()`, or `write_to(buffer.transfer(), value)`. An exception thrown
+while one of these holds the writer therefore reaches the epoch. That includes
+an exception from constructing the value
+([#169](https://github.com/Uni20-dev/uni20/issues/169)).
+
+An owning holder that finishes normally, at the end of its scope or when
+`write_to` has emplaced its value, ends exception delivery to the epoch, as
+`release()` does. So does a `write_to` dropped without being awaited, which
+publishes the previous value. A later exception escaping the coroutine then leaves that
+value alone.
+
+A coroutine that receives an owning holder by value, as in
+`co_await child(co_await buffer.transfer())`, destroys its parameters after the
+promise has handled an escaping exception. When an exception has escaped the
+coroutine body, its frame is destroyed while that exception is rethrown, so the
+holder counts as destroyed by the exception, wherever it sits among the
+parameters. A failure that the body caught does not count. The failure then reaches
+the epoch from the caller's `WriteBuffer` sink, as described next.
+
+An owning holder that an exception destroys publishes the epoch at that point.
+That happens before the promise reaches `unhandled_exception()` and delivers the
+failure ([#163](https://github.com/Uni20-dev/uni20/issues/163)).
+- Readers that still hold the epoch when the failure arrives see it, and so
+  does a successor that starts after them.
+- A successor that starts in between keeps its own value, and a reader on
+  another thread can see the previous value.
+- A failure that arrives after the epoch has finished is dropped. Builds with
+  task diagnostics (`UNI20_DEBUG_ASYNC_TASKS`) still record the exception in the
+  task registry when it escapes the coroutine.
+- If the coroutine catches that exception, delivery stays open. A later
+  exception escaping the coroutine can still fail the epoch while it is being
+  read.
+
+If a failing producer must always fail its value, hold the writer through the
+non-owning `co_await buffer` instead. That form keeps the writer until the
+coroutine finishes.
 
 ### Explicit path
 
@@ -99,7 +176,15 @@ This is useful when errors should be routed to additional buffers (including rea
 ### Explicit sink lifetime guard
 
 If an explicit sink is destroyed during stack unwinding before promise
-`unhandled_exception()` runs, runtime aborts intentionally (`CHECK`).
+`unhandled_exception()` runs, and the promise has no other sink for that epoch,
+the runtime aborts intentionally (`CHECK`).
+
+- A copy of a registered buffer registers with the same promise. Destroying the
+  copy while the original remains loses nothing and does not abort.
+- A failed coroutine's parameters are destroyed during a rethrow of its
+  exception (see "Owning writers" above). Moving the only registered sink into
+  a child coroutine that fails therefore aborts, even if the parent catches the
+  exception.
 
 This fail-fast behavior prevents silent loss of exception routing in hard-to-debug cases.
 
@@ -145,6 +230,9 @@ Important tests in `tests/async/test_async_basic.cpp` cover:
 - explicit routing with `propagate_exceptions_to(...)`
 - duplicate explicit registration no-op behavior
 - fail-fast path for destroyed explicit sinks during unwind
+
+`tests/async/test_async_caught_failure.cpp` runs caught and uncaught upstream
+failures in both scheduling orders.
 
 ## Related References
 

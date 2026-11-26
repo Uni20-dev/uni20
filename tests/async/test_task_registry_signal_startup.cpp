@@ -1,5 +1,6 @@
 #include <uni20/async/task_registry.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include <thread>
 
 #include <signal.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace
@@ -34,6 +36,29 @@ void remove_graphviz_files(std::filesystem::path const& directory, std::string c
   }
 }
 
+bool child_skips_parent_service_shutdown()
+{
+  struct sigaction parent_action = {};
+  if (::sigaction(SIGUSR1, nullptr, &parent_action) != 0) return false;
+
+  auto const child = ::fork();
+  if (child < 0) return false;
+  if (child == 0)
+  {
+    ::alarm(5);
+    uni20::detail::finalize_task_registry_diagnostics_from_environment();
+    struct sigaction child_action = {};
+    bool const preserved =
+        ::sigaction(SIGUSR1, nullptr, &child_action) == 0 && child_action.sa_handler == parent_action.sa_handler;
+    ::_exit(preserved ? 0 : 1);
+  }
+
+  int status{};
+  while (::waitpid(child, &status, 0) < 0)
+    if (errno != EINTR) return false;
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 } // namespace
 
 int main()
@@ -45,6 +70,12 @@ int main()
   std::error_code ec;
   std::filesystem::create_directories(output_dir, ec);
   remove_graphviz_files(output_dir, options.file_prefix);
+
+  if (!child_skips_parent_service_shutdown())
+  {
+    std::fprintf(stderr, "child did not leave the parent's diagnostics service alone during shutdown\n");
+    return 1;
+  }
 
   if (::kill(::getpid(), SIGUSR1) != 0)
   {

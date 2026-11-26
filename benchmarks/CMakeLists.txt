@@ -3,6 +3,7 @@
 # Create a benchmark executable.
 add_executable(uni20_benchmarks
 #    benchmark_dummy.cpp
+    benchmark_async_access.cpp
     benchmark_coroutine_overhead.cpp
     benchmark_linalg_dispatch.cpp
     benchmark_tensor_tbb_scaling.cpp
@@ -10,7 +11,6 @@ add_executable(uni20_benchmarks
 
 target_link_libraries(uni20_benchmarks
     PRIVATE uni20_common
-            mdspan
             benchmark::benchmark
             TBB::tbb
             uni20_async

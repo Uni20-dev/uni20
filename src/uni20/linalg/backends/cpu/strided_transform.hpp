@@ -22,31 +22,30 @@ namespace uni20::linalg::cpu::detail
 template <bool ReadsOutput, class Output, class Operation, class... Inputs> consteval bool strided_transform_operation()
 {
   using output_type = std::remove_cvref_t<Output>;
-  if constexpr (!MutableStridedMdspanLike<Output> || (!(StridedMdspanLike<Inputs> && ...)) ||
+  if constexpr (!(MutableMdspanLike<Output> && AffineMdspanLike<Output>) || (!(AffineMdspanLike<Inputs> && ...)) ||
                 !((output_type::rank() == std::remove_cvref_t<Inputs>::rank()) && ...))
   {
     return false;
   }
   else if constexpr (ReadsOutput)
   {
-    return std::invocable<Operation&, typename output_type::reference,
-                          typename std::remove_cvref_t<Inputs>::reference...>&&
-      requires(typename output_type::reference output, Operation & operation)
-    {
-      output = std::invoke(operation, output, std::declval<typename std::remove_cvref_t<Inputs>::reference>()...);
+    return requires(Operation& operation) {
+      std::declval<typename output_type::reference>() =
+          std::invoke(operation, std::declval<typename output_type::reference>(),
+                      std::declval<typename std::remove_cvref_t<Inputs>::reference>()...);
     };
   }
   else
   {
-    return std::invocable<Operation&, typename std::remove_cvref_t<Inputs>::reference...>&&
-             requires(typename output_type::reference output, Operation & operation)
-    {
-      output = std::invoke(operation, std::declval<typename std::remove_cvref_t<Inputs>::reference>()...);
+    return requires(Operation& operation) {
+      std::declval<typename output_type::reference>() =
+          std::invoke(operation, std::declval<typename std::remove_cvref_t<Inputs>::reference>()...);
     };
   }
 }
 
-template <bool ReadsOutput, class Operation, MutableStridedMdspanLike Output, StridedMdspanLike... Inputs>
+template <bool ReadsOutput, class Operation, AffineMdspanLike Output, AffineMdspanLike... Inputs>
+  requires MutableMdspanLike<Output>
 class strided_transform_executor {
   public:
     using operation_type = std::decay_t<Operation>;
@@ -85,20 +84,31 @@ class strided_transform_executor {
     }
 
   private:
+    template <std::size_t Operand> decltype(auto) access(std::ptrdiff_t offset)
+    {
+      using span_type = std::tuple_element_t<Operand, std::tuple<Output, Inputs...>>;
+      using mapping_offset_type =
+          decltype(uni20::detail::mapping_origin(std::declval<typename span_type::mapping_type const&>()));
+      // The plan visits reachable mapping offsets. Convert as mdspan indexing does.
+      return std::as_const(std::get<Operand>(accessors_))
+          .access(std::get<Operand>(handles_),
+                  static_cast<typename span_type::offset_type>(static_cast<mapping_offset_type>(offset)));
+    }
+
     void apply(offset_type const& offsets)
     {
       [&]<std::size_t... Input>(std::index_sequence<Input...>) {
-        auto&& output = std::get<0>(accessors_).access(std::get<0>(handles_), offsets[0]);
+        auto&& output = this->access<0>(offsets[0]);
         if constexpr (ReadsOutput)
         {
-          output =
-              std::invoke(operation_, output,
-                          std::get<Input + 1>(accessors_).access(std::get<Input + 1>(handles_), offsets[Input + 1])...);
+          std::forward<decltype(output)>(output) =
+              std::invoke(operation_, std::forward<decltype(output)>(output),
+                          this->access<Input + 1>(offsets[Input + 1])...);
         }
         else
         {
-          output = std::invoke(
-              operation_, std::get<Input + 1>(accessors_).access(std::get<Input + 1>(handles_), offsets[Input + 1])...);
+          std::forward<decltype(output)>(output) =
+              std::invoke(operation_, this->access<Input + 1>(offsets[Input + 1])...);
         }
       }(std::make_index_sequence<input_count>{});
     }

@@ -4,10 +4,12 @@
 #include <atomic>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <new>
 #include <type_traits>
 #include <uni20/common/trace.hpp>
+#include <uni20/config.hpp>
 #include <utility>
 
 namespace uni20::async
@@ -17,6 +19,42 @@ class NodeInfo;
 
 namespace detail
 {
+
+/// \brief Lets a diagnostic observer pin a storage control block that another thread may be releasing.
+/// \details The anchor lives in the block's debug DAG node, which is never freed, so it can be used
+///          after the block is gone. The block's final release retires the anchor before deleting
+///          the block, and first waits for the observers already inside it. Inside, an observer only
+///          tries to take a strong reference (\ref try_pin_observed_block), so the final release
+///          waits for a few atomic operations and never for user code.
+class StorageObservationAnchor {
+  public:
+    /// \brief Enter the anchor. Every call must be matched by \ref leave.
+    /// \return `false` if the block has been retired and must not be touched.
+    [[nodiscard]] bool enter() noexcept { return (state_.fetch_add(1, std::memory_order_acquire) & retired_bit) == 0; }
+
+    /// \brief Leave the anchor after \ref enter.
+    void leave() noexcept
+    {
+      auto const old = state_.fetch_sub(1, std::memory_order_release);
+      if ((old & retired_bit) != 0 && (old & ~retired_bit) == 1) state_.notify_all();
+    }
+
+    /// \brief Retire the anchor and wait until no observer is inside it.
+    /// \details Called once, by the final release of the block, before the block is deleted.
+    void retire() noexcept
+    {
+      auto state = state_.fetch_or(retired_bit, std::memory_order_acq_rel) | retired_bit;
+      while (state != retired_bit)
+      {
+        state_.wait(state, std::memory_order_acquire);
+        state = state_.load(std::memory_order_acquire);
+      }
+    }
+
+  private:
+    static constexpr std::uint32_t retired_bit = std::uint32_t{1} << 31;
+    std::atomic<std::uint32_t> state_{0};
+};
 
 /// \brief Type-erased ownership state shared by all `shared_storage` control blocks.
 /// \details An alias control block retains one reference to its lifetime owner.
@@ -42,8 +80,39 @@ class shared_storage_control_block {
 
     void release_ref() noexcept
     {
-      if (strong_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) delete this;
+      if (strong_count_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+      {
+#if UNI20_DEBUG_DAG
+        // Here and not in a destructor: an observer must be done before destruction begins.
+        if (diagnostic_anchor_) diagnostic_anchor_->retire();
+#endif
+        delete this;
+      }
     }
+
+    /// \brief Take a strong reference, unless the count has already reached zero.
+    /// \pre The block has not been deleted; see \ref try_pin_observed_block.
+    /// \return `true` if the caller now holds a strong reference.
+    [[nodiscard]] bool try_add_ref() noexcept
+    {
+      auto count = strong_count_.load(std::memory_order_relaxed);
+      while (count != 0)
+      {
+        if (strong_count_.compare_exchange_weak(count, count + 1, std::memory_order_acquire, std::memory_order_relaxed))
+          return true;
+      }
+      return false;
+    }
+
+#if UNI20_DEBUG_DAG
+    /// \brief Attach the anchor of the debug DAG node that represents this block.
+    /// \pre Called once, before the block is shared with another thread.
+    void attach_diagnostic_anchor(StorageObservationAnchor* anchor) noexcept
+    {
+      DEBUG_CHECK(!diagnostic_anchor_);
+      diagnostic_anchor_ = anchor;
+    }
+#endif
 
     [[nodiscard]] std::size_t use_count() const noexcept { return strong_count_.load(std::memory_order_relaxed); }
 
@@ -59,7 +128,25 @@ class shared_storage_control_block {
 
     std::atomic<std::size_t> strong_count_{1};
     shared_storage_control_block* lifetime_owner_ = nullptr;
+#if UNI20_DEBUG_DAG
+    StorageObservationAnchor* diagnostic_anchor_ = nullptr;
+#endif
 };
+
+/// \brief Take a strong reference to \p block through its anchor, unless the block has been released.
+/// \details Safe to call while another thread may be making the final release of \p block, or after
+///          the block is gone: \p block is dereferenced only inside a successful anchor entry.
+/// \pre \p anchor is attached to \p block and outlives it.
+/// \param anchor Anchor attached to \p block.
+/// \param block Block to pin; possibly already deleted.
+/// \return `true` if the caller now holds one strong reference to \p block.
+inline bool try_pin_observed_block(StorageObservationAnchor& anchor, shared_storage_control_block* block) noexcept
+{
+  bool const live = anchor.enter();
+  bool const pinned = live && block->try_add_ref();
+  anchor.leave();
+  return pinned;
+}
 
 } // namespace detail
 
@@ -153,24 +240,6 @@ template <typename T> class shared_storage {
     /// \brief Construct from a raw control block pointer.
     /// \param c Control block pointer.
     explicit shared_storage(control_block* c) noexcept : ctrl_(c) {}
-
-    /// \brief Reports construction state for diagnostic observers.
-    /// \param control Raw control-block pointer.
-    /// \return `true` when the control block currently contains a constructed value.
-    [[nodiscard]] static bool diagnostic_constructed_from_control(void const* control) noexcept
-    {
-      auto const* block = static_cast<control_block const*>(control);
-      return block && block->constructed();
-    }
-
-    /// \brief Returns the current value address for diagnostic observers.
-    /// \param control Raw control-block pointer.
-    /// \return Constructed value address, or `nullptr` when unconstructed.
-    [[nodiscard]] static void const* diagnostic_value_address_from_control(void const* control) noexcept
-    {
-      auto* block = const_cast<control_block*>(static_cast<control_block const*>(control));
-      return block && block->constructed() ? static_cast<void const*>(block->ptr()) : nullptr;
-    }
 
   public:
     using element_type = T;

@@ -34,7 +34,7 @@ template <class Function, MdspanLike Span> class unary_transform_accessor {
     using span_type = Span;
     using wrapped_accessor_type = typename span_type::accessor_type;
     using data_handle_type = typename span_type::data_handle_type;
-    using offset_type = span_offset_t<wrapped_accessor_type>;
+    using offset_type = typename wrapped_accessor_type::offset_type;
     using reference = direct_call_result_t<function_type, typename span_type::reference>;
     using element_type = logical_value_t<remove_proxy_reference_t<reference>> const;
     using offset_policy = unary_transform_accessor;
@@ -68,7 +68,7 @@ template <class Function, MdspanLike... Spans> class transform_accessor {
     using function_type = Function;
     using accessor_tuple = std::tuple<typename Spans::accessor_type...>;
     using data_handle_type = std::tuple<typename Spans::data_handle_type...>;
-    using offset_type = std::tuple<span_offset_t<typename Spans::accessor_type>...>;
+    using offset_type = std::tuple<typename Spans::offset_type...>;
     using reference = direct_call_result_t<function_type, typename Spans::reference...>;
     using element_type = logical_value_t<remove_proxy_reference_t<reference>> const;
     using offset_policy = transform_accessor;
@@ -139,7 +139,7 @@ template <class Function, MdspanLike Span>
   using extents_type = typename Span::extents_type;
   using layout_type = typename Span::layout_type;
 
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{
       span.data_handle(), span.mapping(), accessor_type(std::forward<Function>(function), span)};
 }
 
@@ -161,7 +161,7 @@ template <class Function, MdspanLike First, MdspanLike Second, MdspanLike... Res
   using element_type = typename accessor_type::element_type;
 
   auto extents = make_common_extents(first, second, rest...);
-  return stdex::mdspan<element_type, extents_type, layout_type, accessor_type>{
+  return uni20::mdspan<element_type, extents_type, layout_type, accessor_type>{
       std::tuple{first.data_handle(), second.data_handle(), rest.data_handle()...},
       mapping_type{extents, first.mapping(), second.mapping(), rest.mapping()...},
       accessor_type(std::forward<Function>(function), first, second, rest...)};

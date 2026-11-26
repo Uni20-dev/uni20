@@ -32,9 +32,9 @@ namespace detail
 template <class RequestedLayout, class InputMdspan>
 using materialized_layout_t =
     std::conditional_t<std::is_void_v<RequestedLayout>,
-                       std::conditional_t<std::same_as<typename InputMdspan::layout_type, stdex::layout_left> ||
-                                              std::same_as<typename InputMdspan::layout_type, stdex::layout_right>,
-                                          typename InputMdspan::layout_type, stdex::layout_left>,
+                       std::conditional_t<std::same_as<typename InputMdspan::layout_type, uni20::layout_left> ||
+                                              std::same_as<typename InputMdspan::layout_type, uni20::layout_right>,
+                                          typename InputMdspan::layout_type, uni20::layout_left>,
                        RequestedLayout>;
 
 template <class Storage>
@@ -100,7 +100,7 @@ template <typename Tuple, std::size_t... I> constexpr bool integral_prefix(std::
 /// \brief Factory that provides default accessors for tensor storage containers.
 struct DefaultAccessorFactory
 {
-    template <typename ElementType> using accessor_t = stdex::default_accessor<ElementType>;
+    template <typename ElementType> using accessor_t = uni20::default_accessor<ElementType>;
 
     template <typename ElementType, typename Storage>
     [[nodiscard]] constexpr auto make_accessor(Storage const&) const noexcept -> accessor_t<ElementType>
@@ -143,6 +143,8 @@ using tensor_device_accessor_t = typename TensorDeviceAccessor<AccessorFactory, 
 } // namespace detail
 
 /// \brief General-purpose owning tensor with immediate or deferred mdspan metadata.
+/// \details The storage handle addresses the start of the allocation. The
+///          layout must have a statically zero base offset.
 /// \ingroup tensor
 /// \tparam ElementType Value type stored by the tensor.
 /// \tparam Rank Static rank of the tensor.
@@ -151,9 +153,10 @@ using tensor_device_accessor_t = typename TensorDeviceAccessor<AccessorFactory, 
 /// \tparam AccessorFactory Factory that produces accessors for the storage handle.
 /// \tparam Extents Extents type describing the tensor shape; fully dynamic by default.
 template <typename ElementType, std::size_t Rank, typename StoragePolicy = HostStorage,
-          typename LayoutPolicy = stdex::layout_left,
+          typename LayoutPolicy = uni20::layout_left,
           typename AccessorFactory = detail::tensor_accessor_factory_t<StoragePolicy>,
-          typename Extents = stdex::dextents<index_type, Rank>>
+          typename Extents = uni20::dextents<index_type, Rank>>
+  requires detail::ZeroBaseOffsetMapping<typename LayoutPolicy::template mapping<Extents>>
 class Tensor {
   public:
     static_assert(Rank == Extents::rank());
@@ -175,8 +178,8 @@ class Tensor {
     using mapping_type = typename layout_policy::template mapping<extents_type>;
     using size_type = uni20::size_type;
     using backend_selector_type = typename storage_policy::backend_selector_type;
-    using mdspan_type = stdex::mdspan<element_type, extents_type, layout_policy, accessor_type>;
-    using const_mdspan_type = stdex::mdspan<element_type const, extents_type, layout_policy, const_accessor_type>;
+    using mdspan_type = uni20::mdspan<element_type, extents_type, layout_policy, accessor_type>;
+    using const_mdspan_type = uni20::mdspan<element_type const, extents_type, layout_policy, const_accessor_type>;
 
     using storage_type = typename storage_policy::template storage_t<element_type>;
 
@@ -751,11 +754,11 @@ class Tensor {
     ///          preserve mapping and accessor semantics through `mdspan()` or
     ///          explicit access acquisition.
     /// \return Pointer to the first element in canonical contiguous storage.
-    [[nodiscard]] auto data() noexcept -> element_type* requires(immediately_writable &&
-                                                                 (std::same_as<layout_type, stdex::layout_left> ||
-                                                                  std::same_as<layout_type, stdex::layout_right>) &&
-                                                                 is_default_accessor_v<accessor_type> &&
-                                                                 std::same_as<mutable_handle_type, element_type*>) {
+    [[nodiscard]] auto data() noexcept -> element_type*
+      requires(immediately_writable &&
+               (std::same_as<layout_type, uni20::layout_left> || std::same_as<layout_type, uni20::layout_right>) &&
+               is_default_accessor_v<accessor_type> && std::same_as<mutable_handle_type, element_type*>)
+    {
       return this->mutable_handle();
     }
 
@@ -766,12 +769,13 @@ class Tensor {
     ///          preserve mapping and accessor semantics through `mdspan()` or
     ///          explicit access acquisition.
     /// \return Pointer to the first element in canonical contiguous storage.
-    [[nodiscard]] auto data() const noexcept
-        -> element_type const* requires(immediately_readable &&
-                                        (std::same_as<layout_type, stdex::layout_left> ||
-                                         std::same_as<layout_type, stdex::layout_right>) &&
-                                        is_default_accessor_v<const_accessor_type> &&
-                                        std::same_as<handle_type, element_type const*>) { return this->handle(); }
+    [[nodiscard]] auto data() const noexcept -> element_type const*
+      requires(immediately_readable &&
+               (std::same_as<layout_type, uni20::layout_left> || std::same_as<layout_type, uni20::layout_right>) &&
+               is_default_accessor_v<const_accessor_type> && std::same_as<handle_type, element_type const*>)
+    {
+      return this->handle();
+    }
 
     /// \brief Return the tensor mapping.
     /// \return Mapping containing extents and strides.
@@ -821,9 +825,14 @@ class Tensor {
         return this->accessor();
     }
 
-    /// \brief Return the number of elements in the mapped storage span.
-    /// \return Required span size of the tensor mapping.
-    [[nodiscard]] auto size() const noexcept -> size_type { return mapping_.required_span_size(); }
+    /// \brief Return the logical element count, the product of the tensor extents.
+    [[nodiscard]] auto size() const noexcept -> size_type
+    {
+      std::size_t count = 1;
+      for (std::size_t axis = 0; axis != extents_type::rank(); ++axis)
+        count *= static_cast<std::size_t>(this->extents().extent(axis));
+      return static_cast<size_type>(count);
+    }
 
     /// \brief Return the tensor rank.
     /// \return Static rank of the extents type.
@@ -1072,7 +1081,7 @@ Tensor(InputTensor const&)
 /// \tparam LayoutPolicy Layout policy that determines index ordering and stride computation.
 /// \tparam AccessorFactory Factory that produces accessors for the storage handle.
 template <typename ElementType, typename Extents, typename StoragePolicy = HostStorage,
-          typename LayoutPolicy = stdex::layout_left,
+          typename LayoutPolicy = uni20::layout_left,
           typename AccessorFactory = detail::tensor_accessor_factory_t<StoragePolicy>>
 using BasicTensor = Tensor<ElementType, Extents::rank(), StoragePolicy, LayoutPolicy, AccessorFactory, Extents>;
 

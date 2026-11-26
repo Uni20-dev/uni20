@@ -45,6 +45,8 @@ struct TaskRegistryGraphDataNode
     std::string address{};
     std::string state{};
     std::string value{};
+    /// Why `value` was not read although the value was constructed, such as `writer active`.
+    std::string value_unavailable{};
     bool value_constructed{true};
 };
 

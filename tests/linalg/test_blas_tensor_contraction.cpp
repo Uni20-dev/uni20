@@ -1,6 +1,7 @@
 #include <uni20/core/types.hpp>
 #include <uni20/linalg/ops/contract.hpp>
 #include <uni20/tensor/conjugate.hpp>
+#include <uni20/tensor/mdspec_tensor_view.hpp>
 #include <uni20/tensor/tensor.hpp>
 
 #include <gtest/gtest.h>
@@ -23,6 +24,35 @@ using uni20::linalg::CpuReferenceBackend;
 using direct_blas_backend = uni20::linalg::DirectGemmContractionBackend<BlasBackend>;
 using looped_blas_backend = uni20::linalg::LoopedGemmContractionBackend<BlasBackend>;
 using host_backends = uni20::linalg::backend_list<direct_blas_backend, looped_blas_backend, CpuReferenceBackend>;
+
+struct OffsetPolicyWithoutOffsetType
+{
+    using element_type = double const;
+    using data_handle_type = element_type*;
+
+    explicit OffsetPolicyWithoutOffsetType(uni20::default_accessor<element_type> const&) {}
+};
+
+struct ReadAccessor : uni20::default_accessor<double const>
+{
+    using offset_policy = OffsetPolicyWithoutOffsetType;
+};
+
+struct MappingOffset
+{
+    int value;
+
+    explicit MappingOffset(int value_) : value(value_) {}
+    MappingOffset(std::ptrdiff_t) = delete;
+};
+
+struct ReadAccessorWithIntOffset : uni20::default_accessor<double const>
+{
+    using offset_type = MappingOffset;
+
+    reference access(data_handle_type data, offset_type offset) const { return data[offset.value]; }
+    data_handle_type offset(data_handle_type data, offset_type offset) const { return data + offset.value; }
+};
 
 [[nodiscard]] auto selected_backend(std::vector<uni20::linalg::dispatch_diagnostics::event> const& events,
                                     std::string_view operation) -> std::optional<std::string_view>
@@ -60,6 +90,10 @@ try_normalized_contract(BackendSelector&& selector, OutputTensor& output, uni20:
 }
 
 } // namespace
+
+template <> inline constexpr bool uni20::enable_accessor_in_domain<ReadAccessor, uni20::host_access_domain> = true;
+template <>
+inline constexpr bool uni20::enable_accessor_in_domain<ReadAccessorWithIntOffset, uni20::host_access_domain> = true;
 
 TEST(BlasTensorContractionTest, DefaultSelectorUsesDirectBackendAndOneBlasGemm)
 {
@@ -289,6 +323,36 @@ TEST(BlasTensorContractionTest, NonmergeableGroupDeclinesWithoutModifyingOutput)
         EXPECT_DOUBLE_EQ((output[i, j, n]), -7.0);
 }
 
+TEST(BlasTensorContractionTest, DefaultSelectorFallsBackWhenOffsetProjectionIsUnsupported)
+{
+  auto check = []<class Accessor>() {
+    using shape = uni20::dextents<int, 3>;
+    using span_type = uni20::mdspan<double const, shape, uni20::layout_stride, Accessor>;
+    std::array<double, 9> const values{1, 2, 3, 4, 0, 5, 6, 7, 8};
+    span_type lhs_span{values.data(), typename span_type::mapping_type{shape{2, 2, 2}, {5, 2, 1}}, Accessor{}};
+    uni20::MdspecTensorView<span_type, span_type, uni20::HostStorage> lhs{lhs_span, lhs_span};
+    uni20::RowMajorTensor<double, 2> rhs(2, 2);
+    uni20::RowMajorTensor<double, 3> output(2, 2, 2);
+    rhs[0, 0] = 2;
+    rhs[1, 1] = 3;
+    auto const axes = uni20::linalg::make_contraction_axes<3, 2>(
+        std::array<std::pair<std::size_t, std::size_t>, 1>{{{2, 0}}});
+    ASSERT_TRUE(uni20::linalg::try_make_looped_contraction_gemm_plan(output.mdspan(), lhs_span, rhs.mdspan(), axes));
+
+    namespace diagnostics = uni20::linalg::dispatch_diagnostics;
+    std::vector<diagnostics::event> events;
+    diagnostics::scoped_sink capture([&](diagnostics::event const& event) { events.push_back(event); });
+    uni20::linalg::contract(output, 1.0, lhs, rhs, axes, 0.0);
+
+    std::array<double, 8> const expected{2, 6, 6, 12, 10, 18, 14, 24};
+    for (std::size_t i = 0; i != expected.size(); ++i)
+      EXPECT_EQ(output.data()[i], expected[i]);
+    EXPECT_EQ(selected_backend(events, "contract"), "cpu_reference");
+  };
+  check.template operator()<ReadAccessor>();
+  check.template operator()<ReadAccessorWithIntOffset>();
+}
+
 TEST(BlasTensorContractionTest, SingletonAxisDoesNotForceLoopedContraction)
 {
   namespace diagnostics = uni20::linalg::dispatch_diagnostics;
@@ -408,19 +472,19 @@ TEST(BlasTensorContractionTest, ResidualNGroupUsesOriginalBetaForEverySlice)
 
 TEST(BlasTensorContractionTest, LoopedGemmOffsetsDeferredHostDescriptors)
 {
-  using extents_type = stdex::dextents<uni20::index_type, 3>;
-  using lhs_mapping_type = stdex::layout_stride::mapping<extents_type>;
-  using output_mapping_type = stdex::layout_right::mapping<extents_type>;
-  using matrix_extents_type = stdex::dextents<uni20::index_type, 2>;
-  using matrix_mapping_type = stdex::layout_right::mapping<matrix_extents_type>;
+  using extents_type = uni20::dextents<uni20::index_type, 3>;
+  using lhs_mapping_type = uni20::layout_stride::mapping<extents_type>;
+  using output_mapping_type = uni20::layout_right::mapping<extents_type>;
+  using matrix_extents_type = uni20::dextents<uni20::index_type, 2>;
+  using matrix_mapping_type = uni20::layout_right::mapping<matrix_extents_type>;
   using mutable_descriptor = uni20::test::HostStorageDescriptor<std::vector<double>>;
   using const_descriptor = uni20::test::HostStorageDescriptor<std::vector<double> const>;
   using output_mdspec =
-      uni20::mdspec<double, extents_type, stdex::layout_right, stdex::default_accessor<double>, mutable_descriptor>;
-  using lhs_mdspec = uni20::mdspec<double const, extents_type, stdex::layout_stride,
-                                   stdex::default_accessor<double const>, const_descriptor>;
-  using rhs_mdspec = uni20::mdspec<double const, matrix_extents_type, stdex::layout_right,
-                                   stdex::default_accessor<double const>, const_descriptor>;
+      uni20::mdspec<double, extents_type, uni20::layout_right, uni20::default_accessor<double>, mutable_descriptor>;
+  using lhs_mdspec = uni20::mdspec<double const, extents_type, uni20::layout_stride,
+                                   uni20::default_accessor<double const>, const_descriptor>;
+  using rhs_mdspec = uni20::mdspec<double const, matrix_extents_type, uni20::layout_right,
+                                   uni20::default_accessor<double const>, const_descriptor>;
 
   std::vector<double> lhs_storage(16);
   std::vector<double> rhs_storage(12);
@@ -428,9 +492,9 @@ TEST(BlasTensorContractionTest, LoopedGemmOffsetsDeferredHostDescriptors)
   auto const lhs_mapping = lhs_mapping_type{extents_type{2, 2, 3}, std::array<uni20::index_type, 3>{10, 3, 1}};
   auto const output_mapping = output_mapping_type{extents_type{2, 2, 2}};
   auto const rhs_mapping = matrix_mapping_type{matrix_extents_type{3, 2}};
-  stdex::mdspan<double, extents_type, stdex::layout_stride> lhs_values(lhs_storage.data(), lhs_mapping);
-  stdex::mdspan<double, matrix_extents_type, stdex::layout_right> rhs_values(rhs_storage.data(), rhs_mapping);
-  stdex::mdspan<double, extents_type, stdex::layout_right> output_values(output_storage.data(), output_mapping);
+  uni20::mdspan<double, extents_type, uni20::layout_stride> lhs_values(lhs_storage.data(), lhs_mapping);
+  uni20::mdspan<double, matrix_extents_type, uni20::layout_right> rhs_values(rhs_storage.data(), rhs_mapping);
+  uni20::mdspan<double, extents_type, uni20::layout_right> output_values(output_storage.data(), output_mapping);
   for (uni20::index_type i = 0; i < 2; ++i)
     for (uni20::index_type j = 0; j < 2; ++j)
       for (uni20::index_type k = 0; k < 3; ++k)
@@ -439,9 +503,9 @@ TEST(BlasTensorContractionTest, LoopedGemmOffsetsDeferredHostDescriptors)
     for (uni20::index_type n = 0; n < 2; ++n)
       rhs_values[k, n] = static_cast<double>(2 + 2 * k + n);
 
-  output_mdspec output{mutable_descriptor{&output_storage}, output_mapping, stdex::default_accessor<double>{}};
-  lhs_mdspec lhs{const_descriptor{&lhs_storage}, lhs_mapping, stdex::default_accessor<double const>{}};
-  rhs_mdspec rhs{const_descriptor{&rhs_storage}, rhs_mapping, stdex::default_accessor<double const>{}};
+  output_mdspec output{mutable_descriptor{&output_storage}, output_mapping, uni20::default_accessor<double>{}};
+  lhs_mdspec lhs{const_descriptor{&lhs_storage}, lhs_mapping, uni20::default_accessor<double const>{}};
+  rhs_mdspec rhs{const_descriptor{&rhs_storage}, rhs_mapping, uni20::default_accessor<double const>{}};
   auto const axes =
       uni20::linalg::make_contraction_axes<3, 2>(std::array<std::pair<std::size_t, std::size_t>, 1>{{{2, 0}}});
   auto operation = uni20::linalg::contract_op<3, 2, 1>{.axes = axes};

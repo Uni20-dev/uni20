@@ -2,6 +2,8 @@
 #include <uni20/linalg/backend_selector.hpp>
 #include <uni20/mdspan/conjugate_accessor.hpp>
 #include <uni20/tensor/copy.hpp>
+#include <uni20/tensor/mdspec_tensor_view.hpp>
+#include <uni20/tensor/reshape.hpp>
 
 #include "deferred_host_tensor.hpp"
 
@@ -29,6 +31,14 @@ class ErrorModeGuard {
   private:
     bool previous_;
 };
+
+template <class Span>
+concept CanMaterializeSpan = requires(Span const& span) {
+  uni20::make_tensor(uni20::linalg::CpuReferenceBackend{}, span);
+};
+
+template <class MutableSpan, class ConstSpan>
+concept CanWrapAsTensorView = requires { typename uni20::MdspecTensorView<MutableSpan, ConstSpan, uni20::HostStorage>; };
 
 void fill_complex_matrix(uni20::DenseMatrix<complex_type, uni20::RowMajor>& matrix)
 {
@@ -58,6 +68,41 @@ uni20::linalg::KernelAttempt try_kernel(MdspecOnlyCopyBackend const& backend, un
   return uni20::linalg::KernelAttempt::success;
 }
 } // namespace
+
+#ifdef __cpp_lib_mdspan
+TEST(TensorCopyTest, ExplicitForeignImportPreservesRowMajorOrder)
+{
+  using shape = std::extents<int, 2, 3>;
+  using foreign_span = std::mdspan<double, shape>;
+  using const_foreign_span = std::mdspan<double const, shape>;
+  static_assert(!uni20::MdspanLike<foreign_span>);
+  static_assert(!uni20::MdspecLike<foreign_span>);
+  static_assert(!CanMaterializeSpan<foreign_span>);
+  static_assert(!CanWrapAsTensorView<foreign_span, const_foreign_span>);
+
+  std::array<double, 6> values{0, 1, 2, 3, 4, 5};
+  foreign_span source{values.data()};
+  auto imported = uni20::mdspan{source};
+  auto tensor = uni20::make_tensor(uni20::linalg::CpuReferenceBackend{}, imported);
+  static_assert(std::same_as<typename decltype(tensor)::layout_type, uni20::RowMajor>);
+
+  auto flat = uni20::reshape_view(tensor, 6);
+  for (uni20::index_type i = 0; i < 6; ++i)
+    EXPECT_EQ(flat[i], values[i]);
+}
+
+#endif
+
+TEST(TensorCopyTest, NarrowSignedMdspanIndex)
+{
+  using extents = uni20::extents<signed char, 2>;
+  std::array<double, 2> input{3.0, 4.0};
+  std::array<double, 2> output{};
+  uni20::mdspan<double const, extents> source{input.data()};
+  uni20::mdspan<double, extents> destination{output.data()};
+  uni20::copy(uni20::linalg::CpuReferenceBackend{}, destination, source);
+  EXPECT_EQ(output, input);
+}
 
 TEST(TensorCopyTest, CopyResizesOutputAndObservesLazyConjugation)
 {
@@ -150,7 +195,7 @@ TEST(TensorCopyTest, BareMdspanConvenienceDispatchesNormalizedMdspecs)
 
 TEST(TensorCopyTest, MakeTensorMaterializesStaticExtentsAsGeneralPurposeTensor)
 {
-  using fixed_extents = stdex::extents<uni20::index_type, 2, 3>;
+  using fixed_extents = uni20::extents<uni20::index_type, 2, 3>;
   using fixed_tensor = uni20::BasicTensor<double, fixed_extents, uni20::HostStorage, uni20::RowMajor>;
   fixed_tensor input(fixed_extents{});
   input[0, 0] = 1.0;
@@ -191,7 +236,7 @@ TEST(TensorCopyTest, MakeTensorUsesDefaultLayoutForNoncanonicalSourceType)
 
 TEST(TensorCopyTest, ExplicitStaticExtentsRejectMismatchedSourceShape)
 {
-  using fixed_extents = stdex::extents<uni20::index_type, 2, 3>;
+  using fixed_extents = uni20::extents<uni20::index_type, 2, 3>;
   using fixed_tensor = uni20::BasicTensor<double, fixed_extents>;
   ErrorModeGuard const error_mode;
 

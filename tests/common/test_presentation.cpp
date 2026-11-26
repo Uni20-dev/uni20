@@ -434,7 +434,7 @@ TEST(PresentationMdspan, DefaultFormatterHandlesRealAndComplexScalars)
   options.numeric.float64_precision = 4;
 
   std::array<double, 4> real_data{1.0, 2.0 / 3.0, -12.5, 1000.0};
-  stdex::mdspan<double, stdex::extents<std::size_t, 2, 2>> real_matrix(real_data.data());
+  uni20::mdspan<double, uni20::extents<std::size_t, 2, 2>> real_matrix(real_data.data());
 
   EXPECT_EQ(presentation::format_mdspan(real_matrix, policy, options), "shape=(2, 2)\n"
                                                                        "\xE2\x8E\xA1     1 0.6667 \xE2\x8E\xA4\n"
@@ -444,7 +444,7 @@ TEST(PresentationMdspan, DefaultFormatterHandlesRealAndComplexScalars)
   options.numeric.float64_precision = 2;
   std::array<uni20::complex<double>, 2> complex_data{uni20::complex<double>{1.0, -2.5},
                                                      uni20::complex<double>{3.125, 0.0}};
-  stdex::mdspan<uni20::complex<double>, stdex::extents<std::size_t, 2>> complex_vector(complex_data.data());
+  uni20::mdspan<uni20::complex<double>, uni20::extents<std::size_t, 2>> complex_vector(complex_data.data());
 
   EXPECT_EQ(presentation::format_mdspan(complex_vector, policy, options), "shape=(2)\n[ 1.00-2.50i 3.12+0.00i ]");
 }
@@ -454,7 +454,7 @@ TEST(PresentationMdspan, DefaultFormatterHighlightsNonFiniteScalarsWhenColorEnab
   auto policy = base_policy();
   std::array<double, 4> data{1.0, std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
                              std::numeric_limits<double>::quiet_NaN()};
-  stdex::mdspan<double, stdex::extents<std::size_t, 2, 2>> matrix(data.data());
+  uni20::mdspan<double, uni20::extents<std::size_t, 2, 2>> matrix(data.data());
 
   auto const plain = presentation::format_mdspan(matrix, policy);
   EXPECT_FALSE(contains_ansi(plain));
@@ -474,7 +474,7 @@ TEST(PresentationMdspan, UnicodeMatrixUsesDisplayCellAlignedBrackets)
 {
   auto policy = base_policy();
   std::array<int, 6> data{1, 200, 30, 4, 5, 6};
-  stdex::mdspan<int, stdex::extents<std::size_t, 3, 2>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 3, 2>> matrix(data.data());
 
   auto rendered = presentation::format_mdspan(matrix, policy, [](int value) { return std::to_string(value); });
 
@@ -489,7 +489,7 @@ TEST(PresentationMdspan, AsciiPolicyUsesAsciiMatrixArt)
   auto policy = base_policy();
   policy.glyphs = presentation::glyph_set::ascii;
   std::array<int, 4> data{1, 20, 3, 4};
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 2>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 2>> matrix(data.data());
 
   auto rendered = presentation::format_mdspan(matrix, policy, [](int value) { return std::to_string(value); });
 
@@ -502,7 +502,7 @@ TEST(PresentationMdspan, CjkCellsAlignByDisplayWidth)
 {
   auto policy = base_policy();
   std::array<std::string, 4> data{"x", "\xE4\xB8\xAD", "long", "y"};
-  stdex::mdspan<std::string, stdex::extents<std::size_t, 2, 2>> matrix(data.data());
+  uni20::mdspan<std::string, uni20::extents<std::size_t, 2, 2>> matrix(data.data());
 
   auto rendered = presentation::format_mdspan(matrix, policy, [](std::string const& value) { return value; });
 
@@ -515,7 +515,7 @@ TEST(PresentationMdspan, MatrixAxesCanTransposeRankTwoViews)
 {
   auto policy = base_policy();
   std::array<int, 6> data{1, 20, 300, 4, 5, 6};
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 3>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 3>> matrix(data.data());
 
   presentation::mdspan_format_options options;
   options.matrix_axes = presentation::mdspan_matrix_axes{1, 0};
@@ -532,7 +532,7 @@ TEST(PresentationMdspan, HigherRankTensorsRenderLabeledMatrixSlices)
 {
   auto policy = base_policy();
   std::array<int, 8> data{1, 2, 3, 4, 5, 6, 7, 8};
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 2, 2>> tensor(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 2, 2>> tensor(data.data());
 
   auto rendered = presentation::format_mdspan(tensor, policy, [](int value) { return std::to_string(value); });
 
@@ -553,7 +553,7 @@ TEST(PresentationMdspan, MatrixAxesCanSelectRankThreeView)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 3, 2>> tensor(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 3, 2>> tensor(data.data());
 
   presentation::mdspan_format_options options;
   options.matrix_axes = presentation::mdspan_matrix_axes{0, 2};
@@ -581,7 +581,7 @@ TEST(PresentationMdspan, RankFourTensorRenderingIsExhaustive)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 2, 2, 2>> tensor(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 2, 2, 2>> tensor(data.data());
 
   auto rendered = presentation::format_mdspan(tensor, policy, [](int value) { return std::to_string(value); });
 
@@ -607,7 +607,7 @@ TEST(PresentationMdspan, MatrixAxesRejectInvalidChoices)
 {
   auto policy = base_policy();
   std::array<int, 4> data{1, 2, 3, 4};
-  stdex::mdspan<int, stdex::extents<std::size_t, 2, 2>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 2, 2>> matrix(data.data());
 
   presentation::mdspan_format_options options;
   options.matrix_axes = presentation::mdspan_matrix_axes{0, 0};
@@ -627,7 +627,7 @@ TEST(PresentationMdspan, PreviewElidesLargeMatrixWithinWrapWidth)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  stdex::mdspan<int, stdex::extents<std::size_t, 6, 6>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 6, 6>> matrix(data.data());
   presentation::mdspan_preview_options options;
   options.full_element_limit = 8;
   options.edge_items = 2;
@@ -662,7 +662,7 @@ TEST(PresentationMdspan, PreviewDoesNotMarkElidedWhenAllPositionsAreSelected)
   for (std::size_t i = 0; i < data.size(); ++i)
     data[i] = static_cast<int>(i);
 
-  stdex::mdspan<int, stdex::extents<std::size_t, 6, 6>> matrix(data.data());
+  uni20::mdspan<int, uni20::extents<std::size_t, 6, 6>> matrix(data.data());
   presentation::mdspan_preview_options options;
   options.full_element_limit = 8;
   options.edge_items = 8;

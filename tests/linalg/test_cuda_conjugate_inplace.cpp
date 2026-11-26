@@ -23,7 +23,7 @@ using complex_cuda_matrix_type = uni20::CudaTensor<complex_type, 2>;
 using real_cuda_matrix_type = uni20::CudaTensor<double, 2>;
 using complex_cuda_mdspec = decltype(std::declval<complex_cuda_matrix_type&>().mdspec());
 using real_cuda_mdspec = decltype(std::declval<real_cuda_matrix_type&>().mdspec());
-using extents_type = stdex::dextents<uni20::index_type, 2>;
+using extents_type = uni20::dextents<uni20::index_type, 2>;
 
 static_assert(uni20::linalg::detail::cuda_reference::SupportedConjugateMdspec<complex_cuda_mdspec>);
 static_assert(uni20::linalg::detail::cuda_reference::SupportedConjugateMdspec<real_cuda_mdspec>);
@@ -34,7 +34,7 @@ auto make_strided_mdspec(Tensor& tensor, std::size_t offset, extents_type extent
 {
   auto base = tensor.mdspec();
   using base_type = decltype(base);
-  using layout_type = stdex::layout_stride;
+  using layout_type = uni20::layout_stride;
   using mapping_type = layout_type::mapping<extents_type>;
   using result_type = uni20::mdspec<typename base_type::element_type, extents_type, layout_type,
                                     typename base_type::accessor_type, typename base_type::data_descriptor_type>;
@@ -59,10 +59,10 @@ class CudaConjugateInplaceTest : public ::testing::Test {
 
 TEST(CudaConjugatePlanningTest, OneOperandPlanCompactsAndDecodesPaddedStrides)
 {
-  using mapping_type = stdex::layout_stride::mapping<extents_type>;
+  using mapping_type = uni20::layout_stride::mapping<extents_type>;
   mapping_type mapping{extents_type{2, 3}, std::array<uni20::index_type, 2>{1, 3}};
   complex_type value{};
-  stdex::mdspan span{&value, mapping};
+  uni20::mdspan span{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));
@@ -77,12 +77,12 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanCompactsAndDecodesPaddedStrides)
 
 TEST(CudaConjugatePlanningTest, OneOperandPlanSelects64BitReachableOffsets)
 {
-  using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<vector_extents_type>;
+  using vector_extents_type = uni20::dextents<uni20::index_type, 1>;
+  using mapping_type = uni20::layout_stride::mapping<vector_extents_type>;
   auto const stride = static_cast<uni20::index_type>(std::numeric_limits<std::int32_t>::max()) + 1;
   mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{stride}};
   complex_type value{};
-  stdex::mdspan span{&value, mapping};
+  uni20::mdspan span{&value, mapping};
   uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
 
   ASSERT_TRUE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));
@@ -90,16 +90,18 @@ TEST(CudaConjugatePlanningTest, OneOperandPlanSelects64BitReachableOffsets)
   EXPECT_EQ(plan.plan_64.offsets(1), (std::array<std::int64_t, 1>{static_cast<std::int64_t>(stride)}));
 }
 
-TEST(CudaConjugatePlanningTest, OneOperandPlanDeclinesNegativeStrides)
+TEST(CudaConjugatePlanningTest, NegativeStridesStayOutsideCudaLowering)
 {
-  using vector_extents_type = stdex::dextents<uni20::index_type, 1>;
-  using mapping_type = stdex::layout_stride::mapping<vector_extents_type>;
-  mapping_type mapping{vector_extents_type{2}, std::array<uni20::index_type, 1>{-1}};
-  complex_type value{};
-  stdex::mdspan span{&value, mapping};
-  uni20::linalg::detail::cuda_reference::LoweredElementwiseConjugatePlan plan;
+  using shape = uni20::dextents<uni20::index_type, 1>;
+  uni20::layout_signed_stride::mapping<shape> mapping{shape{2}, {-1}};
+  complex_type values[2]{};
+  uni20::mdspan span{values + 1, mapping};
+  static_assert(!uni20::StridedMdspecLike<decltype(span)>);
 
-  EXPECT_FALSE(uni20::linalg::detail::cuda_reference::try_make_elementwise_conjugate_plan(span, plan));
+  using namespace uni20::linalg::detail::cuda_reference;
+  auto host_plan = uni20::make_multi_iteration_plan(std::tuple{span.mapping()});
+  LoweredElementwiseConjugatePlan plan;
+  EXPECT_FALSE(try_lower_strided_elementwise_plan<elementwise_conjugate_maximum_rank>(host_plan, plan));
 }
 
 TEST_F(CudaConjugateInplaceTest, ConjugatesComplexDoubleAndFloatStorage)
@@ -159,6 +161,9 @@ TEST_F(CudaConjugateInplaceTest, HandlesRankZeroAndRowMajorMappings)
     auto access = device_scalar.storage().blocking_write_access();
     uni20::cuda::check(cudaMemcpy(access.data(), &scalar, sizeof(scalar), cudaMemcpyHostToDevice),
                        "initialize rank-zero conjugation test", 0);
+    // A pageable cudaMemcpy may return before its DMA lands, and uni20 streams
+    // do not wait for the default stream, so finish the upload here.
+    uni20::cuda::check(cudaDeviceSynchronize(), "cudaDeviceSynchronize rank-zero conjugation test", 0);
   }
   uni20::conjugate_inplace(device_scalar);
   complex_type scalar_result;

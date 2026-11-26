@@ -62,6 +62,10 @@ reference comparisons, and measured limitations.
 - [Tensor Dispatch and View Semantics Draft](dispatch_and_view_semantics_draft.md)
   preserves the reasoning that led to the current Tensor and dispatch APIs.
   Prefer the canonical guides above for implemented behavior.
+- [Uni20 mdspan and mdspec Design](uni20_mdspan_design.md) proposes Uni20's own
+  `mdspan` and layout mappings: a stride observer at every rank, signed accessor
+  offsets, a reachable-offset range for single-buffer element mappings, and an
+  opt-in signed-stride layout. `mdspec` follows the same specification.
 
 Async ownership and alias lifetime are documented in
 [Async Storage](../async/storage.md). Backend execution starts at the

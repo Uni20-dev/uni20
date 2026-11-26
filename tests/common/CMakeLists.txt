@@ -6,7 +6,7 @@ add_test_module(common
           test_trace_format.cpp test_terminal_utils.cpp test_presentation.cpp test_display.cpp test_nifty_counter.cpp
           test_process.cpp test_performance_measurements.cpp test_initialization.cpp test_half_int.cpp test_data_table.cpp test_data_table_streaming.cpp test_data_table_json.cpp test_program.cpp
           test_run_context.cpp test_output_session.cpp test_mpreal_data_table.cpp
-  LIBS uni20_common mdspan
+  LIBS uni20_common
 )
 
 add_executable(uni20_initialization_diagnostic_probe initialization_diagnostic_probe.cpp)

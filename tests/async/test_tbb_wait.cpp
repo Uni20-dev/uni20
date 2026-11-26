@@ -89,7 +89,7 @@ TEST(TbbWait, MoveWaitsForActiveWriterWithOneParticipant)
   TbbScheduler scheduler{1};
   ScopedScheduler scope(&scheduler);
   scheduler.execute_batch(1, [&](std::size_t) {
-    auto epoch = std::make_shared<EpochContext>();
+    auto epoch = EpochContext::make();
     auto storage = make_shared_storage<int>(7);
     EpochContextWriter<int> first(storage, epoch);
     EpochContextWriter<int> second(storage, epoch);

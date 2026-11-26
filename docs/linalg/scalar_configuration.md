@@ -78,7 +78,8 @@ cmake -S . -B build_codex/arbitrary \
 
 Dependency sourcing remains independent: `UNI20_USE_SYSTEM_MPLAPACK=AUTO`
 prefers an installed package and otherwise fetches the pinned release; `ON`
-requires an installed package; `OFF` fetches. Explicit backend selection may
+requires an installed package; `OFF` fetches, unless a parent project already
+created the MPLAPACK targets. Explicit backend selection may
 fetch its components even if a scalar was auto-detected.
 
 Scalar availability does not promise every numerical operation supports that

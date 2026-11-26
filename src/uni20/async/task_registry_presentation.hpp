@@ -179,8 +179,10 @@ template <typename Value> [[nodiscard]] std::string task_registry_join_ids(std::
     {
       auto name =
           node.label.empty() ? fmt::format("data {}", node.id) : fmt::format("data {}: {}", node.id, node.label);
-      table.row(name, node.type.empty() ? "-" : node.type, detail::task_registry_data_state(node, diagnostics),
-                node.value.empty() ? "-" : node.value, node.storage_address.empty() ? "-" : node.storage_address);
+      auto content = node.value;
+      if (content.empty()) content = node.value_unavailable.empty() ? "-" : "not read: " + node.value_unavailable;
+      table.row(name, node.type.empty() ? "-" : node.type, detail::task_registry_data_state(node, diagnostics), content,
+                node.storage_address.empty() ? "-" : node.storage_address);
     }
   }
 
