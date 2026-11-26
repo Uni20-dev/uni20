@@ -882,14 +882,12 @@ template <class Integer> Integer parse_integer(std::string_view text, Integer le
 constexpr int no_cuda_device = 77;
 
 // Whether a context can be made on a visible device: a device in exclusive-process mode that
-// another process holds, for one, is visible but not usable.
+// another process holds, for one, is visible but not usable.  The device is left current, so that
+// no other device's context is opened by switching back to it.
 bool cuda_device_usable(int ordinal)
 {
-  int previous = 0;
-  if (cudaGetDevice(&previous) != cudaSuccess) previous = 0;
   bool const usable = cudaSetDevice(ordinal) == cudaSuccess && cudaFree(nullptr) == cudaSuccess;
   static_cast<void>(cudaGetLastError());
-  static_cast<void>(cudaSetDevice(previous));
   return usable;
 }
 
@@ -915,7 +913,13 @@ bool cuda_device_available(int device)
 // it is given (--second-cuda-device, for the placement check).
 template <class Run> int on_cuda_device(int device, std::optional<int> second, Run&& run)
 {
-  if (!cuda_device_available(device) || (second && !cuda_device_available(*second))) return no_cuda_device;
+  if (!cuda_device_available(device)) return no_cuda_device;
+  if (second)
+  {
+    bool const available = cuda_device_available(*second);
+    static_cast<void>(cudaSetDevice(device)); // its context exists already
+    if (!available) return no_cuda_device;
+  }
   std::vector<int> ordinals{device};
   if (second) ordinals.push_back(*second);
   second_cuda_device = second;
