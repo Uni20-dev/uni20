@@ -20,7 +20,9 @@ using V = decltype(mdspec_of(std::declval<Tensor<float80, 1>&>()));
 static_assert(!BlasScalar<float80> && !LapackScalar<float80>);
 static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, A&, A&, A&>() == KernelTypeAcceptance::yes);
 static_assert(probe_dispatch_kernel_types<LapackBackend, lq_op, A&, A&, A&>() == KernelTypeAcceptance::yes);
-static_assert(probe_dispatch_kernel_types<LapackBackend, self_adjoint_eigh_op, V&, A&>() == KernelTypeAcceptance::yes);
+// The packed eigensolver accepts the default driver at runtime.
+static_assert(probe_dispatch_kernel_types<LapackBackend, self_adjoint_eigh_op, V&, A&>() ==
+              KernelTypeAcceptance::maybe);
 static_assert(probe_dispatch_kernel_types<LapackBackend, singular_values_op, V&, A&>() == KernelTypeAcceptance::yes);
 static_assert(probe_dispatch_kernel_types<LapackBackend, nonsymmetric_eigen_op, A&, std::span<complex160>, Z&>() ==
               KernelTypeAcceptance::yes);
@@ -33,7 +35,8 @@ constexpr auto complex_acceptance =
     UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX ? KernelTypeAcceptance::yes : KernelTypeAcceptance::no;
 static_assert(probe_dispatch_kernel_types<LapackBackend, qr_op, Z&, Z&, Z&>() == complex_acceptance);
 static_assert(probe_dispatch_kernel_types<LapackBackend, lq_op, Z&, Z&, Z&>() == complex_acceptance);
-static_assert(probe_dispatch_kernel_types<LapackBackend, self_adjoint_eigh_op, V&, Z&>() == complex_acceptance);
+static_assert(probe_dispatch_kernel_types<LapackBackend, self_adjoint_eigh_op, V&, Z&>() ==
+              (UNI20_HAS_MPLAPACK_FLOAT80_COMPLEX ? KernelTypeAcceptance::maybe : KernelTypeAcceptance::no));
 static_assert(probe_dispatch_kernel_types<LapackBackend, singular_values_op, V&, Z&>() == complex_acceptance);
 static_assert(probe_dispatch_kernel_types<LapackBackend, nonsymmetric_eigen_op, Z&, std::span<complex160>, Z&>() ==
               complex_acceptance);
@@ -117,6 +120,22 @@ TYPED_TEST(Binary80Decomposition, ConsumingAndOneSidedSvd)
           EXPECT_LE(math::abs(values[k] - s[k]), tolerance);
         }
       }
+}
+
+TYPED_TEST(Binary80Decomposition, DeclinesDivideAndConquerDrivers)
+{
+  auto matrix = sample<TypeParam>(2, 2);
+  Tensor<float80, 1> values(2);
+  DenseMatrix<TypeParam> left(2, 2), right(2, 2);
+  auto a = mdspec_of(matrix);
+  auto w = mdspec_of(values);
+  auto u = mdspec_of(left);
+  auto vt = mdspec_of(right);
+
+  EXPECT_EQ(try_kernel(LapackBackend{}, self_adjoint_eigh_op{.driver = EighDriver::DivideAndConquer}, w, a),
+            KernelAttempt::unsupported_instance);
+  EXPECT_EQ(try_kernel(LapackBackend{}, svd_op{.driver = SvdDriver::DivideAndConquer}, w, u, vt, a),
+            KernelAttempt::unsupported_instance);
 }
 
 TYPED_TEST(Binary80Decomposition, SelectedTriangleAndEmptyFactors)
