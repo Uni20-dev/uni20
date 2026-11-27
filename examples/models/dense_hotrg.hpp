@@ -55,6 +55,7 @@
 #include <uni20/backend/cuda/runtime.hpp>
 #include <uni20/backend/cusolver/execution.hpp>
 #include <uni20/linalg/elementwise_functions.hpp>
+#include <uni20/linalg/ops/cuda_jacobi.hpp>
 #include <uni20/linalg/ops/svd.hpp>
 #include <uni20/storage/cuda_storage.hpp>
 #include <uni20/tensor/diagonal.hpp>
@@ -106,12 +107,25 @@ enum class model
 //         a device (cuSOLVER syevd)
 //   selected-eigh  only the leading k + 1 eigenpairs, the last for the gap: LAPACK syevr on the host,
 //         cuSOLVER syevdx on a device
+//   jacobi-eigh  the leading eigenvectors by cuSOLVER Jacobi (syevj); CUDA tensors only
+//   jacobi-svd   the leading singular vectors by cuSOLVER Jacobi (gesvdj); CUDA tensors only
 enum class cut_method
 {
   svd,
   eigh,
-  selected_eigh
+  selected_eigh,
+  jacobi_eigh,
+  jacobi_svd
 };
+
+inline constexpr std::array all_cut_methods{cut_method::svd, cut_method::eigh, cut_method::selected_eigh,
+                                            cut_method::jacobi_eigh, cut_method::jacobi_svd};
+
+// Whether a method has only a CUDA implementation: the cuSOLVER Jacobi solvers have no host counterpart.
+[[nodiscard]] constexpr bool cut_method_needs_device(cut_method method)
+{
+  return method == cut_method::jacobi_eigh || method == cut_method::jacobi_svd;
+}
 
 // Whether the selected eigensolver (#204) covers a host scalar type: the raw LAPACK wrappers, which take
 // float and double and, when configured, MPLAPACK binary128.  binary80 and MPFR have only the full solver.
@@ -127,6 +141,10 @@ template <uni20::Real R> inline constexpr bool selected_eigh_supported = uni20::
       return "eigh";
     case cut_method::selected_eigh:
       return "selected-eigh";
+    case cut_method::jacobi_eigh:
+      return "jacobi-eigh";
+    case cut_method::jacobi_svd:
+      return "jacobi-svd";
   }
   return "?";
 }
@@ -605,6 +623,9 @@ template <uni20::Real R>
   R const trace = gram_trace(theta);
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
+  if (cut_method_needs_device(method))
+    throw std::invalid_argument(std::string("dense_hotrg: the ") + cut_method_name(method) +
+                                " cut runs only on CUDA tensors");
   if (method == cut_method::selected_eigh)
   {
     if constexpr (!selected_eigh_supported<R>)
@@ -683,8 +704,9 @@ template <uni20::Real R>
 // one GEMM on the device, so the factor never leaves the device.  The SVD computes the right
 // factor and all n^2 vectors where k are kept.
 //
-// With cut_method::eigh, cuSOLVER syevd gives the ascending eigensystem on the device, and U is the
-// eigenvector matrix times the last k columns of the identity in reverse order, so it is descending.
+// The eigensolvers (syevd, syevdx for selected-eigh, syevj for jacobi-eigh) give ascending eigenpairs
+// on the device, and U is the eigenvector matrix times the last k columns of the identity in reverse
+// order, so it is descending.  jacobi-svd (gesvdj) gives the reduced SVD, used as the full one is.
 template <uni20::Real R>
 [[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D, cut_method method)
 {
@@ -695,64 +717,75 @@ template <uni20::Real R>
   idx const k = static_cast<idx>(std::min<std::size_t>(D, static_cast<std::size_t>(rows)));
   R const trace = gram_trace(theta);
 
-  if (method == cut_method::selected_eigh)
+  // U is the solver's vectors times a selector, columns of the identity, in one GEMM on the device.
+  auto const keep_columns = [&](auto& U, auto const& vectors, idx count, bool trailing) {
+    uni20::Tensor<R, 2> selector(count, k, p); // zero-initialized
+    for (idx c = 0; c < k; ++c)
+      selector[trailing ? count - 1 - c : c, c] = R{1};  // trailing: ascending vectors, kept in reverse
+    auto const device_selector = place.upload(selector); // alive until the GEMM has finished
+    uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, vectors, device_selector,
+                            std::array<axis_pair, 1>{{{1, 0}}}, R{0}, p);
+    wait_for(U);
+  };
+  // A Jacobi solver that reaches its sweep limit returns approximate factors; a cut from those would be
+  // silently wrong, so stop instead.
+  auto const converged = [&](auto result) {
+    auto const& c = result.convergence;
+    if (!c.converged)
+      throw std::runtime_error(std::string("dense_hotrg: the ") + cut_method_name(method) +
+                               " cut did not converge in " + std::to_string(c.sweeps) + " sweeps (residual " +
+                               std::to_string(c.residual) + ")");
+    return std::move(result.factors);
+  };
+
+  if (method == cut_method::selected_eigh || method == cut_method::eigh || method == cut_method::jacobi_eigh)
   {
-    idx const first = std::max<idx>(rows - k - 1, 0); // one more than kept, for the gap
+    // Ascending eigenpairs; selected-eigh asks for one more than kept, for the gap.
+    idx const first = method == cut_method::selected_eigh ? std::max<idx>(rows - k - 1, 0) : 0;
     idx const count = rows - first;
     auto U = place.template make<R>(p, n, n, k);
     auto const values = [&] {
       lap const timer(spent().cut);
-      auto decomposition = uni20::linalg::eigh(uni20::reshape_view(theta, rows, rows),
-                                               uni20::linalg::EigenvalueIndexRange{first, rows}); // ascending
-      uni20::Tensor<R, 2> trailing(count, k, p);                                                  // zero-initialized
-      for (idx c = 0; c < k; ++c)
-        trailing[count - 1 - c, c] = R{1};
-      auto const selector = place.upload(trailing);
-      uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, decomposition.eigenvectors, selector,
-                              std::array<axis_pair, 1>{{{1, 0}}}, R{0}, p);
-      wait_for(U);
+      auto const matrix = uni20::reshape_view(theta, rows, rows);
+      if (method == cut_method::jacobi_eigh)
+      {
+        auto const decomposition = converged(uni20::linalg::eigh_jacobi(matrix));
+        keep_columns(U, decomposition.eigenvectors, count, true);
+        return uni20::to_host(decomposition.eigenvalues);
+      }
+      if (method == cut_method::selected_eigh)
+      {
+        auto const decomposition = uni20::linalg::eigh(matrix, uni20::linalg::EigenvalueIndexRange{first, rows});
+        keep_columns(U, decomposition.eigenvectors, count, true);
+        return uni20::to_host(decomposition.eigenvalues);
+      }
+      auto const decomposition = uni20::linalg::eigh(matrix);
+      keep_columns(U, decomposition.eigenvectors, count, true);
       return uni20::to_host(decomposition.eigenvalues);
     }();
     gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
     cut_from_eigenvalues(result.gap, result.S, result.discarded, values, count, k, trace);
     return result;
   }
-  if (method == cut_method::eigh)
-  {
-    auto U = place.template make<R>(p, n, n, k);
-    auto const values = [&] {
-      lap const timer(spent().cut);
-      auto decomposition = uni20::linalg::eigh(uni20::reshape_view(theta, rows, rows)); // ascending
-      uni20::Tensor<R, 2> trailing(rows, k, p);                                         // zero-initialized
-      for (idx c = 0; c < k; ++c)
-        trailing[rows - 1 - c, c] = R{1};
-      auto const selector = place.upload(trailing);
-      uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, decomposition.eigenvectors, selector,
-                              std::array<axis_pair, 1>{{{1, 0}}}, R{0}, p);
-      wait_for(U);
-      return uni20::to_host(decomposition.eigenvalues);
-    }();
-    gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
-    cut_from_eigenvalues(result.gap, result.S, result.discarded, values, rows, k, trace);
-    return result;
-  }
-  uni20::CudaMatrix<R> left(uni20::uninitialized, resources, rows, rows);
-  uni20::CudaMatrix<R> right_adjoint(uni20::uninitialized, resources, rows, rows);
-  uni20::CudaTensor<R, 1> values(uni20::uninitialized, resources, rows);
+
+  // Descending singular values.
   auto U = place.template make<R>(p, n, n, k);
-  {
+  auto const s = [&] {
     lap const timer(spent().cut);
+    if (method == cut_method::jacobi_svd)
+    {
+      auto const decomposition = converged(uni20::linalg::svd_jacobi(uni20::reshape_view(theta, rows, rows)));
+      keep_columns(U, decomposition.left_singular_vectors, rows, false);
+      return uni20::to_host(decomposition.singular_values);
+    }
+    uni20::CudaMatrix<R> left(uni20::uninitialized, resources, rows, rows);
+    uni20::CudaMatrix<R> right_adjoint(uni20::uninitialized, resources, rows, rows);
+    uni20::CudaTensor<R, 1> values(uni20::uninitialized, resources, rows);
     auto matrix = uni20::reshape(std::move(theta), rows, rows);
     uni20::linalg::singular_value_decomposition(values, left, right_adjoint, matrix);
-    uni20::Tensor<R, 2> leading(rows, k, p); // zero-initialized
-    for (idx c = 0; c < k; ++c)
-      leading[c, c] = R{1};
-    auto const selector = place.upload(leading);
-    uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, left, selector, std::array<axis_pair, 1>{{{1, 0}}},
-                            R{0}, p);
-    wait_for(U);
-  }
-  auto const s = uni20::to_host(values);
+    keep_columns(U, left, rows, false);
+    return uni20::to_host(values);
+  }();
 
   gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
   R kept = R{0};
