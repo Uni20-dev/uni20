@@ -242,3 +242,36 @@ Each of these returns one host scalar or keeps its result on the device. With
 against the host entry by entry, one step along each axis, and two flows of the
 critical Ising model. `--second-cuda-device=N` also enrolls device `N` and
 checks that a step on a tensor held there keeps its results on that device.
+
+### Cutting the gram
+
+Each step keeps the leading `D` vectors of a symmetric positive semidefinite
+gram of size `D^2 x D^2` at the plateau. `--gram-cut=M` chooses how:
+
+| Method | Host | CUDA |
+| --- | --- | --- |
+| `svd` (default) | `truncated_svd` (LAPACK `gesvd`, or MPLAPACK) | the full cuSOLVER SVD, then the leading columns by a GEMM |
+| `eigh` | `eigh` (LAPACK `syev`, or MPLAPACK) | cuSOLVER `syevd`, then the trailing columns by a GEMM |
+
+Both keep the same subspace when the gap at the cut is not tiny; the flows agree
+to rounding.
+
+`--benchmark-gram-cut` compares the methods at fp64 on the selected place, for
+the bonds in `--bonds=D,D,...`:
+
+```bash
+./build/examples/ising_hotrg_example --benchmark-gram-cut --bonds=8,16,24,32 --rounds=6
+./build/examples/ising_hotrg_example --execution=cuda --benchmark-gram-cut --bonds=16,32,48,64 --rounds=5
+```
+
+It cuts the y-step gram of a 4-round critical flow with each method, keeps the
+fastest of `--repeat=N` runs, and reports the error of the kept spectrum and of
+the discarded weight, the distance `||U U^T - V V^T||_F` between the kept
+subspaces, and the gap at the cut, all against a host `eigh` of the same gram.
+It then runs a `--rounds` flow with each method and reports the final ln Z/N and
+X_1 against the `svd` flow. More methods are tracked in
+[issue 200](https://github.com/Uni20-dev/uni20/issues/200).
+
+On a Quadro GV100 (CUDA 12.9), `eigh` cuts the bond-64 gram in 0.41 s against
+2.17 s for `svd`, and a five-round bond-64 flow takes 9.3 s against 15.8 s. On
+the host (Intel Alder Lake, OpenBLAS), the bond-32 cut takes 0.49 s against 1.97 s.

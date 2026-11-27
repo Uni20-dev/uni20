@@ -288,6 +288,35 @@ CUDA device across all blocks. A full-vector sector whose charge occurs on only
 one boundary has no provider factorization to perform; the bridge constructs
 its side-specific identity null-space factor directly on CUDA.
 
+## Jacobi Decompositions
+
+`eigh_jacobi` selects cuSOLVER `syevj` for a square real CUDA matrix.
+`svd_jacobi` selects `gesvdj` and returns reduced factors, including for wide
+inputs. Both accept `float` and `double` and preserve their input. The selected
+triangle defines the symmetric matrix for `eigh_jacobi`. The returned eigenvalues
+are ascending and singular values are descending. The factorization runs on
+the input device with one cuSOLVER lease. The host receives the provider's
+status and stopping diagnostics.
+
+```cpp
+auto [factors, convergence] = uni20::linalg::eigh_jacobi(
+    device_gram, {.tolerance = 1e-12, .maximum_sweeps = 30});
+```
+
+The tolerance and sweep limit override cuSOLVER defaults when supplied. If the
+solver reaches its sweep limit before meeting the tolerance, the result still
+contains its approximate factors and reports `convergence.converged == false`.
+`convergence.residual` is the provider's internal off-diagonal norm. Check
+reconstruction, orthogonality, or the retained subspace separately when
+comparing accuracy across drivers. Empty inputs return shape-correct empty
+factors with zero sweeps and zero residual.
+
+The polar SVD routine `cusolverDnXgesvdp` reports a perturbation magnitude
+`h_err_sigma` and uses separate host and device workspace. cuSOLVER may perturb
+small singular values when computing a full unitary basis, so the magnitude is
+relevant when a cut approaches the near-zero tail.
+[NVIDIA cuSOLVER documentation](https://docs.nvidia.com/cuda/cusolver/index.html#cusolverdnxgesvdp)
+
 ## Scheduler Boundary
 
 The CUDA/cuSOLVER layer should not become a second dependency DAG. CPU-side

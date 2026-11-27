@@ -90,10 +90,12 @@ namespace format
 [[nodiscard]] column_format fixed(int precision, terminal::TerminalStyle style = {});
 
 /// \brief Format numeric values with scientific notation and the requested precision.
-[[nodiscard]] column_format scientific(int precision, terminal::TerminalStyle style = {});
+/// \details The fit minimum leaves room for a sign and an exponent of `exponent_digits` digits.
+[[nodiscard]] column_format scientific(int precision, terminal::TerminalStyle style = {}, int exponent_digits = 3);
 
 /// \brief Format numeric values with general notation and the requested precision.
-[[nodiscard]] column_format general(int precision, terminal::TerminalStyle style = {});
+/// \details The fit minimum leaves room for a sign and an exponent of `exponent_digits` digits.
+[[nodiscard]] column_format general(int precision, terminal::TerminalStyle style = {}, int exponent_digits = 3);
 } // namespace format
 
 /// \brief Already formatted display text with numeric alignment semantics retained by its producer.

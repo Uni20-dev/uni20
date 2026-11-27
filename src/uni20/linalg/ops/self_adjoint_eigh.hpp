@@ -10,6 +10,7 @@
  */
 
 #include <uni20/common/trace.hpp>
+#include <uni20/linalg/backends/lapack/selected_eigh.hpp>
 #include <uni20/linalg/backends/lapack/self_adjoint_eigh.hpp>
 #include <uni20/linalg/blas/mdspan_matrix.hpp>
 #include <uni20/linalg/decomposition_precision.hpp>
@@ -21,11 +22,13 @@
 #include <uni20/tensor/tensor.hpp>
 
 #if UNI20_BACKEND_CUSOLVER
+#include <uni20/linalg/backends/cusolver/selected_eigh.hpp>
 #include <uni20/linalg/backends/cusolver/self_adjoint_eigh.hpp>
 #endif
 
 #include <array>
 #include <concepts>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -317,6 +320,76 @@ template <uni20::RankedTensorView<2> MatrixTensor>
   auto work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
   auto selector = detail::select_self_adjoint_eigh_backend<decltype(work)>(triangle);
   return detail::eigh_from_work_matrix(std::move(selector), std::move(work), triangle, p, driver);
+}
+
+/// \brief Preserve a matrix and compute the eigenpairs in a half-open index range.
+/// \details Eigenvalues are ordered from smallest to largest. For [first,last),
+///          the outputs have last-first values and that many eigenvector columns.
+///          CUDA inputs use real float or double and results stay on the input device.
+template <KernelBackendSelector Selector, uni20::RankedTensorView<2> Matrix>
+[[nodiscard]] auto eigh(Selector&& selector, Matrix const& matrix, EigenvalueIndexRange indices,
+                        MatrixTriangle triangle = MatrixTriangle::Upper, std::optional<Precision> requested = {})
+{
+  using scalar = uni20::tensor_element_t<Matrix>;
+  using real = uni20::make_real_t<scalar>;
+  auto const n = matrix.extent(0);
+  ERROR_IF(n != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
+  if (indices.first < 0 || indices.last < indices.first || std::cmp_greater(indices.last, n))
+    throw std::invalid_argument("invalid eigenvalue index range");
+  auto const count = indices.last - indices.first;
+  auto const p = detail::decomposition_precision(matrix, requested);
+  auto solve = [&](auto& values, auto& vectors, auto& work) {
+    auto w = uni20::mdspec_of(values);
+    auto z = uni20::mdspec_of(vectors);
+    auto a = uni20::mdspec_of(work);
+    detail::dispatch_at_precision<scalar>(std::forward<Selector>(selector),
+                                          selected_self_adjoint_eigh_op{.indices = indices, .triangle = triangle},
+                                          p, w, z, a);
+  };
+
+#if UNI20_BACKEND_CUSOLVER
+  if constexpr (detail::cuda_resident_eigh<Matrix>())
+  {
+    auto& resources = uni20::mdspec_of(matrix).data_descriptor().buffer().resources();
+    uni20::CudaTensor<real, 1> values(uni20::uninitialized, resources, count);
+    uni20::CudaMatrix<scalar, uni20::ColumnMajor> vectors(uni20::uninitialized, resources, n, count);
+    if (count != 0)
+    {
+      uni20::CudaMatrix<scalar, uni20::ColumnMajor> work(uni20::uninitialized, resources, n, n);
+      uni20::copy(work, matrix);
+      solve(values, vectors, work);
+    }
+    return SelfAdjointEighResult<decltype(values), decltype(vectors)>{std::move(values), std::move(vectors)};
+  }
+  else
+#endif
+  {
+    uni20::Tensor<real, 1> values(uni20::uninitialized, count);
+    uni20::DenseMatrix<scalar, uni20::ColumnMajor> vectors(uni20::uninitialized, n, count);
+    if (count != 0)
+    {
+      auto work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+      solve(values, vectors, work);
+    }
+    uni20::detail::record_output_precision(values, p);
+    uni20::detail::record_output_precision(vectors, p);
+    return SelfAdjointEighResult<decltype(values), decltype(vectors)>{std::move(values), std::move(vectors)};
+  }
+}
+
+/// \brief Compute selected eigenpairs using the input's storage policy.
+template <uni20::RankedTensorView<2> Matrix>
+[[nodiscard]] auto eigh(Matrix const& matrix, EigenvalueIndexRange indices,
+                        MatrixTriangle triangle = MatrixTriangle::Upper, std::optional<Precision> requested = {})
+{
+#if UNI20_BACKEND_CUSOLVER
+  using storage = std::conditional_t<detail::cuda_resident_eigh<Matrix>(), uni20::CudaStorage, uni20::HostStorage>;
+#else
+  using storage = uni20::HostStorage;
+#endif
+  auto selector = select_backend_for_storage<storage>(
+      selected_self_adjoint_eigh_op{.indices = indices, .triangle = triangle});
+  return eigh(std::move(selector), matrix, indices, triangle, requested);
 }
 
 /// \brief Consume an owning matrix and return its complete self-adjoint eigensystem through an explicit selector.

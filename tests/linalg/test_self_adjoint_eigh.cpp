@@ -273,6 +273,62 @@ TEST(SelfAdjointEighTest, MplapackFloat128RealAndComplexPaths)
 }
 #endif
 
+TEST(SelfAdjointEighTest, SelectedComplexEigenpairsUseAscendingHalfOpenIndices)
+{
+  using namespace uni20::linalg;
+  using Scalar = uni20::complex<double>;
+  uni20::DenseMatrix<Scalar, uni20::RowMajor> matrix(3, 3);
+  matrix[0, 0] = 3;
+  matrix[1, 1] = 3;
+  matrix[0, 1] = Scalar{0, 1};
+  matrix[1, 0] = Scalar{0, -1};
+
+  auto const result = eigh(matrix, EigenvalueIndexRange{1, 3});
+  ASSERT_EQ(result.eigenvalues.size(), 2);
+  ASSERT_EQ(result.eigenvectors.extent(0), 3);
+  ASSERT_EQ(result.eigenvectors.extent(1), 2);
+  EXPECT_NEAR(result.eigenvalues[0], 2, 1e-13);
+  EXPECT_NEAR(result.eigenvalues[1], 4, 1e-13);
+  check_eigenvector_residuals([&](auto row, auto col) { return matrix[row, col]; }, result.eigenvectors,
+                              result.eigenvalues, 1e-13);
+
+  auto const empty = eigh(matrix, EigenvalueIndexRange{2, 2});
+  EXPECT_EQ(empty.eigenvalues.size(), 0);
+  EXPECT_EQ(empty.eigenvectors.extent(0), 3);
+  EXPECT_EQ(empty.eigenvectors.extent(1), 0);
+  EXPECT_THROW((void)eigh(matrix, EigenvalueIndexRange{-1, 3}), std::invalid_argument);
+  EXPECT_THROW((void)eigh(matrix, EigenvalueIndexRange{2, 4}), std::invalid_argument);
+}
+
+#if UNI20_HAS_MPLAPACK_FLOAT128
+TEST(SelfAdjointEighTest, SelectedBinary128EigenpairsUseTheProviderWorkspace)
+{
+  using namespace uni20::linalg;
+  using Real = uni20::float128;
+  uni20::DenseMatrix<Real> matrix(3, 3);
+  matrix[0, 0] = Real{1};
+  matrix[1, 1] = Real{2};
+  matrix[2, 2] = Real{4};
+  auto const result = eigh(matrix, EigenvalueIndexRange{2, 3});
+  ASSERT_EQ(result.eigenvalues.size(), 1);
+  EXPECT_TRUE(result.eigenvalues[0] == Real{4});
+  EXPECT_EQ(result.eigenvectors.extent(1), 1);
+}
+#endif
+
+TEST(SelfAdjointEighTest, SelectedRealEigenpairsCanKeepAnInteriorRange)
+{
+  using namespace uni20::linalg;
+  uni20::DenseMatrix<double> matrix(3, 3);
+  matrix[0, 0] = 4;
+  matrix[1, 1] = 1;
+  matrix[2, 2] = 3;
+  auto const result = eigh(matrix, EigenvalueIndexRange{1, 2});
+  ASSERT_EQ(result.eigenvalues.size(), 1);
+  EXPECT_NEAR(result.eigenvalues[0], 3, 1e-13);
+  EXPECT_NEAR(std::abs(result.eigenvectors[2, 0]), 1, 1e-13);
+}
+
 TEST(SelfAdjointEighTest, DivideAndConquerChecksWorkspaceBeforeQuery)
 {
   using uni20::linalg::lapack_detail::divide_and_conquer_eigh_workspace_fits;

@@ -6,6 +6,7 @@
  * \brief Backend-independent operation values used with normalized kernel operands.
  */
 
+#include <uni20/core/types.hpp>
 #include <uni20/linalg/contraction_axes.hpp>
 #include <uni20/linalg/reduction_axes.hpp>
 
@@ -256,6 +257,21 @@ struct self_adjoint_eigh_op
     bool compute_vectors = true;
     MatrixTriangle triangle = MatrixTriangle::Upper;
     EighDriver driver = EighDriver::Default;
+};
+
+/// \brief Zero-based half-open index range in an ascending eigenspectrum.
+struct EigenvalueIndexRange
+{
+    uni20::index_type first;
+    uni20::index_type last;
+};
+
+/// \brief Selected dense eigenpairs with separate compact value and vector outputs.
+struct selected_self_adjoint_eigh_op
+{
+    static constexpr std::string_view name = "selected_self_adjoint_eigh";
+    EigenvalueIndexRange indices;
+    MatrixTriangle triangle = MatrixTriangle::Upper;
 };
 
 /// \brief Extent policy for one side of an exact singular value decomposition.
