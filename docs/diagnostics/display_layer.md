@@ -316,7 +316,9 @@ shrinking shared columns toward their minimum widths. If the width is omitted
 for text or automatic columns, the column uses the ordinary shared-width
 terminal allocation. Use explicit fixed widths when a field should never change
 width; reserve shared-width columns for prose-like fields that should absorb
-terminal slack. Text sent to a numeric column, for example `"non-converged"`, is
+terminal slack. Fit and shared columns are at least as wide as their heading; a
+heading wider than a fixed width wraps onto further header lines within that
+width. Text sent to a numeric column, for example `"non-converged"`, is
 treated as exceptional text: it is displayed in the column but does not update
 the decimal anchor.
 

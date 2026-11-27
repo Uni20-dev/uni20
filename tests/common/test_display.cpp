@@ -212,6 +212,27 @@ TEST(DisplayStreamingTable, EmitsHeaderOnceAndKeepsLaterRowsCompact)
   expect_no_trailing_spaces(render_ascii(events[2]));
 }
 
+TEST(DisplayStreamingTable, HeadingWiderThanAFixedWidthWrapsWithinTheColumn)
+{
+  std::vector<display::event> events;
+  display::scoped_sink capture([&](display::event const& event) { events.push_back(event); });
+
+  auto table = display::table("");
+  table.wrap_width(40)
+      .column("Energy", display::width::fixed(3), presentation::table_alignment::left)
+      .column("n", display::width::fixed(1));
+  table.row(1.5, 7);
+
+  ASSERT_EQ(events.size(), 1U);
+  auto const lines = split_lines(render_ascii(events[0]));
+  ASSERT_EQ(lines.size(), 4U); // two heading lines, the separator, the row
+  EXPECT_EQ(lines[0], "Ene  n");
+  EXPECT_EQ(lines[1], "rgy");
+  EXPECT_EQ(lines[2], "---  -");
+  EXPECT_EQ(lines[3], "1.5  7");
+  expect_no_trailing_spaces(render_ascii(events[0]));
+}
+
 TEST(DisplayStreamingTable, VeryNarrowWidthUsesVerticalFallback)
 {
   std::vector<display::event> events;
