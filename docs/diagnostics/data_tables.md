@@ -99,6 +99,11 @@ helpers reset `.fractional()`; calling `.fractional()` last selects fractions.
 Stored values are never changed. Projection overrides can choose different
 formats for different sinks.
 
+A streaming terminal lays out an `mpreal` column before its first row, so a
+column without an explicit digit count should state the precision of its values
+with `.working_precision(p)`; see the terminal adapter under
+[Streaming to Multiple Sinks](#streaming-to-multiple-sinks).
+
 Without an explicit digit count or `.fractional()`, an exact integer emits its
 integer spelling; an exact noninteger throws `std::invalid_argument`. There is
 no `max_digits10` for an exact rational. This rule applies to human and delimited
@@ -460,17 +465,20 @@ Explicit finalization is required to discover flush errors. Destruction releases
 adapters without calling their output methods or inventing a final summary.
 CSV/TSV/JSON adapters flush their borrowed stream at finish, but do not close it;
 the owner must check close errors. The terminal adapter uses
-`display::streaming_table` with fit widths. It declares the columns with the
-first row: a real column in general or scientific notation starts as wide as
-the widest text its format can give, a sign, its digits and an exponent at the
-type's largest exponent, so the header and the rows already written stay aligned
-when wider values arrive. A runtime-precision real takes its digits from its
-format, or else from an approximate first-row value, and reserves four exponent
-digits. A runtime-precision column with neither (no digit count, and a missing or
-exact first value) starts at the minimum width; it and a value beyond `1e±9999`
-widen their column on demand, which misaligns the rows already written. Other columns start at the minimum width and grow when a row
-needs more. If the reserved widths do not fit the terminal, the table uses
-vertical key/value output from the first row. Numeric values remain
+`display::streaming_table`. A column's `.width(...)` sets its terminal width
+with a display width, such as `display::width::fixed(30)` or
+`display::width::fit(24)`. Without one, a real column uses the fit minimum of
+the display format that matches its numeric format (`display::format::general`,
+`scientific` or `fixed` with the same digit count), so the header and the rows
+already written stay aligned when later values are wider. A native real's
+default digit count is its `max_digits10`. A runtime-precision column takes it
+from `.working_precision(p)`, which states the precision of its values before any
+row arrives; values are still formatted at their own precision. A
+runtime-precision column with neither a digit count nor a working precision, an
+exact-fraction column and a non-real column start at the sink's minimum width and
+grow when a row needs more, which misaligns the rows already written. If the
+columns do not fit the terminal, the table uses vertical key/value output from
+its first row. Numeric values remain
 intact, including round-trip real text and half-integer fractions. If a value
 cannot fit its column, the table switches to vertical key/value output for that
 and subsequent rows. A single overlong value is emitted intact even if its line

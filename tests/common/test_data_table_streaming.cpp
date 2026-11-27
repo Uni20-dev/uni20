@@ -309,8 +309,23 @@ TEST(DataTableStreaming, TerminalColumnsKeepTheirLayoutWhenLaterRowsAreWider)
   EXPECT_NE(rendered.back().find(uni20::format_real(wide_y)), std::string::npos);
 }
 
+TEST(DataTableStreaming, TerminalColumnsTakeAnExplicitWidth)
+{
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<double>("x").width(uni20::display::width::fixed(30)),
+                                  p::data_column<int>("n"));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  table.append(1.5, 1);
+  table.finish();
+  ASSERT_EQ(rendered.size(), 1U);
+  EXPECT_EQ(rendered[0].find('n'), 32U) << rendered[0]; // 30 cells for x, then the two-cell separator
+}
+
 #if UNI20_HAS_MPREAL
-TEST(DataTableStreaming, RuntimePrecisionColumnsReserveFromTheirFormatOrFirstValue)
+TEST(DataTableStreaming, RuntimePrecisionColumnsLayOutFromTheirWorkingPrecision)
 {
   using uni20::mpreal;
   using uni20::Precision;
@@ -318,18 +333,32 @@ TEST(DataTableStreaming, RuntimePrecisionColumnsReserveFromTheirFormatOrFirstVal
   uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
     rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
   });
-  // a: a missing first value and an explicit digit count; b: an exact first value and an explicit digit
-  // count; c: no digit count, so the first value's precision.
-  auto table = p::make_data_table("", p::data_column<std::optional<mpreal>>("a").general(40),
-                                  p::data_column<mpreal>("b").general(40), p::data_column<mpreal>("c"),
-                                  p::data_column<int>("d"));
-  table.attach(p::terminal_sink({.wrap_width = 400}));
   auto const precision = Precision::bits(128);
+  // a: a missing first value; b: an exact first value; c: an explicit digit count instead.
+  auto table = p::make_data_table("", p::data_column<std::optional<mpreal>>("a").working_precision(precision),
+                                  p::data_column<mpreal>("b").working_precision(precision),
+                                  p::data_column<mpreal>("c").general(40), p::data_column<int>("d"));
+  table.attach(p::terminal_sink({.wrap_width = 400}));
   mpreal const wide = -mpreal("1.234567890123456789012345678901234567890e-5", precision);
   table.append(std::nullopt, mpreal(1, Precision::exact()), mpreal("1.5", precision), 1);
   table.append(wide, wide, wide, 2);
   table.finish();
   expect_rows_aligned_with_header(rendered, "bcd");
+}
+
+TEST(DataTableStreaming, RuntimePrecisionColumnWithoutDigitsStartsAtTheMinimumWidth)
+{
+  using uni20::mpreal;
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<mpreal>("a"), p::data_column<int>("n"));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  table.append(mpreal("1.5", uni20::Precision::bits(128)), 1);
+  table.finish();
+  ASSERT_EQ(rendered.size(), 1U);
+  EXPECT_EQ(rendered[0].find('n'), 12U) << rendered[0]; // the sink's minimum width of 10, then the separator
 }
 #endif
 
@@ -352,8 +381,8 @@ TYPED_TEST(DataTableStreamingPrecision, NarrowTerminalKeepsRoundTripNumbersIntac
     uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
       rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
     });
-    auto table = p::make_data_table("", p::data_column<Real>("x").round_trip(), p::data_column<Real>("y").round_trip(),
-                                    p::data_column<Real>("z").round_trip());
+    auto table = p::make_data_table("", p::data_column<Real>("x").round_trip(),
+                                      p::data_column<Real>("y").round_trip(), p::data_column<Real>("z").round_trip());
     table.attach(p::terminal_sink({.wrap_width = 60}));
     if (compact_first) table.append(1, 2, 3);
     Real const x = Real{1} / Real{7};

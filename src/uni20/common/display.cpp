@@ -354,7 +354,8 @@ column_format general(int precision, terminal::TerminalStyle style)
 {
   auto const digits = static_cast<std::size_t>(std::max(precision, 0));
   auto result = number(fmt::format("{{:.{}g}}", digits), std::move(style));
-  result.minimum_width = digits + 6;
+  // A sign, a point and an exponent "e-ddd", as for scientific(); the fixed form is never wider.
+  result.minimum_width = digits + 7;
   return result;
 }
 } // namespace format
