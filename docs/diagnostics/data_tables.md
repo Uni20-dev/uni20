@@ -481,8 +481,8 @@ exact-fraction column and a non-real column start at the sink's minimum width an
 grow when a row needs more, which misaligns the rows already written. So do an
 `mpreal` value beyond `1e±9999`, a `fixed` value with more than five integer
 digits (four if negative), an exact integer longer than the column's digit count,
-and a `.missing(...)` marker wider than the column; `.width(...)` reserves more. A `display::width::fixed(n)` width is exact: a label wider than `n`
-overflows its heading. If the
+and a `.missing(...)` marker wider than the column; `.width(...)` reserves more. A `display::width::fixed(n)` width is exact: a label
+wider than `n` wraps onto further header lines within the column. If the
 columns do not fit the terminal, the table uses vertical key/value output from
 its first row. Numeric values remain
 intact, including round-trip real text and half-integer fractions. If a value
