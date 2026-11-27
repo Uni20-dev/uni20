@@ -3,6 +3,7 @@
 #include "../../examples/models/ising_strip_reference.hpp"
 #include "../numerics/precision_cases.hpp"
 #include <sstream>
+#include <stdexcept>
 #include <uni20/linalg/dispatch_diagnostics.hpp>
 
 namespace
@@ -122,6 +123,42 @@ TYPED_TEST(DenseHotrg, EighCutKeepsTheSvdCutSubspace)
     expect_error_at_most(eigh.discarded_y[i], svd.discarded_y[i], 1024 * C::epsilon());
     expect_error_at_most(eigh.discarded_x[i], svd.discarded_x[i], 1024 * C::epsilon());
     C::expect_precision(eigh.lnz[i]);
+  }
+}
+
+TYPED_TEST(DenseHotrg, SelectedEighCutKeepsTheSvdCutSubspace)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  auto const p = C::precision();
+  R const Kc = hotrg::critical_coupling<R>(hotrg::model::clock, 2, p);
+  if constexpr (!hotrg::selected_eigh_supported<R>)
+  {
+    // binary80 and MPFR have only the full eigensolver.
+    EXPECT_THROW(
+        (void)hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 1, nullptr, hotrg::cut_method::selected_eigh),
+        std::invalid_argument);
+  }
+  else
+  {
+    auto const svd = hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3);
+    auto const selected =
+        hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3, nullptr, hotrg::cut_method::selected_eigh);
+    ASSERT_EQ(selected.lnz.size(), svd.lnz.size());
+    for (std::size_t i = 0; i < svd.lnz.size(); ++i)
+    {
+      expect_error_at_most(selected.lnz[i], svd.lnz[i], 1024 * C::epsilon());
+      expect_error_at_most(selected.discarded_y[i], svd.discarded_y[i], 1024 * C::epsilon());
+      expect_error_at_most(selected.discarded_x[i], svd.discarded_x[i], 1024 * C::epsilon());
+      // The extra eigenpair is there only for the gap at the cut, so check that too.  The gap
+      // (lambda_D - lambda_{D+1}) / lambda_D divides by the smallest kept eigenvalue, while each
+      // eigenvalue is accurate only to about epsilon * lambda_1, so its rounding error is about
+      // epsilon * lambda_1 / lambda_D: some 1300 epsilon here in float and double alike.  Dropping
+      // the extra pair sets the gap to 1, far outside this bound.
+      expect_error_at_most(selected.gap_y[i], svd.gap_y[i], 16384 * C::epsilon());
+      expect_error_at_most(selected.gap_x[i], svd.gap_x[i], 16384 * C::epsilon());
+      C::expect_precision(selected.lnz[i]);
+    }
   }
 }
 

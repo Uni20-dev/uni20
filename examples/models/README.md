@@ -252,9 +252,14 @@ gram of size `D^2 x D^2` at the plateau. `--gram-cut=M` chooses how:
 | --- | --- | --- |
 | `svd` (default) | `truncated_svd` (LAPACK `gesvd`, or MPLAPACK) | the full cuSOLVER SVD, then the leading columns by a GEMM |
 | `eigh` | `eigh` (LAPACK `syev`, or MPLAPACK) | cuSOLVER `syevd`, then the trailing columns by a GEMM |
+| `selected-eigh` | `eigh` over an index range (LAPACK `syevr`, or MPLAPACK binary128) | cuSOLVER `syevdx`, then the columns by a GEMM |
 
-Both keep the same subspace when the gap at the cut is not tiny; the flows agree
-to rounding.
+`selected-eigh` asks for only the top `D + 1` eigenpairs: `D` to keep and one
+more for the gap at the cut. It covers float, double and binary128; binary80
+and MPFR runs reject it, since their adapters have only the full solver.
+
+All three keep the same subspace when the gap at the cut is not tiny; the flows
+agree to rounding.
 
 `--benchmark-gram-cut` compares the methods at fp64 on the selected place, for
 the bonds in `--bonds=D,D,...`:
@@ -272,6 +277,12 @@ It then runs a `--rounds` flow with each method and reports the final ln Z/N and
 X_1 against the `svd` flow. More methods are tracked in
 [issue 200](https://github.com/Uni20-dev/uni20/issues/200).
 
-On a Quadro GV100 (CUDA 12.9), `eigh` cuts the bond-64 gram in 0.41 s against
-2.17 s for `svd`, and a five-round bond-64 flow takes 9.3 s against 15.8 s. On
-the host (Intel Alder Lake, OpenBLAS), the bond-32 cut takes 0.49 s against 1.97 s.
+| Cut of one gram | `svd` | `eigh` | `selected-eigh` |
+| --- | --- | --- | --- |
+| Quadro GV100 (CUDA 12.9), bond 64 | 2.12 s | 0.41 s | 0.38 s |
+| Host (Intel Alder Lake, OpenBLAS), bond 32 | 2.00 s | 0.47 s | 0.047 s |
+
+A five-round flow takes 15.7 s, 9.2 s and 9.2 s on the GV100 at bond 64, and
+14.1 s, 8.5 s and 7.0 s on the host at bond 32. On the GPU, `syevdx` still
+reduces the whole gram to tridiagonal form, which dominates; asking for fewer
+eigenpairs saves little there.

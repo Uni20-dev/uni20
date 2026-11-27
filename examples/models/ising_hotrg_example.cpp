@@ -725,6 +725,11 @@ void the_step_on_cuda_tensors()
     d::emit(text("bond 8, eigh cut: ln Z / N off the host's SVD cut by {:.1e}; cut errors off by {:.1e}", lnz, cut),
             d::stream::out);
     report(lnz < 1e-11 && cut < 1e-9, "the eigh cut on CUDA tensors keeps the subspace of the host's SVD cut");
+    flow_record const selected =
+        flow<device_place>(vertex(model::clock, 2, K), 8, rounds, nullptr, cut_method::selected_eigh);
+    double const selected_lnz = largest_difference(expected.lnz, selected.lnz);
+    d::emit(text("bond 8, selected-eigh cut: ln Z / N off the host's SVD cut by {:.1e}", selected_lnz), d::stream::out);
+    report(selected_lnz < 1e-11, "the selected-eigh cut on CUDA tensors keeps the subspace of the host's SVD cut");
   }
   if (second_cuda_device)
   {
@@ -893,7 +898,10 @@ double subspace_distance(tensor3 const& U, tensor3 const& V)
 
 template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int repeat)
 {
-  constexpr std::array methods{cut_method::svd, cut_method::eigh};
+  constexpr std::array methods{cut_method::svd, cut_method::eigh, cut_method::selected_eigh};
+  std::size_t method_width = 0;
+  for (cut_method method : methods)
+    method_width = std::max(method_width, std::string_view(cut_method_name(method)).size());
   double const K = critical_coupling<double>(model::clock, 2, uni20::native_precision<double>());
   using clock = std::chrono::steady_clock;
 
@@ -904,14 +912,14 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
       .field("Repeats", repeat);
   d::emit(std::move(setup), d::stream::out);
 
-  auto cuts =
-      p::make_data_table("Cut of one gram", {.retain = p::retention::none}, p::data_column<idx>("bond").label("Bond"),
-                         p::data_column<std::string>("method").label("Method"),
-                         p::data_column<double>("seconds").label("Seconds").scientific(2),
-                         p::data_column<double>("spectrum").label("Spectrum error").scientific(2),
-                         p::data_column<double>("discarded").label("Discarded error").scientific(2),
-                         p::data_column<double>("subspace").label("Subspace distance").scientific(2),
-                         p::data_column<double>("gap").label("Gap").scientific(2));
+  auto cuts = p::make_data_table(
+      "Cut of one gram", {.retain = p::retention::none}, p::data_column<idx>("bond").label("Bond"),
+      p::data_column<std::string>("method").label("Method").width(uni20::display::width::fit(method_width)),
+      p::data_column<double>("seconds").label("Seconds").scientific(2),
+      p::data_column<double>("spectrum").label("Spectrum error").scientific(2),
+      p::data_column<double>("discarded").label("Discarded error").scientific(2),
+      p::data_column<double>("subspace").label("Subspace distance").scientific(2),
+      p::data_column<double>("gap").label("Gap").scientific(2));
   cuts.attach(p::terminal_sink());
   for (std::size_t D : bonds)
   {
@@ -961,7 +969,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
 
   auto flows = p::make_data_table(
       "Flow with each cut", {.retain = p::retention::none}, p::data_column<idx>("bond").label("Bond"),
-      p::data_column<std::string>("method").label("Method"),
+      p::data_column<std::string>("method").label("Method").width(uni20::display::width::fit(method_width)),
       p::data_column<double>("seconds").label("Seconds").scientific(2), p::data_column<double>("lnz").label("ln Z/N"),
       p::data_column<double>("lnz_vs_svd").label("vs svd").scientific(2), p::data_column<double>("x1").label("X_1"),
       p::data_column<double>("x1_vs_svd").label("vs svd").scientific(2));
@@ -1008,7 +1016,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
       .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
       .row("--second-cuda-device=N", "With --execution=cuda --check: also check a step on a tensor on device N")
       .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
-      .row("--gram-cut=M", "svd|eigh (default svd): how a step takes the leading vectors of the gram")
+      .row("--gram-cut=M", "svd|eigh|selected-eigh (default svd): how a step takes the leading vectors of the gram")
       .row("--benchmark-gram-cut", "Time every gram-cut method on the same grams, and a flow with each (fp64)")
       .row("--bonds=D,D,...", "Bonds for --benchmark-gram-cut (default 8,16,24)")
       .row("--repeat=N", "Timed repeats per cut for --benchmark-gram-cut; the fastest is shown (default 3)")
@@ -1140,8 +1148,10 @@ int main(int argc, char** argv)
           method = cut_method::svd;
         else if (value == "eigh")
           method = cut_method::eigh;
+        else if (value == "selected-eigh")
+          method = cut_method::selected_eigh;
         else
-          usage("--gram-cut is svd or eigh");
+          usage("--gram-cut is svd, eigh or selected-eigh");
       }
       else if (name == "--bonds")
       {

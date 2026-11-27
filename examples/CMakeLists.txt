@@ -122,6 +122,7 @@ endif()
 add_test(NAME IsingHotrgRejectFixedBits COMMAND ising_hotrg_example --precision=fp64 --bits=128)
 set_tests_properties(IsingHotrgRejectFixedBits PROPERTIES WILL_FAIL TRUE)
 add_test(NAME IsingHotrgEighFlow COMMAND ising_hotrg_example --gram-cut=eigh --bond=8 --rounds=6)
+add_test(NAME IsingHotrgSelectedEighFlow COMMAND ising_hotrg_example --gram-cut=selected-eigh --bond=8 --rounds=6)
 add_test(NAME IsingHotrgCutBenchmark COMMAND ising_hotrg_example --benchmark-gram-cut --bonds=4,8 --rounds=2
                                              --repeat=1)
 if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)

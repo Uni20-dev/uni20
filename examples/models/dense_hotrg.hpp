@@ -68,6 +68,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <functional>
 #include <numbers>
@@ -103,15 +104,31 @@ enum class model
 //   svd   the leading singular vectors: `truncated_svd` on the host, the full cuSOLVER SVD on a device
 //   eigh  the leading eigenvectors: `eigh` on the host (LAPACK, or MPLAPACK for the wide types) and on
 //         a device (cuSOLVER syevd)
+//   selected-eigh  only the leading k + 1 eigenpairs, the last for the gap: LAPACK syevr on the host,
+//         cuSOLVER syevdx on a device
 enum class cut_method
 {
   svd,
-  eigh
+  eigh,
+  selected_eigh
 };
+
+// Whether the selected eigensolver (#204) covers a host scalar type: the raw LAPACK wrappers, which take
+// float and double and, when configured, MPLAPACK binary128.  binary80 and MPFR have only the full solver.
+template <uni20::Real R> inline constexpr bool selected_eigh_supported = uni20::LapackReal<R>;
 
 [[nodiscard]] inline char const* cut_method_name(cut_method method)
 {
-  return method == cut_method::svd ? "svd" : "eigh";
+  switch (method)
+  {
+    case cut_method::svd:
+      return "svd";
+    case cut_method::eigh:
+      return "eigh";
+    case cut_method::selected_eigh:
+      return "selected-eigh";
+  }
+  return "?";
 }
 
 // Where a run's time goes, accumulated over every call since the program started: the GEMM
@@ -588,6 +605,31 @@ template <uni20::Real R>
   R const trace = gram_trace(theta);
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
+  if (method == cut_method::selected_eigh)
+  {
+    if constexpr (!selected_eigh_supported<R>)
+      throw std::invalid_argument(
+          "dense_hotrg: the selected-eigh cut needs a LAPACK scalar (float, double, MPLAPACK binary128); use eigh");
+    else
+    {
+      idx const k = static_cast<idx>(std::min(D, rows)), r = n * n;
+      idx const first = std::max<idx>(r - k - 1, 0); // one more than kept, for the gap
+      auto const decomposition = [&] {
+        lap const timer(spent().cut);
+        return uni20::linalg::eigh(uni20::reshape_view(theta, r, r), uni20::linalg::EigenvalueIndexRange{first, r},
+                                   uni20::linalg::MatrixTriangle::Upper, p); // ascending
+      }();
+      idx const count = r - first;
+      gram_cut<R, host_place> result{
+          .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+      for (idx c = 0; c < k; ++c)
+        for (idx b = 0; b < n; ++b)
+          for (idx a = 0; a < n; ++a)
+            result.U[a, b, c] = R(decomposition.eigenvectors[a + n * b, count - 1 - c]);
+      cut_from_eigenvalues(result.gap, result.S, result.discarded, decomposition.eigenvalues, count, k, trace);
+      return result;
+    }
+  }
   if (method == cut_method::eigh)
   {
     auto const decomposition = [&] {
@@ -595,7 +637,8 @@ template <uni20::Real R>
       return uni20::linalg::eigh(uni20::reshape_view(theta, n * n, n * n), p); // ascending
     }();
     idx const k = static_cast<idx>(std::min(D, rows));
-    gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+    gram_cut<R, host_place> result{
+        .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
     for (idx c = 0; c < k; ++c)
       for (idx b = 0; b < n; ++b)
         for (idx a = 0; a < n; ++a)
@@ -611,7 +654,8 @@ template <uni20::Real R>
   }();
   idx const k = static_cast<idx>(decomposition.singular_values.extent(0));
 
-  gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+  gram_cut<R, host_place> result{
+      .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
   uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, k));
   R kept = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < k; ++i)
@@ -651,6 +695,28 @@ template <uni20::Real R>
   idx const k = static_cast<idx>(std::min<std::size_t>(D, static_cast<std::size_t>(rows)));
   R const trace = gram_trace(theta);
 
+  if (method == cut_method::selected_eigh)
+  {
+    idx const first = std::max<idx>(rows - k - 1, 0); // one more than kept, for the gap
+    idx const count = rows - first;
+    auto U = place.template make<R>(p, n, n, k);
+    auto const values = [&] {
+      lap const timer(spent().cut);
+      auto decomposition = uni20::linalg::eigh(uni20::reshape_view(theta, rows, rows),
+                                               uni20::linalg::EigenvalueIndexRange{first, rows}); // ascending
+      uni20::Tensor<R, 2> trailing(count, k, p);                                                  // zero-initialized
+      for (idx c = 0; c < k; ++c)
+        trailing[count - 1 - c, c] = R{1};
+      auto const selector = place.upload(trailing);
+      uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, decomposition.eigenvectors, selector,
+                              std::array<axis_pair, 1>{{{1, 0}}}, R{0}, p);
+      wait_for(U);
+      return uni20::to_host(decomposition.eigenvalues);
+    }();
+    gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
+    cut_from_eigenvalues(result.gap, result.S, result.discarded, values, count, k, trace);
+    return result;
+  }
   if (method == cut_method::eigh)
   {
     auto U = place.template make<R>(p, n, n, k);
