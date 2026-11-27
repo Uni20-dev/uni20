@@ -97,12 +97,29 @@ enum class model
   potts
 };
 
+// How a step cuts the gram.  The gram is symmetric positive semidefinite, so its leading singular
+// vectors are its leading eigenvectors and both methods keep the same subspace; they differ in cost
+// and in the solver's rounding.
+//   svd   the leading singular vectors: `truncated_svd` on the host, the full cuSOLVER SVD on a device
+//   eigh  the leading eigenvectors: `eigh` on the host (LAPACK, or MPLAPACK for the wide types) and on
+//         a device (cuSOLVER syevd)
+enum class cut_method
+{
+  svd,
+  eigh
+};
+
+[[nodiscard]] inline char const* cut_method_name(cut_method method)
+{
+  return method == cut_method::svd ? "svd" : "eigh";
+}
+
 // Where a run's time goes, accumulated over every call since the program started: the GEMM
-// contractions, the regroupings (strided copies that materialize a permuted view), and the SVD
-// of the gram.
+// contractions, the regroupings (strided copies that materialize a permuted view), and the cut of
+// the gram (its decomposition, and on a device the selection of the kept vectors).
 struct seconds_spent
 {
-    double contract = 0.0, regroup = 0.0, svd = 0.0;
+    double contract = 0.0, regroup = 0.0, cut = 0.0;
 };
 
 inline seconds_spent& spent()
@@ -544,15 +561,50 @@ template <uni20::Real R, class Place> struct gram_cut
     R gap;
 };
 
-template <uni20::Real R> [[nodiscard]] inline gram_cut<R, host_place> cut_gram(tensor4<R> const& theta, std::size_t D)
+// The cut from the gram's eigensystem, ascending: the last k eigenpairs, in descending order.
+template <uni20::Real R, class Values>
+void cut_from_eigenvalues(R& gap, std::vector<R>& S, R& discarded, Values const& values, idx rows, idx k, R trace)
+{
+  R kept = R{0};
+  for (idx c = 0; c < k; ++c)
+  {
+    S.push_back(R(values[rows - 1 - c]));
+    kept += S.back();
+  }
+  discarded = 1 - kept / trace;
+  if (k == rows)
+    gap = R{1}; // nothing was discarded
+  else if (S.back() > 0)
+    gap = (S.back() - R(values[rows - 1 - k])) / S.back();
+  else
+    gap = R{0}; // the cut falls inside the null space
+}
+
+template <uni20::Real R>
+[[nodiscard]] inline gram_cut<R, host_place> cut_gram(tensor4<R> const& theta, std::size_t D, cut_method method)
 {
   auto const p = uni20::precision_of(theta);
   idx const n = theta.extent(0);
   R const trace = gram_trace(theta);
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
+  if (method == cut_method::eigh)
+  {
+    auto const decomposition = [&] {
+      lap const timer(spent().cut);
+      return uni20::linalg::eigh(uni20::reshape_view(theta, n * n, n * n), p); // ascending
+    }();
+    idx const k = static_cast<idx>(std::min(D, rows));
+    gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+    for (idx c = 0; c < k; ++c)
+      for (idx b = 0; b < n; ++b)
+        for (idx a = 0; a < n; ++a)
+          result.U[a, b, c] = R(decomposition.eigenvectors[a + n * b, n * n - 1 - c]);
+    cut_from_eigenvalues(result.gap, result.S, result.discarded, decomposition.eigenvalues, n * n, k, trace);
+    return result;
+  }
   auto decomposition = [&] {
-    lap const timer(spent().svd);
+    lap const timer(spent().cut);
     return uni20::linalg::truncated_svd(
         uni20::reshape_view(theta, n * n, n * n),
         uni20::linalg::SvdTruncationPolicy<R>{.maximum_retained_extent = std::min(D, rows)}, p);
@@ -586,8 +638,11 @@ template <uni20::Real R> [[nodiscard]] inline gram_cut<R, host_place> cut_gram(t
 // host to report the cut; and U is the left factor times the leading k columns of the identity,
 // one GEMM on the device, so the factor never leaves the device.  The SVD computes the right
 // factor and all n^2 vectors where k are kept.
+//
+// With cut_method::eigh, cuSOLVER syevd gives the ascending eigensystem on the device, and U is the
+// eigenvector matrix times the last k columns of the identity in reverse order, so it is descending.
 template <uni20::Real R>
-[[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D)
+[[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D, cut_method method)
 {
   auto const p = uni20::precision_of(theta);
   auto const place = place_of(theta);
@@ -596,12 +651,31 @@ template <uni20::Real R>
   idx const k = static_cast<idx>(std::min<std::size_t>(D, static_cast<std::size_t>(rows)));
   R const trace = gram_trace(theta);
 
+  if (method == cut_method::eigh)
+  {
+    auto U = place.template make<R>(p, n, n, k);
+    auto const values = [&] {
+      lap const timer(spent().cut);
+      auto decomposition = uni20::linalg::eigh(uni20::reshape_view(theta, rows, rows)); // ascending
+      uni20::Tensor<R, 2> trailing(rows, k, p);                                         // zero-initialized
+      for (idx c = 0; c < k; ++c)
+        trailing[rows - 1 - c, c] = R{1};
+      auto const selector = place.upload(trailing);
+      uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, decomposition.eigenvectors, selector,
+                              std::array<axis_pair, 1>{{{1, 0}}}, R{0}, p);
+      wait_for(U);
+      return uni20::to_host(decomposition.eigenvalues);
+    }();
+    gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
+    cut_from_eigenvalues(result.gap, result.S, result.discarded, values, rows, k, trace);
+    return result;
+  }
   uni20::CudaMatrix<R> left(uni20::uninitialized, resources, rows, rows);
   uni20::CudaMatrix<R> right_adjoint(uni20::uninitialized, resources, rows, rows);
   uni20::CudaTensor<R, 1> values(uni20::uninitialized, resources, rows);
   auto U = place.template make<R>(p, n, n, k);
   {
-    lap const timer(spent().svd);
+    lap const timer(spent().cut);
     auto matrix = uni20::reshape(std::move(theta), rows, rows);
     uni20::linalg::singular_value_decomposition(values, left, right_adjoint, matrix);
     uni20::Tensor<R, 2> leading(rows, k, p); // zero-initialized
@@ -632,10 +706,10 @@ template <uni20::Real R>
 }
 #endif
 
-template <class Tensor4> [[nodiscard]] inline auto coarse_grain_y(Tensor4 const& t, std::size_t D)
+template <class Tensor4> [[nodiscard]] inline auto coarse_grain_y(Tensor4 const& t, std::size_t D, cut_method method)
 {
   using R = typename Tensor4::value_type;
-  auto cut = cut_gram(gram_y(t), D);
+  auto cut = cut_gram(gram_y(t), D, method);
   step_result<R, place_type<Tensor4>> result{.T = apply_isometry(t, t, cut.U),
                                              .U = std::move(cut.U),
                                              .S = std::move(cut.S),
@@ -655,14 +729,15 @@ template <class Tensor4> [[nodiscard]] inline auto gram(Tensor4 const& t, axis a
   return along == axis::y ? gram_y(t) : gram_y(exchange_axes(t));
 }
 
-// One HOTRG step along `along` with a global top-D cut: gram -> truncated SVD -> the update
-// network with U on both fused faces -> divide by the largest entry.  For the x step exchange
-// the names ym <-> xm, yp <-> xp in every picture.  The tensor may be on the host or, in a CUDA
-// build, on the device; the result is in the same place.
-template <class Tensor4> [[nodiscard]] inline auto coarse_grain(Tensor4 const& t, axis along, std::size_t D)
+// One HOTRG step along `along` with a global top-D cut: gram -> its leading vectors (`method`) ->
+// the update network with U on both fused faces -> divide by the largest entry.  For the x step
+// exchange the names ym <-> xm, yp <-> xp in every picture.  The tensor may be on the host or, in a
+// CUDA build, on the device; the result is in the same place.
+template <class Tensor4>
+[[nodiscard]] inline auto coarse_grain(Tensor4 const& t, axis along, std::size_t D, cut_method method = cut_method::svd)
 {
-  if (along == axis::y) return detail::coarse_grain_y(t, D);
-  auto result = detail::coarse_grain_y(exchange_axes(t), D);
+  if (along == axis::y) return detail::coarse_grain_y(t, D, method);
+  auto result = detail::coarse_grain_y(exchange_axes(t), D, method);
   result.T = exchange_axes(result.T);
   return result;
 }
@@ -678,7 +753,7 @@ template <uni20::Real R> struct flow_record
     std::vector<R> log_norm_y = {}, log_norm_x = {};
     std::vector<R> discarded_y = {}, discarded_x = {}, gap_y = {}, gap_x = {};
     std::vector<R> lnz = {}; // log Z per original lattice site
-    std::vector<double> seconds = {}, seconds_contract = {}, seconds_regroup = {}, seconds_svd = {};
+    std::vector<double> seconds = {}, seconds_contract = {}, seconds_regroup = {}, seconds_cut = {};
     R initial_log_scale;
     R unit_lnz;
     tensor4<R> T0;
@@ -693,7 +768,8 @@ template <uni20::Real R> struct flow_record
 ///          The model tensor is normalized on the host and placed once; the record's `T0`,
 ///          and the tensor given to the observer, are on the host.
 template <class Place = host_place, uni20::Real R, class Observer = std::nullptr_t>
-[[nodiscard]] flow_record<R> flow(scaled_tensor<R> unit, std::size_t D, int steps, Observer observe = nullptr)
+[[nodiscard]] flow_record<R> flow(scaled_tensor<R> unit, std::size_t D, int steps, Observer observe = nullptr,
+                                  cut_method method = cut_method::svd)
 {
   detail::require(steps >= 0 && D > 0, "nonnegative rounds and positive bond dimension required");
   auto const p = uni20::precision_of(unit.tensor);
@@ -718,8 +794,8 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
     {
       auto const start = std::chrono::steady_clock::now();
       seconds_spent const before = spent();
-      auto along_y = coarse_grain(T, axis::y, D);
-      auto along_x = coarse_grain(along_y.T, axis::x, D);
+      auto along_y = coarse_grain(T, axis::y, D, method);
+      auto along_x = coarse_grain(along_y.T, axis::x, D, method);
       T = std::move(along_x.T);
       record.log2_width.push_back(step + 1);
       record.log_norm_y.push_back(uni20::math::log(along_y.norm));
@@ -735,7 +811,7 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
       record.seconds.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
       record.seconds_contract.push_back(spent().contract - before.contract);
       record.seconds_regroup.push_back(spent().regroup - before.regroup);
-      record.seconds_svd.push_back(spent().svd - before.svd);
+      record.seconds_cut.push_back(spent().cut - before.cut);
       if constexpr (!std::same_as<Observer, std::nullptr_t>)
       {
         if constexpr (std::same_as<Place, host_place>)
