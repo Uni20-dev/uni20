@@ -39,12 +39,14 @@ LoopedGemmContractionBackend(GemmSelector) -> LoopedGemmContractionBackend<std::
 namespace detail::looped_gemm_contraction_backend
 {
 
-template <class GemmSelector, class OutputMdspec, class Scalar, class LhsMdspec, class RhsMdspec>
+template <class GemmSelector, class OutputMdspec, class Scalar, class LhsMdspec, class RhsMdspec,
+          class... PrecisionArgs>
 consteval bool gemm_dispatch_types_compatible()
 {
   return requires(GemmSelector const& selector, offset_contraction_matrix_mdspec_t<OutputMdspec>& output, Scalar alpha,
-                  offset_contraction_matrix_mdspec_t<LhsMdspec>& lhs, offset_contraction_matrix_mdspec_t<RhsMdspec>& rhs) {
-    try_dispatch_kernel(selector, gemm_op{}, output, alpha, lhs, rhs, alpha);
+                  offset_contraction_matrix_mdspec_t<LhsMdspec>& lhs, offset_contraction_matrix_mdspec_t<RhsMdspec>& rhs,
+                  PrecisionArgs... precision) {
+    try_dispatch_kernel(selector, gemm_op{}, output, alpha, lhs, rhs, alpha, precision...);
   };
 }
 
@@ -55,13 +57,13 @@ template <
     class GemmSelector, std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
     MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
     uni20::Scalar Scalar, RankedContractionMdspecLike<LhsRank> LhsMdspec,
-    RankedContractionMdspecLike<RhsRank> RhsMdspec>
+    RankedContractionMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
 consteval auto kernel_accepts_types(LoopedGemmContractionBackend<GemmSelector> const&,
                                     contract_op<LhsRank, RhsRank, ContractedRank> const&, OutputMdspec&, Scalar const&,
-                                    LhsMdspec&, RhsMdspec&, Scalar const&)
+                                    LhsMdspec&, RhsMdspec&, Scalar const&, PrecisionArgs...)
 {
-  if constexpr (detail::looped_gemm_contraction_backend::gemm_dispatch_types_compatible<GemmSelector, OutputMdspec,
-                                                                                        Scalar, LhsMdspec, RhsMdspec>())
+  if constexpr (detail::looped_gemm_contraction_backend::gemm_dispatch_types_compatible<
+                    GemmSelector, OutputMdspec, Scalar, LhsMdspec, RhsMdspec, PrecisionArgs...>())
     return kernel_types_maybe;
   else
     return kernel_types_no;
@@ -77,12 +79,12 @@ template <
     class GemmSelector, std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
     MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
     uni20::Scalar Scalar, RankedContractionMdspecLike<LhsRank> LhsMdspec,
-    RankedContractionMdspecLike<RhsRank> RhsMdspec>
-  requires(detail::looped_gemm_contraction_backend::gemm_dispatch_types_compatible<GemmSelector, OutputMdspec, Scalar,
-                                                                                   LhsMdspec, RhsMdspec>())
+    RankedContractionMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
+  requires(detail::looped_gemm_contraction_backend::gemm_dispatch_types_compatible<
+           GemmSelector, OutputMdspec, Scalar, LhsMdspec, RhsMdspec, PrecisionArgs...>())
 KernelAttempt try_kernel(LoopedGemmContractionBackend<GemmSelector> const& backend,
                          contract_op<LhsRank, RhsRank, ContractedRank> const& operation, OutputMdspec& output,
-                         Scalar alpha, LhsMdspec& lhs, RhsMdspec& rhs, Scalar beta)
+                         Scalar alpha, LhsMdspec& lhs, RhsMdspec& rhs, Scalar beta, PrecisionArgs... precision)
 {
   auto plan = try_make_looped_contraction_gemm_plan(output, lhs, rhs, operation.axes);
   if (!plan) return KernelAttempt::unsupported_layout;
@@ -96,12 +98,14 @@ KernelAttempt try_kernel(LoopedGemmContractionBackend<GemmSelector> const& backe
     auto rhs_matrix = make_offset_contraction_matrix_mdspec(rhs, plan->gemm.rhs, index * plan->rhs_offset_stride);
     if (index == 0)
     {
-      if (!try_dispatch_kernel(backend.gemm_selector, gemm_op{}, output_matrix, alpha, lhs_matrix, rhs_matrix, beta))
+      if (!try_dispatch_kernel(backend.gemm_selector, gemm_op{}, output_matrix, alpha, lhs_matrix, rhs_matrix, beta,
+                               precision...))
         return KernelAttempt::unsupported_instance;
     }
     else
     {
-      dispatch_kernel(backend.gemm_selector, gemm_op{}, output_matrix, alpha, lhs_matrix, rhs_matrix, beta);
+      dispatch_kernel(backend.gemm_selector, gemm_op{}, output_matrix, alpha, lhs_matrix, rhs_matrix, beta,
+                      precision...);
     }
   }
   return KernelAttempt::success;

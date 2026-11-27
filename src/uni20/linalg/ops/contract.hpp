@@ -13,8 +13,10 @@
 #include <uni20/linalg/contraction_axes.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
+#include <uni20/linalg/precision.hpp>
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/output.hpp>
+#include <uni20/tensor/precision.hpp>
 
 #include <array>
 #include <concepts>
@@ -97,7 +99,9 @@ void validate_contraction_aliasing(OutputTensor& output, LhsTensor const& lhs, R
 /// \details Computes `output = alpha * contract(lhs, rhs) + beta * output`.
 ///          Surviving left axes precede surviving right axes in their original
 ///          order. Backend selection occurs before operands are normalized to
-///          mdspec values.
+///          mdspec values. Runtime precision is explicit or inferred from input defaults,
+///          including output when beta is nonzero. Fixed results use their native
+///          precision; runtime precision is forwarded to nested GEMM dispatch.
 /// \pre Output storage does not overlap either input, beyond the cheap
 ///      same-object aliases rejected by this front end.
 template <class BackendSelector, class OutputTensor, class LhsTensor, class RhsTensor, std::size_t LhsRank,
@@ -108,7 +112,7 @@ template <class BackendSelector, class OutputTensor, class LhsTensor, class RhsT
            uni20::RankedTensorView<LhsTensor, LhsRank> && uni20::RankedTensorView<RhsTensor, RhsRank>
 void contract(BackendSelector&& selector, OutputTensor&& output, uni20::tensor_element_t<OutputTensor> alpha,
               LhsTensor const& lhs, RhsTensor const& rhs, ContractionAxes<LhsRank, RhsRank, ContractedRank> axes,
-              uni20::tensor_element_t<OutputTensor> beta)
+              uni20::tensor_element_t<OutputTensor> beta, std::optional<Precision> requested = {})
 {
   detail::validate_contraction_aliasing(output, lhs, rhs);
   auto const required_extents = contraction_output_extents(lhs, rhs, axes);
@@ -118,8 +122,21 @@ void contract(BackendSelector&& selector, OutputTensor&& output, uni20::tensor_e
   auto lhs_descriptor = uni20::mdspec_of(lhs);
   auto rhs_descriptor = uni20::mdspec_of(rhs);
   auto operation = contract_op<LhsRank, RhsRank, ContractedRank>{.axes = std::move(axes)};
-  dispatch_kernel(std::forward<BackendSelector>(selector), std::move(operation), output_descriptor, alpha,
-                  lhs_descriptor, rhs_descriptor, beta);
+  using scalar_type = uni20::tensor_element_t<OutputTensor>;
+  auto const p = [&] {
+    if (requested) return *requested;
+    if constexpr (has_runtime_precision_v<scalar_type>)
+    {
+      auto inferred = common_default_precision(lhs, rhs);
+      if (beta != scalar_type{}) inferred = common_precision(inferred, precision_of(output));
+      return inferred;
+    }
+    else
+      return native_precision<scalar_type>();
+  }();
+  detail::dispatch_at_precision<scalar_type>(std::forward<BackendSelector>(selector), operation, p, output_descriptor,
+                                             alpha, lhs_descriptor, rhs_descriptor, beta);
+  uni20::detail::record_output_precision(output, p);
 }
 
 /// \brief Contract two tensors using their default backend selector.
@@ -131,11 +148,11 @@ template <class OutputTensor, class LhsTensor, class RhsTensor, std::size_t LhsR
            uni20::RankedTensorView<LhsTensor, LhsRank> && uni20::RankedTensorView<RhsTensor, RhsRank>
 void contract(OutputTensor&& output, uni20::tensor_element_t<OutputTensor> alpha, LhsTensor const& lhs,
               RhsTensor const& rhs, ContractionAxes<LhsRank, RhsRank, ContractedRank> axes,
-              uni20::tensor_element_t<OutputTensor> beta)
+              uni20::tensor_element_t<OutputTensor> beta, std::optional<Precision> requested = {})
 {
   auto operation = contract_op<LhsRank, RhsRank, ContractedRank>{.axes = axes};
   auto selector = select_backend(operation, output, lhs, rhs);
-  contract(std::move(selector), std::forward<OutputTensor>(output), alpha, lhs, rhs, std::move(axes), beta);
+  contract(std::move(selector), std::forward<OutputTensor>(output), alpha, lhs, rhs, std::move(axes), beta, requested);
 }
 
 /// \brief Contract two tensors using an explicit selector and raw axis pairs.
@@ -148,13 +165,13 @@ template <class BackendSelector, class OutputTensor, class LhsTensor, class RhsT
 void contract(BackendSelector&& selector, OutputTensor&& output, uni20::tensor_element_t<OutputTensor> alpha,
               LhsTensor const& lhs, RhsTensor const& rhs,
               std::array<std::pair<std::size_t, std::size_t>, ContractedRank> requested_axes,
-              uni20::tensor_element_t<OutputTensor> beta)
+              uni20::tensor_element_t<OutputTensor> beta, std::optional<Precision> requested = {})
 {
   constexpr std::size_t lhs_rank = uni20::tensor_mdspec_t<LhsTensor>::rank();
   constexpr std::size_t rhs_rank = uni20::tensor_mdspec_t<RhsTensor>::rank();
   auto axes = make_contraction_axes<lhs_rank, rhs_rank>(std::move(requested_axes));
   contract(std::forward<BackendSelector>(selector), std::forward<OutputTensor>(output), alpha, lhs, rhs,
-           std::move(axes), beta);
+           std::move(axes), beta, requested);
 }
 
 /// \brief Contract two tensors using storage policy and raw axis pairs.
@@ -166,12 +183,12 @@ template <class OutputTensor, class LhsTensor, class RhsTensor, std::size_t Cont
             uni20::tensor_mdspec_t<LhsTensor>::rank() + uni20::tensor_mdspec_t<RhsTensor>::rank() - 2 * ContractedRank)
 void contract(OutputTensor&& output, uni20::tensor_element_t<OutputTensor> alpha, LhsTensor const& lhs,
               RhsTensor const& rhs, std::array<std::pair<std::size_t, std::size_t>, ContractedRank> requested_axes,
-              uni20::tensor_element_t<OutputTensor> beta)
+              uni20::tensor_element_t<OutputTensor> beta, std::optional<Precision> requested = {})
 {
   constexpr std::size_t lhs_rank = uni20::tensor_mdspec_t<LhsTensor>::rank();
   constexpr std::size_t rhs_rank = uni20::tensor_mdspec_t<RhsTensor>::rank();
   auto axes = make_contraction_axes<lhs_rank, rhs_rank>(std::move(requested_axes));
-  contract(std::forward<OutputTensor>(output), alpha, lhs, rhs, std::move(axes), beta);
+  contract(std::forward<OutputTensor>(output), alpha, lhs, rhs, std::move(axes), beta, requested);
 }
 
 } // namespace uni20::linalg

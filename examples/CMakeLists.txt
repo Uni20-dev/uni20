@@ -97,6 +97,30 @@ add_test(NAME BlockTensorSvdNullspaceExample COMMAND block_tensor_svd_nullspace_
 uni20_add_example(ising_hotrg_example models/ising_hotrg_example.cpp uni20_linalg)
 add_test(NAME IsingHotrgExample COMMAND ising_hotrg_example --check)
 add_test(NAME IsingHotrgFlowExample COMMAND ising_hotrg_example --bond=8 --rounds=6)
+add_test(NAME IsingHotrgLowTemperature
+         COMMAND ising_hotrg_example --temperature=0.004 --bond=1 --rounds=1 --onsager-points=16)
+add_test(NAME IsingHotrgVeryLowTemperature
+         COMMAND ising_hotrg_example --temperature=0.0001 --bond=4 --rounds=2 --onsager-points=16)
+add_test(NAME IsingHotrgLongFlow
+         COMMAND ising_hotrg_example --bond=1 --rounds=1100 --onsager-points=16)
+add_test(NAME IsingHotrgFloat32
+         COMMAND ising_hotrg_example --precision=fp32 --bond=4 --rounds=1 --onsager-points=16)
+if(UNI20_HAS_MPLAPACK_FLOAT80)
+  add_test(NAME IsingHotrgFloat80
+           COMMAND ising_hotrg_example --precision=fp80 --bond=4 --rounds=1 --onsager-points=16)
+endif()
+if(UNI20_HAS_MPLAPACK_FLOAT128)
+  add_test(NAME IsingHotrgFloat128
+           COMMAND ising_hotrg_example --precision=fp128 --bond=4 --rounds=1 --onsager-points=16)
+endif()
+if(UNI20_HAS_MPLAPACK_MPREAL)
+  foreach(bits IN ITEMS 128 256)
+    add_test(NAME IsingHotrgMpreal${bits}
+             COMMAND ising_hotrg_example --precision=mpreal --bits=${bits} --bond=4 --rounds=1 --onsager-points=16)
+  endforeach()
+endif()
+add_test(NAME IsingHotrgRejectFixedBits COMMAND ising_hotrg_example --precision=fp64 --bits=128)
+set_tests_properties(IsingHotrgRejectFixedBits PROPERTIES WILL_FAIL TRUE)
 
 uni20_add_example(spin_half_heisenberg_dmrg_example models/spin_half_heisenberg_dmrg_example.cpp uni20_models
                   TBB::tbb)

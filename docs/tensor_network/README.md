@@ -9,6 +9,8 @@ later distributed-execution targets rather than defining current capability.
 
 ## Current Main-Branch Foundations
 
+- [Dense HOTRG](dense_hotrg.md) documents logarithmic scale and lattice-size
+  bookkeeping, arithmetic selection, GEMM dispatch, and exact-reference validation.
 - [Symmetry](../symmetry/) documents the quantum-number and block-space
   foundations that are present on `main`.
 - [Tensor Operations](../tensor/operations.md) and

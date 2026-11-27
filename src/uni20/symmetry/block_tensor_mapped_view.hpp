@@ -201,14 +201,28 @@ class BlockTensorAllocationContextBinding<
 ///          view still retains placement identity. Replacing or structurally
 ///          modifying the ultimate payload owner invalidates every view over
 ///          that payload and context.
+// The precision binding of a BlockTensor, or of a mapped view over one. A BlockTensor is not a
+// dense tensor view, so descriptor_precision_source, which deduces through tensor_element_t,
+// does not apply to it.
+template <class Source>
+[[nodiscard]] auto block_tensor_precision_source(Source const& source)
+    -> precision_source<typename std::remove_cvref_t<Source>::value_type>
+{
+  if constexpr (requires { source.precision_source(); })
+    return source.precision_source();
+  else
+    return {};
+}
+
 template <class SourceTensor, class DomainType, class CodomainType, auto KeyPermutation, auto DensePermutation>
-class BlockTensorMappedView {
+class BlockTensorMappedView : public detail::precision_source<typename std::remove_cvref_t<SourceTensor>::value_type> {
   public:
     using source_type = SourceTensor;
     using source_tensor_type = std::remove_cvref_t<SourceTensor>;
     using borrowed_block_tensor_view_tag = void;
     using element_type = typename source_tensor_type::element_type;
     using value_type = typename source_tensor_type::value_type;
+    using precision_source_type = detail::precision_source<value_type>;
     using storage_policy = typename source_tensor_type::storage_policy;
     using storage_type = typename source_tensor_type::storage_type;
     using backend_selector_type = typename source_tensor_type::backend_selector_type;
@@ -249,8 +263,8 @@ class BlockTensorMappedView {
     /// \param domain Transformed ordered domain.
     /// \param codomain Transformed ordered codomain.
     explicit BlockTensorMappedView(SourceTensor& source, domain_type domain, codomain_type codomain)
-        : symmetry_(source.symmetry()), domain_(std::move(domain)), codomain_(std::move(codomain)),
-          allocation_context_(source)
+        : precision_source_type(block_tensor_precision_source(source)), symmetry_(source.symmetry()),
+          domain_(std::move(domain)), codomain_(std::move(codomain)), allocation_context_(source)
     {
       this->build_key_index(source);
     }
@@ -266,6 +280,9 @@ class BlockTensorMappedView {
 
     /// \brief Prevent replacing metadata observed by a dependent view.
     auto operator=(BlockTensorMappedView&&) -> BlockTensorMappedView& = delete;
+
+    /// \brief Preserve the ultimate owner's precision binding through nested mapped views.
+    [[nodiscard]] auto precision_source() const noexcept -> precision_source_type { return *this; }
 
     /// \brief Return the explicit symmetry context.
     auto symmetry() const -> Symmetry { return symmetry_; }

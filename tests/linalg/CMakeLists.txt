@@ -1,3 +1,5 @@
+add_test_module(contraction_precision SOURCES test_contraction_precision.cpp LIBS uni20_linalg uni20_async TBB::tbb)
+
 if(UNI20_HAS_MPREAL)
   add_test_module(cpu_runtime_lu SOURCES test_cpu_runtime_lu.cpp LIBS uni20_linalg uni20_async TBB::tbb)
 endif()
