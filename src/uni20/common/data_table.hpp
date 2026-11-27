@@ -290,6 +290,9 @@ template <DataTableValue T> class data_column {
     data_column& working_precision(Precision p)
       requires Real<data_table_detail::value_type<T>>
     {
+      if (p.is_exact())
+        throw std::invalid_argument("data_column: a working precision must be finite; select digits or fractions "
+                                    "for exact values");
       display_.working_precision = p;
       return *this;
     }

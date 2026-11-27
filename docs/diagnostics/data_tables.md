@@ -469,14 +469,20 @@ the owner must check close errors. The terminal adapter uses
 with a display width, such as `display::width::fixed(30)` or
 `display::width::fit(24)`. Without one, a real column uses the fit minimum of
 the display format that matches its numeric format (`display::format::general`,
-`scientific` or `fixed` with the same digit count), so the header and the rows
-already written stay aligned when later values are wider. A native real's
+`scientific` or `fixed` with the same digit count), with room for the type's
+widest exponent: two digits for `float`, three for `double`, four for
+`long double`, binary128 and `mpreal`. The header and the rows already written
+then stay aligned when later values are wider. A native real's
 default digit count is its `max_digits10`. A runtime-precision column takes it
 from `.working_precision(p)`, which states the precision of its values before any
 row arrives; values are still formatted at their own precision. A
 runtime-precision column with neither a digit count nor a working precision, an
 exact-fraction column and a non-real column start at the sink's minimum width and
-grow when a row needs more, which misaligns the rows already written. If the
+grow when a row needs more, which misaligns the rows already written. So do an
+`mpreal` value beyond `1e±9999`, a `fixed` value with more than five integer
+digits, and an exact integer longer than the column's digit count; `.width(...)`
+reserves more. A `display::width::fixed(n)` width is exact: a label wider than `n`
+overflows its heading. If the
 columns do not fit the terminal, the table uses vertical key/value output from
 its first row. Numeric values remain
 intact, including round-trip real text and half-integer fractions. If a value

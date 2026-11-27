@@ -2,6 +2,7 @@
 #include <uni20/common/data_table_sinks.hpp>
 
 #include <functional>
+#include <limits>
 #include <sstream>
 
 namespace
@@ -322,6 +323,31 @@ TEST(DataTableStreaming, TerminalColumnsTakeAnExplicitWidth)
   table.finish();
   ASSERT_EQ(rendered.size(), 1U);
   EXPECT_EQ(rendered[0].find('n'), 32U) << rendered[0]; // 30 cells for x, then the two-cell separator
+}
+
+TEST(DataTableStreaming, TerminalColumnsLeaveRoomForTheTypesWidestExponent)
+{
+  if constexpr (std::numeric_limits<long double>::max_exponent10 < 1000)
+    GTEST_SKIP() << "long double has no four-digit decimal exponent on this platform";
+  else
+  {
+    std::vector<std::string> rendered;
+    uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+      rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+    });
+    auto table = p::make_data_table("", p::data_column<long double>("a"),
+                                    p::data_column<long double>("b").scientific(3), p::data_column<int>("c"));
+    table.attach(p::terminal_sink({.wrap_width = 200}));
+    table.append(1.5L, 1.5L, 1);
+    table.append(-1.2345678901234567890e-1000L, -1.2345e-1000L, 2);
+    table.finish();
+    expect_rows_aligned_with_header(rendered, "bc");
+  }
+}
+
+TEST(DataTableStreaming, WorkingPrecisionMustBeFinite)
+{
+  EXPECT_THROW(p::data_column<double>("x").working_precision(uni20::Precision::exact()), std::invalid_argument);
 }
 
 #if UNI20_HAS_MPREAL

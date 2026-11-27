@@ -342,20 +342,21 @@ column_format fixed(int precision, terminal::TerminalStyle style)
   return result;
 }
 
-column_format scientific(int precision, terminal::TerminalStyle style)
+column_format scientific(int precision, terminal::TerminalStyle style, int exponent_digits)
 {
   auto const digits = static_cast<std::size_t>(std::max(precision, 0));
   auto result = number(fmt::format("{{:.{}e}}", digits), std::move(style));
-  result.minimum_width = digits + 8;
+  // A sign, one leading digit, a point, and "e-" with the exponent's digits.
+  result.minimum_width = digits + 5 + static_cast<std::size_t>(std::max(exponent_digits, 2));
   return result;
 }
 
-column_format general(int precision, terminal::TerminalStyle style)
+column_format general(int precision, terminal::TerminalStyle style, int exponent_digits)
 {
   auto const digits = static_cast<std::size_t>(std::max(precision, 0));
   auto result = number(fmt::format("{{:.{}g}}", digits), std::move(style));
-  // A sign, a point and an exponent "e-ddd", as for scientific(); the fixed form is never wider.
-  result.minimum_width = digits + 7;
+  // A sign, a point, and "e-" with the exponent's digits; the fixed form ("-0.000ddd") is never wider.
+  result.minimum_width = digits + 4 + static_cast<std::size_t>(std::max(exponent_digits, 2));
   return result;
 }
 } // namespace format

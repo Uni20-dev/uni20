@@ -133,10 +133,26 @@ template <typename T> display::formatted_cell terminal_cell(T const& value, data
   }
 }
 
+// Decimal digits of the largest exponent a real type can print, so that its column leaves room for it.
+// binary128 reaches e+4932; an mpreal value beyond 1e+-9999 still widens its column.
+template <typename T> int exponent_digits()
+{
+  if constexpr (requires { uni20::numeric_limits<T>::max_exponent10; })
+  {
+    int digits = 0;
+    for (int e = uni20::numeric_limits<T>::max_exponent10; e > 0; e /= 10)
+      ++digits;
+    return digits;
+  }
+  else
+    return 4;
+}
+
 // A column's streaming terminal width: its own width if it sets one, otherwise the minimum width of the
-// display format that matches its numeric format, so that the header is laid out for the values the
-// format can give. A runtime-precision column takes its default digit count from its working precision.
-// Without a digit count, and for exact fractions, the column starts at the sink's minimum width.
+// display format that matches its numeric format, with the type's exponent digits, so that the header
+// is laid out for the values the format can give. A runtime-precision column takes its default digit
+// count from its working precision. Without a digit count, and for exact fractions, the column starts
+// at the sink's minimum width.
 template <typename Column>
 display::column_width terminal_column_width(data_column_display const& display, std::size_t minimum)
 {
@@ -158,9 +174,11 @@ display::column_width terminal_column_width(data_column_display const& display, 
       digits = uni20::numeric_limits<real_type>::max_digits10();
     if (digits >= 0)
     {
-      auto const format = numeric.notation == real_format_notation::fixed        ? display::format::fixed(digits)
-                          : numeric.notation == real_format_notation::scientific ? display::format::scientific(digits)
-                                                                                 : display::format::general(digits);
+      int const exponent = exponent_digits<real_type>();
+      auto const format = numeric.notation == real_format_notation::fixed ? display::format::fixed(digits)
+                          : numeric.notation == real_format_notation::scientific
+                              ? display::format::scientific(digits, {}, exponent)
+                              : display::format::general(digits, {}, exponent);
       return display::width::fit(std::max(minimum, format.minimum_width));
     }
   }
