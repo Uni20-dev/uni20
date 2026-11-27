@@ -464,9 +464,11 @@ the owner must check close errors. The terminal adapter uses
 first row: a real column in general or scientific notation starts as wide as
 the widest text its format can give, a sign, its digits and an exponent at the
 type's largest exponent, so the header and the rows already written stay aligned
-when wider values arrive. A runtime-precision real takes its digits from the
-first row's value and reserves four exponent digits; a value beyond `1e±9999`
-still widens its column, which misaligns the rows already written. Other columns start at the minimum width and grow when a row
+when wider values arrive. A runtime-precision real takes its digits from its
+format, or else from an approximate first-row value, and reserves four exponent
+digits. A runtime-precision column with neither (no digit count, and a missing or
+exact first value) starts at the minimum width; it and a value beyond `1e±9999`
+widen their column on demand, which misaligns the rows already written. Other columns start at the minimum width and grow when a row
 needs more. If the reserved widths do not fit the terminal, the table uses
 vertical key/value output from the first row. Numeric values remain
 intact, including round-trip real text and half-integer fractions. If a value

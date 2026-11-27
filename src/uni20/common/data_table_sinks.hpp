@@ -151,8 +151,9 @@ template <typename T> std::size_t exponent_digits()
 // streaming column is as wide as its widest value from its first row: the header and the rows already
 // written cannot be laid out again.  General notation is a sign, `digits` significant digits, a point and
 // an exponent "e-ddd" (its fixed form, "-0.000ddd", is never wider); scientific notation has `digits`
-// digits after one leading digit.  Zero, meaning no bound, for fixed notation, exact values, a missing
-// first value of a runtime-precision type, and columns that are not real.
+// digits after one leading digit.  A runtime-precision column takes its digits from its format, or else
+// from an approximate first value.  Zero, meaning no bound, for fixed notation, exact fractions, a
+// runtime-precision column with neither, and columns that are not real.
 template <typename V> std::size_t reserved_width([[maybe_unused]] V const* value, data_column_display const& display)
 {
   if constexpr (!Real<V>)
@@ -165,9 +166,13 @@ template <typename V> std::size_t reserved_width([[maybe_unused]] V const* value
     if constexpr (runtime_real<V>)
     {
 #if UNI20_HAS_MPREAL
-      if (!value || value->is_exact()) return 0;
-      digits = numeric.precision >= 0 ? static_cast<std::size_t>(numeric.precision)
-                                      : mpfr_get_str_ndigits(10, value->precision().bit_count());
+      if (value && value->is_exact() && display.fractions) return 0; // a fraction has no digit bound
+      if (numeric.precision >= 0)
+        digits = static_cast<std::size_t>(numeric.precision);
+      else if (value && !value->is_exact())
+        digits = mpfr_get_str_ndigits(10, value->precision().bit_count());
+      else
+        return 0; // neither the format nor a missing or exact first value gives a digit count
 #else
       return 0;
 #endif
