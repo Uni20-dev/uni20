@@ -2,6 +2,7 @@
 #include <uni20/common/data_table_sinks.hpp>
 
 #include <functional>
+#include <limits>
 #include <sstream>
 
 namespace
@@ -269,6 +270,123 @@ TEST(DataTableStreaming, TerminalAdapterPreservesDecimalAlignmentAfterFormatting
   auto first_row_start = rendered[0].rfind('\n', rendered[0].size() - 2) + 1;
   EXPECT_EQ(rendered[0].find('.', first_row_start) - first_row_start, rendered[1].find('.'));
 }
+
+// Every rendered row ends each value before the separator in front of the next named column's heading.
+void expect_rows_aligned_with_header(std::vector<std::string> const& rendered, std::string const& later_headings)
+{
+  std::vector<std::string> lines;
+  for (auto const& text : rendered)
+  {
+    std::istringstream stream(text);
+    for (std::string line; std::getline(stream, line);)
+      if (!line.empty()) lines.push_back(line);
+  }
+  ASSERT_GE(lines.size(), 4U); // header, separator and two rows
+  auto const& header = lines[0];
+  for (char const heading : later_headings)
+  {
+    auto const column = header.find(heading);
+    ASSERT_NE(column, std::string::npos) << heading;
+    for (std::size_t i = 2; i < lines.size(); ++i)
+      EXPECT_EQ(lines[i].substr(column - 2, 2), "  ") << lines[i];
+  }
+}
+
+TEST(DataTableStreaming, TerminalColumnsKeepTheirLayoutWhenLaterRowsAreWider)
+{
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<double>("x"), p::data_column<double>("y"),
+                                  p::data_column<double>("z").scientific(2));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  double const wide_x = -0.00012345678901234567, wide_y = -1.2345678901234567e-300;
+  table.append(1.5, 2.0, 3.0);
+  table.append(wide_x, wide_y, -9.87e-300);
+  table.finish();
+  expect_rows_aligned_with_header(rendered, "yz");
+  EXPECT_NE(rendered.back().find(uni20::format_real(wide_x)), std::string::npos);
+  EXPECT_NE(rendered.back().find(uni20::format_real(wide_y)), std::string::npos);
+}
+
+TEST(DataTableStreaming, TerminalColumnsTakeAnExplicitWidth)
+{
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<double>("x").width(uni20::display::width::fixed(30)),
+                                  p::data_column<int>("n"));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  table.append(1.5, 1);
+  table.finish();
+  ASSERT_EQ(rendered.size(), 1U);
+  EXPECT_EQ(rendered[0].find('n'), 32U) << rendered[0]; // 30 cells for x, then the two-cell separator
+}
+
+TEST(DataTableStreaming, TerminalColumnsLeaveRoomForTheTypesWidestExponent)
+{
+  // The widest value is made at run time: a four-digit-exponent literal is out of range, and an error,
+  // where long double is binary64.
+  if (std::numeric_limits<long double>::max_exponent10 < 1000)
+    GTEST_SKIP() << "long double has no four-digit decimal exponent on this platform";
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<long double>("a"), p::data_column<long double>("b").scientific(3),
+                                  p::data_column<int>("c"));
+  table.attach(p::terminal_sink({.wrap_width = 200}));
+  long double const widest = -std::numeric_limits<long double>::denorm_min();
+  table.append(1.5L, 1.5L, 1);
+  table.append(widest, widest, 2);
+  table.finish();
+  expect_rows_aligned_with_header(rendered, "bc");
+}
+
+TEST(DataTableStreaming, WorkingPrecisionMustBeFinite)
+{
+  EXPECT_THROW(p::data_column<double>("x").working_precision(uni20::Precision::exact()), std::invalid_argument);
+}
+
+#if UNI20_HAS_MPREAL
+TEST(DataTableStreaming, RuntimePrecisionColumnsLayOutFromTheirWorkingPrecision)
+{
+  using uni20::mpreal;
+  using uni20::Precision;
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto const precision = Precision::bits(128);
+  // a: a missing first value; b: an exact first value; c: an explicit digit count instead.
+  auto table = p::make_data_table("", p::data_column<std::optional<mpreal>>("a").working_precision(precision),
+                                  p::data_column<mpreal>("b").working_precision(precision),
+                                  p::data_column<mpreal>("c").general(40), p::data_column<int>("d"));
+  table.attach(p::terminal_sink({.wrap_width = 400}));
+  mpreal const wide = -mpreal("1.234567890123456789012345678901234567890e-5", precision);
+  table.append(std::nullopt, mpreal(1, Precision::exact()), mpreal("1.5", precision), 1);
+  table.append(wide, wide, wide, 2);
+  table.finish();
+  expect_rows_aligned_with_header(rendered, "bcd");
+}
+
+TEST(DataTableStreaming, RuntimePrecisionColumnWithoutDigitsStartsAtTheMinimumWidth)
+{
+  using uni20::mpreal;
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<mpreal>("a"), p::data_column<int>("n"));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  table.append(mpreal("1.5", uni20::Precision::bits(128)), 1);
+  table.finish();
+  ASSERT_EQ(rendered.size(), 1U);
+  EXPECT_EQ(rendered[0].find('n'), 12U) << rendered[0]; // the sink's minimum width of 10, then the separator
+}
+#endif
 
 template <typename Real> class DataTableStreamingPrecision : public ::testing::Test {};
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \

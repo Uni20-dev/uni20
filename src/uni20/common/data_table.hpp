@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include "display.hpp"
 #include "half_int.hpp"
 #include "presentation.hpp"
 
@@ -200,6 +201,10 @@ struct data_column_display
     table_alignment alignment = table_alignment::right;
     std::string missing = "—";
     bool fractions = false;
+    /// \brief Streaming terminal width; unset selects the minimum width of the numeric format.
+    std::optional<display::column_width> width = std::nullopt;
+    /// \brief Working precision of runtime-precision values, for the default digit count of the layout.
+    std::optional<Precision> working_precision = std::nullopt;
 };
 
 /// \brief Typed column schema with owned metadata and deferred display formatting.
@@ -268,6 +273,27 @@ template <DataTableValue T> class data_column {
     {
       this->set_numeric(real_format_notation::general, -1);
       display_.numeric.normalize_negative_zero = false;
+      return *this;
+    }
+    /// \brief Set the streaming terminal width with a display width: `display::width::fixed`, `fit` or `share`.
+    /// \details Without one, a real column starts at the minimum width of the display format matching its
+    ///          numeric format, and other columns at the sink's minimum column width.
+    data_column& width(display::column_width spec)
+    {
+      display_.width = spec;
+      return *this;
+    }
+    /// \brief Declare the working precision of the column's values.
+    /// \details A runtime-precision column uses it for the default digit count of its layout, so that the
+    ///          layout is known before any row arrives. Values are still formatted at their own precision.
+    ///          A fixed-precision column does not need it and ignores it.
+    data_column& working_precision(Precision p)
+      requires Real<data_table_detail::value_type<T>>
+    {
+      if (p.is_exact())
+        throw std::invalid_argument("data_column: a working precision must be finite; select digits or fractions "
+                                    "for exact values");
+      display_.working_precision = p;
       return *this;
     }
     /// \brief Select exact fractions for half-integers or exact mpreal values.
