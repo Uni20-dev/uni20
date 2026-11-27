@@ -91,6 +91,12 @@ workspace or wide row-major workspace read as its transpose, and
 `linalg::singular_values` returns CUDA-resident values for CUDA inputs. See the
 [cuSOLVER architecture](../backends/cuda/cusolver.md#svd-boundary).
 
+For real `float` and `double`, CUDA `self_adjoint_eigh` uses the blocking
+cuSOLVER `syevd` routines on square column-major work matrices. The
+eigenvalues are ascending and the corresponding eigenvectors occupy columns
+of the work matrix when requested. Preserving `eigh` copies the input to
+column-major work on the same device and returns both tensors there.
+
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
 lowerings for native scalars and configured MPLAPACK GEMM providers, including
 finite MPFR/MPC scalars with explicit operation precision. They jointly merge the logical M, N, and K
