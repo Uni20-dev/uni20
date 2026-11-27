@@ -97,6 +97,13 @@ eigenvalues are ascending and the corresponding eigenvectors occupy columns
 of the work matrix when requested. Preserving `eigh` copies the input to
 column-major work on the same device and returns both tensors there.
 
+`eigh(matrix, EigenvalueIndexRange{first, last})` selects a half-open range
+in ascending eigenvalue order. It returns `last - first` values and a matrix
+with that many eigenvector columns. Direct host LAPACK uses `syevr`/`heevr`
+for float32/64 and the configured MPLAPACK binary128 provider. CUDA uses
+`syevdx` for real float32/64 and keeps the result on the input device. The
+packed binary80 and MPFR/MPC eigensystem adapters cover the full solver.
+
 Explicit Jacobi decompositions are available with `eigh_jacobi(matrix, options,
 triangle)` and `svd_jacobi(matrix, options)` for CUDA-buffer matrices of real
 `float` or `double`. They preserve the input and return device-resident factors.

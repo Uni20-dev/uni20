@@ -61,6 +61,9 @@ precision setting is needed.
 | `mpreal --bits=N` | N binary digits (default 128) | MPLAPACK MPFR |
 
 Unavailable choices are rejected. `--bits` is valid only with `mpreal`.
+`--gram-cut=svd|eigh` chooses how a step takes the leading vectors of the gram,
+at every precision; `--benchmark-gram-cut` compares the methods (see the
+[model examples](../../examples/models/)).
 `--execution=cuda` runs the same step on CUDA tensors for `fp32` and `fp64`,
 in a build with the CUDA, cuBLAS and cuSOLVER backends; the wider types are host
 only. See the [model examples](../../examples/models/) for what the

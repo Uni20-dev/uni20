@@ -105,6 +105,26 @@ TYPED_TEST(DenseHotrg, ExactStripUsesAllAvailableDigits)
   }
 }
 
+TYPED_TEST(DenseHotrg, EighCutKeepsTheSvdCutSubspace)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  auto const p = C::precision();
+  R const Kc = hotrg::critical_coupling<R>(hotrg::model::clock, 2, p);
+  // At bond 8 the gap at the cut is wide, so both methods keep the same subspace and the flows agree
+  // to rounding, round by round.
+  auto const svd = hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3);
+  auto const eigh = hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3, nullptr, hotrg::cut_method::eigh);
+  ASSERT_EQ(eigh.lnz.size(), svd.lnz.size());
+  for (std::size_t i = 0; i < svd.lnz.size(); ++i)
+  {
+    expect_error_at_most(eigh.lnz[i], svd.lnz[i], 1024 * C::epsilon());
+    expect_error_at_most(eigh.discarded_y[i], svd.discarded_y[i], 1024 * C::epsilon());
+    expect_error_at_most(eigh.discarded_x[i], svd.discarded_x[i], 1024 * C::epsilon());
+    C::expect_precision(eigh.lnz[i]);
+  }
+}
+
 TYPED_TEST(DenseHotrg, LongFlowRetainsTinyLogScale)
 {
   using C = TypeParam;

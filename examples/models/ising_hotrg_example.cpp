@@ -620,14 +620,6 @@ void inputs_at_the_edge()
          "128 rounds retain the lattice width as an exponent without overflow");
 }
 
-#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
-// ----------------------------------------------------------------------------------------------
-// I  the step on CUDA tensors
-// ----------------------------------------------------------------------------------------------
-
-// The device named by --second-cuda-device, enrolled beside the selected one for the placement check.
-std::optional<int> second_cuda_device;
-
 // The largest difference relative to the largest entry of `a`; infinite if any entry of either is not
 // finite, so that an unwritten or corrupted entry cannot pass.
 template <class A, class B> double relative_difference(A const& a, B const& b)
@@ -657,6 +649,14 @@ double largest_difference(std::vector<double> const& a, std::vector<double> cons
   }
   return worst;
 }
+
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// ----------------------------------------------------------------------------------------------
+// I  the step on CUDA tensors
+// ----------------------------------------------------------------------------------------------
+
+// The device named by --second-cuda-device, enrolled beside the selected one for the placement check.
+std::optional<int> second_cuda_device;
 
 void the_step_on_cuda_tensors()
 {
@@ -713,6 +713,18 @@ void the_step_on_cuda_tensors()
                  got.lnz.back(), lnz, cut),
             d::stream::out);
     report(lnz < 1e-11 && cut < 1e-9, "bond " + std::to_string(D) + ": the flow on CUDA tensors is the host's");
+  }
+  {
+    // The eigh cut on the device (cuSOLVER syevd) keeps the subspace of the host's SVD cut.
+    int const rounds = 6;
+    flow_record const expected = flow(vertex(model::clock, 2, K), 8, rounds);
+    flow_record const got = flow<device_place>(vertex(model::clock, 2, K), 8, rounds, nullptr, cut_method::eigh);
+    double const lnz = largest_difference(expected.lnz, got.lnz);
+    double const cut = std::max(largest_difference(expected.discarded_y, got.discarded_y),
+                                largest_difference(expected.discarded_x, got.discarded_x));
+    d::emit(text("bond 8, eigh cut: ln Z / N off the host's SVD cut by {:.1e}; cut errors off by {:.1e}", lnz, cut),
+            d::stream::out);
+    report(lnz < 1e-11 && cut < 1e-9, "the eigh cut on CUDA tensors keeps the subspace of the host's SVD cut");
   }
   if (second_cuda_device)
   {
@@ -782,7 +794,8 @@ template <uni20::Real R> R read_real(std::string_view text, uni20::Precision p)
 }
 
 template <uni20::Real R, class Place = host_place>
-int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Precision precision, int quadrature_points)
+int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Precision precision, int quadrature_points,
+             cut_method method)
 {
   R const ratio = read_real<R>(temperature, precision);
   if (!uni20::isfinite(ratio) || ratio <= 0) throw std::invalid_argument("temperature must be finite and positive");
@@ -794,28 +807,32 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .field("Bond", D)
       .field("Rounds", rounds)
       .field("Width", "2^log2(width)")
-      .field("Tensors", Place::name);
+      .field("Tensors", Place::name)
+      .field("Gram cut", cut_method_name(method));
   d::emit(std::move(setup), d::stream::out);
   auto results = make_flow_table<R>(precision);
   results.attach(p::terminal_sink());
-  auto const record = flow<Place>(vertex(model::clock, 2, K), D, rounds, [&](auto const& r, auto const& t) {
-    auto const i = r.log2_width.size() - 1;
-    int const exponent = r.log2_width[i];
-    auto const spectrum = ring_levels(t);
-    auto const X = scaling_dimensions(spectrum.eigenvalues);
-    auto const* expected = reference::find(exponent, ratio);
-    auto level = [&](std::size_t n) -> std::optional<R> {
-      if (n < X.size()) return X[n];
-      return std::nullopt;
-    };
-    auto reference_level = [&](std::size_t n) -> std::optional<R> {
-      if (expected) return displayed_reference<R>(expected->scaling_dimensions[n], precision);
-      return std::nullopt;
-    };
-    results.append(exponent, t.extent(0), std::max(r.discarded_y[i], r.discarded_x[i]), r.lnz[i],
-                   R((r.lnz[i] - exact) / exact), level(1), reference_level(1), level(2), reference_level(2),
-                   spectrum.asymmetry);
-  });
+  auto const record = flow<Place>(
+      vertex(model::clock, 2, K), D, rounds,
+      [&](auto const& r, auto const& t) {
+        auto const i = r.log2_width.size() - 1;
+        int const exponent = r.log2_width[i];
+        auto const spectrum = ring_levels(t);
+        auto const X = scaling_dimensions(spectrum.eigenvalues);
+        auto const* expected = reference::find(exponent, ratio);
+        auto level = [&](std::size_t n) -> std::optional<R> {
+          if (n < X.size()) return X[n];
+          return std::nullopt;
+        };
+        auto reference_level = [&](std::size_t n) -> std::optional<R> {
+          if (expected) return displayed_reference<R>(expected->scaling_dimensions[n], precision);
+          return std::nullopt;
+        };
+        results.append(exponent, t.extent(0), std::max(r.discarded_y[i], r.discarded_x[i]), r.lnz[i],
+                       R((r.lnz[i] - exact) / exact), level(1), reference_level(1), level(2), reference_level(2),
+                       spectrum.asymmetry);
+      },
+      method);
   results.finish();
   double all = 0, contractions = 0, regroup = 0, svd = 0;
   for (std::size_t i = 0; i < record.seconds.size(); ++i)
@@ -823,14 +840,14 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
     all += record.seconds[i];
     contractions += record.seconds_contract[i];
     regroup += record.seconds_regroup[i];
-    svd += record.seconds_svd[i];
+    svd += record.seconds_cut[i];
   }
   auto timing = p::make_data_table("Timing", p::data_column<std::string>("phase").label("Phase"),
                                    p::data_column<double>("seconds").label("Seconds").fixed(2));
   timing.append("Total", all);
   timing.append("Contractions", contractions);
   timing.append("Axis regroupings", regroup);
-  timing.append("SVD", svd);
+  timing.append("Gram cut", svd);
   timing.finish();
   p::report_builder timing_report;
   timing_report.table("") = p::to_report_table(timing);
@@ -842,6 +859,134 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .field("Strip references", "100 significant digits");
   d::emit(std::move(diagnostics), d::stream::out);
   return record.log2_width.size() == static_cast<std::size_t>(rounds) ? 0 : 1;
+}
+
+// ----------------------------------------------------------------------------------------------
+// --benchmark-gram-cut: every cut method on the same grams, and a flow with each
+// ----------------------------------------------------------------------------------------------
+
+// ||U U^T - V V^T||_F for isometries U and V given as [n, n, k] host tensors: zero for the same kept
+// subspace, at most sqrt(2 k).  It is sqrt(2) ||U - V (V^T U)||_F, which, unlike 2 k - 2 ||V^T U||_F^2,
+// does not cancel to sqrt(epsilon) for nearly equal subspaces.  The subspace is the model's only where
+// the gap at the cut is not tiny.
+double subspace_distance(tensor3 const& U, tensor3 const& V)
+{
+  idx const n = U.extent(0), k = U.extent(2);
+  std::vector<double> overlap(static_cast<std::size_t>(k * k), 0.0); // (V^T U)[e, c]
+  for (idx c = 0; c < k; ++c)
+    for (idx e = 0; e < k; ++e)
+      for (idx b = 0; b < n; ++b)
+        for (idx a = 0; a < n; ++a)
+          overlap[static_cast<std::size_t>(e + k * c)] += at(V, a, b, e) * at(U, a, b, c);
+  double residual = 0.0;
+  for (idx c = 0; c < k; ++c)
+    for (idx b = 0; b < n; ++b)
+      for (idx a = 0; a < n; ++a)
+      {
+        double r = at(U, a, b, c);
+        for (idx e = 0; e < k; ++e)
+          r -= at(V, a, b, e) * overlap[static_cast<std::size_t>(e + k * c)];
+        residual += r * r;
+      }
+  return std::sqrt(2.0 * residual);
+}
+
+template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int repeat)
+{
+  constexpr std::array methods{cut_method::svd, cut_method::eigh};
+  double const K = critical_coupling<double>(model::clock, 2, uni20::native_precision<double>());
+  using clock = std::chrono::steady_clock;
+
+  p::report_builder setup("Gram-cut benchmark, critical 2D Ising, fp64");
+  setup.field("Tensors", Place::name)
+      .field("Gram", "the y-step gram of a 4-round flow's coarse tensor, (D^2 x D^2)")
+      .field("Reference", "host eigh of the same gram")
+      .field("Repeats", repeat);
+  d::emit(std::move(setup), d::stream::out);
+
+  auto cuts =
+      p::make_data_table("Cut of one gram", {.retain = p::retention::none}, p::data_column<idx>("bond").label("Bond"),
+                         p::data_column<std::string>("method").label("Method"),
+                         p::data_column<double>("seconds").label("Seconds").scientific(2),
+                         p::data_column<double>("spectrum").label("Spectrum error").scientific(2),
+                         p::data_column<double>("discarded").label("Discarded error").scientific(2),
+                         p::data_column<double>("subspace").label("Subspace distance").scientific(2),
+                         p::data_column<double>("gap").label("Gap").scientific(2));
+  cuts.attach(p::terminal_sink());
+  for (std::size_t D : bonds)
+  {
+    flow_record const plateau = flow(vertex(model::clock, 2, K), D, 4);
+    tensor4 const theta = gram(plateau.T0, axis::y);
+    auto const reference = detail::cut_gram(theta, D, cut_method::eigh);
+    for (cut_method method : methods)
+    {
+      double best = HUGE_VAL;
+      std::optional<tensor3> U;
+      std::vector<double> S;
+      double discarded = 0.0, gap = 0.0;
+      for (int r = 0; r < repeat; ++r)
+      {
+        if constexpr (std::same_as<Place, host_place>)
+        {
+          auto const start = clock::now();
+          auto cut = detail::cut_gram(theta, D, method);
+          best = std::min(best, std::chrono::duration<double>(clock::now() - start).count());
+          U.emplace(std::move(cut.U));
+          S = std::move(cut.S);
+          discarded = cut.discarded;
+          gap = cut.gap;
+        }
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+        else
+        {
+          auto on_device = Place{}.upload(theta);
+          wait_for(on_device);
+          auto const start = clock::now();
+          auto cut = detail::cut_gram(std::move(on_device), D, method);
+          wait_for(cut.U);
+          best = std::min(best, std::chrono::duration<double>(clock::now() - start).count());
+          U.emplace(uni20::to_host(cut.U));
+          S = std::move(cut.S);
+          discarded = cut.discarded;
+          gap = cut.gap;
+        }
+#endif
+      }
+      cuts.append(static_cast<idx>(D), std::string(cut_method_name(method)), best,
+                  largest_difference(reference.S, S) / reference.S.front(), std::abs(discarded - reference.discarded),
+                  subspace_distance(*U, reference.U), gap);
+    }
+  }
+  cuts.finish();
+
+  auto flows = p::make_data_table(
+      "Flow with each cut", {.retain = p::retention::none}, p::data_column<idx>("bond").label("Bond"),
+      p::data_column<std::string>("method").label("Method"),
+      p::data_column<double>("seconds").label("Seconds").scientific(2), p::data_column<double>("lnz").label("ln Z/N"),
+      p::data_column<double>("lnz_vs_svd").label("vs svd").scientific(2), p::data_column<double>("x1").label("X_1"),
+      p::data_column<double>("x1_vs_svd").label("vs svd").scientific(2));
+  flows.attach(p::terminal_sink());
+  for (std::size_t D : bonds)
+  {
+    double lnz_svd = 0.0, x1_svd = 0.0;
+    for (cut_method method : methods)
+    {
+      auto const start = clock::now();
+      flow_record const record = flow<Place>(vertex(model::clock, 2, K), D, rounds, nullptr, method);
+      double const seconds = std::chrono::duration<double>(clock::now() - start).count();
+      auto const X = scaling_dimensions(ring_levels(record.T0).eigenvalues);
+      double const lnz = record.lnz.back(), x1 = X.size() > 1 ? X[1] : HUGE_VAL;
+      if (method == cut_method::svd)
+      {
+        lnz_svd = lnz;
+        x1_svd = x1;
+      }
+      flows.append(static_cast<idx>(D), std::string(cut_method_name(method)), seconds, lnz, std::abs(lnz - lnz_svd), x1,
+                   std::abs(x1 - x1_svd));
+    }
+  }
+  flows.finish();
+  return 0;
 }
 
 [[noreturn]] void usage(char const* complaint)
@@ -863,6 +1008,10 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
       .row("--second-cuda-device=N", "With --execution=cuda --check: also check a step on a tensor on device N")
       .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
+      .row("--gram-cut=M", "svd|eigh (default svd): how a step takes the leading vectors of the gram")
+      .row("--benchmark-gram-cut", "Time every gram-cut method on the same grams, and a flow with each (fp64)")
+      .row("--bonds=D,D,...", "Bonds for --benchmark-gram-cut (default 8,16,24)")
+      .row("--repeat=N", "Timed repeats per cut for --benchmark-gram-cut; the fastest is shown (default 3)")
       .row("-h, --help", "Show this help");
   d::emit(std::move(help), complaint ? d::stream::err : d::stream::out);
   std::exit(complaint ? 2 : 0);
@@ -940,7 +1089,10 @@ int main(int argc, char** argv)
   std::string_view temperature = "1", precision = "fp64", execution = "cpu";
   [[maybe_unused]] int cuda_device = 0;
   [[maybe_unused]] std::optional<int> second_device;
-  bool check = false, explicit_bits = false;
+  cut_method method = cut_method::svd;
+  std::vector<std::size_t> bonds{8, 16, 24};
+  int repeat = 3;
+  bool check = false, explicit_bits = false, benchmark = false;
   try
   {
     for (int i = 1; i < argc; ++i)
@@ -950,6 +1102,11 @@ int main(int argc, char** argv)
       if (argument == "--check")
       {
         check = true;
+        continue;
+      }
+      if (argument == "--benchmark-gram-cut")
+      {
+        benchmark = true;
         continue;
       }
       auto const split = argument.find('=');
@@ -977,6 +1134,27 @@ int main(int argc, char** argv)
         cuda_device = parse_integer<int>(value, 0);
       else if (name == "--second-cuda-device")
         second_device = parse_integer<int>(value, 0);
+      else if (name == "--gram-cut")
+      {
+        if (value == "svd")
+          method = cut_method::svd;
+        else if (value == "eigh")
+          method = cut_method::eigh;
+        else
+          usage("--gram-cut is svd or eigh");
+      }
+      else if (name == "--bonds")
+      {
+        bonds.clear();
+        for (std::string_view rest = value; !rest.empty();)
+        {
+          auto const comma = rest.find(',');
+          bonds.push_back(parse_integer<std::size_t>(rest.substr(0, comma)));
+          rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
+        }
+      }
+      else if (name == "--repeat")
+        repeat = parse_integer<int>(value);
       else
         usage("unknown option");
     }
@@ -984,19 +1162,26 @@ int main(int argc, char** argv)
     if (execution != "cpu" && execution != "cuda") usage("--execution is cpu or cuda");
     if (check && precision != "fp64")
       usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
+    if (benchmark && (check || precision != "fp64"))
+      usage("--benchmark-gram-cut runs at fp64 and cannot be combined with --check");
     if (second_device && (execution != "cuda" || !check || *second_device == cuda_device))
       usage("--second-cuda-device names a device other than --cuda-device for --execution=cuda --check");
     if (execution == "cuda")
     {
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
       if (check) return on_cuda_device(cuda_device, second_device, [] { return run_checks(true); });
+      if (benchmark)
+        return on_cuda_device(cuda_device, std::nullopt,
+                              [&] { return run_cut_benchmark<device_place>(bonds, rounds, repeat); });
       if (precision == "fp32")
         return on_cuda_device(cuda_device, std::nullopt, [&] {
-          return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points);
+          return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points,
+                                               method);
         });
       if (precision == "fp64")
         return on_cuda_device(cuda_device, std::nullopt, [&] {
-          return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points);
+          return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points,
+                                                method);
         });
       usage("--execution=cuda takes --precision=fp32 or fp64");
 #else
@@ -1004,21 +1189,24 @@ int main(int argc, char** argv)
 #endif
     }
     if (check) return run_checks(false);
+    if (benchmark) return run_cut_benchmark<host_place>(bonds, rounds, repeat);
     if (precision == "fp32")
-      return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points);
+      return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points, method);
     if (precision == "fp64")
-      return run_flow<double>(bond, rounds, temperature, uni20::native_precision<double>(), points);
+      return run_flow<double>(bond, rounds, temperature, uni20::native_precision<double>(), points, method);
 #if UNI20_HAS_MPLAPACK_FLOAT80
     if (precision == "fp80")
-      return run_flow<uni20::float80>(bond, rounds, temperature, uni20::native_precision<uni20::float80>(), points);
+      return run_flow<uni20::float80>(bond, rounds, temperature, uni20::native_precision<uni20::float80>(), points,
+                                      method);
 #endif
 #if UNI20_HAS_MPLAPACK_FLOAT128
     if (precision == "fp128")
-      return run_flow<uni20::float128>(bond, rounds, temperature, uni20::native_precision<uni20::float128>(), points);
+      return run_flow<uni20::float128>(bond, rounds, temperature, uni20::native_precision<uni20::float128>(), points,
+                                       method);
 #endif
 #if UNI20_HAS_MPLAPACK_MPREAL
     if (precision == "mpreal")
-      return run_flow<uni20::mpreal>(bond, rounds, temperature, uni20::Precision::bits(bits), points);
+      return run_flow<uni20::mpreal>(bond, rounds, temperature, uni20::Precision::bits(bits), points, method);
 #endif
     usage("unknown precision or its LAPACK provider is not configured");
   }
