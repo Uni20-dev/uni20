@@ -7,6 +7,7 @@
  */
 
 #include <uni20/backend/backend.hpp>
+#include <uni20/backend/blas/blas_int.hpp>
 #include <uni20/common/trace.hpp>
 #include <uni20/core/math.hpp>
 #include <uni20/linalg/kernel_attempt.hpp>
@@ -73,6 +74,17 @@ constexpr std::optional<std::size_t> try_size_product(std::size_t left, std::siz
     return std::nullopt;
   }
   return left * right;
+}
+
+/// \brief Evaluate a workspace term in the range shared by the host and LAPACK.
+constexpr std::optional<blas_int> try_lapack_workspace_size(std::size_t count, std::size_t multiplier,
+                                                            std::size_t extra = 0) noexcept
+{
+  auto const product = try_size_product(count, multiplier);
+  if (!product || extra > uni20::numeric_limits<std::size_t>::max() - *product) return std::nullopt;
+  auto const result = uni20::blas::try_blas_int(*product + extra);
+  if (!uni20::blas::is_valid_blas_int(result)) return std::nullopt;
+  return result;
 }
 
 } // namespace uni20::linalg::lapack_detail

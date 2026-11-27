@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -582,6 +583,25 @@ TEST(SvdTest, ZeroExtentFullFactorsUseIdentityCompletion)
   EXPECT_EQ(left_completion.singular_values.extent(0), 0);
   EXPECT_EQ(left_completion.right_singular_vectors_adjoint.rows(), 0);
   EXPECT_EQ(left_completion.right_singular_vectors_adjoint.cols(), 0);
+}
+
+TEST(SvdTest, DivideAndConquerChecksWorkspaceBeforeQuery)
+{
+  using uni20::linalg::lapack_detail::try_gesdd_workspace;
+  using Complex = uni20::complex<float>;
+  constexpr auto max_work = static_cast<std::size_t>(std::numeric_limits<uni20::blas_int>::max());
+  EXPECT_TRUE(try_gesdd_workspace<float>(true, 1, max_work - 10).has_value());
+  EXPECT_FALSE(try_gesdd_workspace<float>(true, 1, max_work - 9).has_value());
+  EXPECT_TRUE(try_gesdd_workspace<Complex>(false, 1, max_work / 2 - 1).has_value());
+  EXPECT_FALSE(try_gesdd_workspace<Complex>(false, 1, max_work / 2).has_value());
+
+  if constexpr (std::numeric_limits<uni20::blas_int>::digits == 31)
+  {
+    EXPECT_TRUE(try_gesdd_workspace<float>(false, 23169, 23169).has_value());
+    EXPECT_FALSE(try_gesdd_workspace<float>(false, 23170, 23170).has_value());
+    EXPECT_TRUE(try_gesdd_workspace<Complex>(false, 20723, 20723).has_value());
+    EXPECT_FALSE(try_gesdd_workspace<Complex>(false, 20724, 20724).has_value());
+  }
 }
 
 TEST(SvdTest, DivideAndConquerReconstructsComplexRectangularInput)

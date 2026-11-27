@@ -61,10 +61,25 @@ consteval auto self_adjoint_eigh_acceptance()
   }
 }
 
+/// \brief Check the dominating SYEVD/HEEVD workspace bound before the provider evaluates it.
 template <uni20::LapackScalar Scalar>
-void run_divide_and_conquer_eigh(char jobz, char uplo, blas_int order, Scalar* matrix, blas_int lda,
-                                 uni20::make_real_t<Scalar>* values)
+constexpr bool divide_and_conquer_eigh_workspace_fits(bool vectors, std::size_t order)
 {
+  if (order <= 1) return true;
+  if (!vectors) return try_lapack_workspace_size(order, uni20::LapackReal<Scalar> ? 2 : 1, 1).has_value();
+
+  // The real WORK or complex RWORK bound also covers LIWORK and complex LWORK.
+  auto const coefficient = try_lapack_workspace_size(order, 2, uni20::LapackReal<Scalar> ? 6 : 5);
+  return coefficient && try_lapack_workspace_size(order, static_cast<std::size_t>(*coefficient), 1);
+}
+
+template <uni20::LapackScalar Scalar>
+KernelAttempt run_divide_and_conquer_eigh(char jobz, char uplo, blas_int order, Scalar* matrix, blas_int lda,
+                                          uni20::make_real_t<Scalar>* values)
+{
+  if (!divide_and_conquer_eigh_workspace_fits<Scalar>(jobz == 'V', static_cast<std::size_t>(order)))
+    return KernelAttempt::unsupported_shape;
+
   using Real = uni20::make_real_t<Scalar>;
   auto run = [&](Scalar* work, blas_int lwork, Real* rwork, blas_int lrwork, blas_int* iwork, blas_int liwork) {
     if constexpr (uni20::LapackReal<Scalar>)
@@ -83,6 +98,7 @@ void run_divide_and_conquer_eigh(char jobz, char uplo, blas_int order, Scalar* m
   std::vector<Real> rwork(static_cast<std::size_t>(lrwork));
   std::vector<blas_int> iwork(static_cast<std::size_t>(iwork_query));
   run(work.data(), lwork, rwork.data(), lrwork, iwork.data(), iwork_query);
+  return KernelAttempt::success;
 }
 
 /// \brief Compute an in-place symmetric or Hermitian eigensystem through `syev` or `heev`.
@@ -125,8 +141,7 @@ KernelAttempt try_self_adjoint_eigh(self_adjoint_eigh_op const& op, EigenvalueMd
   char const uplo = lapack_detail::lapack_triangle(op.triangle);
   if (op.driver == EighDriver::DivideAndConquer)
   {
-    run_divide_and_conquer_eigh(jobz, uplo, order, matrix->data, matrix->leading_dimension, values->data);
-    return KernelAttempt::success;
+    return run_divide_and_conquer_eigh(jobz, uplo, order, matrix->data, matrix->leading_dimension, values->data);
   }
   if constexpr (uni20::LapackReal<matrix_scalar>)
   {

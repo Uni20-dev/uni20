@@ -112,28 +112,55 @@ KernelAttempt run_gesvd(char jobu, char jobvt, std::size_t rank,
   return KernelAttempt::success;
 }
 
+struct GesddAuxiliaryWorkspace
+{
+    std::size_t integer_work;
+    std::size_t real_work;
+};
+
+/// \brief Validate the documented GESDD workspace bounds for full or reduced vectors.
+/// \details Validate LWORK before querying the provider. Complex RWORK offsets are
+///          also formed in LAPACK integers, even though no LRWORK is passed.
+template <uni20::LapackScalar Scalar>
+constexpr std::optional<GesddAuxiliaryWorkspace> try_gesdd_workspace(bool full, std::size_t rank, std::size_t largest)
+{
+  auto const iwork = try_lapack_workspace_size(rank, 8);
+  if (!iwork) return std::nullopt;
+  GesddAuxiliaryWorkspace result{.integer_work = static_cast<std::size_t>(*iwork), .real_work = 0};
+  if constexpr (uni20::LapackReal<Scalar>)
+  {
+    auto const coefficient = try_lapack_workspace_size(rank, 4, full ? 6 : 7);
+    if (!coefficient || !try_lapack_workspace_size(rank, static_cast<std::size_t>(*coefficient), full ? largest : 0))
+      return std::nullopt;
+  }
+  else
+  {
+    auto const coefficient = try_lapack_workspace_size(rank, 1, full ? 2 : 3);
+    if (!coefficient || !try_lapack_workspace_size(rank, static_cast<std::size_t>(*coefficient), full ? largest : 0))
+      return std::nullopt;
+
+    auto const square = try_lapack_workspace_size(rank, 5, 5);
+    auto const rank_term = try_lapack_workspace_size(rank, 2, 1);
+    if (!square || !rank_term) return std::nullopt;
+    auto const rectangle = try_lapack_workspace_size(largest, 2, static_cast<std::size_t>(*rank_term));
+    if (!rectangle) return std::nullopt;
+    auto const rwork = try_lapack_workspace_size(rank, static_cast<std::size_t>(std::max(*square, *rectangle)));
+    if (!rwork) return std::nullopt;
+    result.real_work = static_cast<std::size_t>(*rwork);
+  }
+  return result;
+}
+
 template <uni20::LapackScalar Scalar, class Matrix, class Values>
 KernelAttempt run_gesdd(char job, std::size_t rank, Matrix const& matrix, Values const& values, Scalar* left,
                         blas_int ldu, Scalar* right, blas_int ldvt)
 {
   using Real = uni20::make_real_t<Scalar>;
-  auto const iwork_size = try_size_product(8, rank);
-  if (!iwork_size || !uni20::blas::is_valid_blas_int(uni20::blas::try_blas_int(*iwork_size)))
-    return KernelAttempt::unsupported_shape;
-
-  std::size_t rwork_size = 0;
-  if constexpr (uni20::LapackComplex<Scalar>)
-  {
-    auto const largest = static_cast<std::size_t>(std::max(matrix.rows, matrix.cols));
-    auto const square_term = try_size_product(5, rank + 1);
-    auto const rectangular_term = try_size_product(2, largest + rank);
-    if (!square_term || !rectangular_term) return KernelAttempt::unsupported_shape;
-    auto const size = try_size_product(rank, std::max(*square_term, *rectangular_term + 1));
-    if (!size) return KernelAttempt::unsupported_shape;
-    rwork_size = *size;
-  }
-  std::vector<blas_int> iwork(*iwork_size);
-  std::vector<Real> rwork(rwork_size);
+  auto const largest = static_cast<std::size_t>(std::max(matrix.rows, matrix.cols));
+  auto const auxiliary = try_gesdd_workspace<Scalar>(job == 'A', rank, largest);
+  if (!auxiliary) return KernelAttempt::unsupported_shape;
+  std::vector<blas_int> iwork(auxiliary->integer_work);
+  std::vector<Real> rwork(auxiliary->real_work);
   auto run = [&](Scalar* work, blas_int lwork) {
     if constexpr (uni20::LapackReal<Scalar>)
       uni20::lapack::gesdd(job, matrix.rows, matrix.cols, matrix.data, matrix.leading_dimension, values.data, left, ldu,

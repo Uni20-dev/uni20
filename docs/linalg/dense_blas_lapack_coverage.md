@@ -105,6 +105,8 @@ for factors whose shapes fit one paired reduced or full job. It uses
 separate factor outputs when the caller supplies an rvalue. These options
 are available for direct LAPACK float32/64 and MPLAPACK binary128. The
 packed binary80 and MPFR/MPC adapters support the default drivers.
+The divide-and-conquer drivers reject shapes whose documented workspace
+bounds exceed the configured LAPACK integer range before querying the provider.
 
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
 lowerings for native scalars and configured MPLAPACK GEMM providers, including

@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -271,6 +272,20 @@ TEST(SelfAdjointEighTest, MplapackFloat128RealAndComplexPaths)
   check_eigenvector_residuals(matrix_element, row_major_result.eigenvectors, row_major_result.eigenvalues, 1e-20);
 }
 #endif
+
+TEST(SelfAdjointEighTest, DivideAndConquerChecksWorkspaceBeforeQuery)
+{
+  using uni20::linalg::lapack_detail::divide_and_conquer_eigh_workspace_fits;
+  constexpr auto limit = std::size_t{1} << (std::numeric_limits<uni20::blas_int>::digits / 2);
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<float>(true, limit - 2));
+  EXPECT_FALSE(divide_and_conquer_eigh_workspace_fits<float>(true, limit - 1));
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<float>(false, limit - 1));
+
+  using Complex = uni20::complex<float>;
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<Complex>(true, limit - 2));
+  EXPECT_FALSE(divide_and_conquer_eigh_workspace_fits<Complex>(true, limit - 1));
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<Complex>(false, limit - 1));
+}
 
 TEST(SelfAdjointEighTest, DivideAndConquerReturnsHermitianEigenpairs)
 {
