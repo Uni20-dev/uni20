@@ -20,12 +20,25 @@
 // which is what reaches GEMM.  Every regrouping in between is a `permute<>` view materialized
 // as a column-major tensor (`detail::permuted`).
 //
+// The step is written once for two places: host tensors of any real scalar type, and, in a build
+// with the CUDA, cuBLAS and cuSOLVER backends, CUDA tensors of float or double (`host_place`,
+// `device_place`).  Where a CUDA tensor has no counterpart of a host idiom there is a pair of
+// overloads, and the device overload says what it stands in for:
+//
+//   * entry access (by design): the model tensor is built on the host and transferred, and the
+//     flow's observer receives a host copy of the coarse tensor;
+//   * the largest entry and the traces use `maximum_host` and `sum_host` of a `diagonal_view`;
+//   * the gram is cut by a full cuSOLVER SVD (there is no device `truncated_svd`), and, since a
+//     device matrix has no column slice, its leading columns are taken by a GEMM with the
+//     leading columns of the identity.
+//
 // Scalar-generic real arithmetic with explicit working precision, unit cell 1x1.
 // `ring_levels` reads the transfer-matrix spectrum of the coarse tensor back out,
 // which the example compares against exact Ising values
 // (ising_strip_reference.hpp).
 #pragma once
 
+#include <uni20/config.hpp>
 #include <uni20/core/math.hpp>
 #include <uni20/core/scalar_io.hpp>
 #include <uni20/linalg/ops/contract.hpp>
@@ -36,6 +49,21 @@
 #include <uni20/tensor/reshape.hpp>
 #include <uni20/tensor/tensor.hpp>
 
+#if UNI20_BACKEND_CUDA && UNI20_BACKEND_CUBLAS && UNI20_BACKEND_CUSOLVER
+#define UNI20_EXAMPLE_DENSE_HOTRG_DEVICE 1
+#include <uni20/backend/cublas/execution.hpp>
+#include <uni20/backend/cuda/runtime.hpp>
+#include <uni20/backend/cusolver/execution.hpp>
+#include <uni20/linalg/elementwise_functions.hpp>
+#include <uni20/linalg/ops/svd.hpp>
+#include <uni20/storage/cuda_storage.hpp>
+#include <uni20/tensor/diagonal.hpp>
+#include <uni20/tensor/reductions.hpp>
+#include <uni20/tensor/transform.hpp>
+#else
+#define UNI20_EXAMPLE_DENSE_HOTRG_DEVICE 0
+#endif
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -45,6 +73,7 @@
 #include <numbers>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -82,9 +111,75 @@ inline seconds_spent& spent()
   return totals;
 }
 
+// ---------------------------------------------------------------------------------------------
+// the places where a step's tensors live
+// ---------------------------------------------------------------------------------------------
+
+// Host memory: any real scalar type, at working precision p.
+struct host_place
+{
+    template <uni20::Real R, std::size_t Rank> using tensor = uni20::Tensor<R, Rank>;
+    static constexpr char const* name = "host";
+
+    // A tensor whose every element is written before it is read.
+    template <uni20::Real R, class... Extents> [[nodiscard]] auto make(uni20::Precision p, Extents... extents) const
+    {
+      return tensor<R, sizeof...(Extents)>(uni20::uninitialized, static_cast<idx>(extents)..., p);
+    }
+};
+
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// One CUDA device: float or double.  The place of a tensor (`place_of`) is that tensor's device;
+// a default-constructed place is the runtime's default device.
+struct device_place
+{
+    template <uni20::Real R, std::size_t Rank> using tensor = uni20::CudaTensor<R, Rank>;
+    static constexpr char const* name = "CUDA";
+
+    uni20::cuda::DeviceResources* resources = &uni20::cuda::device_resources();
+
+    template <uni20::Real R, class... Extents> [[nodiscard]] auto make(uni20::Precision, Extents... extents) const
+    {
+      return tensor<R, sizeof...(Extents)>(uni20::uninitialized, *resources, static_cast<idx>(extents)...);
+    }
+    template <uni20::Real R, std::size_t Rank> [[nodiscard]] auto upload(uni20::Tensor<R, Rank> const& t) const
+    {
+      return uni20::to_device(t, *resources);
+    }
+};
+#endif
+
+// Where a tensor lives: the host, or the device that holds its storage.
+template <class Tensor> [[nodiscard]] auto place_of([[maybe_unused]] Tensor const& t)
+{
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+  if constexpr (std::same_as<uni20::tensor_storage_policy_t<std::remove_cvref_t<Tensor>>, uni20::CudaStorage>)
+    return device_place{&uni20::mdspec_of(t).data_descriptor().buffer().resources()};
+  else
+    return host_place{};
+#else
+  return host_place{};
+#endif
+}
+
+template <class Tensor> using place_type = decltype(place_of(std::declval<Tensor const&>()));
+
+// Wait until the work that writes `t` has finished, so that a timer sees it.  Host work has
+// finished already.  A CUDA tensor's buffer waits for the submitted operations that involve it,
+// and for nothing else submitted to the device.
+template <class Tensor> void wait_for([[maybe_unused]] Tensor const& t)
+{
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+  if constexpr (std::same_as<uni20::tensor_storage_policy_t<std::remove_cvref_t<Tensor>>, uni20::CudaStorage>)
+    uni20::mdspec_of(t).data_descriptor().buffer().synchronize();
+#endif
+}
+
 namespace detail
 {
 
+// Wall time spent in a scope.  A timed scope that queues device work ends with `wait_for` on the
+// tensor that work writes; each scope's inputs were waited for by the scope that wrote them.
 struct lap
 {
     double& slot;
@@ -95,13 +190,15 @@ struct lap
     ~lap() { slot += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(); }
 };
 
-// The tensor with its axes regrouped, as an owning column-major tensor at working precision p:
-// output axis j is source axis Axis[j].  The copy writes every element before it is read.
+// The tensor with its axes regrouped, as an owning column-major tensor in the same place, at
+// working precision p: output axis j is source axis Axis[j].  The copy writes every element.
 template <std::size_t... Axis, class Source> [[nodiscard]] auto permuted(Source const& t, uni20::Precision p)
 {
+  auto const place = place_of(t);
   lap const timer(spent().regroup);
-  uni20::Tensor<typename Source::value_type, sizeof...(Axis)> result(uni20::uninitialized, t.extent(Axis)..., p);
+  auto result = place.template make<typename Source::value_type>(p, t.extent(Axis)...);
   uni20::copy(result, uni20::permute<Axis...>(t));
+  wait_for(result);
   return result;
 }
 
@@ -249,8 +346,45 @@ template <uni20::Real R> [[nodiscard]] inline R torus_trace(tensor4<R> const& t)
   return sum;
 }
 
+// sum_{i, j} theta[i, j, i, j]: the trace of the gram as a matrix [(l1, l2); (l1', l2')].
+template <uni20::Real R> [[nodiscard]] inline R gram_trace(tensor4<R> const& theta)
+{
+  auto const p = uni20::precision_of(theta);
+  R trace = uni20::scalar_at_precision<R>(0, p);
+  for (idx i = 0; i < theta.extent(0); ++i)
+    for (idx j = 0; j < theta.extent(1); ++j)
+      trace += R(theta[i, j, i, j]);
+  return trace;
+}
+
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// The same four pieces for a CUDA tensor, which has no element access.  Each reads the tensor in
+// place and returns one host scalar.
+template <uni20::Real R> [[nodiscard]] inline R max_element(uni20::CudaTensor<R, 4> const& t)
+{
+  return std::max(R{0}, uni20::maximum_host(t));
+}
+
+template <uni20::Real R> inline void scale(uni20::CudaTensor<R, 4>& t, R factor)
+{
+  uni20::transform_inplace(t, uni20::linalg::scale{factor});
+}
+
+template <uni20::Real R> [[nodiscard]] inline R torus_trace(uni20::CudaTensor<R, 4> const& t)
+{
+  detail::require(t.extent(0) == t.extent(3) && t.extent(1) == t.extent(2),
+                  "torus_trace: opposite faces differ in dimension");
+  return uni20::sum_host(uni20::diagonal_view<0, 3, 1, 2>(t));
+}
+
+template <uni20::Real R> [[nodiscard]] inline R gram_trace(uni20::CudaTensor<R, 4> const& theta)
+{
+  return uni20::sum_host(uni20::diagonal_view<0, 2, 1, 3>(theta));
+}
+#endif
+
 // The same tensor with the two axes' names exchanged, T[u, l, r, d] -> [l, u, d, r].
-template <uni20::Real R> [[nodiscard]] inline tensor4<R> exchange_axes(tensor4<R> const& t)
+template <class Tensor4> [[nodiscard]] inline auto exchange_axes(Tensor4 const& t)
 {
   auto const p = uni20::precision_of(t);
   return detail::permuted<1, 0, 3, 2>(t, p);
@@ -276,8 +410,10 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> exchange_axes(tensor4<R
 //            └────────────── d ─────────────┘
 //
 //   theta[(l1, l2) ; (l1', l2')] = sum_{s, s'} A B         (three chi^6 products)
-template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const& t)
+template <class Tensor4> [[nodiscard]] inline auto gram_y(Tensor4 const& t)
 {
+  using R = typename Tensor4::value_type;
+  auto const place = place_of(t);
   auto const p = uni20::precision_of(t);
   idx const m = t.extent(0), n = t.extent(1);
   detail::require(t.extent(2) == n && t.extent(3) == m, "gram: opposite faces differ in dimension");
@@ -287,26 +423,29 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const
   auto const t_lu_rd = detail::permuted<1, 0, 2, 3>(t, p); // [l, u, r, d]
 
   // Each contraction output is written by a beta = 0 contraction before it is read.
-  tensor4<R> upper(uni20::uninitialized, n, m, n, m, p); // A[l1, s, l1', s'], s the d face of the upper copy
+  auto upper = place.template make<R>(p, n, m, n, m); // A[l1, s, l1', s'], s the d face of the upper copy
   {
     detail::lap const timer(spent().contract);
     uni20::linalg::contract(upper, uni20::scalar_at_precision<R>(1, p), t_ld_ur, t_ld_ur,
                             array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(upper);
   }
-  tensor4<R> lower(uni20::uninitialized, n, m, n, m, p); // B[l2, s, l2', s'], s the u face of the lower copy
+  auto lower = place.template make<R>(p, n, m, n, m); // B[l2, s, l2', s'], s the u face of the lower copy
   {
     detail::lap const timer(spent().contract);
     uni20::linalg::contract(lower, uni20::scalar_at_precision<R>(1, p), t_lu_rd, t_lu_rd,
                             array<axis_pair, 2>{{{2, 2}, {3, 3}}}, uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(lower);
   }
   auto const a = detail::permuted<0, 2, 1, 3>(upper, p); // [l1, l1', s, s']
   auto const b = detail::permuted<1, 3, 0, 2>(lower, p); // [s, s', l2, l2']
 
-  tensor4<R> paired(uni20::uninitialized, n, n, n, n, p); // [l1, l1', l2, l2']
+  auto paired = place.template make<R>(p, n, n, n, n); // [l1, l1', l2, l2']
   {
     detail::lap const timer(spent().contract);
     uni20::linalg::contract(paired, uni20::scalar_at_precision<R>(1, p), a, b, array<axis_pair, 2>{{{2, 0}, {3, 1}}},
                             uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(paired);
   }
   return detail::permuted<0, 2, 1, 3>(paired, p); // [l1, l2, l1', l2']
 }
@@ -329,9 +468,11 @@ template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram_y(tensor4<R> const
 //
 // in the order ((Tu U) Td) U: chi^6, chi^7, chi^6 in time and chi^5 in memory.  U is real, so
 // the U^dagger of the left pair is U itself.
-template <uni20::Real R>
-[[nodiscard]] inline tensor4<R> apply_isometry(tensor4<R> const& upper, tensor4<R> const& lower, tensor3<R> const& iso)
+template <class Tensor4, class Tensor3>
+[[nodiscard]] inline auto apply_isometry(Tensor4 const& upper, Tensor4 const& lower, Tensor3 const& iso)
 {
+  using R = typename Tensor4::value_type;
+  auto const place = place_of(upper);
   auto const p = uni20::precision_of(upper);
   idx const mu = upper.extent(0), n = upper.extent(1), ms = upper.extent(3), md = lower.extent(3), k = iso.extent(2);
   detail::require(upper.extent(2) == n && lower.extent(1) == n && lower.extent(2) == n && lower.extent(0) == ms,
@@ -347,58 +488,67 @@ template <uni20::Real R>
   auto const second = [&] {
     // H1[u, r1, s, l2, k1] = sum_{l1} Tu U, regrouped as [u, r1, k1, l2, s]
     auto const h1 = [&] {
-      tensor5<R> first(uni20::uninitialized, mu, n, ms, n, k, p);
+      auto first = place.template make<R>(p, mu, n, ms, n, k);
       {
         detail::lap const timer(spent().contract);
         uni20::linalg::contract(first, uni20::scalar_at_precision<R>(1, p), tu, iso, array<axis_pair, 1>{{{3, 0}}},
                                 uni20::scalar_at_precision<R>(0, p), p);
+        wait_for(first);
       }
       return detail::permuted<0, 1, 4, 3, 2>(first, p);
     }();
-    tensor5<R> held(uni20::uninitialized, mu, n, k, n, md, p);
+    auto held = place.template make<R>(p, mu, n, k, n, md);
     {
       detail::lap const timer(spent().contract);
       uni20::linalg::contract(held, uni20::scalar_at_precision<R>(1, p), h1, td, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
                               uni20::scalar_at_precision<R>(0, p), p);
+      wait_for(held);
     }
     return held;
   }();
   auto const h2 = detail::permuted<2, 4, 0, 1, 3>(second, p); // [k1, d, u, r1, r2]
 
   // [k1, d, u, k2] = sum_{r1, r2} H2 U
-  tensor4<R> third(uni20::uninitialized, k, md, mu, k, p);
+  auto third = place.template make<R>(p, k, md, mu, k);
   {
     detail::lap const timer(spent().contract);
     uni20::linalg::contract(third, uni20::scalar_at_precision<R>(1, p), h2, iso, array<axis_pair, 2>{{{3, 0}, {4, 1}}},
                             uni20::scalar_at_precision<R>(0, p), p);
+    wait_for(third);
   }
   return detail::permuted<2, 0, 3, 1>(third, p); // [u, k1, k2, d]
 }
 
-template <uni20::Real R> struct step_result
+template <uni20::Real R, class Place = host_place> struct step_result
 {
-    tensor4<R> T;          // the coarse tensor [ym, xm, xp, yp], divided by `norm`
-    tensor3<R> U;          // the isometry [a, b, k]: a the upper (left) copy's leg, b the lower (right) one's
-    std::vector<R> S = {}; // the kept singular values of the gram, descending
-    R norm = R{0};         // the largest entry the coarse tensor was divided by
-    R discarded = R{0};    // 1 - sum(S) / tr(gram): the discarded fraction of the gram's trace
-    R gap = R{0};          // (smallest kept - largest discarded) / smallest kept singular value; 1 if nothing was
-                           // discarded, 0 if the smallest kept value is zero.  Near 0 the cut falls inside a
-                           // degenerate cluster and the kept subspace is the solver's choice, not the model's.
+    typename Place::template tensor<R, 4> T; // the coarse tensor [ym, xm, xp, yp], divided by `norm`
+    typename Place::template tensor<R, 3> U; // the isometry [a, b, k]: a the upper (left) copy's leg, b the lower one's
+    std::vector<R> S = {};                   // the kept singular values of the gram, descending
+    R norm = R{0};                           // the largest entry the coarse tensor was divided by
+    R discarded = R{0};                      // 1 - sum(S) / tr(gram): the discarded fraction of the gram's trace
+    R gap = R{0}; // (smallest kept - largest discarded) / smallest kept singular value; 1 if nothing was
+                  // discarded, 0 if the smallest kept value is zero.  Near 0 the cut falls inside a
+                  // degenerate cluster and the kept subspace is the solver's choice, not the model's.
 };
 
 namespace detail
 {
 
-template <uni20::Real R> [[nodiscard]] inline step_result<R> coarse_grain_y(tensor4<R> const& t, std::size_t D)
+// The leading singular vectors of the gram theta[l1, l2, l1', l2'] as an isometry U[l1, l2, k],
+// with what the cut keeps and discards.
+template <uni20::Real R, class Place> struct gram_cut
 {
-  auto const p = uni20::precision_of(t);
-  idx const n = t.extent(1);
-  tensor4<R> theta = gram_y(t);
-  R trace = uni20::scalar_at_precision<R>(0, p);
-  for (idx i = 0; i < n; ++i)
-    for (idx j = 0; j < n; ++j)
-      trace += R(theta[i, j, i, j]);
+    typename Place::template tensor<R, 3> U;
+    std::vector<R> S;
+    R discarded;
+    R gap;
+};
+
+template <uni20::Real R> [[nodiscard]] inline gram_cut<R, host_place> cut_gram(tensor4<R> const& theta, std::size_t D)
+{
+  auto const p = uni20::precision_of(theta);
+  idx const n = theta.extent(0);
+  R const trace = gram_trace(theta);
 
   std::size_t const rows = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
   auto decomposition = [&] {
@@ -409,7 +559,7 @@ template <uni20::Real R> [[nodiscard]] inline step_result<R> coarse_grain_y(tens
   }();
   idx const k = static_cast<idx>(decomposition.singular_values.extent(0));
 
-  step_result<R> result{.T = tensor4<R>(1, 1, 1, 1, p), .U = tensor3<R>(n, n, k, p)};
+  gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
   uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, k));
   R kept = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < k; ++i)
@@ -427,8 +577,70 @@ template <uni20::Real R> [[nodiscard]] inline step_result<R> coarse_grain_y(tens
   else
     result.gap = uni20::scalar_at_precision<R>(
         0, p); // the cut falls inside the null space: kept and discarded values are both zero
+  return result;
+}
 
-  result.T = apply_isometry(t, t, result.U);
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+// A CUDA tensor has no `truncated_svd`, and no view of a matrix's leading columns.  The full SVD
+// runs on the device through cuSOLVER `gesvd`; its singular values (n^2 scalars) are read on the
+// host to report the cut; and U is the left factor times the leading k columns of the identity,
+// one GEMM on the device, so the factor never leaves the device.  The SVD computes the right
+// factor and all n^2 vectors where k are kept.
+template <uni20::Real R>
+[[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D)
+{
+  auto const p = uni20::precision_of(theta);
+  auto const place = place_of(theta);
+  auto& resources = *place.resources;
+  idx const n = theta.extent(0), rows = n * n;
+  idx const k = static_cast<idx>(std::min<std::size_t>(D, static_cast<std::size_t>(rows)));
+  R const trace = gram_trace(theta);
+
+  uni20::CudaMatrix<R> left(uni20::uninitialized, resources, rows, rows);
+  uni20::CudaMatrix<R> right_adjoint(uni20::uninitialized, resources, rows, rows);
+  uni20::CudaTensor<R, 1> values(uni20::uninitialized, resources, rows);
+  auto U = place.template make<R>(p, n, n, k);
+  {
+    lap const timer(spent().svd);
+    auto matrix = uni20::reshape(std::move(theta), rows, rows);
+    uni20::linalg::singular_value_decomposition(values, left, right_adjoint, matrix);
+    uni20::Tensor<R, 2> leading(rows, k, p); // zero-initialized
+    for (idx c = 0; c < k; ++c)
+      leading[c, c] = R{1};
+    auto const selector = place.upload(leading);
+    uni20::linalg::contract(uni20::reshape_view(U, rows, k), R{1}, left, selector, std::array<axis_pair, 1>{{{1, 0}}},
+                            R{0}, p);
+    wait_for(U);
+  }
+  auto const s = uni20::to_host(values);
+
+  gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
+  R kept = R{0};
+  for (idx i = 0; i < k; ++i)
+  {
+    result.S.push_back(R(s[i]));
+    kept += result.S.back();
+  }
+  result.discarded = 1 - kept / trace;
+  if (k == rows)
+    result.gap = R{1}; // nothing was discarded
+  else if (result.S.back() > 0)
+    result.gap = (result.S.back() - R(s[k])) / result.S.back();
+  else
+    result.gap = R{0}; // the cut falls inside the null space
+  return result;
+}
+#endif
+
+template <class Tensor4> [[nodiscard]] inline auto coarse_grain_y(Tensor4 const& t, std::size_t D)
+{
+  using R = typename Tensor4::value_type;
+  auto cut = cut_gram(gram_y(t), D);
+  step_result<R, place_type<Tensor4>> result{.T = apply_isometry(t, t, cut.U),
+                                             .U = std::move(cut.U),
+                                             .S = std::move(cut.S),
+                                             .discarded = cut.discarded,
+                                             .gap = cut.gap};
   result.norm = max_element(result.T);
   require(result.norm > 0, "coarse_grain: the largest entry of the coarse tensor is not positive");
   scale(result.T, R(1 / result.norm));
@@ -438,19 +650,19 @@ template <uni20::Real R> [[nodiscard]] inline step_result<R> coarse_grain_y(tens
 } // namespace detail
 
 // The gram of the fused low-face pair of the OTHER axis (xm for a y step, ym for an x step).
-template <uni20::Real R> [[nodiscard]] inline tensor4<R> gram(tensor4<R> const& t, axis along)
+template <class Tensor4> [[nodiscard]] inline auto gram(Tensor4 const& t, axis along)
 {
   return along == axis::y ? gram_y(t) : gram_y(exchange_axes(t));
 }
 
 // One HOTRG step along `along` with a global top-D cut: gram -> truncated SVD -> the update
 // network with U on both fused faces -> divide by the largest entry.  For the x step exchange
-// the names ym <-> xm, yp <-> xp in every picture.
-template <uni20::Real R>
-[[nodiscard]] inline step_result<R> coarse_grain(tensor4<R> const& t, axis along, std::size_t D)
+// the names ym <-> xm, yp <-> xp in every picture.  The tensor may be on the host or, in a CUDA
+// build, on the device; the result is in the same place.
+template <class Tensor4> [[nodiscard]] inline auto coarse_grain(Tensor4 const& t, axis along, std::size_t D)
 {
   if (along == axis::y) return detail::coarse_grain_y(t, D);
-  step_result<R> result = detail::coarse_grain_y(exchange_axes(t), D);
+  auto result = detail::coarse_grain_y(exchange_axes(t), D);
   result.T = exchange_axes(result.T);
   return result;
 }
@@ -477,7 +689,10 @@ template <uni20::Real R> struct flow_record
 ///          The finite input tensor is normalized before its first Gram matrix; its
 ///          periodic traces must be positive for the partition-function logarithm.
 ///          The observer receives the current record and its normalized coarse tensor.
-template <uni20::Real R, class Observer = std::nullptr_t>
+///          `Place` is where the coarse tensors live (host_place, or device_place in a CUDA build).
+///          The model tensor is normalized on the host and placed once; the record's `T0`,
+///          and the tensor given to the observer, are on the host.
+template <class Place = host_place, uni20::Real R, class Observer = std::nullptr_t>
 [[nodiscard]] flow_record<R> flow(scaled_tensor<R> unit, std::size_t D, int steps, Observer observe = nullptr)
 {
   detail::require(steps >= 0 && D > 0, "nonnegative rounds and positive bond dimension required");
@@ -497,29 +712,55 @@ template <uni20::Real R, class Observer = std::nullptr_t>
   R const unit_lnz = initial + uni20::math::log(torus_trace(unit.tensor));
   flow_record<R> record{.initial_log_scale = initial, .unit_lnz = unit_lnz, .T0 = std::move(unit.tensor)};
   R sum = initial, weight = uni20::scalar_at_precision<R>(1, p);
-  for (int step = 0; step < steps; ++step)
+  [[maybe_unused]] Place const place{}; // where a host input is placed
+  auto rounds = [&](auto& T) {
+    for (int step = 0; step < steps; ++step)
+    {
+      auto const start = std::chrono::steady_clock::now();
+      seconds_spent const before = spent();
+      auto along_y = coarse_grain(T, axis::y, D);
+      auto along_x = coarse_grain(along_y.T, axis::x, D);
+      T = std::move(along_x.T);
+      record.log2_width.push_back(step + 1);
+      record.log_norm_y.push_back(uni20::math::log(along_y.norm));
+      record.log_norm_x.push_back(uni20::math::log(along_x.norm));
+      weight /= 4;
+      sum += weight * (2 * record.log_norm_y.back() + record.log_norm_x.back());
+      record.lnz.push_back(sum + weight * uni20::math::log(torus_trace(T)));
+      record.discarded_y.push_back(along_y.discarded);
+      record.discarded_x.push_back(along_x.discarded);
+      record.gap_y.push_back(along_y.gap);
+      record.gap_x.push_back(along_x.gap);
+      wait_for(T);
+      record.seconds.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+      record.seconds_contract.push_back(spent().contract - before.contract);
+      record.seconds_regroup.push_back(spent().regroup - before.regroup);
+      record.seconds_svd.push_back(spent().svd - before.svd);
+      if constexpr (!std::same_as<Observer, std::nullptr_t>)
+      {
+        if constexpr (std::same_as<Place, host_place>)
+          observe(record, T);
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+        else
+        {
+          // The record's T0 is the latest tensor in both places when the observer runs.
+          record.T0 = uni20::to_host(T);
+          observe(record, record.T0);
+        }
+#endif
+      }
+    }
+  };
+  if constexpr (std::same_as<Place, host_place>) rounds(record.T0);
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+  else
   {
-    auto const start = std::chrono::steady_clock::now();
-    seconds_spent const before = spent();
-    auto along_y = coarse_grain(record.T0, axis::y, D);
-    auto along_x = coarse_grain(along_y.T, axis::x, D);
-    record.T0 = std::move(along_x.T);
-    record.log2_width.push_back(step + 1);
-    record.log_norm_y.push_back(uni20::math::log(along_y.norm));
-    record.log_norm_x.push_back(uni20::math::log(along_x.norm));
-    weight /= 4;
-    sum += weight * (2 * record.log_norm_y.back() + record.log_norm_x.back());
-    record.lnz.push_back(sum + weight * uni20::math::log(torus_trace(record.T0)));
-    record.discarded_y.push_back(along_y.discarded);
-    record.discarded_x.push_back(along_x.discarded);
-    record.gap_y.push_back(along_y.gap);
-    record.gap_x.push_back(along_x.gap);
-    record.seconds.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
-    record.seconds_contract.push_back(spent().contract - before.contract);
-    record.seconds_regroup.push_back(spent().regroup - before.regroup);
-    record.seconds_svd.push_back(spent().svd - before.svd);
-    if constexpr (!std::same_as<Observer, std::nullptr_t>) observe(record, record.T0);
+    auto T = place.upload(record.T0);
+    rounds(T);
+    // With an observer, every round has already downloaded T into T0.
+    if constexpr (std::same_as<Observer, std::nullptr_t>) record.T0 = uni20::to_host(T);
   }
+#endif
   return record;
 }
 
