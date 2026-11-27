@@ -620,7 +620,8 @@ template <uni20::Real R>
                                    uni20::linalg::MatrixTriangle::Upper, p); // ascending
       }();
       idx const count = r - first;
-      gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+      gram_cut<R, host_place> result{
+          .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
       for (idx c = 0; c < k; ++c)
         for (idx b = 0; b < n; ++b)
           for (idx a = 0; a < n; ++a)
@@ -636,7 +637,8 @@ template <uni20::Real R>
       return uni20::linalg::eigh(uni20::reshape_view(theta, n * n, n * n), p); // ascending
     }();
     idx const k = static_cast<idx>(std::min(D, rows));
-    gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+    gram_cut<R, host_place> result{
+        .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
     for (idx c = 0; c < k; ++c)
       for (idx b = 0; b < n; ++b)
         for (idx a = 0; a < n; ++a)
@@ -652,7 +654,8 @@ template <uni20::Real R>
   }();
   idx const k = static_cast<idx>(decomposition.singular_values.extent(0));
 
-  gram_cut<R, host_place> result{.U = tensor3<R>(n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+  gram_cut<R, host_place> result{
+      .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
   uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, k));
   R kept = uni20::scalar_at_precision<R>(0, p);
   for (idx i = 0; i < k; ++i)
