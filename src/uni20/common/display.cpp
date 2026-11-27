@@ -671,15 +671,33 @@ void streaming_table::emit_rows(std::vector<formatted_cell> const& cells, std::s
     }
     if (!vertical_fallback_)
     {
+      // A heading wider than its column wraps within the column's width: a fixed width never changes, and
+      // fit and shared widths already include their heading.
+      std::vector<std::vector<presentation::styled_text>> headings;
+      headings.reserve(columns_.size());
+      std::size_t heading_lines = 1;
       for (std::size_t i = 0; i != columns_.size(); ++i)
       {
-        if (i != 0) text.append("  ");
-        auto heading = align_cell(make_plain_cell(columns_[i].heading), widths_[i], table_alignment::left, policy_,
-                                  i + 1 == columns_.size());
-        text.append(presentation::render_plain(heading, policy_),
-                    terminal::TerminalStyle(std::string_view("LightGray;Bold")));
+        headings.push_back(wrap_cell(make_plain_cell(columns_[i].heading), widths_[i], policy_));
+        heading_lines = std::max(heading_lines, headings.back().size());
       }
-      text.append("\n");
+      for (std::size_t line = 0; line != heading_lines; ++line)
+      {
+        // As for a wrapped row, a continuation line ends at its last column with text.
+        std::size_t last = 0;
+        for (std::size_t i = 0; i != columns_.size(); ++i)
+          if (line < headings[i].size() && !headings[i][line].empty()) last = i;
+        if (line == 0) last = columns_.size() - 1;
+        for (std::size_t i = 0; i <= last; ++i)
+        {
+          if (i != 0) text.append("  ");
+          auto const part = line < headings[i].size() ? headings[i][line] : presentation::styled_text{};
+          auto heading = align_cell(part, widths_[i], table_alignment::left, policy_, i == last);
+          text.append(presentation::render_plain(heading, policy_),
+                      terminal::TerminalStyle(std::string_view("LightGray;Bold")));
+        }
+        text.append("\n");
+      }
       if (header_separator_)
       {
         for (std::size_t i = 0; i != columns_.size(); ++i)
