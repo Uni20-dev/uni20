@@ -150,6 +150,13 @@ TYPED_TEST(DenseHotrg, SelectedEighCutKeepsTheSvdCutSubspace)
       expect_error_at_most(selected.lnz[i], svd.lnz[i], 1024 * C::epsilon());
       expect_error_at_most(selected.discarded_y[i], svd.discarded_y[i], 1024 * C::epsilon());
       expect_error_at_most(selected.discarded_x[i], svd.discarded_x[i], 1024 * C::epsilon());
+      // The extra eigenpair is there only for the gap at the cut, so check that too.  The gap
+      // (lambda_D - lambda_{D+1}) / lambda_D divides by the smallest kept eigenvalue, while each
+      // eigenvalue is accurate only to about epsilon * lambda_1, so its rounding error is about
+      // epsilon * lambda_1 / lambda_D: some 1300 epsilon here in float and double alike.  Dropping
+      // the extra pair sets the gap to 1, far outside this bound.
+      expect_error_at_most(selected.gap_y[i], svd.gap_y[i], 16384 * C::epsilon());
+      expect_error_at_most(selected.gap_x[i], svd.gap_x[i], 16384 * C::epsilon());
       C::expect_precision(selected.lnz[i]);
     }
   }
