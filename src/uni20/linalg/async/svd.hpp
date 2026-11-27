@@ -125,7 +125,7 @@ template <class Result, class MatrixTensor>
     return select_backend_for<
         typename Result::singular_value_tensor_type, typename Result::left_singular_vector_tensor_type,
         typename Result::right_singular_vector_adjoint_tensor_type, std::remove_cvref_t<MatrixTensor>>(
-        svd_op{.left = options.left, .right = options.right});
+        svd_op{.left = options.left, .right = options.right, .driver = options.driver});
   }
   else
   {

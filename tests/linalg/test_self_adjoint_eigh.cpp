@@ -271,3 +271,33 @@ TEST(SelfAdjointEighTest, MplapackFloat128RealAndComplexPaths)
   check_eigenvector_residuals(matrix_element, row_major_result.eigenvectors, row_major_result.eigenvalues, 1e-20);
 }
 #endif
+
+TEST(SelfAdjointEighTest, DivideAndConquerReturnsHermitianEigenpairs)
+{
+  using namespace uni20::linalg;
+  using Scalar = uni20::complex<double>;
+  uni20::DenseMatrix<Scalar, uni20::RowMajor> matrix(2, 2);
+  matrix[0, 0] = 3;
+  matrix[1, 1] = 3;
+  matrix[0, 1] = Scalar{0, 1};
+  matrix[1, 0] = Scalar{0, -1};
+  auto result = eigh(matrix, EighDriver::DivideAndConquer);
+  EXPECT_NEAR(result.eigenvalues[0], 2, 1e-13);
+  EXPECT_NEAR(result.eigenvalues[1], 4, 1e-13);
+  check_eigenvector_residuals([&](auto row, auto col) { return matrix[row, col]; }, result.eigenvectors,
+                              result.eigenvalues, 1e-13);
+}
+
+#if UNI20_HAS_MPLAPACK_FLOAT128
+TEST(SelfAdjointEighTest, DivideAndConquerSupportsBinary128)
+{
+  using namespace uni20::linalg;
+  using Real = uni20::float128;
+  uni20::DenseMatrix<Real> matrix(2, 2);
+  matrix[0, 0] = Real{2};
+  matrix[1, 1] = Real{4};
+  auto result = eigh(matrix, EighDriver::DivideAndConquer);
+  EXPECT_TRUE(result.eigenvalues[0] == Real{2});
+  EXPECT_TRUE(result.eigenvalues[1] == Real{4});
+}
+#endif

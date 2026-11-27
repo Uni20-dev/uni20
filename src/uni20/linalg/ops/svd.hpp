@@ -52,7 +52,7 @@ template <uni20::MutableRankedTensorView<1> SingularValueTensor, uni20::MutableR
                                                                   static_cast<uni20::index_type>(left_cols)});
   uni20::prepare_output(right_singular_vectors_adjoint, svd_matrix_extents{static_cast<uni20::index_type>(right_rows),
                                                                            static_cast<uni20::index_type>(cols)});
-  return {.left = options.left, .right = options.right};
+  return {.left = options.left, .right = options.right, .driver = options.driver};
 }
 
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> SingularValueTensor,
@@ -481,7 +481,7 @@ template <class MatrixTensor> [[nodiscard]] constexpr auto select_svd_backend(Sv
 {
   return select_backend_for<svd_value_tensor_t<MatrixTensor>, svd_matrix_tensor_t<MatrixTensor>,
                             svd_matrix_tensor_t<MatrixTensor>, std::remove_cvref_t<MatrixTensor>>(
-      svd_op{.left = options.left, .right = options.right});
+      svd_op{.left = options.left, .right = options.right, .driver = options.driver});
 }
 
 template <KernelBackendSelector BackendSelector, class MatrixTensor>
@@ -636,7 +636,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
     left = make_svd_factor<factor_type>(rows, left_cols);
     right = make_svd_factor<factor_type>(right_rows, cols);
     auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
-    auto operation = svd_op{.left = options.left, .right = options.right};
+    auto operation = svd_op{.left = options.left, .right = options.right, .driver = options.driver};
     auto values_span = values.mdspan();
     auto left_span = left.mdspan();
     auto right_span = right.mdspan();
@@ -644,7 +644,8 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
     detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(
         std::forward<BackendSelector>(selector), operation, p, values_span, left_span, right_span, matrix_span);
   }
-  else if (options.left == SvdVectorExtent::Reduced && (options.right == SvdVectorExtent::Full || rows >= cols))
+  else if (options.driver == SvdDriver::Default && options.left == SvdVectorExtent::Reduced &&
+           (options.right == SvdVectorExtent::Full || rows >= cols))
   {
     right = make_svd_factor<factor_type>(right_rows, cols);
     auto operation = svd_op{.left = options.left, .right = options.right, .overwrite = SvdOverwrite::Left};
@@ -663,14 +664,14 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
     else
     {
       left = make_svd_factor<factor_type>(rows, left_cols);
-      auto normal_operation = svd_op{.left = options.left, .right = options.right};
+      auto normal_operation = svd_op{.left = options.left, .right = options.right, .driver = options.driver};
       auto left_span = left.mdspan();
       detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
                                                                            normal_operation, p, values_span, left_span,
                                                                            right_span, matrix_span);
     }
   }
-  else if (options.right == SvdVectorExtent::Reduced)
+  else if (options.driver == SvdDriver::Default && options.right == SvdVectorExtent::Reduced)
   {
     left = make_svd_factor<factor_type>(rows, left_cols);
     auto operation = svd_op{.left = options.left, .right = options.right, .overwrite = SvdOverwrite::Right};
@@ -689,7 +690,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
     else
     {
       right = make_svd_factor<factor_type>(right_rows, cols);
-      auto normal_operation = svd_op{.left = options.left, .right = options.right};
+      auto normal_operation = svd_op{.left = options.left, .right = options.right, .driver = options.driver};
       auto right_span = right.mdspan();
       detail::dispatch_at_precision<uni20::tensor_element_t<MatrixTensor>>(std::forward<BackendSelector>(selector),
                                                                            normal_operation, p, values_span, left_span,
@@ -700,7 +701,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
   {
     left = make_svd_factor<factor_type>(rows, left_cols);
     right = make_svd_factor<factor_type>(right_rows, cols);
-    auto operation = svd_op{.left = options.left, .right = options.right};
+    auto operation = svd_op{.left = options.left, .right = options.right, .driver = options.driver};
     auto values_span = values.mdspan();
     auto left_span = left.mdspan();
     auto right_span = right.mdspan();
@@ -992,7 +993,7 @@ template <class MatrixTensor>
   {
     using factor_type = detail::svd_reuse_factor_t<MatrixTensor>;
     using value_type = detail::svd_value_tensor_t<MatrixTensor>;
-    auto operation = svd_op{.left = options.left, .right = options.right};
+    auto operation = svd_op{.left = options.left, .right = options.right, .driver = options.driver};
     auto selector =
         select_backend_for<value_type, factor_type, factor_type, std::remove_cvref_t<MatrixTensor>>(operation);
     return detail::svd_from_transferable_matrix(std::move(selector), std::forward<MatrixTensor>(matrix), options, p);

@@ -142,7 +142,7 @@ template <class V, packed_detail::DecompositionMatrix A, class... P>
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 consteval auto kernel_accepts_types(LapackBackend, self_adjoint_eigh_op const&, V&, A&, P... precision)
 {
-  return kernel_types_yes;
+  return kernel_types_maybe;
 }
 
 /// \brief Read only the selected triangle and return values and optional vectors at p.
@@ -151,6 +151,7 @@ template <class V, packed_detail::DecompositionMatrix A, class... P>
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 KernelAttempt try_kernel(LapackBackend, self_adjoint_eigh_op const& op, V& v, A& a, P... precision)
 {
+  if (op.driver != EighDriver::Default) return KernelAttempt::unsupported_instance;
   auto const p = packed_detail::working_precision<typename A::value_type>(precision...);
   (void)p.bit_count();
   return lapack_detail::with_host_write_mdspans(
@@ -354,7 +355,7 @@ template <class V, packed_detail::DecompositionMatrix A, class L, class R, class
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 consteval auto kernel_accepts_types(LapackBackend, svd_op const& op, V& v, L& l, R& r, A& a, P... precision)
 {
-  return kernel_types_yes;
+  return kernel_types_maybe;
 }
 
 /// \brief Compute the requested SVD factors through logical host packing.
@@ -364,6 +365,7 @@ template <class V, packed_detail::DecompositionMatrix A, class L, class R, class
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 KernelAttempt try_kernel(LapackBackend, svd_op const& op, V& v, L& l, R& r, A& a, P... precision)
 {
+  if (op.driver != SvdDriver::Default) return KernelAttempt::unsupported_instance;
   auto const p = packed_detail::working_precision<typename A::value_type>(precision...);
   return lapack_detail::with_host_write_mdspans(
       [&](auto& vs, auto& ls, auto& rs, auto& as) {
@@ -386,7 +388,7 @@ template <class V, packed_detail::DecompositionMatrix A, class F, class... P>
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 consteval auto kernel_accepts_types(LapackBackend, svd_op const& op, V& v, F& f, A& a, P... precision)
 {
-  return kernel_types_yes;
+  return kernel_types_maybe;
 }
 
 /// \brief Compute the requested SVD factors through logical host packing.
@@ -395,6 +397,7 @@ template <class V, packed_detail::DecompositionMatrix A, class F, class... P>
            packed_detail::KernelPrecision<typename A::value_type, P...> && packed_detail::DecompositionValues<V, A>
 KernelAttempt try_kernel(LapackBackend, svd_op const& op, V& v, F& f, A& a, P... precision)
 {
+  if (op.driver != SvdDriver::Default) return KernelAttempt::unsupported_instance;
   auto const p = packed_detail::working_precision<typename A::value_type>(precision...);
   return lapack_detail::with_host_write_mdspans(
       [&](auto& vs, auto& fs, auto& as) {

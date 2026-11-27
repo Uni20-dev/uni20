@@ -97,6 +97,15 @@ eigenvalues are ascending and the corresponding eigenvectors occupy columns
 of the work matrix when requested. Preserving `eigh` copies the input to
 column-major work on the same device and returns both tensors there.
 
+On the host, `eigh(matrix, EighDriver::DivideAndConquer)` selects
+`syevd`/`heevd`. The destructive `self_adjoint_eigh` also accepts
+`.driver = EighDriver::DivideAndConquer` in its options.
+`svd(matrix, {.driver = SvdDriver::DivideAndConquer})` selects `gesdd`
+for factors whose shapes fit one paired reduced or full job. It uses
+separate factor outputs when the caller supplies an rvalue. These options
+are available for direct LAPACK float32/64 and MPLAPACK binary128. The
+packed binary80 and MPFR/MPC adapters support the default drivers.
+
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
 lowerings for native scalars and configured MPLAPACK GEMM providers, including
 finite MPFR/MPC scalars with explicit operation precision. They jointly merge the logical M, N, and K

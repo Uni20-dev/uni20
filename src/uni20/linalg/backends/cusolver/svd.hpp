@@ -127,6 +127,7 @@ template <class Values, class Left, class Right, class Matrix>
 KernelAttempt try_svd(svd_op const& operation, Values& values, Left& left, Right& right_adjoint, Matrix& matrix)
 {
   using scalar_type = typename std::remove_cvref_t<Matrix>::element_type;
+  if (operation.driver != SvdDriver::Default) return KernelAttempt::unsupported_instance;
   if (operation.overwrite != SvdOverwrite::None) return KernelAttempt::unsupported_instance;
   if (matrix.extent(0) == 0 || matrix.extent(1) == 0) return KernelAttempt::unsupported_shape;
   if (matrix.extent(0) < matrix.extent(1)) return KernelAttempt::unsupported_shape;

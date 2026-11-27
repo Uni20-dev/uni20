@@ -583,3 +583,49 @@ TEST(SvdTest, ZeroExtentFullFactorsUseIdentityCompletion)
   EXPECT_EQ(left_completion.right_singular_vectors_adjoint.rows(), 0);
   EXPECT_EQ(left_completion.right_singular_vectors_adjoint.cols(), 0);
 }
+
+TEST(SvdTest, DivideAndConquerReconstructsComplexRectangularInput)
+{
+  using namespace uni20::linalg;
+  using Scalar = uni20::complex<double>;
+  uni20::DenseMatrix<Scalar> matrix(2, 3);
+  matrix[0, 0] = Scalar{0, 2};
+  matrix[1, 1] = 3;
+  matrix[1, 2] = Scalar{1, 1};
+  auto const result = svd(matrix, {.driver = SvdDriver::DivideAndConquer});
+  EXPECT_EQ(result.left_singular_vectors.extent(1), 2);
+  EXPECT_EQ(result.right_singular_vectors_adjoint.extent(0), 2);
+  expect_svd_reconstruction(matrix, result, 1e-13);
+
+  auto const full = svd(
+      matrix, {.left = SvdVectorExtent::Full, .right = SvdVectorExtent::Full, .driver = SvdDriver::DivideAndConquer});
+  EXPECT_EQ(full.right_singular_vectors_adjoint.extent(0), 3);
+  expect_svd_reconstruction(matrix, full, 1e-13);
+}
+
+TEST(SvdTest, DivideAndConquerWithRvalueUsesSeparateFactors)
+{
+  using namespace uni20::linalg;
+  uni20::DenseMatrix<double> matrix(3, 2);
+  matrix[0, 0] = 4;
+  matrix[1, 1] = 2;
+  auto const original = matrix;
+  auto const result = svd(std::move(matrix), {.driver = SvdDriver::DivideAndConquer});
+  EXPECT_NEAR(result.singular_values[0], 4, 1e-13);
+  EXPECT_NEAR(result.singular_values[1], 2, 1e-13);
+  expect_svd_reconstruction(original, result, 1e-13);
+}
+
+#if UNI20_HAS_MPLAPACK_FLOAT128
+TEST(SvdTest, DivideAndConquerSupportsBinary128)
+{
+  using namespace uni20::linalg;
+  using Real = uni20::float128;
+  uni20::DenseMatrix<Real> matrix(2, 2);
+  matrix[0, 0] = Real{2};
+  matrix[1, 1] = Real{4};
+  auto result = svd(matrix, {.driver = SvdDriver::DivideAndConquer});
+  EXPECT_TRUE(result.singular_values[0] == Real{4});
+  EXPECT_TRUE(result.singular_values[1] == Real{2});
+}
+#endif

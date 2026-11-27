@@ -234,11 +234,19 @@ enum class MatrixTriangle
   Lower
 };
 
+/// \brief Algorithm choice for a complete dense eigensystem.
+enum class EighDriver
+{
+  Default,
+  DivideAndConquer
+};
+
 /// \brief Options for a dense symmetric or Hermitian eigensystem.
 struct SelfAdjointEighOptions
 {
     bool compute_vectors = true;
     MatrixTriangle triangle = MatrixTriangle::Upper;
+    EighDriver driver = EighDriver::Default;
 };
 
 /// \brief Dense symmetric or Hermitian eigensystem operation tag.
@@ -247,6 +255,7 @@ struct self_adjoint_eigh_op
     static constexpr std::string_view name = "self_adjoint_eigh";
     bool compute_vectors = true;
     MatrixTriangle triangle = MatrixTriangle::Upper;
+    EighDriver driver = EighDriver::Default;
 };
 
 /// \brief Extent policy for one side of an exact singular value decomposition.
@@ -256,11 +265,19 @@ enum class SvdVectorExtent
   Full
 };
 
-/// \brief Output-shape options for an exact singular value decomposition.
+/// \brief Algorithm choice for a complete dense SVD.
+enum class SvdDriver
+{
+  Default,
+  DivideAndConquer
+};
+
+/// \brief Output shape and algorithm options for an exact singular value decomposition.
 struct SvdOptions
 {
     SvdVectorExtent left = SvdVectorExtent::Reduced;
     SvdVectorExtent right = SvdVectorExtent::Reduced;
+    SvdDriver driver = SvdDriver::Default;
 };
 
 /// \brief Input allocation overwritten by a singular-vector factor.
@@ -300,6 +317,7 @@ struct svd_op
     SvdVectorExtent left = SvdVectorExtent::Reduced;
     SvdVectorExtent right = SvdVectorExtent::Reduced;
     SvdOverwrite overwrite = SvdOverwrite::None;
+    SvdDriver driver = SvdDriver::Default;
 };
 
 /// \brief Symmetric tridiagonal eigensystem operation tag.
