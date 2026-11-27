@@ -97,6 +97,13 @@ eigenvalues are ascending and the corresponding eigenvectors occupy columns
 of the work matrix when requested. Preserving `eigh` copies the input to
 column-major work on the same device and returns both tensors there.
 
+Explicit Jacobi decompositions are available with `eigh_jacobi(matrix, options,
+triangle)` and `svd_jacobi(matrix, options)` for CUDA-buffer matrices of real
+`float` or `double`. They preserve the input and return device-resident factors.
+Jacobi SVD returns reduced factors for square, tall, and wide matrices. Both
+calls block to return cuSOLVER's convergence status, internal residual norm,
+and sweep count. See [CUDA Jacobi decompositions](../backends/cuda/cusolver.md#jacobi-decompositions).
+
 Fixed-output dense Tensor contraction has direct and residual-axis host BLAS
 lowerings for native scalars and configured MPLAPACK GEMM providers, including
 finite MPFR/MPC scalars with explicit operation precision. They jointly merge the logical M, N, and K
