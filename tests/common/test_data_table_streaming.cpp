@@ -270,6 +270,43 @@ TEST(DataTableStreaming, TerminalAdapterPreservesDecimalAlignmentAfterFormatting
   EXPECT_EQ(rendered[0].find('.', first_row_start) - first_row_start, rendered[1].find('.'));
 }
 
+TEST(DataTableStreaming, TerminalColumnsKeepTheirLayoutWhenLaterRowsAreWider)
+{
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<double>("x"), p::data_column<double>("y"),
+                                  p::data_column<double>("z").scientific(2));
+  table.attach(p::terminal_sink({.wrap_width = 120}));
+  double const wide_x = -0.00012345678901234567, wide_y = -1.2345678901234567e-300;
+  table.append(1.5, 2.0, 3.0);
+  table.append(wide_x, wide_y, -9.87e-300);
+  table.finish();
+  std::vector<std::string> lines;
+  for (auto const& text : rendered)
+  {
+    std::istringstream stream(text);
+    for (std::string line; std::getline(stream, line);)
+      if (!line.empty()) lines.push_back(line);
+  }
+  ASSERT_GE(lines.size(), 4U); // header, separator and two rows
+  auto const& header = lines[0];
+  auto const y_column = header.find('y'), z_column = header.find('z');
+  ASSERT_NE(y_column, std::string::npos);
+  ASSERT_NE(z_column, std::string::npos);
+  for (std::size_t i = 2; i < lines.size(); ++i)
+  {
+    SCOPED_TRACE(lines[i]);
+    // Every value ends before the separator in front of the next column's heading.
+    EXPECT_EQ(lines[i].substr(y_column - 2, 2), "  ");
+    EXPECT_EQ(lines[i].substr(z_column - 2, 2), "  ");
+  }
+  EXPECT_NE(lines.back().find(uni20::format_real(wide_x)), std::string::npos);
+  EXPECT_NE(lines.back().find(uni20::format_real(wide_y)), std::string::npos);
+  EXPECT_NE(lines.back().find("-9.87e-300"), std::string::npos);
+}
+
 template <typename Real> class DataTableStreamingPrecision : public ::testing::Test {};
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK && defined(MPLAPACK_BINARY128_MODE) &&                      \
     (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
@@ -289,8 +326,8 @@ TYPED_TEST(DataTableStreamingPrecision, NarrowTerminalKeepsRoundTripNumbersIntac
     uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
       rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
     });
-    auto table = p::make_data_table("", p::data_column<Real>("x").round_trip(),
-                                      p::data_column<Real>("y").round_trip(), p::data_column<Real>("z").round_trip());
+    auto table = p::make_data_table("", p::data_column<Real>("x").round_trip(), p::data_column<Real>("y").round_trip(),
+                                    p::data_column<Real>("z").round_trip());
     table.attach(p::terminal_sink({.wrap_width = 60}));
     if (compact_first) table.append(1, 2, 3);
     Real const x = Real{1} / Real{7};

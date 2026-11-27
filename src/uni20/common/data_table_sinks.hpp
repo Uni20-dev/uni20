@@ -133,6 +133,53 @@ template <typename T> display::formatted_cell terminal_cell(T const& value, data
   }
 }
 
+// Decimal digits of the largest exponent a native real type can print, at least two.
+template <typename T> std::size_t exponent_digits()
+{
+  if constexpr (requires { uni20::numeric_limits<T>::max_exponent10; })
+  {
+    std::size_t digits = 0;
+    for (int e = uni20::numeric_limits<T>::max_exponent10; e > 0; e /= 10)
+      ++digits;
+    return std::max<std::size_t>(digits, 2);
+  }
+  else
+    return 4; // binary128 reaches e+4932; a wider mpreal exponent still grows its column
+}
+
+// Display cells for the widest text a real column's format gives at this value's precision, so that a
+// streaming column is as wide as its widest value from its first row: the header and the rows already
+// written cannot be laid out again.  General notation is a sign, `digits` significant digits, a point and
+// an exponent "e-ddd" (its fixed form, "-0.000ddd", is never wider); scientific notation has `digits`
+// digits after one leading digit.  Zero, meaning no bound, for fixed notation, exact values, a missing
+// first value of a runtime-precision type, and columns that are not real.
+template <typename V> std::size_t reserved_width([[maybe_unused]] V const* value, data_column_display const& display)
+{
+  if constexpr (!Real<V>)
+    return 0;
+  else
+  {
+    auto const& numeric = display.numeric;
+    if (numeric.notation == real_format_notation::fixed) return 0;
+    std::size_t digits = 0;
+    if constexpr (runtime_real<V>)
+    {
+#if UNI20_HAS_MPREAL
+      if (!value || value->is_exact()) return 0;
+      digits = numeric.precision >= 0 ? static_cast<std::size_t>(numeric.precision)
+                                      : mpfr_get_str_ndigits(10, value->precision().bit_count());
+#else
+      return 0;
+#endif
+    }
+    else
+      digits = numeric.precision >= 0 ? static_cast<std::size_t>(numeric.precision)
+                                      : static_cast<std::size_t>(uni20::numeric_limits<V>::max_digits10());
+    std::size_t const exponent = 2 + exponent_digits<V>();
+    return numeric.notation == real_format_notation::general ? 1 + digits + 1 + exponent : 3 + digits + exponent;
+  }
+}
+
 class terminal_sink_adapter {
   public:
     explicit terminal_sink_adapter(data_terminal_options options) : options_(std::move(options)) {}
@@ -141,17 +188,32 @@ class terminal_sink_adapter {
     {
       selection_ = resolve_projection(schema, options_.projection);
       table_.emplace(title, options_.destination);
+      columns_declared_ = false;
       if (options_.output) table_->output(options_.output, options_.policy.value_or(plain_policy()));
       if (options_.wrap_width) table_->wrap_width(*options_.wrap_width);
-      for (std::size_t p = 0; p < selection_.indices.size(); ++p)
-        visit_column(schema, selection_.indices[p], [&](auto const& column) {
-          table_->column(column.label(), display::width::fit(options_.minimum_column_width),
-                         selection_.display[p].alignment);
-        });
       this->emit_metadata(metadata);
     }
     template <typename Schema, typename Row> void row(Schema const& schema, Row const& row)
     {
+      // The columns are declared with the first row, whose values give the precision of runtime reals.
+      if (!columns_declared_)
+      {
+        visit_selected(schema, row, selection_, [&](auto const& column, auto const& value, auto const& format) {
+          using cell_type = std::remove_cvref_t<decltype(value)>;
+          using real_type = data_table_detail::value_type<cell_type>;
+          real_type const* present = nullptr;
+          if constexpr (optional_traits<cell_type>::optional)
+          {
+            if (value) present = &*value;
+          }
+          else
+            present = &value;
+          auto const reserved = reserved_width<real_type>(present, format);
+          table_->column(column.label(), display::width::fit(std::max(options_.minimum_column_width, reserved)),
+                         format.alignment);
+        });
+        columns_declared_ = true;
+      }
       std::vector<display::formatted_cell> cells;
       cells.reserve(selection_.indices.size());
       visit_selected(schema, row, selection_, [&](auto const&, auto const& value, auto const& format) {
@@ -181,11 +243,13 @@ class terminal_sink_adapter {
     data_terminal_options options_;
     resolved_projection selection_;
     std::optional<display::streaming_table> table_;
+    bool columns_declared_ = false;
 };
 } // namespace data_table_detail
 
 /// \brief Stream deferred display formatting through display::streaming_table.
-/// \details Uses incremental fit widths and the current display sink; no table history is retained by the adapter.
+/// \details Uses fit widths and the current display sink; no table history is retained by the adapter. Real
+///          columns start as wide as the widest text their format can give, so earlier rows stay aligned.
 [[nodiscard]] inline auto terminal_sink(data_terminal_options options = {})
 {
   return data_table_detail::terminal_sink_adapter(std::move(options));
