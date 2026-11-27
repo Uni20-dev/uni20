@@ -69,6 +69,23 @@ TYPED_TEST(CusolverEighTest, DeviceEigensystemReadsOnlyTheSelectedTriangle)
     }
   }
 
+  auto device_input = uni20::to_device(matrix, resources);
+  auto selected = uni20::linalg::eigh(device_input, uni20::linalg::EigenvalueIndexRange{2, 3});
+  static_assert(std::is_same_v<decltype(selected.eigenvectors), uni20::CudaMatrix<Scalar, uni20::ColumnMajor>>);
+  auto selected_values = uni20::to_host(selected.eigenvalues);
+  auto selected_vectors = uni20::to_host(selected.eigenvectors);
+  ASSERT_EQ(selected_values.size(), 1);
+  ASSERT_EQ(selected_vectors.extent(0), 3);
+  ASSERT_EQ(selected_vectors.extent(1), 1);
+  EXPECT_NEAR(selected_values[0], expected[2], tolerance);
+  for (uni20::index_type row = 0; row < 3; ++row)
+  {
+    Scalar av = 0;
+    for (uni20::index_type k = 0; k < 3; ++k)
+      av += matrix[row, k] * selected_vectors[k, 0];
+    EXPECT_NEAR(av, (selected_values[0] * selected_vectors[row, 0]), tolerance);
+  }
+
   uni20::Tensor<Scalar, 2, uni20::HostStorage, uni20::ColumnMajor> work_host(3, 3);
   uni20::copy(work_host, matrix);
   auto work = uni20::to_device(work_host, resources);
