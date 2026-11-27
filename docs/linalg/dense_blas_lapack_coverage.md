@@ -215,16 +215,16 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense symmetric tridiagonal divide-and-conquer eigensystem | yes | yes | n/a | n/a | Dense projected symmetric tridiagonal eigensystem through LAPACK `stevd`. |
 | Dense selected symmetric tridiagonal eigensystem | yes | yes | n/a | n/a | Dense projected symmetric tridiagonal eigensystem through LAPACK `stevr` using 0-based inclusive index ranges. |
 | Dense singular value decomposition | yes | yes | yes | yes | Dispatched exact Tensor SVD through LAPACK `gesvd`, with singular-values-only, left-only, right-only, and complete APIs. `truncated_svd` is a separate dense policy layer with rank, cutoff, and discarded-weight criteria, rank-zero support, stable same-precision statistics, and preserving/consuming synchronous and Async forms. Reduced consuming exact factors may adopt the input allocation through LAPACK overwrite jobs. Complex singular values use the underlying real scalar type. |
-| Dense divide-and-conquer singular value decomposition | yes | yes | yes | yes | Dense projected utility SVD through LAPACK `gesdd`. Complex singular values use the underlying real scalar type. |
+| Dense divide-and-conquer singular value decomposition | yes | yes | yes | yes | Dispatched host `svd` with `SvdDriver::DivideAndConquer` uses LAPACK `gesdd` for paired reduced or full factors. |
 | Dense selected singular value decomposition | yes | yes | yes | yes | Dense projected selected SVD through LAPACK `gesvdx`, using 0-based inclusive decreasing singular-value index ranges. Complex singular values use the underlying real scalar type. |
 | Dense real symmetric eigensystem | yes | yes | n/a | n/a | Dense projected Hermitian reference or utility problem. |
-| Dense real divide-and-conquer symmetric eigensystem | yes | yes | n/a | n/a | Dense projected Hermitian reference or utility problem through LAPACK `syevd`. |
+| Dense real divide-and-conquer symmetric eigensystem | yes | yes | n/a | n/a | Dispatched host `eigh` and `self_adjoint_eigh` with `EighDriver::DivideAndConquer` use LAPACK `syevd`. |
 | Dense real selected symmetric eigensystem | yes | yes | n/a | n/a | Dense projected Hermitian reference or utility problem through LAPACK `syevr` using 0-based inclusive index ranges. |
 | Dense generalized real symmetric eigensystem | yes | yes | n/a | n/a | Dense type-1 generalized Hermitian utility problem through LAPACK `sygv`. |
 | Dense generalized real divide-and-conquer symmetric eigensystem | yes | yes | n/a | n/a | Dense type-1 generalized Hermitian utility problem through LAPACK `sygvd`. |
 | Dense generalized real selected symmetric eigensystem | yes | yes | n/a | n/a | Dense type-1 generalized Hermitian utility problem through LAPACK `sygvx` using 0-based inclusive index ranges. |
 | Dense complex Hermitian eigensystem | n/a | n/a | yes | yes | Dense projected Hermitian reference or utility problem through LAPACK `heev`. |
-| Dense complex divide-and-conquer Hermitian eigensystem | n/a | n/a | yes | yes | Dense projected Hermitian reference or utility problem through LAPACK `heevd`. |
+| Dense complex divide-and-conquer Hermitian eigensystem | n/a | n/a | yes | yes | Dispatched host `eigh` and `self_adjoint_eigh` with `EighDriver::DivideAndConquer` use LAPACK `heevd`. |
 | Dense complex selected Hermitian eigensystem | n/a | n/a | yes | yes | Dense projected Hermitian reference or utility problem through LAPACK `heevr` using 0-based inclusive index ranges. |
 | Dense generalized complex Hermitian eigensystem | n/a | n/a | yes | yes | Dense type-1 generalized Hermitian utility problem through LAPACK `hegv`. |
 | Dense generalized complex divide-and-conquer Hermitian eigensystem | n/a | n/a | yes | yes | Dense type-1 generalized Hermitian utility problem through LAPACK `hegvd`. |

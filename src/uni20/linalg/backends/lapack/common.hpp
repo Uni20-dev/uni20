@@ -13,6 +13,7 @@
 #include <uni20/linalg/kernel_attempt.hpp>
 #include <uni20/tensor/access.hpp>
 
+#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <functional>
@@ -49,18 +50,28 @@ template <class Scalar> blas_int workspace_size(Scalar const& query)
   CHECK(recommended >= real_type{1}, recommended);
 
   auto const maximum = static_cast<real_type>(uni20::numeric_limits<blas_int>::max());
-  if (uni20::numeric_limits<real_type>::digits(recommended) < uni20::numeric_limits<blas_int>::digits())
+  auto const precision = uni20::numeric_limits<real_type>::digits(recommended);
+  blas_int result;
+  if (precision < uni20::numeric_limits<blas_int>::digits())
   {
     // A low-precision real may round max(blas_int) up to the first
     // unrepresentable integer, so equality is not a safe conversion bound.
     CHECK(recommended < maximum, recommended);
+    result = static_cast<blas_int>(recommended);
+
+    // Some providers round an integer workspace down when storing it in WORK(1).
+    // Once the real type loses low integer bits, allocate through the last
+    // integer below its next representable value.
+    auto const missing_bits = static_cast<int>(std::bit_width(static_cast<std::make_unsigned_t<blas_int>>(result))) -
+                              precision;
+    if (missing_bits > 0) result += (blas_int{1} << missing_bits) - 1;
   }
   else
   {
     CHECK(recommended <= maximum, recommended);
+    result = static_cast<blas_int>(recommended);
   }
 
-  blas_int const result = static_cast<blas_int>(recommended);
   CHECK(result >= 1, result);
   CHECK(std::in_range<std::size_t>(result), result);
   return result;

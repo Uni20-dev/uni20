@@ -343,6 +343,20 @@ TEST(SelfAdjointEighTest, DivideAndConquerChecksWorkspaceBeforeQuery)
   EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<Complex>(false, limit - 1));
 }
 
+TEST(SelfAdjointEighTest, WorkspaceQueryCoversRoundedSinglePrecisionLengths)
+{
+  using uni20::linalg::lapack_detail::workspace_size;
+  // CHEEVD with vectors at n=3000 needs 18,015,001 real entries.
+  constexpr uni20::blas_int lrwork = 1 + 5 * 3000 + 2 * 3000 * 3000;
+  EXPECT_GE(workspace_size(static_cast<float>(lrwork)), lrwork);
+  // Complex WORK queries encode LWORK in their real component. At this
+  // magnitude the spacing is four, so adding just one entry is insufficient.
+  constexpr uni20::blas_int lwork = 33'554'434;
+  EXPECT_GE(workspace_size(uni20::complex<float>{static_cast<float>(lwork), 0}), lwork);
+  EXPECT_EQ(workspace_size(16'777'215.0f), 16'777'215);
+  EXPECT_EQ(workspace_size(static_cast<double>(lrwork)), lrwork);
+}
+
 TEST(SelfAdjointEighTest, DivideAndConquerReturnsHermitianEigenpairs)
 {
   using namespace uni20::linalg;
