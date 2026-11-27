@@ -327,22 +327,22 @@ TEST(DataTableStreaming, TerminalColumnsTakeAnExplicitWidth)
 
 TEST(DataTableStreaming, TerminalColumnsLeaveRoomForTheTypesWidestExponent)
 {
-  if constexpr (std::numeric_limits<long double>::max_exponent10 < 1000)
+  // The widest value is made at run time: a four-digit-exponent literal is out of range, and an error,
+  // where long double is binary64.
+  if (std::numeric_limits<long double>::max_exponent10 < 1000)
     GTEST_SKIP() << "long double has no four-digit decimal exponent on this platform";
-  else
-  {
-    std::vector<std::string> rendered;
-    uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
-      rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
-    });
-    auto table = p::make_data_table("", p::data_column<long double>("a"),
-                                    p::data_column<long double>("b").scientific(3), p::data_column<int>("c"));
-    table.attach(p::terminal_sink({.wrap_width = 200}));
-    table.append(1.5L, 1.5L, 1);
-    table.append(-1.2345678901234567890e-1000L, -1.2345e-1000L, 2);
-    table.finish();
-    expect_rows_aligned_with_header(rendered, "bc");
-  }
+  std::vector<std::string> rendered;
+  uni20::display::scoped_sink capture([&](uni20::display::event const& event) {
+    rendered.push_back(std::visit([](auto const& content) { return p::render_plain(content); }, event.content));
+  });
+  auto table = p::make_data_table("", p::data_column<long double>("a"), p::data_column<long double>("b").scientific(3),
+                                  p::data_column<int>("c"));
+  table.attach(p::terminal_sink({.wrap_width = 200}));
+  long double const widest = -std::numeric_limits<long double>::denorm_min();
+  table.append(1.5L, 1.5L, 1);
+  table.append(widest, widest, 2);
+  table.finish();
+  expect_rows_aligned_with_header(rendered, "bc");
 }
 
 TEST(DataTableStreaming, WorkingPrecisionMustBeFinite)

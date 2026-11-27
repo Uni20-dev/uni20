@@ -480,8 +480,8 @@ runtime-precision column with neither a digit count nor a working precision, an
 exact-fraction column and a non-real column start at the sink's minimum width and
 grow when a row needs more, which misaligns the rows already written. So do an
 `mpreal` value beyond `1e±9999`, a `fixed` value with more than five integer
-digits, and an exact integer longer than the column's digit count; `.width(...)`
-reserves more. A `display::width::fixed(n)` width is exact: a label wider than `n`
+digits (four if negative), an exact integer longer than the column's digit count,
+and a `.missing(...)` marker wider than the column; `.width(...)` reserves more. A `display::width::fixed(n)` width is exact: a label wider than `n`
 overflows its heading. If the
 columns do not fit the terminal, the table uses vertical key/value output from
 its first row. Numeric values remain
