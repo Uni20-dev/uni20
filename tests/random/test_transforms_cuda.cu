@@ -26,12 +26,12 @@ __global__ void sample(Philox4x32Block counter, Results* out)
 {
   auto const w = philox4x32_10(counter, {});
   *out = {w,
-          Uniform<float>{}(w),
-          Uniform<double>{}(w),
-          Uniform{-1.7f, 4.3f}(w),
-          Uniform{-1.7, 4.3}(w),
-          Normal{-0.75, 1.25}(w),
-          ComplexNormal{{1.25, -0.25}, 0.75}(w)};
+          Uniform<float>{}({w}),
+          Uniform<double>{}({w}),
+          Uniform{-1.7f, 4.3f}({w}),
+          Uniform{-1.7, 4.3}({w}),
+          Normal{-0.75, 1.25}({w}),
+          ComplexNormal{{1.25, -0.25}, 0.75}({w})};
 }
 
 TEST(RandomTransformCudaTest, MatchesHostWithinTransformBounds)
@@ -52,26 +52,26 @@ TEST(RandomTransformCudaTest, MatchesHostWithinTransformBounds)
     Results gpu{};
     ASSERT_EQ(cudaMemcpy(&gpu, device.get(), sizeof(gpu), cudaMemcpyDeviceToHost), cudaSuccess);
     auto w = philox4x32_10(counter, {});
-    auto unit_f = Uniform<float>{}(w);
-    auto unit_d = Uniform<double>{}(w);
-    auto pair = Normal{}(w);
+    auto unit_f = Uniform<float>{}({w});
+    auto unit_d = Uniform<double>{}({w});
+    auto pair = Normal{}({w});
     constexpr double eps = std::numeric_limits<double>::epsilon();
     for (unsigned j = 0; j < 4; ++j)
     {
       EXPECT_EQ(gpu.words.words[j], w.words[j]);
       EXPECT_EQ(std::bit_cast<std::uint32_t>(gpu.floats.values[j]), std::bit_cast<std::uint32_t>(unit_f.values[j]));
-      EXPECT_NEAR(gpu.scaled_float.values[j], (Uniform{-1.7f, 4.3f}(w).values[j]),
+      EXPECT_NEAR(gpu.scaled_float.values[j], (Uniform{-1.7f, 4.3f}({w}).values[j]),
                   4 * std::numeric_limits<float>::epsilon() * (1.7f + 6 * unit_f.values[j]));
     }
     for (unsigned j = 0; j < 2; ++j)
     {
       EXPECT_EQ(std::bit_cast<std::uint64_t>(gpu.doubles.values[j]), std::bit_cast<std::uint64_t>(unit_d.values[j]));
-      EXPECT_NEAR(gpu.scaled_double.values[j], (Uniform{-1.7, 4.3}(w).values[j]),
+      EXPECT_NEAR(gpu.scaled_double.values[j], (Uniform{-1.7, 4.3}({w}).values[j]),
                   4 * eps * (1.7 + 6 * unit_d.values[j]));
-      EXPECT_NEAR(gpu.normal.values[j], (Normal{-0.75, 1.25}(w).values[j]),
+      EXPECT_NEAR(gpu.normal.values[j], (Normal{-0.75, 1.25}({w}).values[j]),
                   8 * eps * (0.75 + 1.25 * std::abs(pair.values[j])));
     }
-    auto const z = ComplexNormal{{1.25, -0.25}, 0.75}(w).values[0];
+    auto const z = ComplexNormal{{1.25, -0.25}, 0.75}({w}).values[0];
     EXPECT_NEAR(gpu.z.values[0].real(), z.real(), 8 * eps * (1.25 + 0.75 * std::abs(pair.values[0])));
     EXPECT_NEAR(gpu.z.values[0].imag(), z.imag(), 8 * eps * (0.25 + 0.75 * std::abs(pair.values[1])));
   }

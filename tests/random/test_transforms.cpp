@@ -13,19 +13,19 @@ namespace uni20::random::test
 namespace
 {
 constexpr Philox4x32Block mixed{{0x12345aff, 0xabcdef81, 0x76543a7f, 0xfedcba98}};
-static_assert(Uniform<float>{}(mixed).values[0] == 0x1.2345ap-4f);
-static_assert(Uniform<double>{}(mixed).values[1] == 0x1.fdb97530eca87p-1);
+static_assert(Uniform<float>{}({mixed}).values[0] == 0x1.2345ap-4f);
+static_assert(Uniform<double>{}({mixed}).values[1] == 0x1.fdb97530eca87p-1);
 
 TEST(RandomTransformTest, UnitUniformsMatchRecordedWords)
 {
   constexpr Philox4x32Block extremes{{0, 0, ~0u, ~0u}};
   EXPECT_TRUE(
-      std::ranges::equal(Uniform<float>{}(extremes).values, std::array{0.f, 0.f, 0x1.fffffep-1f, 0x1.fffffep-1f}));
-  EXPECT_TRUE(std::ranges::equal(Uniform<double>{}(extremes).values, std::array{0., 0x1.fffffffffffffp-1}));
-  EXPECT_TRUE(std::ranges::equal(Uniform<float>{}(mixed).values,
+      std::ranges::equal(Uniform<float>{}({extremes}).values, std::array{0.f, 0.f, 0x1.fffffep-1f, 0x1.fffffep-1f}));
+  EXPECT_TRUE(std::ranges::equal(Uniform<double>{}({extremes}).values, std::array{0., 0x1.fffffffffffffp-1}));
+  EXPECT_TRUE(std::ranges::equal(Uniform<float>{}({mixed}).values,
                                  std::array{0x1.2345ap-4f, 0x1.579bdep-1f, 0x1.d950e8p-2f, 0x1.fdb974p-1f}));
   EXPECT_TRUE(
-      std::ranges::equal(Uniform<double>{}(mixed).values, std::array{0x1.579bdf022468bp-1, 0x1.fdb97530eca87p-1}));
+      std::ranges::equal(Uniform<double>{}({mixed}).values, std::array{0x1.579bdf022468bp-1, 0x1.fdb97530eca87p-1}));
 }
 
 TEST(RandomTransformTest, ScalingAndBoxMullerFollowAnalyticValues)
@@ -34,14 +34,14 @@ TEST(RandomTransformTest, ScalingAndBoxMullerFollowAnalyticValues)
   for (auto words : {Philox4x32Block{}, Philox4x32Block{{~0u, ~0u, ~0u, ~0u}}, mixed,
                      Philox4x32Block{{0, 0x80000000, 0, 0x40000000}}, Philox4x32Block{{~0u, 0, 0, 0x80000000}}})
   {
-    auto const unit = Uniform<double>{}(words);
+    auto const unit = Uniform<double>{}({words});
     long double const radius = std::sqrt(-2 * std::log(static_cast<long double>(unit.values[0]) + 0x1p-53L));
     long double const angle = 2 * std::numbers::pi_v<long double> * unit.values[1];
     std::array ref{radius * std::cos(angle), radius * std::sin(angle)};
-    auto const scaled = Uniform{-3.0, 5.0}(words);
-    auto const normal = Normal{0.25, 1.5}(words);
+    auto const scaled = Uniform{-3.0, 5.0}({words});
+    auto const normal = Normal{0.25, 1.5}({words});
     complex<double> const mean{-0.25, 0.5};
-    auto const z = ComplexNormal{mean, 2.0}(words).values[0];
+    auto const z = ComplexNormal{mean, 2.0}({words}).values[0];
     for (unsigned i = 0; i < 2; ++i)
     {
       EXPECT_NEAR(scaled.values[i], -3.L + 8.L * unit.values[i], 4 * eps * (3 + 8 * unit.values[i]));
@@ -90,13 +90,13 @@ TEST(RandomTransformTest, DistributionMomentsAndEqualProbabilityBins)
   for (unsigned i = 0; i < n; ++i)
   {
     auto const words = philox4x32_10({{i, 0, 0, 0}}, {{0x4635, 0xac9d}});
-    for (auto u : Uniform<float>{}(words).values)
+    for (auto u : Uniform<float>{}({words}).values)
       uniform_float.add(u, u);
-    for (auto u : Uniform<double>{}(words).values)
+    for (auto u : Uniform<double>{}({words}).values)
       uniform_double.add(u, u);
-    for (auto x : Normal{}(words).values)
+    for (auto x : Normal{}({words}).values)
       real_normal.add(x, std::erfc(-x / std::numbers::sqrt2) * 0.5);
-    auto const z = ComplexNormal{mu, 2}(words).values[0] - mu;
+    auto const z = ComplexNormal{mu, 2}({words}).values[0] - mu;
     sum += z;
     pseudo += z * z;
     double const power = std::norm(z);
