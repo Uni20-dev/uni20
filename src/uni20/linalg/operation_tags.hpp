@@ -181,6 +181,12 @@ struct qr_op
     static constexpr std::string_view name = "qr";
 };
 
+/// \brief Right-multiply a matrix in place by a diagonal specified as a vector.
+struct scale_columns_op
+{
+    static constexpr std::string_view name = "scale_columns";
+};
+
 /// \brief Overwrite a tall matrix with the thin Householder Q factor.
 struct orthonormal_basis_op
 {

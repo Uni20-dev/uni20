@@ -23,6 +23,7 @@ Operation values and diagnostic names are defined centrally in
 - `nonsymmetric_eigen.hpp`: fixed-output nonsymmetric eigensystem dispatch.
 - `qr.hpp`: destructive-workspace and preserving-value reduced real or complex QR
   factorizations.
+- `randomized_nystrom.hpp` computes leading eigenpairs of a real symmetric positive semidefinite matrix.
 - `randomized_svd.hpp` computes a fixed-rank Gaussian approximation with optional stabilized power iteration.
 - `schur.hpp`: fixed-output Schur decomposition and block-reordering dispatch.
 - `self_adjoint_eigh.hpp`: destructive in-place, preserving value, and
@@ -76,3 +77,5 @@ Operation values and diagnostic names are defined centrally in
 - [Tensor operations](../../../../docs/tensor/operations.md)
 - [Mdspan linear algebra dispatch](../../../../docs/linalg/mdspan_dispatch.md)
 - [Kernel dispatch](../../../../docs/architecture/kernel_dispatch.md)
+
+`scale_columns(matrix, factors)` computes `matrix[i,j] *= factors[j]` in place for a rectangular matrix and a disjoint vector. The vector length must equal the number of columns. The host and CUDA reference backends reuse their strided elementwise multiply with a read-only broadcast of the vector.

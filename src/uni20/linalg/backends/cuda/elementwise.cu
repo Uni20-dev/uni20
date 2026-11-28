@@ -167,7 +167,7 @@ template <class Function, class Scalar>
 void enqueue_elementwise_binary(Scalar* output, Scalar const* lhs, Scalar const* rhs, Function function,
                                 ElementwiseBinaryPlan32 const& plan, cudaStream_t stream, int device)
 {
-  static_assert(RegisteredStatelessBinary<Function>);
+  static_assert(CompiledBinaryTransform<Function, Scalar>);
   enqueue_elementwise_binary_impl(output, lhs, rhs, function, plan, stream, device);
 }
 
@@ -219,7 +219,7 @@ template <class Function, class Scalar>
 void enqueue_elementwise_binary(Scalar* output, Scalar const* lhs, Scalar const* rhs, Function function,
                                 ElementwiseBinaryPlan64 const& plan, cudaStream_t stream, int device)
 {
-  static_assert(RegisteredStatelessBinary<Function>);
+  static_assert(CompiledBinaryTransform<Function, Scalar>);
   enqueue_elementwise_binary_impl(output, lhs, rhs, function, plan, stream, device);
 }
 
@@ -456,6 +456,9 @@ UNI20_INSTANTIATE_BINARY_SCALARS(uni20::linalg::add);
 UNI20_INSTANTIATE_BINARY_SCALARS(uni20::linalg::subtract);
 UNI20_INSTANTIATE_BINARY_SCALARS(uni20::linalg::multiply);
 UNI20_INSTANTIATE_BINARY_SCALARS(uni20::linalg::divide);
+
+UNI20_INSTANTIATE_BINARY(uni20::linalg::relative_inverse_sqrt<float>, float);
+UNI20_INSTANTIATE_BINARY(uni20::linalg::relative_inverse_sqrt<double>, double);
 
 #undef UNI20_INSTANTIATE_BINARY_SCALARS
 #undef UNI20_INSTANTIATE_BINARY

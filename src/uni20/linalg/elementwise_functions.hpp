@@ -8,6 +8,7 @@
 
 #include <uni20/core/compiler_attributes.hpp>
 
+#include <cmath>
 #include <type_traits>
 #include <utility>
 
@@ -57,6 +58,17 @@ struct reciprocal
         -> decltype(Value{1} / value)
     {
       return Value{1} / value;
+    }
+};
+
+/// \brief Invert the square root of a positive value above a relative cutoff, returning zero otherwise.
+/// \details The ratio avoids underflow from forming reference * tolerance for a tiny spectrum.
+template <class R> struct relative_inverse_sqrt
+{
+    R tolerance;
+    [[nodiscard]] UNI20_HOST_DEVICE R operator()(R value, R reference) const
+    {
+      return value > R{0} && reference > R{0} && value / reference > tolerance ? R{1} / std::sqrt(value) : R{0};
     }
 };
 
