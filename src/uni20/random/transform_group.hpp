@@ -1,6 +1,6 @@
 #pragma once
 
-#include <uni20/random/philox.hpp>
+#include <uni20/random/unit_uniform.hpp>
 
 #include <array>
 #include <cstddef>
@@ -23,35 +23,6 @@ template <class T, unsigned N> struct ValueBlock
     using value_type = T;
     static constexpr unsigned size = N;
     T values[N];
-};
-
-/// \brief Scalar customization for converting a fixed count of consecutive 32-bit words to a unit uniform.
-/// \details closed_open produces [0,1) and open_closed produces (0,1]. Words are in Philox output order.
-template <class Real> struct UnitUniform;
-
-template <> struct UnitUniform<float>
-{
-    static constexpr unsigned word_count = 1;
-    using words_type = std::array<std::uint32_t, word_count>;
-
-    UNI20_HOST_DEVICE static constexpr float closed_open(words_type const& w)
-    {
-      return static_cast<float>(w[0] >> 8) * 0x1p-24f;
-    }
-    UNI20_HOST_DEVICE static constexpr float open_closed(words_type const& w) { return closed_open(w) + 0x1p-24f; }
-};
-
-template <> struct UnitUniform<double>
-{
-    static constexpr unsigned word_count = 2;
-    using words_type = std::array<std::uint32_t, word_count>;
-
-    UNI20_HOST_DEVICE static constexpr double closed_open(words_type const& w)
-    {
-      auto const bits = (std::uint64_t{w[1]} << 32) | w[0];
-      return static_cast<double>(bits >> 11) * 0x1p-53;
-    }
-    UNI20_HOST_DEVICE static constexpr double open_closed(words_type const& w) { return closed_open(w) + 0x1p-53; }
 };
 
 /// \brief Endpoint convention for one distribution input.

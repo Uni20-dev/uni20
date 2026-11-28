@@ -36,13 +36,15 @@ struct Uniform
     using group_type = TransformGroup<T, ValueBlock<T, 1>, UnitInterval::closed_open>;
     using input_type = typename group_type::input_type;
     using result_type = typename group_type::result_type;
-    T low = 0;
-    T high = 1;
+    T low{0};
+    T high{1};
+    // CUDA 12.9 mispasses by-value fill arguments when an empty converter uses [[no_unique_address]].
+    UnitUniform<T> converter = {};
 
     UNI20_HOST_DEVICE constexpr ValueBlock<T, 1> from_uniforms(T u) const { return {{low + (high - low) * u}}; }
     UNI20_HOST_DEVICE constexpr result_type operator()(input_type const& group) const
     {
-      return group_type::apply(group, *this);
+      return group_type::apply(group, *this, converter);
     }
 };
 
@@ -55,8 +57,9 @@ template <class Real> struct RealNormalDistribution
     using group_type = TransformGroup<Real, ValueBlock<Real, 2>, UnitInterval::open_closed, UnitInterval::closed_open>;
     using input_type = group_type::input_type;
     using result_type = group_type::result_type;
-    Real mu = 0;
-    Real sigma = 1;
+    Real mu{0};
+    Real sigma{1};
+    UnitUniform<Real> converter = {};
 
     UNI20_HOST_DEVICE ValueBlock<Real, 2> from_uniforms(Real u1, Real u2) const
     {
@@ -65,7 +68,10 @@ template <class Real> struct RealNormalDistribution
         x = mu + sigma * x;
       return pair;
     }
-    UNI20_HOST_DEVICE result_type operator()(input_type const& group) const { return group_type::apply(group, *this); }
+    UNI20_HOST_DEVICE result_type operator()(input_type const& group) const
+    {
+      return group_type::apply(group, *this, converter);
+    }
 };
 
 /// \brief Transform two unit uniforms into one circular complex normal with E|z - mu|² = sigma².
@@ -77,7 +83,8 @@ template <class Real> struct ComplexNormalDistribution
     using input_type = group_type::input_type;
     using result_type = group_type::result_type;
     complex<Real> mu = {};
-    Real sigma = 1;
+    Real sigma{1};
+    UnitUniform<Real> converter = {};
 
     UNI20_HOST_DEVICE ValueBlock<complex<Real>, 1> from_uniforms(Real u1, Real u2) const
     {
@@ -91,14 +98,26 @@ template <class Real> struct ComplexNormalDistribution
       Real const scale = sigma * inverse_sqrt_two;
       return {{complex<Real>{mu.real() + scale * pair.values[0], mu.imag() + scale * pair.values[1]}}};
     }
-    UNI20_HOST_DEVICE result_type operator()(input_type const& group) const { return group_type::apply(group, *this); }
+    UNI20_HOST_DEVICE result_type operator()(input_type const& group) const
+    {
+      return group_type::apply(group, *this, converter);
+    }
 };
 } // namespace detail
 
+/// \brief Real Box–Muller pair at the selected precision.
+template <class Real>
+  requires(!std::same_as<Real, float>)
+using NormalFor = detail::RealNormalDistribution<Real>;
+/// \brief Circular complex normal with components at the selected precision.
+template <class Real>
+  requires(!std::same_as<Real, float>)
+using ComplexNormalFor = detail::ComplexNormalDistribution<Real>;
+
 /// \brief Two real Box–Muller values per Philox block at double precision.
-using Normal = detail::RealNormalDistribution<double>;
+using Normal = NormalFor<double>;
 /// \brief One circular complex Box–Muller value per Philox block at double precision.
-using ComplexNormal = detail::ComplexNormalDistribution<double>;
+using ComplexNormal = ComplexNormalFor<double>;
 
 namespace detail
 {
@@ -113,7 +132,8 @@ struct RoundedNormalSketch
       return {{static_cast<float>(pair.values[0]), static_cast<float>(pair.values[1])}};
     }
 };
-template <class R> using SketchNormal = std::conditional_t<std::same_as<R, float>, RoundedNormalSketch, Normal>;
+template <class R>
+using SketchNormal = std::conditional_t<std::same_as<R, float>, RoundedNormalSketch, RealNormalDistribution<R>>;
 } // namespace detail
 
 } // namespace uni20::random
