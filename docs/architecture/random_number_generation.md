@@ -30,9 +30,10 @@ Related notes:
 
 ## Reproducibility Contract
 
-**Guaranteed: no unintended reuse.** No two Philox evaluations share a key and
-counter, apart from chance identity collisions (see
-[Identity Tree](#identity-tree)), provided that:
+**Guaranteed: no unintended reuse.** Each value is drawn from an *address*: a
+Philox key, a counter, and a lane of that evaluation. No two logically
+independent draws are assigned the same address, apart from chance identity
+collisions (see [Identity Tree](#identity-tree)), provided that:
 
 - the runs being compared have distinct roots. Fresh entropy gives this by
   default (see [Restart and Persistence](#restart-and-persistence)). With a
@@ -45,11 +46,16 @@ Under those conditions the guarantee holds across operations, components,
 ranks, devices, restarts and branches from a checkpoint. Monte Carlo statistics
 and randomized algorithms depend on it for correctness.
 
-The guarantee is about evaluations, not individual values. One evaluation
-returns four 32-bit words, and a transform turns them into one to four values
-(see [Transforms](#transforms)). A value is therefore identified by its key, its
-counter, and its lane within the evaluation, which the transform defines. Each
-lane feeds at most one value.
+An evaluation returns four 32-bit words, and a transform turns them into one to
+four values, each from its own lane (see [Transforms](#transforms)). The
+guarantee is about how addresses are assigned, not about how often an address is
+evaluated. Evaluating an assigned address again is deliberate, and gives the same
+words:
+
+- one-element-at-a-time evaluation computes a block once for each of its lanes;
+- a lazy view read twice evaluates its addresses twice;
+- a regenerated replica revisits its original's addresses;
+- a copied stream replays the original's draws.
 
 Reuse is deliberate in one case. Rerunning with the same seed, or resuming two
 jobs from one checkpoint with the same seed, reproduces the same draws. That is
@@ -93,9 +99,12 @@ to fit one.
 Compatibility with the standard library is offered, but it does not constrain
 the interface. It is an adapter on top:
 
-- A stream type models `std::uniform_random_bit_generator`, so that user code
-  and standard algorithms such as `std::shuffle` can draw from it (see
-  [Monte Carlo Streams](#monte-carlo-streams)).
+- A stream type meets the standard's uniform random bit generator
+  requirements, so that user code and standard algorithms such as
+  `std::shuffle` can draw from it (see [Monte Carlo Streams](#monte-carlo-streams)).
+  That takes more than the `std::uniform_random_bit_generator` concept: the
+  requirements in [rand.req.urng] also name a nested `result_type`, which
+  `std::shuffle` uses.
 - The stream holds an identity, a position and buffered lanes, and it draws
   through counter-mode evaluations. Its position is a counter, so it can skip
   ahead in constant time.
@@ -112,25 +121,30 @@ they are made.
 | Layer | Content | Status |
 |---|---|---|
 | 1. Bit generator | The Philox4x32-10 bijection ([Bit Generator](#bit-generator)) | Fixed: Philox4x32-10 is specified externally |
-| 2. Transforms | Words to uniform and normal `float` and `double` values, complex normal values, and the lane layout of values ([Transforms](#transforms)) | Fixed for `float` and `double`; open questions 5 and 7 cover the rest |
-| 3. Fill and stream | A dense view filled from a 128-bit identity, a position scheme and a transform ([Positions](#positions)), and the standard-compatible stream over the same evaluations ([Monte Carlo Streams](#monte-carlo-streams)) | Fixed for dense views; the default for packed blocks is open question 10 |
-| 4. Derivation and attachment | The root, `child`, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
+| 2. Transforms | Words to values of each element type and distribution: the bits used, the endpoints, and the lane layout ([Transforms](#transforms)) | Fixed for uniform `float` and `double`, normal `double` and complex normal `complex<double>`. The `float` normal rows wait for open question 5, and extended scalars for question 7 |
+| 3. Fill and stream | A dense view filled from a leaf identity, a position scheme and a transform ([Positions](#positions)), and the standard-compatible stream over the same evaluations ([Monte Carlo Streams](#monte-carlo-streams)). Both obtain words only through `value_block(leaf, position)` | Fixed for dense views; the default for packed blocks is open question 10 |
+| 4. Derivation and attachment | The root, `child`, how `value_block` packs a leaf and a position into a Philox key and counter, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
 
 These rules keep layer 4 open:
 
 - **Fills never see the tree.** A fill receives a leaf identity and does not
   know how it was derived. A change of derivation therefore changes no fill
-  code, on the host or on a device.
+  code, on the host or on a device. Fills and streams obtain words only through
+  `value_block(leaf, position)`, which belongs to layer 4, so a change to the
+  counter packing does not touch them either.
 - **Algorithms take a generator.** Randomized algorithms take a generator node
   argument (see [Randomized Algorithms](#randomized-algorithms)). A change of
-  derivation therefore changes none of their signatures.
+  derivation therefore changes none of their signatures. Before they accept a
+  shared generator, layer 4 has to say who supplies each call's fresh operation
+  label ([open question 13](#open-questions)).
 - **The first layer-4 implementation is small.** It provides a root from a seed
   and `child(node, label)`, for single-process dense use. Until layer 4 is
   fixed, it may change without notice, and with it the values that a given seed
   produces. The contract already excludes reproducibility across builds, and
   nothing stored depends on these values yet.
 - **Derivation tests check properties.** Until layer 4 is fixed, they check that
-  identical labels give identical identities, that siblings are distinct, and
+  identical labels give identical identities, that single-step siblings are
+  distinct, and
   that derivation and value counters do not overlap. Only layers 1 and 2 are
   tested against recorded values: the Philox known-answer vectors, and the
   values that a transform makes from given words.
@@ -198,8 +212,8 @@ Three quantities are easy to confuse:
 One primitive both derives children and generates values:
 
 ```text
-child(node, label)     = Philox4x32-10 under k at counter (h, label)          label    < 2⁶³
-values(node, position) = Philox4x32-10 under k at counter (h, 2⁶³ + position)  position < 2⁶³
+child(node, label)          = Philox4x32-10 under k at counter (h, label)          label    < 2⁶³
+value_block(node, position) = Philox4x32-10 under k at counter (h, 2⁶³ + position)  position < 2⁶³
 ```
 
 The 128 output bits of `child` are the child's `(k, h)`. Bit 63 of the low
@@ -226,9 +240,12 @@ cross-check against another Philox implementation must use it.
 Properties, with what holds exactly kept apart from what is a statistical
 assumption:
 
-- **Siblings never collide (exact).** For a fixed key, Philox is a bijection on
-  the counter. Distinct labels under one parent therefore give distinct 128-bit
-  child identities.
+- **Single-step siblings never collide (exact).** For a fixed key, Philox is a
+  bijection on the counter. Distinct 63-bit labels passed to `child` under one
+  parent therefore give distinct 128-bit child identities. A label absorbed
+  over several steps (below) is not covered. Once two such labels differ before
+  their last chunk, their last steps run under different keys, and their final
+  identities coincide only by chance, as for other identities.
 - **Distinct identities never share an evaluation (exact).** A node evaluates
   Philox only under its key `k`, at counters whose high half is `h`. Two nodes
   whose identities differ in `k` or in `h` therefore use disjoint inputs, over
@@ -257,7 +274,10 @@ assumption:
 Labels are 63-bit integers. Longer labels, such as 128-bit GUIDs or strings, are
 absorbed over several derivation steps with a prefix-free encoding: a tag and
 length in the first chunk. This keeps a two-chunk label at one level from
-matching two one-chunk levels ([open question 2](#open-questions)).
+matching two one-chunk levels ([open question 2](#open-questions)). If plain
+integer labels and encoded labels can share a parent, the encoding also
+reserves a range for its first chunks that no plain integer label uses. A
+multi-step label gets the heuristic guarantee, not the exact one.
 
 The root identity is derived from the seed or entropy and the mapping version.
 A change of bit generator, derivation or transform therefore starts a different
@@ -323,6 +343,11 @@ An operation chooses one of two position schemes.
   allocation into that handle, so the planner must supply the view's base
   offset separately: per launch for one view, and per segment in the segmented
   plan. The fill functor adds the two.
+- A view passed on its own does not carry its allocation's origin. A block view
+  taken from packed storage points at its first element, and the owner keeps the
+  offset. A fill of a standalone view therefore uses offsets relative to the
+  view's first element, unless the caller supplies the allocation origin.
+  Replaying a block's values inside its allocation needs that origin.
 - A random fill is then an ordinary nullary elementwise operation with no index
   decoding. The current `apply` passes only loaded values, so it needs a small
   extension to pass the output offset and the base.
@@ -358,10 +383,24 @@ distribution. Each evaluation yields `g` values:
 |---|---|---|
 | uniform `float` | 1 (24 bits used) | 4 |
 | uniform `double` | 2 (53 bits used) | 2 |
-| normal `float` | 1 | 4 (two Box–Muller pairs) |
+| normal `float` | provisional ([question 5](#open-questions)) | 4 or 2 |
 | normal `double` | 2 | 2 (one pair) |
-| complex normal `complex<float>` | 1 | 2 |
+| complex normal `complex<float>` | provisional ([question 5](#open-questions)) | 2 or 1 |
 | complex normal `complex<double>` | 2 | 1 |
+
+The fixed rows convert words as follows. `w` is a 32-bit lane `out[i]`, and `W`
+a 64-bit lane `[out[2i + 1] : out[2i]]`:
+
+| Value | Conversion |
+|---|---|
+| uniform `float`, lane `i` | `u = (w >> 8) · 2⁻²⁴`, so `u ∈ [0, 1)` |
+| uniform `double`, lane `i` | `u = (W >> 11) · 2⁻⁵³`, so `u ∈ [0, 1)` |
+| Box–Muller radius, from 64-bit lane 0 | `u1 = ((W >> 11) + 1) · 2⁻⁵³`, so `u1 ∈ (0, 1]` |
+| Box–Muller angle, from 64-bit lane 1 | `u2 = (W >> 11) · 2⁻⁵³`, so `u2 ∈ [0, 1)` |
+
+A normal `double` evaluation gives value 0 = `r cos 2πu2` and value 1 =
+`r sin 2πu2`. A complex normal `complex<double>` evaluation gives one value,
+whose real and imaginary parts come from those two.
 
 An implementation may evaluate one element at a time and discard the other
 lanes, or evaluate an aligned group per thread. The values are identical either
@@ -377,6 +416,7 @@ Uniform resolution matters in large runs:
 - A 32-bit `u1` caps `|x|` at `sqrt(64 ln 2) ≈ 6.66σ`, where the two-sided
   tail probability is about 2.7×10⁻¹¹. A run that draws 10¹² normal values
   should see about 27 values beyond the cap and sees none.
+- A 24-bit `u1`, the resolution of a uniform `float`, caps it at about 5.77σ.
 - With 53-bit uniforms the cap is about 8.57σ.
 
 Double-precision values therefore use 53-bit uniforms
@@ -391,10 +431,20 @@ Conventions:
   imaginary parts are the cosine and sine halves of one Box–Muller pair. They
   are independent, each with standard deviation `sigma / sqrt(2)`.
 
-Words and uniforms agree bit for bit between host and device. Normal values go
-through `log`, `sqrt`, `sin` and `cos`, so they agree to a few ulp, which the
-contract accepts. The transform lives in one header compiled for both host and
-device.
+Words and unit uniforms `u` agree bit for bit between host and device.
+Everything computed from them can differ in the last bits:
+
+- **Scaled values.** `low + (high - low) u` and `mu + sigma x` are a multiply
+  and an add. A compiler may contract them into one fused multiply-add on one
+  side and not the other, or under one set of flags and not another. The
+  results then differ by the rounding of those operations: a few ulp of
+  `|low| + |high - low| u`, or of `|mu| + sigma |x|`. The bound is absolute, not
+  relative to the result, because the result can cancel to zero.
+- **Normal values.** `x` itself goes through `log`, `sqrt`, `sin` and `cos`, so
+  it agrees only to a few ulp.
+
+The contract accepts both. The transform lives in one header compiled for both
+host and device.
 
 ## Distributed Execution
 
@@ -418,8 +468,13 @@ device.
     owned component or the walker id.
   - If rank-dependent control flow advances a replicated node, the replicas
     hand the same label to different operations, and those draws are reused.
-    Debug builds should compare operation identities across ranks at each
-    random operation.
+    Debug builds should check, at each random operation and at a rendezvous
+    the participating ranks share, that the ranks agree on both the operation
+    identity and a plan-level description of the operation, such as its kind
+    and output descriptor. Identities alone miss a reordering. If one rank
+    submits initialization then sketching on a replicated generator, and
+    another submits them the other way round, both see `child(g, 0)` first and
+    `child(g, 1)` second.
 - **Per-rank seeds** (`seed + rank`) are not used:
   - They make the values depend on the decomposition. The same seed gives
     different values on a different number of ranks.
@@ -451,8 +506,10 @@ device.
 - **Descriptors instead of payload.**
   - A random tensor can be stored as a descriptor: mapping version, identity,
     position scheme, layout and distribution parameters.
-  - It regenerates bit for bit on the same device type, and to a few ulp
-    elsewhere.
+  - It regenerates bit for bit only under a compatible implementation of the
+    transform: the same device type, contraction and math library (see
+    [Transforms](#transforms)). Elsewhere it regenerates to the bounds given
+    there. A value that must not change at all needs a stored payload.
   - Whether the store keeps the payload, the descriptor or both is cache
     policy. A descriptor-only store requires its mapping version to remain
     implemented.
@@ -485,7 +542,9 @@ device.
   build, by constructing its stream.
 - **Standard compatibility.** `PhiloxStream` is the adapter of
   [Interface: Counter Mode](#interface-counter-mode). It runs in host and
-  device code, and models `std::uniform_random_bit_generator` on the host.
+  device code. On the host it meets the uniform random bit generator
+  requirements: it models the concept and provides `result_type`, which is
+  `std::uint32_t`.
   - A copy is an independent value with the same state, so it repeats the
     original's draws, as standard engines do. Node handles differ: their
     copies share one child counter.
@@ -498,23 +557,27 @@ device.
 - Philox4x32-10 known-answer vectors from Random123, on host and CUDA.
 - Derivation:
   - identical labels give identical identities;
-  - siblings are distinct;
+  - single-step siblings are distinct;
   - derivation and value counters never overlap.
 - Allocation-offset fills:
   - padding stays zero;
   - one-element and grouped evaluation agree;
-  - host and CUDA words and uniforms agree bit for bit, and normal values agree
-    within a stated ulp bound.
+  - host and CUDA words and unit uniforms agree bit for bit, and scaled and
+    normal values agree within the bounds in [Transforms](#transforms).
 - Logical-position fills give the same values for packed and separate storage,
   any `BlockAlignment`, and row- and column-major order.
 - Replicas produced by the generate-once path are identical.
 - With a fixed submission order, `DebugScheduler` and `TbbScheduler` produce
   the same random values.
 - Restart:
-  - after a fresh-entropy restart, and after a fixed-seed resume, no draw
-    repeats a draw from before the checkpoint;
+  - after a fresh-entropy restart, and after a fixed-seed resume, no address
+    assigned after the checkpoint was assigned before it. The test compares
+    addresses, not values: distinct addresses can give equal values, two
+    24-bit floats for example;
   - two jobs resuming from the same checkpoint with fresh entropy draw
     different values.
+- On the host, an ordinary `std::shuffle` call compiles and runs with the
+  stream.
 - Distribution checks against independent expected values: mean, variance, and
   a χ² or Kolmogorov–Smirnov test for each distribution. For complex normal
   values, check `E[z] = mu`, `E|z - mu|² = sigma²` and `E[(z - mu)²] = 0`.
@@ -553,8 +616,11 @@ device.
    default seed.
 4. **Reserved IDs.** Decide whether the persistent store should reserve object
    IDs before commit, so that outputs can be labelled by GUID.
-5. **Single-precision normal values.** Keep 32-bit uniforms with the 6.66σ cap,
-   or use two words per uniform.
+5. **Single-precision normal values.** Use one word per uniform, giving four
+   real values per evaluation and a cap of 6.66σ with 32-bit uniforms or 5.77σ
+   with 24-bit ones, or two words, giving two values and 8.57σ. The choice
+   changes which evaluation and lane each element uses. The `float` normal
+   rows, and any fill that uses them, stay provisional until it is made.
 6. **Default node.** Decide whether the run context owns a run-level default
    generator node, seeded from configuration.
 7. **Extended scalars.** Words per value and transforms for binary128 and
@@ -562,8 +628,9 @@ device.
 8. **Python surface.** `numpy.random.SeedSequence.spawn` is the closest
    existing analogue of the identity tree.
 
-Questions 9 to 12 concern block tensors and distributed execution, and decide
-layer 4 (see [Implementation Staging](#implementation-staging)):
+Questions 9 to 12 concern block tensors and distributed execution, and
+question 13 concerns randomized algorithms. All five decide layer 4 (see
+[Implementation Staging](#implementation-staging)):
 
 9. **Block labels.** Label a block by its symmetry key or by its ordinal.
    - A key stays the same when other blocks are added, removed or reordered,
@@ -580,22 +647,40 @@ layer 4 (see [Implementation Staging](#implementation-staging)):
       and so does regenerating a block in place of communicating it.
     - A block split across ranks gives the same values for any split only if
       each shard uses positions from the logical index of the whole block,
-      not of the shard.
+      not of the shard. Each shard then carries the coordinate origin of the
+      whole block.
+    - If the segmented plan of Uni20-dev/uni20#125 fuses adjacent segments, it
+      must not fuse segments that have different leaf identities.
 11. **Who derives operation nodes in distributed execution.** In
     root-controller mode, root derives them and command descriptors carry them.
     In SPMD mode, every rank derives them by running the same program. The
     choice follows the MPI design, which is still exploratory.
 12. **Redistribution.** A block that moves between ranks or devices takes its
     values with it. Decide whether a block may instead be regenerated after a
-    move. That keeps its values only if its label and position scheme depend on
-    neither the rank, the device nor the packing, which would make logical
-    positions a requirement for it.
+    move. Two cases differ:
+    - Regenerating an existing block after a move. Keeping its original
+      position map (its leaf, layout and base) as small metadata gives the same
+      Philox inputs and lanes in any destination layout, even with
+      allocation-offset positions. Whole-block logical indices also work.
+    - Generating the same block independently under two decompositions. Only
+      whole-block logical indices give that.
+
+    In both cases the values agree bit for bit only under a compatible
+    transform implementation (see [Transforms](#transforms)). Across device
+    types they agree to its bounds.
+13. **Fresh operation labels.** Decide who supplies the label of each call's
+    operation node: the generator node's atomic child counter, as
+    [Attaching Identities](#attaching-identities) proposes, or the caller, who
+    passes a fresh node to every call. `child(node, label)` is deterministic,
+    so without one of the two, two calls given the same label reuse a sketch.
+    This must be settled before randomized algorithms accept a shared
+    generator.
 
 ## References
 
 - J. K. Salmon, M. A. Moraes, R. O. Dror and D. E. Shaw, "Parallel random
   numbers: as easy as 1, 2, 3", SC '11 (2011). Defines Philox and Threefry.
-- C. Manssen, M. Weigel and A. K. Hartmann, "Random number generators for
+- M. Manssen, M. Weigel and A. K. Hartmann, "Random number generators for
   massively parallel simulations on GPU", Eur. Phys. J. Special Topics 210, 53
   (2012), arXiv:1204.6193.
 - arXiv:2203.04058: TestU01, PractRand and Gjrand results for a set of
