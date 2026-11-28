@@ -1,3 +1,5 @@
+#include "box_muller_cases.hpp"
+
 #include <uni20/random/transforms.hpp>
 
 #include <gtest/gtest.h>
@@ -26,6 +28,38 @@ TEST(RandomTransformTest, UnitUniformsMatchRecordedWords)
                                  std::array{0x1.2345ap-4f, 0x1.579bdep-1f, 0x1.d950e8p-2f, 0x1.fdb974p-1f}));
   EXPECT_TRUE(
       std::ranges::equal(Uniform<double>{}({mixed}).values, std::array{0x1.579bdf022468bp-1, 0x1.fdb97530eca87p-1}));
+}
+
+TEST(RandomTransformTest, UnitUniformEndpoints)
+{
+  using F = UnitUniform<float>;
+  using D = UnitUniform<double>;
+  static_assert(F::word_count == 1 && D::word_count == 2);
+  static_assert(F::open_closed({0}) == 0x1p-24f && F::open_closed({UINT32_MAX}) == 1.f);
+  static_assert(D::open_closed({0, 0}) == 0x1p-53 && D::open_closed({UINT32_MAX, UINT32_MAX}) == 1.);
+  EXPECT_EQ(F::closed_open({0x800000ff}), 0.5f);
+  EXPECT_EQ(F::open_closed({0x800000ff}), 0.5f + 0x1p-24f);
+  EXPECT_EQ(D::closed_open({0x800, 0x80000000}), 0.5 + 0x1p-53);
+  EXPECT_EQ(D::open_closed({0x800, 0x80000000}), 0.5 + 0x1p-52);
+}
+
+TEST(RandomTransformTest, DistributionConsumesConsecutiveUniformsAcrossBlocks)
+{
+  struct Triple
+  {
+      constexpr ValueBlock<double, 3> from_uniforms(double x, double y, double z) const { return {{x, y, z}}; }
+  };
+  using Group = TransformGroup<double, ValueBlock<double, 3>, UnitInterval::closed_open, UnitInterval::open_closed,
+                               UnitInterval::closed_open>;
+  static_assert(Group::input_type::size == 2 && Group::result_type::size == 3);
+  Group::input_type const group{{{{0, 0x40000000, 0, 0x80000000}}, {{0, 0xc0000000, UINT32_MAX, UINT32_MAX}}}};
+  auto const result = Group::apply(group, Triple{});
+  EXPECT_TRUE(std::ranges::equal(result.values, std::array{0.25, 0.5 + 0x1p-53, 0.75}));
+}
+
+TEST(RandomTransformTest, BoxMullerResolvesOneGridStepAroundEveryAxis)
+{
+  check_box_muller_near_axes([](auto block, auto& result) { result = Normal{}({block}); });
 }
 
 TEST(RandomTransformTest, ScalingAndBoxMullerFollowAnalyticValues)
