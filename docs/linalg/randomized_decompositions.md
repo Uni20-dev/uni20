@@ -18,6 +18,11 @@ a common root. The first child (`child(identity, 0)`) supplies
 the sketch. Float sketches round the standard normal draws to float.
 Singular-vector signs and bases within repeated singular values depend on the solver.
 
+Host RNG transforms can also produce fp80, fp128 and MPFR sketches. The
+Q-only `orthonormal_basis` operation used by both randomized decompositions
+has no provider for these three types. The randomized solvers and their HOTRG
+Gram cuts therefore accept fp32 and fp64.
+
 The defaults are eight extra columns ($p=8$) and two power iterations ($q=2$).
 The sketch width is $\ell=\min(k+p,m,n)$ for $k>0$. The rank must lie in
 $[0,\min(m,n)]$ and both oversampling $p$ and the power count $q$ must be

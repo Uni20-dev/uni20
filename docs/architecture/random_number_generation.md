@@ -1,7 +1,8 @@
 # Counter-Based Random Number Generation
 
 **Status:** The Philox bijection, fixed word transforms, dense allocation-offset
-fills, and the standard-compatible word stream are implemented. The [random
+fills, and the standard-compatible word stream are implemented. Host transforms
+cover fp80, fp128 and finite-precision `mpreal`. The [random
 module](../../src/uni20/random/) documents their entry points. Single-process
 `root(seed)` and `child(node, label)` provide provisional identities.
 `DebugScheduler` independently uses `std::mt19937_64` to explore schedules.
@@ -164,7 +165,7 @@ they are made.
 | Layer | Content | Status |
 |---|---|---|
 | 1. Bit generator | The Philox4x32-10 bijection ([Bit Generator](#bit-generator)) | Fixed: Philox4x32-10 is specified externally |
-| 2. Transforms | Words to values of each element type and distribution: the bits used, the endpoints, and which words each value uses ([Transforms](#transforms)) | Fixed for uniform `float` and `double`, normal `double` and complex normal `complex<double>`. The `float` normal rows wait for open question 5, and extended scalars for question 7 |
+| 2. Transforms | Words to values of each element type and distribution: the bits used, the endpoints, and which words each value uses ([Transforms](#transforms)) | Fixed for uniform `float` and `double`, normal `double` and complex normal `complex<double>`. Host uniform, real normal and circular complex normal are also implemented for fp80, fp128 and `mpreal`. The `float` normal rows wait for open question 5 |
 | 3. Fill and stream | A dense view filled from a leaf identity, a position scheme and a transform ([Positions](#positions)), and the standard-compatible stream over the same evaluations ([Monte Carlo Streams](#monte-carlo-streams)). Both obtain words only through `value_block(leaf, position)` | Fixed for dense views and for the stream's word interface. The default for packed blocks is open question 10, and how Uni20's distributions draw from a stream is question 15 |
 | 4. Derivation and attachment | The root, `child`, how `value_block` packs a leaf and a position into a Philox key and counter, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
 
@@ -386,7 +387,6 @@ An operation chooses one of two position schemes.
 - For a fixed-width transform consuming `b` consecutive Philox blocks and
   producing `g` values, an element at allocation offset `o` takes output
   `o % g` from the group starting at block `b * (o / g)` (integer division).
-  All currently implemented transforms consume one block per group.
 - For a dense view the element position is `origin + mapping(indices...)`.
   The mapping supplies the offset from the storage handle, including for a
   reversed or padded view. The caller's `origin` places that handle within
@@ -444,27 +444,40 @@ inputs to two values, and a circular complex normal maps two inputs to one.
 
 The group takes the fewest whole Philox blocks that fit one sample and packs
 as many complete samples as those blocks hold. Each sample reads consecutive
-words in block and lane order. Any trailing words are discarded. The fixed
-rows below each consume one block and produce `g` values:
+words in block and lane order. Any trailing words are discarded. For a real
+normal the two output lanes are the cosine and sine components, in that order.
 
-| Value | Words per uniform | Values per evaluation `g` |
-|---|---|---|
-| uniform `float` | 1 (24 bits used) | 4 |
-| uniform `double` | 2 (53 bits used) | 2 |
-| normal `float` | provisional ([question 5](#open-questions)) | 4 or 2 |
-| normal `double` | 2 | 2 (one pair) |
-| complex normal `complex<float>` | provisional ([question 5](#open-questions)) | 2 or 1 |
-| complex normal `complex<double>` | 2 | 1 |
+| Scalar | Outer words per uniform | Uniform `(b,g)` | Real normal `(b,g)` | Circular complex normal `(b,g)` | Placement |
+|---|---:|---|---|---|---|
+| `float` | 1 | (1,4) | provisional | provisional | host, CUDA for uniform |
+| `double` | 2 | (1,2) | (1,2) | (1,1) | host and CUDA |
+| `float80` | 2 | (1,2) | (1,2) | (1,1) | host |
+| `float128` | 4 | (1,1) | (2,2) | (2,1) | host |
+| `mpreal` at `p` bits | 4 | (1,1) | (2,2) | (2,1) | host |
 
-The fixed rows convert words as follows. `w` is the 32-bit word `out[i]`, and
-`W` the 64-bit word `[out[2i + 1] : out[2i]]`:
+For a `p`-bit grid the closed–open value is `M·2⁻ᵖ` and the open–closed
+radius value is `(M+1)·2⁻ᵖ`. The largest mantissa gives exactly one for the
+radius. For the fixed formats, lane zero of each word group is least
+significant.
 
-| Value | Conversion |
-|---|---|
-| uniform `float`, value `i` | `u = (w >> 8) · 2⁻²⁴`, so `u ∈ [0, 1)` |
-| uniform `double`, value `i` | `u = (W >> 11) · 2⁻⁵³`, so `u ∈ [0, 1)` |
-| Box–Muller radius, from 64-bit word 0 | `u1 = ((W >> 11) + 1) · 2⁻⁵³`, so `u1 ∈ (0, 1]` |
-| Box–Muller angle, from 64-bit word 1 | `u2 = (W >> 11) · 2⁻⁵³`, so `u2 ∈ [0, 1)` |
+| Scalar | Grid bits `p` | Mantissa `M` |
+|---|---:|---|
+| `float` | 24 | top 24 bits of one 32-bit word |
+| `double` | 53 | top 53 bits of the 64-bit word pair |
+| `float80` | 64 | all 64 bits of the word pair |
+| `float128` | 113 | top 113 bits of the 128-bit block, discarding the low 15 bits of lane zero |
+
+For `mpreal`, the four outer words encode a nested Philox identity in the
+same order as `child`: lanes 0 and 1 make the key, lanes 2 and 3 the prefix.
+Read nested `value_block(identity, 0)`, then block 1 and so on, starting with
+lane zero and taking the most significant bit of each lane first. The first
+`p` bits form `M`. The caller supplies a finite working precision. Increasing
+it appends bits to the same mantissa and consumes no additional outer
+positions. The lower-precision closed–open draw is the lower endpoint of the
+containing coarse bin, and the open–closed draw is its upper endpoint. A
+normal pair uses a separate identity for each uniform, preserving both bit
+prefixes. The normal components themselves depend on rounded transcendental
+operations.
 
 Box–Muller takes `u1 ∈ (0, 1]` and `u2 ∈ [0, 1)`. With
 `r = sqrt(-2 ln u1)`, value 0 is `r cospi(2 u2)` and value 1 is
@@ -474,7 +487,7 @@ Both paths use `math::sincospi`. CUDA evaluates the pair in one intrinsic.
 The host uses the scalar's pi-scaled functions, which reduce the argument modulo
 ½ before multiplying by π when native functions are unavailable. This preserves the small component near every axis.
 
-Box–Muller consumes a fixed number of words per sample, as required for random
+Box–Muller consumes a fixed number of outer words per sample, as required for random
 access by position. Evaluating a group and retaining a single lane gives the
 same value as consuming the whole group.
 
@@ -514,7 +527,8 @@ for bit, between host and device or between two host builds:
   a zero component must be exact. For scaled normals the host/device tests
   allow `8 ε (|mu| + sigma |x|)` per real or imaginary component, using the
   corresponding component of the mean. These are numerical validation bounds
-  for ordinary finite outputs. Rounding in the math library and in the final
+  for ordinary finite outputs. Host wide-format tests use the same componentwise
+  bound with the epsilon of the selected precision, including MPFR. Rounding in the math library and in the final
   multiply-add can affect the last bits.
 
 ## Dynamic Placement
@@ -743,13 +757,8 @@ identity:
    rows, and any fill that uses them, stay provisional until it is made.
 6. **Default node.** Decide whether the run context owns a run-level default
    generator node, seeded from configuration.
-7. **Extended scalars.** The planned fp80 and fp128 converters use consecutive
-   words directly. The planned host `mpreal` converter takes four outer words
-   as a 128-bit nested Philox identity. Starting at position zero, it takes
-   as many nested words as its precision requires, most significant first.
-   Thus changing precision preserves the outer address of each uniform.
-   Implementation and numerical validation are tracked in
-   [#216](https://github.com/Uni20-dev/uni20/issues/216).
+7. **Extended scalars (resolved).** The [transform table](#transforms) specifies
+   the host fp80, fp128 and `mpreal` grids and their allocation offsets.
 8. **Python surface.** `numpy.random.SeedSequence.spawn` is the closest
    existing analogue of the identity tree.
 

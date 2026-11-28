@@ -28,6 +28,16 @@ inline constexpr std::uint64_t value_domain = std::uint64_t{1} << 63;
 #endif
 }
 
+UNI20_HOST_DEVICE constexpr std::uint64_t word_pair(std::uint32_t low, std::uint32_t high)
+{
+  return (std::uint64_t{high} << 32) | low;
+}
+
+UNI20_HOST_DEVICE constexpr Identity words_to_identity(std::uint32_t const* words)
+{
+  return {word_pair(words[0], words[1]), word_pair(words[2], words[3])};
+}
+
 UNI20_HOST_DEVICE constexpr Philox4x32Block evaluate(Identity node, std::uint64_t local)
 {
   return philox4x32_10({{static_cast<std::uint32_t>(local), static_cast<std::uint32_t>(local >> 32),
@@ -44,7 +54,7 @@ UNI20_HOST_DEVICE constexpr Philox4x32Block evaluate(Identity node, std::uint64_
 {
   if (label >= detail::value_domain) detail::address_out_of_range();
   auto const w = detail::evaluate(node, label);
-  return {(std::uint64_t{w.words[1]} << 32) | w.words[0], (std::uint64_t{w.words[3]} << 32) | w.words[2]};
+  return detail::words_to_identity(w.words);
 }
 
 /// \brief Return the four words at a leaf's zero-based evaluation position.
