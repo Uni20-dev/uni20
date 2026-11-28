@@ -1,9 +1,10 @@
 # Counter-Based Random Number Generation
 
-**Status:** active design note. The [Philox4x32-10 bijection](../../src/uni20/random/philox.hpp) and the
-[fixed word transforms](../../src/uni20/random/transforms.hpp) implement layers 1 and 2. Uni20 has no random tensor
-API. The only random engine in the library is the `std::mt19937_64` that
-`DebugScheduler` uses to explore schedules, and this note does not affect it.
+**Status:** The Philox bijection, fixed word transforms, dense allocation-offset
+fills, and the standard-compatible word stream are implemented. The [random
+module](../../src/uni20/random/) documents their entry points. Single-process
+`root(seed)` and `child(node, label)` provide provisional identities.
+`DebugScheduler` independently uses `std::mt19937_64` to explore schedules.
 Some examples have small generators of their own. The distributed and persistence sections build on the
 exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.md).
 The implementation proceeds in layers, and only the lower layers are fixed; see
@@ -382,9 +383,10 @@ An operation chooses one of two position schemes.
 
 **Allocation offset (default).**
 
-- An element at offset `o` within its allocation takes value `o mod g` of
-  evaluation `⌊o / g⌋`, where `g` is the number of values per evaluation (see
-  [Transforms](#transforms)).
+- For a fixed-width transform consuming `b` consecutive Philox blocks and
+  producing `g` values, an element at allocation offset `o` takes output
+  `o % g` from the group starting at block `b * (o / g)` (integer division).
+  All currently implemented transforms consume one block per group.
 - The strided elementwise plan already computes the output offset relative to
   the view's data handle. Packed block views fold their offset within the
   allocation into that handle, so the planner must supply the view's base
@@ -405,9 +407,10 @@ An operation chooses one of two position schemes.
   labelled by the block. Under a leaf shared with other views, the origin is
   mandatory: two blocks of one packed allocation filled separately from offset
   0 under one leaf would otherwise get the same addresses.
-- A random fill is then an ordinary nullary elementwise operation with no index
-  decoding. The current `apply` passes only loaded values, so it needs a small
-  extension to pass the output offset and the base.
+- The host fill groups neighbouring offsets from the same evaluation. The CUDA
+  fill uses the strided elementwise kernel, which passes the output offset to
+  the transform. Both use the lowest address of the view's storage span as
+  their reference before adding the caller's origin.
 - Values depend on layout. Packed and separate storage, alignment, and row- or
   column-major order all give different values, which the contract allows.
 - The fill covers block views, never padding, so packed alignment padding stays

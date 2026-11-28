@@ -44,19 +44,25 @@ ElementwiseOperand(Handle, Accessor) -> ElementwiseOperand<std::remove_cvref_t<A
 namespace elementwise_kernel_detail
 {
 
-template <bool ReadsOutput, class Operation, class OutputOperand, class Offsets, class... InputOperands,
-          std::size_t... Input>
+template <bool ReadsOutput, bool PassOutputOffset, class Operation, class OutputOperand, class Offsets,
+          class... InputOperands, std::size_t... Input>
 __device__ void apply(Operation const& operation, OutputOperand const& output, Offsets const& offsets,
                       std::index_sequence<Input...>, InputOperands const&... inputs)
 {
   auto&& output_value = output.access(offsets[0]);
-  if constexpr (ReadsOutput)
+  if constexpr (PassOutputOffset)
+  {
+    static_assert(!ReadsOutput && sizeof...(InputOperands) == 0);
+    output_value = operation(offsets[0]);
+  }
+  else if constexpr (ReadsOutput)
     output_value = operation(output.load(offsets[0]), inputs.load(offsets[Input + 1])...);
   else
     output_value = operation(inputs.load(offsets[Input + 1])...);
 }
 
-template <bool ReadsOutput, class Plan, class Operation, class OutputOperand, class... InputOperands>
+template <bool ReadsOutput, bool PassOutputOffset, class Plan, class Operation, class OutputOperand,
+          class... InputOperands>
 __global__ void elementwise_kernel(Plan plan, Operation operation, OutputOperand output, InputOperands... inputs)
 {
   static_assert(Plan::operand_count == sizeof...(InputOperands) + 1);
@@ -66,14 +72,16 @@ __global__ void elementwise_kernel(Plan plan, Operation operation, OutputOperand
   while (index < plan.element_count)
   {
     auto const offsets = plan.offsets(index);
-    apply<ReadsOutput>(operation, output, offsets, std::index_sequence_for<InputOperands...>{}, inputs...);
+    apply<ReadsOutput, PassOutputOffset>(operation, output, offsets, std::index_sequence_for<InputOperands...>{},
+                                         inputs...);
     index += grid_stride;
   }
 }
 
 } // namespace elementwise_kernel_detail
 
-template <bool ReadsOutput, class Plan, class Operation, class OutputOperand, class... InputOperands>
+template <bool ReadsOutput, bool PassOutputOffset = false, class Plan, class Operation, class OutputOperand,
+          class... InputOperands>
 void launch_elementwise_kernel(Plan const& plan, Operation operation, OutputOperand output, cudaStream_t stream,
                                int device, std::string_view operation_name, InputOperands... inputs)
 {
@@ -83,7 +91,7 @@ void launch_elementwise_kernel(Plan const& plan, Operation operation, OutputOper
   auto required_blocks = (plan.element_count + threads - 1) / threads;
   constexpr std::size_t maximum_blocks = 65535;
   auto const blocks = static_cast<unsigned int>(required_blocks < maximum_blocks ? required_blocks : maximum_blocks);
-  elementwise_kernel_detail::elementwise_kernel<ReadsOutput>
+  elementwise_kernel_detail::elementwise_kernel<ReadsOutput, PassOutputOffset>
       <<<blocks, threads, 0, stream>>>(plan, std::move(operation), std::move(output), std::move(inputs)...);
   uni20::cuda::check(cudaGetLastError(), operation_name, device);
 }
