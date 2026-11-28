@@ -136,6 +136,15 @@ inline mpreal cospi(mpreal const& x) { return detail::extended_unary<mpfr_cospi>
 /// \brief Convert x to finite precision p, then evaluate cospi at p.
 inline mpreal cospi(mpreal const& x, Precision p) { return detail::extended_unary<mpfr_cospi>(x, p); }
 
+/// \brief Sine and cosine of pi times x, each evaluated at the input precision.
+inline sincos_result<mpreal> sincospi(mpreal const& x) { return {uni20::sinpi(x), uni20::cospi(x)}; }
+/// \brief Convert x to finite precision p once, then evaluate both components.
+inline sincos_result<mpreal> sincospi(mpreal const& x, Precision p)
+{
+  (void)p.bit_count();
+  return sincospi(x.at(p));
+}
+
 /// \brief Tangent of pi times x, with provider argument reduction.
 inline mpreal tanpi(mpreal const& x) { return detail::extended_unary<mpfr_tanpi>(x); }
 /// \brief Convert x to finite precision p, then evaluate tanpi at p.

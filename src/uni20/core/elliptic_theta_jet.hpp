@@ -60,8 +60,8 @@ template <ThetaReal R> std::size_t term_count(R const& t, std::size_t max_terms)
 // derivative factors can amplify by 1/t or 1/t^2.
 template <ThetaReal R> complex<R> phase_cycles(R const& cycles)
 {
-  R const twice = 2 * cycles;
-  return {math::cospi(twice), math::sinpi(twice)};
+  auto const trig = math::sincospi(2 * cycles);
+  return {trig.cos, trig.sin};
 }
 template <ThetaReal R> complex<R> phase_product(R const& a, R const& b)
 {

@@ -1,11 +1,8 @@
 #pragma once
 
+#include <uni20/core/math.hpp>
 #include <uni20/core/types.hpp>
 #include <uni20/random/transform_group.hpp>
-
-#ifndef __CUDA_ARCH__
-#include <uni20/core/math.hpp>
-#endif
 
 #include <cmath>
 #include <concepts>
@@ -22,14 +19,11 @@ template <class Real> UNI20_HOST_DEVICE ValueBlock<Real, 2> standard_normal_pair
   // Double is the device normal precision supported by the current backend.
   static_assert(std::same_as<Real, double>);
   double const radius = std::sqrt(-2.0 * std::log(u1));
-  double sine, cosine;
-  ::sincospi(x, &sine, &cosine);
 #else
   Real const radius = math::sqrt(-2 * math::log(u1));
-  Real const sine = math::sinpi(x);
-  Real const cosine = math::cospi(x);
 #endif
-  return {{radius * cosine, radius * sine}};
+  auto const trig = math::sincospi(x);
+  return {{radius * trig.cos, radius * trig.sin}};
 }
 } // namespace detail
 

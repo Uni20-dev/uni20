@@ -13,7 +13,10 @@ UNI20_PRECISION_TEST(NumericalScalar, PiScaledIdentities)
     C::expect_precision(actual);
     expect_error_at_most(actual, expected, C::epsilon() * C::real(8));
   };
-  check(math::sinpi(x) * math::sinpi(x) + math::cospi(x) * math::cospi(x), one);
+  auto const trig = math::sincospi(x);
+  check(trig.sin, math::sinpi(x));
+  check(trig.cos, math::cospi(x));
+  check(trig.sin * trig.sin + trig.cos * trig.cos, one);
   check(math::sinpi(-x), -math::sinpi(x));
   check(math::cospi(-x), math::cospi(x));
   check(math::tanpi(-x), -math::tanpi(x));

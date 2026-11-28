@@ -24,6 +24,15 @@ static_assert(signatures<uni20::float128>);
 #endif
 static_assert(std::same_as<std::invoke_result_t<decltype(m::atan2pi), float, double>, double>);
 static_assert(std::same_as<std::invoke_result_t<decltype(m::atan2pi), double, long double>, long double>);
+static_assert(!std::invocable<decltype(m::sincospi), int>);
+static_assert(!std::invocable<decltype(m::sincospi), ConversionOnly>);
+static_assert(!std::invocable<decltype(m::sincospi), double, uni20::Precision>);
+
+struct CustomAngle
+{
+    friend constexpr uni20::sincos_result<int> sincospi(CustomAngle) { return {2, 3}; }
+};
+static_assert(m::sincospi(CustomAngle{}).cos == 3);
 static_assert(!std::invocable<decltype(m::atan2pi), int, double>);
 static_assert(!std::invocable<decltype(m::atan2pi), ConversionOnly, ConversionOnly>);
 
@@ -47,6 +56,21 @@ using NativeReals = testing::Types<float, double, long double
 #endif
                                    >;
 TYPED_TEST_SUITE(NativePiMath, NativeReals);
+
+TYPED_TEST(NativePiMath, PairedPiFunctionsPreserveTypeAndAxisValues)
+{
+  using R = TypeParam;
+  static_assert(std::same_as<decltype(m::sincospi(R{})), uni20::sincos_result<R>>);
+  R const half = R(0.5);
+  for (R x : {-R(0), R(-1), -half, half, R(1), m::next_down(half), m::next_up(half)})
+  {
+    auto const pair = m::sincospi(x);
+    EXPECT_EQ(pair.sin, m::sinpi(x));
+    EXPECT_EQ(pair.cos, m::cospi(x));
+    EXPECT_EQ(m::signbit(pair.sin), m::signbit(m::sinpi(x)));
+    EXPECT_EQ(m::signbit(pair.cos), m::signbit(m::cospi(x)));
+  }
+}
 
 TEST(NativePiMath, MixedNativeArgumentsRetainTheWiderOperand)
 {

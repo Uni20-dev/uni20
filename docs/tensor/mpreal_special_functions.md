@@ -103,6 +103,7 @@ for the underlying routines.
 | `exp2m1(x)`, `exp10m1(x)` | Base-two/base-ten exponential minus one |
 | `log2p1(x)`, `log10p1(x)` | Base-two/base-ten logarithm of one plus x |
 | `sinpi(x)`, `cospi(x)`, `tanpi(x)` | Trigonometric functions of pi times x |
+| `sincospi(x)` | Named `sin` and `cos` components at π times x. Exact evaluation requires both results to be rational. An explicit finite precision applies to both. |
 | `asinpi(x)`, `acospi(x)`, `atanpi(x)`, `atan2pi(y,x)` | Principal inverse trigonometric functions divided by pi |
 | `sec(x)`, `csc(x)`, `cot(x)` | Reciprocal cosine, sine and tangent, with x in radians |
 | `sech(x)`, `csch(x)`, `coth(x)` | Reciprocal hyperbolic cosine, sine and tangent |

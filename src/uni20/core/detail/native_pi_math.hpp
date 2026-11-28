@@ -1,6 +1,7 @@
 #pragma once
 
 #include "native_math.hpp"
+#include <uni20/core/compiler_attributes.hpp>
 #include <uni20/core/math_constants.hpp>
 
 namespace uni20::detail::native_math
@@ -177,6 +178,26 @@ template <> struct pi_math_provider<float128> : portable_pi_math<float128>
 
 template <NativeReal R> R sinpi(R x) { return pi_math_provider<R>::sinpi(x); }
 template <NativeReal R> R cospi(R x) { return pi_math_provider<R>::cospi(x); }
+template <NativeReal R> sincos_result<R> sincospi(R x) { return {native_math::sinpi(x), native_math::cospi(x)}; }
+
+#ifdef __CUDACC__
+template <NativeReal R>
+  requires(std::same_as<R, float> || std::same_as<R, double>)
+UNI20_HOST_DEVICE sincos_result<R> sincospi(R x)
+{
+#ifdef __CUDA_ARCH__
+  sincos_result<R> result;
+  if constexpr (std::same_as<R, float>)
+    ::sincospif(x, &result.sin, &result.cos);
+  else
+    ::sincospi(x, &result.sin, &result.cos);
+  return result;
+#else
+  return {native_math::sinpi(x), native_math::cospi(x)};
+#endif
+}
+#endif
+
 template <NativeReal R> R tanpi(R x) { return pi_math_provider<R>::tanpi(x); }
 template <NativeReal R> R asinpi(R x) { return pi_math_provider<R>::asinpi(x); }
 template <NativeReal R> R acospi(R x) { return pi_math_provider<R>::acospi(x); }

@@ -237,7 +237,7 @@ template <class Result, class Arg> consteval bool preserves_real_precision()
     }                                                                                                                  \
   }
 
-#define UNI20_SCALAR_MATH_DISPATCH_TO(NAME, NATIVE, RESULT_CHECK)                                                      \
+#define UNI20_SCALAR_MATH_DISPATCH_TO(NAME, NATIVE, RESULT_CHECK, ...)                                                 \
   UNI20_SCALAR_MATH_ADL(NAME)                                                                                          \
   struct NAME##_fn                                                                                                     \
   {                                                                                                                    \
@@ -249,7 +249,7 @@ template <class Result, class Arg> consteval bool preserves_real_precision()
       }                                                                                                                \
       template <class... Args>                                                                                         \
         requires((native_argument<Args> && ...) && !requires(Args const&... args) { NAME##_adl::call(args...); })      \
-                constexpr auto operator()(Args const&... args) const                                                   \
+                __VA_ARGS__ constexpr auto operator()(Args const&... args) const                                       \
                 noexcept(noexcept(NATIVE::NAME(args...))) -> decltype(NATIVE::NAME(args...))                           \
                   requires((RESULT_CHECK<decltype(NATIVE::NAME(args...)), Args>()) && ...)                             \
       {                                                                                                                \
@@ -359,6 +359,7 @@ UNI20_SCALAR_MATH_DISPATCH_TO(log2p1, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(log10p1, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(sinpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(cospi, native_math, preserves_real_precision)
+UNI20_SCALAR_MATH_DISPATCH_TO(sincospi, native_math, preserves_components, UNI20_HOST_DEVICE)
 UNI20_SCALAR_MATH_DISPATCH_TO(tanpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(asinpi, native_math, preserves_real_precision)
 UNI20_SCALAR_MATH_DISPATCH_TO(acospi, native_math, preserves_real_precision)
@@ -640,6 +641,12 @@ inline constexpr detail::scalar_math::log10p1_fn log10p1{};
 inline constexpr detail::scalar_math::sinpi_fn sinpi{};
 /// \brief Cosine of pi times x, with argument reduction before multiplication by pi.
 inline constexpr detail::scalar_math::cospi_fn cospi{};
+/// \brief Sine and cosine of pi times x, returned as named sin and cos components.
+#ifdef __CUDA_ARCH__
+__device__ constexpr detail::scalar_math::sincospi_fn sincospi{};
+#else
+inline constexpr detail::scalar_math::sincospi_fn sincospi{};
+#endif
 /// \brief Tangent of pi times x, with argument reduction before multiplication by pi.
 inline constexpr detail::scalar_math::tanpi_fn tanpi{};
 /// \brief Principal arcsine divided by pi.

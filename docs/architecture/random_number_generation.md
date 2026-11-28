@@ -472,9 +472,9 @@ Box–Muller takes `u1 ∈ (0, 1]` and `u2 ∈ [0, 1)`. With
 `r = sqrt(-2 ln u1)`, value 0 is `r cospi(2 u2)` and value 1 is
 `r sinpi(2 u2)`. The complex normal uses these as its real and imaginary
 components before scaling and shifting. The binary argument `2 u2` is exact.
-CUDA evaluates the pair with `sincospi`. The host uses Uni20's `math::cospi` and
-`math::sinpi`, which use an exact remainder modulo ½ before multiplying by π
-when native functions are unavailable. This preserves the small component near every axis.
+Both paths use `math::sincospi`. CUDA evaluates the pair in one intrinsic.
+The host uses the scalar's pi-scaled functions, which reduce the argument modulo
+½ before multiplying by π when native functions are unavailable. This preserves the small component near every axis.
 
 Box–Muller consumes a fixed number of words per sample, as required for random
 access by position. Evaluating a group and retaining a single lane gives the

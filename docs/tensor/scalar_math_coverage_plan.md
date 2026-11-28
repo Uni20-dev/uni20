@@ -83,7 +83,7 @@ MPFR at 128/256 bits, including boundary semantics and accuracy improvement.
 | Stable arithmetic | `fma`, `copysign`, `fdim`, `fmin`, `fmax` | Fused rounding with mixed rational inputs; sign/comparison operands; NaN rules |
 | Remainders | `fmod`, `remainder`, `remquo` | Truncating versus nearest-even quotient; negative inputs and quotient-bit contract |
 | Decomposition/scaling | `modf`, `frexp`, `ldexp`, `scalbn`, `ilogb` | Named result values; exponent width and special-value behavior |
-| Paired functions | `sincos`, `sinhcosh` | Named owning results, consistent component precision, paired provider calls |
+| Paired functions | `sincos`, `sincospi`, `sinhcosh` | Named owning results with consistent component precision. `sincospi` uses the pi-scaled providers on the host and paired CUDA intrinsics for float and double. |
 | Adjacent values | `nextafter`, `next_up`, `next_down` | A finite representable grid; direction need not have matching precision; signed-zero, infinity and exponent-limit rules |
 | Classification | `isfinite`, `isnan`, `isinf`, `signbit` through `uni20::math` | Bool results need a dispatch policy separate from precision-preserving numerical results |
 

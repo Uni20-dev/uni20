@@ -48,6 +48,7 @@ providing a name does not synthesize a missing scalar operation.
 | `airy_ai` | Native guarded series/asymptotics with original-input phase reduction, or MPFR |
 | `dilog_real` | Native bounded series and real continuation, or MPFR; real part on x>1 |
 | `exp10`, `exp2m1`, `exp10m1`, `log2p1`, `log10p1` | Native or MPFR base-ten and cancellation-safe extensions; typed libc providers for exponentials where available, always compensated portable native logarithms |
+| `sincospi` | Owning `sincos_result<Real>` with `sin` and `cos` at π times the argument. Host scalars use their pi-scaled providers. CUDA `float` and `double` use the paired device intrinsic. |
 | `sinpi`, `cospi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | MPFR or native pi-scaled functions; detected libc families or portable argument reduction at the original precision |
 | `tanpi` | MPFR, or Uni20's portable native argument reduction, including exact quarter-integers and signed integer zeros; libc `tanpi` is not used |
 | `digamma` | Native compensated recurrence/asymptotics/reflection or MPFR; negative nonintegers supported |

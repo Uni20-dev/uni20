@@ -9,6 +9,25 @@ using namespace uni20;
 namespace m = uni20::math;
 mpreal q(char const* text) { return mpreal(text, Precision::exact()); }
 
+TEST(MprealExtensions, PairedPiPreservesExactAndRequestedPrecision)
+{
+  auto const axis = m::sincospi(q("-1/2"));
+  EXPECT_TRUE(axis.sin.is_exact() && axis.cos.is_exact());
+  EXPECT_EQ(axis.sin, -1);
+  EXPECT_EQ(axis.cos, 0);
+
+  auto const eighth = q("1/8");
+  EXPECT_THROW(m::sincospi(eighth), std::logic_error);
+  for (auto p : {Precision::bits(80), Precision::bits(257)})
+  {
+    auto const pair = m::sincospi(eighth, p);
+    EXPECT_EQ(pair.sin.precision(), p);
+    EXPECT_EQ(pair.cos.precision(), p);
+    EXPECT_EQ(pair.sin, m::sinpi(eighth, p));
+    EXPECT_EQ(pair.cos, m::cospi(eighth, p));
+  }
+}
+
 TEST(MprealExtensions, ExactPiReductionAndInverseValues)
 {
   auto check = [](mpreal const& value, char const* expected) {
