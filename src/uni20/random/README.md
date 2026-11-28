@@ -14,6 +14,16 @@ A fixed-width transform declares how many consecutive Philox blocks it takes
 (`input_type::size`) and how many values it produces (`result_type::size`).
 The current transforms all consume one block.
 
+To add a scalar, specialize `UnitUniform<T>` with its fixed `word_count` and
+two conversions from an array of that many raw words in Philox order:
+`closed_open` for [0, 1) and `open_closed` for (0, 1]. To add a distribution,
+declare its result per sample (a `ValueBlock`) and one `UnitInterval` per
+argument of its `from_uniforms` function. For example, the real normal takes
+an open–closed radius uniform followed by a closed–open angle uniform and
+produces two doubles. [`TransformGroup`](transform_group.hpp) composes these
+rules and packs complete samples in output order. Its `apply` function can
+take a converter instance carrying runtime precision.
+
 [`fill.hpp`](fill.hpp) fills dense tensors, default-accessor host mdspans,
 and raw CUDA buffer descriptors. Offsets count **elements**. For a view
 sharing a leaf, pass the allocation offset of its **lowest storage address**,

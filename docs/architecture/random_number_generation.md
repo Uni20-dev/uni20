@@ -438,8 +438,16 @@ An operation chooses one of two position schemes.
 
 ## Transforms
 
-A transform turns Philox words into values of one element type and
-distribution. Each evaluation yields `g` values:
+A scalar defines the number of consecutive 32-bit words per unit uniform and
+how to convert them to [0, 1) and (0, 1]. A distribution declares the interval
+of each input uniform, in order, and how many values it returns. For example,
+a uniform distribution maps one input to one value, a real normal maps two
+inputs to two values, and a circular complex normal maps two inputs to one.
+
+The group takes the fewest whole Philox blocks that fit one sample and packs
+as many complete samples as those blocks hold. Each sample reads consecutive
+words in block and lane order. Any trailing words are discarded. The fixed
+rows below each consume one block and produce `g` values:
 
 | Value | Words per uniform | Values per evaluation `g` |
 |---|---|---|
@@ -460,18 +468,17 @@ The fixed rows convert words as follows. `w` is the 32-bit word `out[i]`, and
 | Box–Muller radius, from 64-bit word 0 | `u1 = ((W >> 11) + 1) · 2⁻⁵³`, so `u1 ∈ (0, 1]` |
 | Box–Muller angle, from 64-bit word 1 | `u2 = (W >> 11) · 2⁻⁵³`, so `u2 ∈ [0, 1)` |
 
-A normal `double` evaluation gives value 0 = `r cos 2πu2` and value 1 =
-`r sin 2πu2`. A complex normal `complex<double>` evaluation gives one value,
-whose real and imaginary parts come from those two.
+Box–Muller takes `u1 ∈ (0, 1]` and `u2 ∈ [0, 1)`. With
+`r = sqrt(-2 ln u1)`, value 0 is `r cospi(2 u2)` and value 1 is
+`r sinpi(2 u2)`. The complex normal uses these as its real and imaginary
+components before scaling and shifting. The binary argument `2 u2` is exact.
+CUDA evaluates the pair with `sincospi`. The host uses Uni20's `math::cospi` and
+`math::sinpi`, which use an exact remainder modulo ½ before multiplying by π
+when native functions are unavailable. This preserves the small component near every axis.
 
-An implementation may evaluate one element at a time and discard the other
-values, or evaluate an aligned group per thread. The values are identical either
-way.
-
-Normal values use Box–Muller: `u1 ∈ (0, 1]`, `u2 ∈ [0, 1)`,
-`r = sqrt(-2 ln u1)`, outputs `r cos 2πu2` and `r sin 2πu2`. Box–Muller consumes
-a fixed number of words per value. Rejection methods such as the ziggurat do
-not, and the position scheme requires a fixed number.
+Box–Muller consumes a fixed number of words per sample, as required for random
+access by position. Evaluating a group and retaining a single lane gives the
+same value as consuming the whole group.
 
 Uniform resolution matters in large runs:
 
@@ -503,13 +510,14 @@ for bit, between host and device or between two host builds:
   results then differ by the rounding of those operations: a few ulp of
   `|low| + |high - low| u`, or of `|mu| + sigma |x|`. The bound is absolute, not
   relative to the result, because the result can cancel to zero.
-- **Normal values.** `x` itself goes through `log`, `sqrt`, `sin` and `cos`.
-  Their results differ between math libraries, between versions, and between
-  the code paths a library selects for a CPU, so `x` agrees only to the
-  libraries' error bounds, a few ulp.
-
-The contract accepts both. The transform lives in one header compiled for both
-host and device.
+- **Normal values.** The tests compare each standard-normal component `x` to
+  an independent reference at the four axes and one 53-bit uniform grid step
+  on either side. The absolute tolerance is `8 ε |x|`, where `ε = 2⁻⁵²`, so
+  a zero component must be exact. For scaled normals the host/device tests
+  allow `8 ε (|mu| + sigma |x|)` per real or imaginary component, using the
+  corresponding component of the mean. These are numerical validation bounds
+  for ordinary finite outputs. Rounding in the math library and in the final
+  multiply-add can affect the last bits.
 
 ## Dynamic Placement
 
@@ -737,8 +745,13 @@ identity:
    rows, and any fill that uses them, stay provisional until it is made.
 6. **Default node.** Decide whether the run context owns a run-level default
    generator node, seeded from configuration.
-7. **Extended scalars.** Words per value and transforms for binary128 and
-   `mpreal`.
+7. **Extended scalars.** The planned fp80 and fp128 converters use consecutive
+   words directly. The planned host `mpreal` converter takes four outer words
+   as a 128-bit nested Philox identity. Starting at position zero, it takes
+   as many nested words as its precision requires, most significant first.
+   Thus changing precision preserves the outer address of each uniform.
+   Implementation and numerical validation are tracked in
+   [#216](https://github.com/Uni20-dev/uni20/issues/216).
 8. **Python surface.** `numpy.random.SeedSequence.spawn` is the closest
    existing analogue of the identity tree.
 

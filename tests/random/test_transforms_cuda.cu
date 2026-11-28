@@ -1,3 +1,5 @@
+#include "box_muller_cases.hpp"
+
 #include <uni20/random/transforms.hpp>
 
 #include <cuda_runtime.h>
@@ -33,6 +35,8 @@ __global__ void sample(Philox4x32Block counter, Results* out)
           Normal{-0.75, 1.25}({w}),
           ComplexNormal{{1.25, -0.25}, 0.75}({w})};
 }
+
+__global__ void sample_normal(Philox4x32Block words, Results* out) { out->normal = Normal{}({words}); }
 
 TEST(RandomTransformCudaTest, MatchesHostWithinTransformBounds)
 {
@@ -75,6 +79,14 @@ TEST(RandomTransformCudaTest, MatchesHostWithinTransformBounds)
     EXPECT_NEAR(gpu.z.values[0].real(), z.real(), 8 * eps * (1.25 + 0.75 * std::abs(pair.values[0])));
     EXPECT_NEAR(gpu.z.values[0].imag(), z.imag(), 8 * eps * (0.25 + 0.75 * std::abs(pair.values[1])));
   }
+
+  check_box_muller_near_axes([&](auto words, auto& result) {
+    sample_normal<<<1, 1>>>(words, device.get());
+    ASSERT_EQ(cudaGetLastError(), cudaSuccess);
+    Results gpu{};
+    ASSERT_EQ(cudaMemcpy(&gpu, device.get(), sizeof(gpu), cudaMemcpyDeviceToHost), cudaSuccess);
+    result = gpu.normal;
+  });
 }
 } // namespace
 } // namespace uni20::random::test
