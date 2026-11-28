@@ -82,7 +82,8 @@ Without the option, both can vary between runs, and the values with them.
 Downstream results are reproducible only if the code that consumes the values
 also makes reproducible choices: reduction order, library algorithm selection
 and scheduling. Uni20 documents each of its own functions that can vary, and
-offers a reproducible option for it (Uni20-dev/uni20#214).
+names a reproducible route for it. The route can be an option, an alternative
+function or a different algorithm (Uni20-dev/uni20#214).
 
 **Not offered:** bitwise identical random values or results across builds,
 compilers, compiler flags, math libraries, machines, devices, rank counts or
