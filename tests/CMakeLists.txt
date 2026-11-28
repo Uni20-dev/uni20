@@ -8,6 +8,7 @@ add_subdirectory(docs)
 
 # Add subdirectories that contribute source files
 add_subdirectory(core)
+add_subdirectory(random)
 add_subdirectory(common)
 if(UNI20_BUILD_CLI)
   add_subdirectory(cli)

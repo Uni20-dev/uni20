@@ -162,6 +162,19 @@ TYPED_TEST(DenseHotrg, SelectedEighCutKeepsTheSvdCutSubspace)
   }
 }
 
+TYPED_TEST(DenseHotrg, JacobiCutsNeedCudaTensors)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  R const Kc = hotrg::critical_coupling<R>(hotrg::model::clock, 2, C::precision());
+  for (hotrg::cut_method method : {hotrg::cut_method::jacobi_eigh, hotrg::cut_method::jacobi_svd})
+  {
+    EXPECT_TRUE(hotrg::cut_method_needs_device(method));
+    EXPECT_THROW((void)hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 4, 1, nullptr, method),
+                 std::invalid_argument);
+  }
+}
+
 TYPED_TEST(DenseHotrg, LongFlowRetainsTinyLogScale)
 {
   using C = TypeParam;

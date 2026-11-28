@@ -572,7 +572,7 @@ class BlockSvdDecomposition {
 /// \tparam Measurements Compile-time-selected performance measurement policy.
 /// \tparam Event Event identifier used for the sector batch.
 /// \param tensor Immediate tensor to factorize.
-/// \param options Dense provider vector-extent options.
+/// \param options Dense provider driver and singular-vector extents.
 /// \param measurements Explicit measurement policy or collector.
 /// \param batch_event Event identifying the sector-factorization batch.
 /// \return Reusable per-charge decomposition and globally ordered spectrum.
@@ -734,7 +734,7 @@ template <ImmediateBlockTensorView Tensor, class Measurements, class Event>
 /// \details This ordinary overload instantiates no performance measurements.
 /// \tparam Tensor Immediate BlockTensor-level input view.
 /// \param tensor Immediate tensor to factorize.
-/// \param options Dense provider vector-extent options.
+/// \param options Dense provider driver and singular-vector extents.
 /// \return Reusable per-charge decomposition and globally ordered spectrum.
 template <ImmediateBlockTensorView Tensor>
   requires uni20::LapackScalar<block_tensor_value_t<Tensor>>
@@ -907,12 +907,11 @@ template <class Scalar>
   {
     CudaMatrix<Scalar> transposed_work(uninitialized, resources, columns, rows);
     copy_transposed_cuda_matrix(transposed_work, matrix_work);
-    CudaMatrix<Scalar> transposed_left(uninitialized, resources, columns,
-                                       options.right == linalg::SvdVectorExtent::Full ? columns : rank);
-    CudaMatrix<Scalar> transposed_right(uninitialized, resources,
-                                         options.left == linalg::SvdVectorExtent::Full ? rows : rank, rows);
+    CudaMatrix<Scalar> transposed_left(uninitialized, resources, columns, right_rows);
+    CudaMatrix<Scalar> transposed_right(uninitialized, resources, left_columns, rows);
+    std::swap(options.left, options.right);
     linalg::singular_value_decomposition(linalg::CusolverBackend{}, device_values, transposed_left, transposed_right,
-                                         transposed_work, {.left = options.right, .right = options.left});
+                                         transposed_work, options);
     copy_transposed_cuda_matrix(device_left, transposed_right);
     copy_transposed_cuda_matrix(device_right, transposed_left);
   }
@@ -938,7 +937,7 @@ template <class Scalar>
 ///          compact singular-value copy is retained on the host for global
 ///          truncation selection.
 /// \param tensor Descriptor-backed CUDA tensor to factorize.
-/// \param options Dense provider vector-extent options.
+/// \param options Dense provider driver and singular-vector extents.
 /// \param measurements Explicit measurement policy or collector.
 /// \param batch_event Event identifying the sector-factorization batch.
 /// \return Reusable per-charge resident decomposition and globally ordered spectrum.

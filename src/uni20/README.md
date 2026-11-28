@@ -13,6 +13,7 @@ logic. Keep these files brief; detailed design notes belong in `/docs`.
 
 - [`core/`](core/): scalar concepts, scalar aliases, scalar traits, numeric limits, and
   small math/type utilities.
+- [`random/`](random/): counter-based random number primitives for host and device.
 - [`common/`](common/): diagnostics, trace/check infrastructure, presentation helpers,
   and common containers/utilities.
 - [`cli/`](cli/): optional CLI11 adapters for executable options, semantic help,
