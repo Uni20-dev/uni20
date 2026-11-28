@@ -23,6 +23,7 @@ Operation values and diagnostic names are defined centrally in
 - `nonsymmetric_eigen.hpp`: fixed-output nonsymmetric eigensystem dispatch.
 - `qr.hpp`: destructive-workspace and preserving-value reduced real or complex QR
   factorizations.
+- `randomized_svd.hpp` computes a fixed-rank Gaussian approximation with optional stabilized power iteration.
 - `schur.hpp`: fixed-output Schur decomposition and block-reordering dispatch.
 - `self_adjoint_eigh.hpp`: destructive in-place, preserving value, and
   allocation-reusing consuming forms for dense symmetric/Hermitian

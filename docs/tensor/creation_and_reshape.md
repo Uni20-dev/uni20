@@ -26,6 +26,12 @@ valid: every untouched stored element remains zero.
 | `DenseMatrix<T>(rows, cols, p)` for fixed-precision numeric `T` | Zero; `p` must equal `native_precision<T>()`. No precision metadata is stored. |
 | `DenseMatrix<T>(uninitialized, rows, cols)` (with trailing `p` when required) | Unspecified native values or unset runtime-precision scalars; write before reading. |
 
+Composite operations can allocate work with `make_tensor_like(uninitialized, source, rows, cols)`
+from `<uni20/tensor/allocate_like.hpp>`. The result is a column-major owner with the requested
+shape and the source's element type, memory domain and default precision. A device buffer
+supplies its allocation resources. An empty view without a buffer uses the domain's default.
+Pass a precision before the dimensions to select an explicit working precision.
+
 For host tensors, `precision_of(tensor)` and `at_precision(tensor, p)` work with
 both fixed and runtime scalar types. Fixed types validate their native precision
 without storing extra metadata. See the [generic precision contract](scalar_policy.md#generic-precision).

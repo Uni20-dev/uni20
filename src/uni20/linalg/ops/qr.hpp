@@ -14,6 +14,10 @@
 #include <uni20/linalg/decomposition_precision.hpp>
 #include <uni20/linalg/dispatch.hpp>
 #include <uni20/linalg/operation_tags.hpp>
+#if UNI20_BACKEND_CUSOLVER
+#include <uni20/linalg/backends/cusolver/qr.hpp>
+#endif
+#include <uni20/tensor/allocate_like.hpp>
 #include <uni20/tensor/concepts.hpp>
 #include <uni20/tensor/copy.hpp>
 #include <uni20/tensor/output.hpp>
@@ -45,8 +49,22 @@ void prepare_qr(QTensor& q, RTensor& r, MatrixTensor const& matrix_work)
   auto const rows = static_cast<uni20::index_type>(matrix_work.extent(0));
   auto const cols = static_cast<uni20::index_type>(matrix_work.extent(1));
   auto const rank = std::min(rows, cols);
-  uni20::prepare_output(q, qr_matrix_extents{rows, rank});
-  uni20::prepare_output(r, qr_matrix_extents{rank, cols});
+  auto prepare = [&](auto& output, qr_matrix_extents shape) {
+    if constexpr (requires {
+                    prepare_output(output, shape, mdspec_of(matrix_work).data_descriptor().buffer().device());
+                  })
+    {
+      auto desc = mdspec_of(matrix_work).data_descriptor();
+      if (desc)
+      {
+        prepare_output(output, shape, desc.buffer().device());
+        return;
+      }
+    }
+    prepare_output(output, shape);
+  };
+  prepare(q, qr_matrix_extents{rows, rank});
+  prepare(r, qr_matrix_extents{rank, cols});
 }
 
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<2> QTensor,
@@ -104,7 +122,15 @@ template <class QTensor, class RTensor> struct QrResult
 
 namespace detail
 {
-template <class MatrixTensor> using qr_matrix_tensor_t = uni20::Tensor<uni20::tensor_element_t<MatrixTensor>, 2>;
+template <class MatrixTensor>
+using qr_matrix_tensor_t = uni20::detail::materialized_tensor_t<uni20::ColumnMajor, MatrixTensor>;
+
+template <class Matrix> auto qr_work_copy(Matrix const& input, Precision p)
+{
+  auto work = make_tensor_like(uninitialized, input, p, input.extent(0), input.extent(1));
+  copy(work, input);
+  return work;
+}
 
 template <class MatrixTensor> consteval bool can_use_qr_storage_as_workspace()
 {
@@ -112,11 +138,12 @@ template <class MatrixTensor> consteval bool can_use_qr_storage_as_workspace()
 }
 
 template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
-  requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
+  requires uni20::MutableRankedTensorView<MatrixTensor, 2>
 [[nodiscard]] auto qr_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, Precision p)
 {
-  qr_matrix_tensor_t<MatrixTensor> q;
-  qr_matrix_tensor_t<MatrixTensor> r;
+  auto const rank = std::min(matrix_work.extent(0), matrix_work.extent(1));
+  auto q = make_tensor_like(uninitialized, matrix_work, p, matrix_work.extent(0), rank);
+  auto r = make_tensor_like(uninitialized, matrix_work, p, rank, matrix_work.extent(1));
   qr_factorization(std::forward<BackendSelector>(selector), q, r, matrix_work, p);
   return QrResult<decltype(q), decltype(r)>{.q = std::move(q), .r = std::move(r)};
 }
@@ -134,7 +161,7 @@ template <KernelBackendSelector BackendSelector, uni20::RankedTensorView<2> Matr
 [[nodiscard]] auto qr(BackendSelector&& selector, MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = detail::qr_work_copy(matrix, p);
   return detail::qr_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
 }
 
@@ -144,13 +171,13 @@ template <uni20::RankedTensorView<2> MatrixTensor>
 [[nodiscard]] auto qr(MatrixTensor const& matrix, std::optional<Precision> requested = {})
 {
   auto const p = detail::decomposition_precision(matrix, requested);
-  auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+  auto matrix_work = detail::qr_work_copy(matrix, p);
   auto selector = detail::select_qr_backend<decltype(matrix_work)>();
   return detail::qr_from_work_matrix(std::move(selector), std::move(matrix_work), p);
 }
 
 /// \brief Consume an owning real or complex matrix and return its reduced QR factorization through an explicit
-/// selector. \details An exact column-major host tensor is moved directly into the
+/// selector. \details A canonical column-major tensor is moved directly into the
 ///          destructive workspace. Other owning tensor views are materialized.
 template <KernelBackendSelector BackendSelector, class MatrixTensor>
   requires uni20::OwningTensor<MatrixTensor> && uni20::MutableRankedTensorView<MatrixTensor, 2> &&
@@ -165,7 +192,7 @@ template <KernelBackendSelector BackendSelector, class MatrixTensor>
   }
   else
   {
-    auto matrix_work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+    auto matrix_work = detail::qr_work_copy(matrix, p);
     return detail::qr_from_work_matrix(std::forward<BackendSelector>(selector), std::move(matrix_work), p);
   }
 }
@@ -184,4 +211,31 @@ template <class MatrixTensor>
   return uni20::linalg::qr(std::move(selector), std::forward<MatrixTensor>(matrix), p);
 }
 
+/// \brief Return the thin Householder Q of a tall or square matrix.
+/// \details A canonical owning rvalue supplies the workspace. Other inputs are copied into
+///          column-major storage in their source domain. No R factor is allocated.
+///          Rank-deficient inputs receive an orthonormal completion.
+template <KernelBackendSelector Selector, RankedTensorView<2> Matrix>
+[[nodiscard]] auto orthonormal_basis(Selector&& selector, Matrix&& matrix)
+{
+  if (matrix.extent(0) < matrix.extent(1)) throw std::invalid_argument("orthonormal_basis requires rows >= columns");
+  auto const p = detail::decomposition_precision(matrix, {});
+  auto work = [&] {
+    if constexpr (!std::is_lvalue_reference_v<Matrix> && !std::is_const_v<std::remove_reference_t<Matrix>> &&
+                  detail::can_use_qr_storage_as_workspace<Matrix>())
+      return std::move(matrix);
+    else
+      return detail::qr_work_copy(matrix, p);
+  }();
+  auto span = mdspec_of(work);
+  detail::dispatch_at_precision<tensor_element_t<Matrix>>(std::forward<Selector>(selector), orthonormal_basis_op{}, p,
+                                                          span);
+  return work;
+}
+
+template <RankedTensorView<2> Matrix> [[nodiscard]] auto orthonormal_basis(Matrix&& matrix)
+{
+  using Work = detail::qr_matrix_tensor_t<Matrix>;
+  return orthonormal_basis(select_backend_for<Work>(orthonormal_basis_op{}), std::forward<Matrix>(matrix));
+}
 } // namespace uni20::linalg

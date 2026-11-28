@@ -14,6 +14,7 @@ optional multiprecision support, and linear-algebra design background.
   outputs, matrix norms, destructive eigensystems, and Schur block reordering.
 - [Square Linear Solves](linear_solve.md) describes strict and recoverable
   frontends, pivot policy, workspace ownership, and backend diagnostics.
+- [Randomized Dense Decompositions](randomized_decompositions.md) describes fixed-rank Gaussian sketches on host and CUDA.
 - [Least Squares](least_squares.md) describes preserving full-rank QR and minimum-norm SVD solves,
   rank/cutoff diagnostics, residual norms and generic precision.
 - [Numerical Infrastructure Plan](precision_numerics_plan.md) sequences

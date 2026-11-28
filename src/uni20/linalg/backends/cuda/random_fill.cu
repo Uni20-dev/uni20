@@ -34,6 +34,7 @@ void enqueue_random_fill(random::transformed_value_t<Transform>* storage, random
 UNI20_RANDOM_FILL(random::Uniform<float>);
 UNI20_RANDOM_FILL(random::Uniform<double>);
 UNI20_RANDOM_FILL(random::Normal);
+UNI20_RANDOM_FILL(random::detail::RoundedNormalSketch);
 UNI20_RANDOM_FILL(random::ComplexNormal);
 #undef UNI20_RANDOM_FILL
 } // namespace uni20::linalg::detail::cuda_reference

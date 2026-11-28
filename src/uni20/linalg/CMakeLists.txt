@@ -15,6 +15,10 @@ if(TARGET uni20_backend_cuda)
   )
 endif()
 
+if(TARGET uni20_backend_cusolver)
+  target_sources(uni20_linalg PRIVATE backends/cusolver/qr_upper.cu)
+endif()
+
 target_include_directories(uni20_linalg
     PUBLIC
         ${PROJECT_SOURCE_DIR}/src
