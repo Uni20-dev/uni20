@@ -3,9 +3,9 @@
 **Status:** active design note. Only layer 1 is implemented: the Philox4x32-10
 bijection `uni20::random::philox4x32_10`, in
 [`philox.hpp`](../../src/uni20/random/philox.hpp). Uni20 has no random tensor
-API. The only random engine in the tree is the
-`std::mt19937_64` that `DebugScheduler` uses to explore schedules, and this note
-does not affect it. The distributed and persistence sections build on the
+API. The only random engine in the library is the `std::mt19937_64` that
+`DebugScheduler` uses to explore schedules, and this note does not affect it.
+Some examples have small generators of their own. The distributed and persistence sections build on the
 exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.md).
 The implementation proceeds in layers, and only the lower layers are fixed; see
 [Implementation Staging](#implementation-staging).
@@ -584,8 +584,9 @@ identity:
 - **Fixed seed:**
   - The resume-point label, which is the GUID of the restored manifest,
     separates draws after a restart from the draws before the checkpoint.
-  - Two jobs that resume from the same checkpoint with the same fixed seed draw
-    the same numbers, which is what a fixed seed asks for. Independent replicas
+  - Two jobs that resume from the same checkpoint with the same fixed seed can
+    draw the same numbers, and do under the reproducible option, which is what
+    a fixed seed asks for. Independent replicas
     use different seeds or fresh entropy.
 - **Exact continuation is not a goal.** A resumed run that reproduced the
   uninterrupted run would need every live node's child counter saved with the
@@ -617,9 +618,12 @@ identity:
   rotations within degenerate singular subspaces) already makes bitwise
   comparison meaningless. Tests compare singular values, projectors and
   reconstruction error against tolerances.
-- **Reproducing a failure.** Rerunning a failing case with the same seed, build
-  and configuration, under the reproducible option, reproduces the sketch,
-  which is usually enough to debug it.
+- **Reproducing a failure.** If the failing run used the reproducible option,
+  rerunning it with the same seed, build and configuration under the option
+  reproduces the sketch, which is usually enough to debug it. A run without the
+  option may have load-balanced its fills or taken labels in submission order,
+  and provenance records neither, so turning the option on afterwards need not
+  reproduce it.
 
 ## Monte Carlo Streams
 
@@ -629,11 +633,17 @@ identity:
 - **State.** A stream's state is its 128-bit identity, its position, and the
   unused words of its current evaluation. How Uni20's own distributions draw
   from a stream is [open question 15](#open-questions).
+- **Word interface.** A stream starts at position 0. Successive calls return
+  `out[0]` to `out[3]` of `value_block(node, 0)`, then of position 1, and so on,
+  and skipping ahead counts words. This is the sequence of `std::philox4x32`
+  with key `k` and counter `(h, 2⁶³ + p)` set at position `p`, so the stream can
+  be tested against the standard engine, as the bijection is.
 - **Labels.** Assign streams by sample or walker identity, not by rank, thread
   or device. Any single sample can then be replayed on its own by constructing
   its stream. Its words and unit uniforms replay exactly under the same mapping
-  version. Its scaled and normal values replay exactly on the same processor, or
-  under the reproducible option with its original placement.
+  version. Its scaled and normal values replay exactly in the same build on the
+  same processor, or under the reproducible option with its original
+  placement.
 - **Standard compatibility.** `PhiloxStream` is the adapter of
   [Interface: Counter Mode](#interface-counter-mode). It runs in host and
   device code. On the host it meets the uniform random bit generator
@@ -673,7 +683,10 @@ identity:
     addresses, not values: distinct addresses can give equal values, two
     24-bit floats for example;
   - two jobs resuming from the same checkpoint with fresh entropy draw
-    different values.
+    different values;
+  - under the reproducible option, a repeated three-job chain reproduces every
+    job's addresses, and a rewind, which restores an earlier checkpoint and
+    writes a new one, draws no address that the abandoned branch drew.
 - On the host, an ordinary `std::shuffle` call compiles and runs with the
   stream.
 - Distribution checks against independent expected values: mean, variance, and
@@ -804,10 +817,19 @@ question 13 concerns randomized algorithms. All five decide layer 4 (see
     - require the persistent store to assign object IDs, manifest IDs included,
       deterministically under the option;
     - or have the option use indices instead of GUIDs: operation and component
-      indices for components, and for the resume point an index that names the
-      checkpoint within its run, not a count of restarts. A plain restart count
-      gives two different checkpoints of one run, each restored once, the same
-      resume label.
+      indices for components, and for the resume point a path that follows the
+      checkpoint's history. The manifest stores the resume node of the job that
+      wrote it, and a job that restores it takes two `child` steps from that
+      node: the checkpoint's ordinal within the writing job, then a job label
+      given with the restore, supplied by the plan or the user as the seed is.
+      Checkpoints of one job are then exactly distinct, and a repeated history
+      derives the same path. The job label keeps apart two jobs that restore
+      one checkpoint; with equal job labels they are replicas, as two jobs with
+      one seed are.
+    - A flat index does not work. Numbered per job, every job's first
+      checkpoint gets the same index, so consecutive jobs of a chain share a
+      resume label. Numbered per chain, a rewind repeats an index. Numbered from
+      zero, a first checkpoint collides with the fresh-start label.
 
 ## References
 
