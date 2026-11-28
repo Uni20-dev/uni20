@@ -51,6 +51,7 @@
 
 #if UNI20_BACKEND_CUDA && UNI20_BACKEND_CUBLAS && UNI20_BACKEND_CUSOLVER
 #define UNI20_EXAMPLE_DENSE_HOTRG_DEVICE 1
+#include <fmt/format.h>
 #include <uni20/backend/cublas/execution.hpp>
 #include <uni20/backend/cuda/runtime.hpp>
 #include <uni20/backend/cusolver/execution.hpp>
@@ -732,9 +733,8 @@ template <uni20::Real R>
   auto const converged = [&](auto result) {
     auto const& c = result.convergence;
     if (!c.converged)
-      throw std::runtime_error(std::string("dense_hotrg: the ") + cut_method_name(method) +
-                               " cut did not converge in " + std::to_string(c.sweeps) + " sweeps (residual " +
-                               std::to_string(c.residual) + ")");
+      throw std::runtime_error(fmt::format("dense_hotrg: the {} cut did not converge in {} sweeps (residual {:.3e})",
+                                           cut_method_name(method), c.sweeps, c.residual));
     return std::move(result.factors);
   };
 
