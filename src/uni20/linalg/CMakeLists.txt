@@ -6,6 +6,7 @@ add_library(uni20_linalg STATIC
 if(TARGET uni20_backend_cuda)
   target_sources(uni20_linalg PRIVATE
       backends/cuda/elementwise.cu
+      backends/cuda/nystrom.cu
       backends/cuda/random_fill.cu
       backends/cuda/reduction.cu
   )

@@ -30,3 +30,28 @@ QR of $A^TQ$ and $AZ$ on each power step. It factors the tall matrix $A^TQ$
 and lifts the retained left vectors through $Q$. This also supports wide
 inputs. On CUDA the sketch, QR workspaces, small SVD and factors reside on
 the input device. CUDA requires cuBLAS and cuSOLVER.
+
+## Positive semidefinite matrices
+
+`randomized_nystrom(a, options, identity)` returns `[eigenvalues, eigenvectors, info]`.
+Supply a square real symmetric positive semidefinite matrix with both triangles
+populated. The result contains the largest $k$ approximate eigenvalues in
+descending order and an orthonormal column for each value, in the same storage
+domain as the input. The options, RNG identity and rank-zero convention are
+shared with the randomized SVD.
+
+After orthonormalizing the Gaussian sketch, each power iteration applies $A$
+once and reorthogonalizes. With the resulting basis $Q$, the algorithm forms
+$Y=AQ$ and the small projected matrix $W=Q^T Y$. The Nyström approximation is
+$YW^\dagger Y^T$. If $W=VDV^T$, a thin SVD of $YV(D^\dagger)^{1/2}$ yields
+its eigenvectors. Squaring the retained singular values gives its eigenvalues.
+This requires $q+1$ applications of the input, compared with $2q+2$ for the
+randomized SVD. The remaining work acts on $n$ by $\ell$ or $\ell$ by $\ell$
+matrices. The CUDA path keeps the whitening factors and all decomposition work
+on the device.
+
+A positive projected eigenvalue is retained when its ratio to the largest
+exceeds $\ell\,\epsilon$ at the working precision. All other projected modes
+receive zero weight in the pseudoinverse. A zero or rank-deficient Gram matrix
+therefore still returns the requested factor shapes. In a zero eigenspace,
+the choice of orthonormal completion is arbitrary.
