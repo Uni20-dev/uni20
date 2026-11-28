@@ -366,3 +366,18 @@ synchronizes the execution stream before those allocations are released.
   and how workspace pressure should interact with the broader CUDA allocator.
 - How MPI client-server scheduling should assign symmetry-sector SVD blocks to
   remote CUDA workers.
+
+## Randomized SVD
+
+`svd_gesvdr(matrix, {.rank = k, .oversampling = p, .power_iterations = q})`
+preserves a real float or double CUDA matrix and returns compact U, singular values
+and the right adjoint on the input device. The two boolean options `left_vectors`
+and `right_vectors` default to true and can be disabled independently. A disabled
+side has zero retained columns or rows. Rank zero returns empty factors. For
+positive rank the provider requires `k + p < min(m,n)`.
+
+cuSOLVER chooses its own sketch. Use `randomized_truncated_svd` to replay a Uni20
+Philox identity. The provider adapter acquires one stream, queries host and device
+workspace, reserves the documented square backing array for each requested vector
+side, and copies only its leading columns into compact results. See the
+[NVIDIA Xgesvdr reference](https://docs.nvidia.com/cuda/cusolver/index.html#cusolverdnxgesvdr).

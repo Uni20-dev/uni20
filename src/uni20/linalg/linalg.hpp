@@ -4,6 +4,7 @@
 #include <uni20/linalg/elementwise_functions.hpp>
 #include <uni20/linalg/operation_tags.hpp>
 #include <uni20/linalg/ops/contract.hpp>
+#include <uni20/linalg/ops/cuda_gesvdr.hpp>
 #include <uni20/linalg/ops/cuda_jacobi.hpp>
 #include <uni20/linalg/ops/gemm.hpp>
 #include <uni20/linalg/ops/gemv.hpp>

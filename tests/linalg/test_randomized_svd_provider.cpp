@@ -3,70 +3,13 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include <iostream>
-#include <uni20/linalg/backends/cusolver/workspace.hpp>
+#include <uni20/linalg/ops/cuda_gesvdr.hpp>
 #include <uni20/linalg/ops/randomized_svd.hpp>
 
 namespace
 {
 using namespace uni20;
 using namespace uni20::linalg;
-namespace rd = uni20::linalg::detail::randomized;
-namespace cs = uni20::linalg::detail::cusolver_backend;
-template <class R> auto vendor_svd(CudaTensor<R, 2> const& input, RandomizedRangeOptions opts)
-{
-  auto& resources = input.mdspec().data_descriptor().buffer().resources();
-  auto device = resources.device().ordinal();
-  uni20::cuda::ScopedDevice guard(device);
-  auto m = input.extent(0), n = input.extent(1), k = opts.rank;
-  auto a = to_device(input, resources);
-  // Use the full buffer dimensions specified by NVIDIA for Xgesvdr.
-  auto values = make_tensor_like(uninitialized, a, std::min(m, n));
-  auto left = make_tensor_like(uninitialized, a, m, m);
-  auto right = make_tensor_like(uninitialized, a, n, n);
-  {
-    auto lease = cusolver::execution_pool(resources).acquire();
-    auto const& stream = lease.stream();
-    auto handle = lease.handle().native_handle();
-    cusolverDnParams_t raw = nullptr;
-    cusolver::check(cusolverDnCreateParams(&raw), "create Xgesvdr parameters", device);
-    std::unique_ptr<std::remove_pointer_t<cusolverDnParams_t>, decltype(&cusolverDnDestroyParams)> params(
-        raw, cusolverDnDestroyParams);
-    auto write = [&](auto& matrix) {
-      return matrix.mdspec().data_descriptor().buffer().write_synchronized_with(stream);
-    };
-    auto aw = write(a), sw = write(values), uw = write(left), vw = write(right);
-    constexpr auto dtype = std::same_as<R, float> ? CUDA_R_32F : CUDA_R_64F;
-    auto invoke = [&](auto fn, auto... workspace) {
-      return fn(handle, params.get(), 'S', 'S', m, n, k, opts.oversampling, opts.power_iterations, dtype, aw.data(), m,
-                dtype, sw.data(), dtype, uw.data(), m, dtype, vw.data(), n, dtype, workspace...);
-    };
-    std::size_t device_bytes = 0, host_bytes = 0;
-    cusolver::check(invoke(cusolverDnXgesvdr_bufferSize, &device_bytes, &host_bytes), "Xgesvdr_bufferSize", device);
-    bool pools = resources.device().capabilities().memory_pools_supported;
-    cs::StreamAllocation<std::byte> scratch(stream, device_bytes, pools);
-    cs::StreamAllocation<int> info(stream, 1, pools);
-    std::vector<std::byte> host(host_bytes);
-    cusolver::check(invoke(cusolverDnXgesvdr, scratch.data(), device_bytes, host.data(), host_bytes, info.data()),
-                    "Xgesvdr", device);
-    int status = 0;
-    uni20::cuda::check(
-        cudaMemcpyAsync(&status, info.data(), sizeof(status), cudaMemcpyDeviceToHost, stream.native_handle()),
-        "read Xgesvdr status", device);
-    stream.synchronize();
-    aw.release_after_synchronization();
-    sw.release_after_synchronization();
-    uw.release_after_synchronization();
-    vw.release_after_synchronization();
-    EXPECT_EQ(status, 0);
-  }
-  auto u = make_tensor_like(uninitialized, a, m, k);
-  auto s = make_tensor_like(uninitialized, a, k);
-  auto vh = make_tensor_like(uninitialized, a, k, n);
-  rd::copy_prefix(u, left);
-  rd::copy_prefix(s, values);
-  rd::copy_prefix(vh, permute<1, 0>(right));
-  return SvdResult<decltype(u), decltype(s), decltype(vh)>{std::move(u), std::move(s), std::move(vh)};
-}
 template <class R> void compare_providers()
 {
   constexpr int m = 384, n = 256, k = 8;
@@ -111,7 +54,45 @@ template <class R> void compare_providers()
     EXPECT_LT(triplet_error, 0.02);
   };
   measure("Uni20", [&] { return randomized_truncated_svd(d, opts, random::root(17)); });
-  measure("Xgesvdr", [&] { return vendor_svd(d, opts); });
+  measure("Xgesvdr", [&] {
+    return svd_gesvdr(d, {.rank = k, .oversampling = opts.oversampling, .power_iterations = opts.power_iterations});
+  });
+}
+TEST(RandomizedSvd, CudaProviderVectorSelection)
+{
+  int devices = 0;
+  auto status = cudaGetDeviceCount(&devices);
+  if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver || (status == cudaSuccess && !devices))
+    GTEST_SKIP();
+  ASSERT_EQ(status, cudaSuccess);
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  DenseMatrix<double> a(12, 17);
+  a[1, 3] = 8.;
+  a[4, 2] = -4.;
+  auto d = to_device(a, 0);
+  for (bool left : {false, true})
+    for (bool right : {false, true})
+    {
+      auto [u, s, vh] = svd_gesvdr(d, {.rank = 2, .oversampling = 3, .left_vectors = left, .right_vectors = right});
+      EXPECT_EQ(u.extent(1), left ? 2 : 0);
+      EXPECT_EQ(vh.extent(0), right ? 2 : 0);
+      auto values = to_host(s);
+      EXPECT_NEAR(values[0], 8., 1.e-11);
+      EXPECT_NEAR(values[1], 4., 1.e-11);
+      if (left)
+      {
+        auto v = to_host(u);
+        EXPECT_NEAR(std::abs((v[1, 0])), 1., 1.e-10);
+      }
+      if (right)
+      {
+        auto v = to_host(vh);
+        EXPECT_NEAR(std::abs((v[1, 2])), 1., 1.e-10);
+      }
+    }
+  EXPECT_EQ(svd_gesvdr(d, {.rank = 0}).singular_values.extent(0), 0);
+  EXPECT_THROW((void)svd_gesvdr(d, {.rank = 5, .oversampling = 7}), std::invalid_argument);
+  EXPECT_EQ((to_host(d)[4, 2]), -4.);
 }
 TEST(RandomizedSvd, CudaVendorComparison)
 {
