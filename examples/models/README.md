@@ -302,3 +302,9 @@ in 13.7 s, against 0.41 s for `eigh`. Their spectrum errors are 2.9e-12 and
 3.2e-13, against 2.1e-15, and a five-round flow's ln Z/N is off the `svd` flow by
 1.6e-14 and 1.5e-14, against 2.2e-16. These runs use cuSOLVER's default
 tolerance (machine precision) and sweep limit.
+
+On the host at bond 32, the divide-and-conquer drivers cut the gram in 0.090 s
+(`dc-eigh`, LAPACK `syevd`) and 0.24 s (`dc-svd`, `gesdd`), against 0.48 s for
+`eigh` and 1.95 s for `svd`. Their five-round flows take 7.1 s and 7.7 s, against
+8.7 s and 14.2 s, and agree with the `svd` flow to rounding. Only `selected-eigh`
+is faster, at 0.047 s for the cut.
