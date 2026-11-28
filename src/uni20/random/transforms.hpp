@@ -113,6 +113,7 @@ struct RoundedNormalSketch
       return {{static_cast<float>(pair.values[0]), static_cast<float>(pair.values[1])}};
     }
 };
+template <class R> using SketchNormal = std::conditional_t<std::same_as<R, float>, RoundedNormalSketch, Normal>;
 } // namespace detail
 
 } // namespace uni20::random

@@ -25,7 +25,7 @@ nonnegative. Rank zero returns empty factors immediately. Increasing $p$ samples
 more directions in each pass. Increasing $q$ improves separation for slowly
 decaying spectra at the cost of two additional matrix products per iteration.
 
-The range finder takes a reduced Householder QR of $A\Omega$, then alternates
+The range finder calls the dispatched Q-only operation `orthonormal_basis` on $A\Omega$, then alternates
 QR of $A^TQ$ and $AZ$ on each power step. It factors the tall matrix $A^TQ$
 and lifts the retained left vectors through $Q$. This also supports wide
 inputs. On CUDA the sketch, QR workspaces, small SVD and factors reside on

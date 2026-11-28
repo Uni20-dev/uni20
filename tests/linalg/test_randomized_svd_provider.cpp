@@ -3,6 +3,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <uni20/linalg/backends/cusolver/workspace.hpp>
 #include <uni20/linalg/ops/randomized_svd.hpp>
 
 namespace
@@ -19,9 +20,9 @@ template <class R> auto vendor_svd(CudaTensor<R, 2> const& input, RandomizedRang
   auto m = input.extent(0), n = input.extent(1), k = opts.rank;
   auto a = to_device(input, resources);
   // Use the full buffer dimensions specified by NVIDIA for Xgesvdr.
-  auto values = rd::allocate(a, std::min(m, n));
-  auto left = rd::allocate(a, m, m);
-  auto right = rd::allocate(a, n, n);
+  auto values = make_tensor_like(uninitialized, a, std::min(m, n));
+  auto left = make_tensor_like(uninitialized, a, m, m);
+  auto right = make_tensor_like(uninitialized, a, n, n);
   {
     auto lease = cusolver::execution_pool(resources).acquire();
     auto const& stream = lease.stream();
@@ -58,9 +59,9 @@ template <class R> auto vendor_svd(CudaTensor<R, 2> const& input, RandomizedRang
     vw.release_after_synchronization();
     EXPECT_EQ(status, 0);
   }
-  auto u = rd::allocate(a, m, k);
-  auto s = rd::allocate(a, k);
-  auto vh = rd::allocate(a, k, n);
+  auto u = make_tensor_like(uninitialized, a, m, k);
+  auto s = make_tensor_like(uninitialized, a, k);
+  auto vh = make_tensor_like(uninitialized, a, k, n);
   rd::copy_prefix(u, left);
   rd::copy_prefix(s, values);
   rd::copy_prefix(vh, permute<1, 0>(right));

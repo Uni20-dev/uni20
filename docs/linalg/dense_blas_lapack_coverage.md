@@ -78,7 +78,11 @@ synchronized before return. Packed BlockTensor tests cover nonzero descriptor
 offsets. General strided reductions and accessor transformations remain for a
 CUDA reference reduction backend.
 
-The randomized range finder uses cuSOLVER `S/Dgeqrf` and `S/Dorgqr` to construct a thin Q on the device.
+On CUDA, `qr` and `qr_factorization` compute reduced Q and R for real fp32/fp64
+inputs with cuSOLVER `geqrf` and `orgqr`. The destructive kernel takes
+column-major work and outputs on the same device, including wide work matrices.
+`orthonormal_basis` selects the Q-only kernel on tall or square inputs. Both
+the LAPACK and cuSOLVER kernels form Q in the workspace and skip extracting R.
 
 The optional cuSOLVER backend provides blocking exact SVD through
 `cusolverDnSgesvd` and `cusolverDnDgesvd`. Its first operation accepts destructive

@@ -16,6 +16,10 @@ The `self_adjoint_eigh.hpp` adapter uses `syevd` for real `float` and
 device. It returns eigenvalues in ascending order and can overwrite the work
 matrix with the corresponding eigenvectors.
 
+`qr.hpp` dispatches real float and double reduced QR. Full QR extracts the
+upper trapezoid between `geqrf` and `orgqr` and copies the reduced Q on their
+shared stream. The Q-only kernel forms its basis directly in the workspace.
+
 These operations select the operand device around the provider calls, since
 cuSOLVER launches into the calling thread's current device.
 

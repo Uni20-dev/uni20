@@ -42,6 +42,39 @@ template <class QMdspan, class RMdspan, class MatrixMdspan> consteval auto qr_ac
     return kernel_types_no;
 }
 
+// Form Q in the first min(m,n) columns; full QR consumes the packed R before orgqr overwrites it.
+template <MutableRankedStridedMdspanLike<2> Matrix, class SaveR> KernelAttempt form_q(Matrix& matrix_work, SaveR save_r)
+{
+  using scalar_type = typename Matrix::value_type;
+  auto const m = static_cast<std::size_t>(matrix_work.extent(0));
+  auto const n = static_cast<std::size_t>(matrix_work.extent(1));
+  auto const rank_size = std::min(m, n);
+  if (rank_size == 0) return KernelAttempt::success;
+  blas_int const rows = uni20::blas::try_blas_int(m), cols = uni20::blas::try_blas_int(n);
+  if (!uni20::blas::is_valid_blas_int(rows) || !uni20::blas::is_valid_blas_int(cols))
+    return KernelAttempt::unsupported_shape;
+  blas_int const rank = std::min(rows, cols);
+  auto matrix = blas::try_lapack_writable_matrix(matrix_work);
+  if (!matrix) return KernelAttempt::unsupported_layout;
+
+  std::vector<scalar_type> tau(rank_size);
+  scalar_type work_query{};
+  uni20::lapack::geqrf(rows, cols, matrix->data, matrix->leading_dimension, tau.data(), &work_query, -1);
+  blas_int const geqrf_lwork = workspace_size(work_query);
+  std::vector<scalar_type> work(static_cast<std::size_t>(geqrf_lwork));
+  uni20::lapack::geqrf(rows, cols, matrix->data, matrix->leading_dimension, tau.data(), work.data(), geqrf_lwork);
+
+  save_r();
+
+  work_query = scalar_type{};
+  uni20::lapack::orgqr(rows, rank, rank, matrix->data, matrix->leading_dimension, tau.data(), &work_query, -1);
+  blas_int const orgqr_lwork = workspace_size(work_query);
+  work.resize(static_cast<std::size_t>(orgqr_lwork));
+  uni20::lapack::orgqr(rows, rank, rank, matrix->data, matrix->leading_dimension, tau.data(), work.data(), orgqr_lwork);
+
+  return KernelAttempt::success;
+}
+
 template <uni20::MutableRankedMdspanLike<2> QMdspan, uni20::MutableRankedMdspanLike<2> RMdspan,
           uni20::MutableRankedStridedMdspanLike<2> MatrixMdspan>
 KernelAttempt try_qr(QMdspan& q, RMdspan& r, MatrixMdspan& matrix_work)
@@ -59,50 +92,25 @@ KernelAttempt try_qr(QMdspan& q, RMdspan& r, MatrixMdspan& matrix_work)
   CHECK_EQUAL(static_cast<std::size_t>(r.extent(0)), rank_size);
   CHECK_EQUAL(r.extent(1), matrix_work.extent(1));
 
-  if (rank_size == 0) return KernelAttempt::success;
-
-  blas_int const rows = uni20::blas::try_blas_int(rows_size);
-  blas_int const cols = uni20::blas::try_blas_int(cols_size);
-  blas_int const rank = uni20::blas::try_blas_int(rank_size);
-  if (!uni20::blas::is_valid_blas_int(rows) || !uni20::blas::is_valid_blas_int(cols) ||
-      !uni20::blas::is_valid_blas_int(rank))
-    return KernelAttempt::unsupported_shape;
-
-  auto matrix = uni20::linalg::blas::try_lapack_writable_matrix(matrix_work);
-  if (!matrix) return KernelAttempt::unsupported_layout;
-  CHECK_EQUAL(matrix->rows, rows);
-  CHECK_EQUAL(matrix->cols, cols);
-
-  std::vector<scalar_type> tau(rank_size);
-  scalar_type work_query{};
-  uni20::lapack::geqrf(rows, cols, matrix->data, matrix->leading_dimension, tau.data(), &work_query, -1);
-  blas_int const geqrf_lwork = workspace_size(work_query);
-  std::vector<scalar_type> work(static_cast<std::size_t>(geqrf_lwork));
-  uni20::lapack::geqrf(rows, cols, matrix->data, matrix->leading_dimension, tau.data(), work.data(), geqrf_lwork);
-
-  for (std::size_t row = 0; row < rank_size; ++row)
-  {
-    for (std::size_t column = 0; column < cols_size; ++column)
+  auto const attempt = form_q(matrix_work, [&] {
+    for (std::size_t row = 0; row < rank_size; ++row)
     {
-      auto const r_row = static_cast<r_index_type>(row);
-      auto const r_column = static_cast<r_index_type>(column);
-      if (row <= column)
+      for (std::size_t column = 0; column < cols_size; ++column)
       {
-        r[r_row, r_column] = matrix_work[static_cast<matrix_index_type>(row), static_cast<matrix_index_type>(column)];
-      }
-      else
-      {
-        r[r_row, r_column] = scalar_type{};
+        auto const r_row = static_cast<r_index_type>(row);
+        auto const r_column = static_cast<r_index_type>(column);
+        if (row <= column)
+        {
+          r[r_row, r_column] = matrix_work[static_cast<matrix_index_type>(row), static_cast<matrix_index_type>(column)];
+        }
+        else
+        {
+          r[r_row, r_column] = scalar_type{};
+        }
       }
     }
-  }
-
-  work_query = scalar_type{};
-  uni20::lapack::orgqr(rows, rank, rank, matrix->data, matrix->leading_dimension, tau.data(), &work_query, -1);
-  blas_int const orgqr_lwork = workspace_size(work_query);
-  work.resize(static_cast<std::size_t>(orgqr_lwork));
-  uni20::lapack::orgqr(rows, rank, rank, matrix->data, matrix->leading_dimension, tau.data(), work.data(), orgqr_lwork);
-
+  });
+  if (attempt != KernelAttempt::success) return attempt;
   for (std::size_t row = 0; row < rows_size; ++row)
   {
     for (std::size_t column = 0; column < rank_size; ++column)
@@ -143,6 +151,23 @@ KernelAttempt try_kernel(LapackBackend, qr_op const&, QMdspec& q, RMdspec& r, Ma
   return lapack_detail::with_host_write_mdspans(
       [](auto& q_span, auto& r_span, auto& matrix_span) { return lapack_detail::try_qr(q_span, r_span, matrix_span); },
       q, r, matrix_work);
+}
+
+template <MutableRankedStridedMdspecLike<2> A>
+  requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
+           DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
+consteval auto kernel_accepts_types(LapackBackend, orthonormal_basis_op, A&)
+{
+  return kernel_types_maybe;
+}
+
+template <MutableRankedStridedMdspecLike<2> A>
+  requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
+           DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
+KernelAttempt try_kernel(LapackBackend, orthonormal_basis_op, A& matrix)
+{
+  if (matrix.extent(0) < matrix.extent(1)) return KernelAttempt::unsupported_shape;
+  return lapack_detail::with_host_write_mdspans([](auto& a) { return lapack_detail::form_q(a, [] {}); }, matrix);
 }
 
 } // namespace uni20::linalg

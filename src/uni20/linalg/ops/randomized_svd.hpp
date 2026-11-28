@@ -7,10 +7,8 @@
 #include <uni20/linalg/ops/qr.hpp>
 #include <uni20/linalg/ops/truncated_svd.hpp>
 #include <uni20/random/fill.hpp>
+#include <uni20/tensor/allocate_like.hpp>
 #include <uni20/tensor/permute.hpp>
-#if UNI20_BACKEND_CUSOLVER
-#include <uni20/linalg/backends/cusolver/range_qr.hpp>
-#endif
 
 namespace uni20::linalg
 {
@@ -43,57 +41,19 @@ inline index_type sketch_width(index_type m, index_type n, RandomizedRangeOption
   return options.rank == 0 ? 0 : options.rank + std::min(options.oversampling, limit - options.rank);
 }
 
-// All internal matrices use column-major storage in the input's execution domain.
-template <class Matrix, class... Dims> auto allocate(Matrix const& input, Dims... dims)
-{
-  using T = tensor_element_t<Matrix>;
-#if UNI20_BACKEND_CUDA
-  if constexpr (std::same_as<tensor_storage_policy_t<Matrix>, CudaStorage>)
-  {
-    static_assert((UNI20_BACKEND_CUSOLVER && UNI20_BACKEND_CUBLAS) ||
-                      !std::same_as<tensor_storage_policy_t<Matrix>, CudaStorage>,
-                  "randomized CUDA decomposition requires cuBLAS and cuSOLVER");
-    auto descriptor = mdspec_of(input).data_descriptor();
-    auto& resources = descriptor ? descriptor.buffer().resources() : cuda::device_resources();
-    return CudaTensor<T, sizeof...(dims)>(uninitialized, resources, dims...);
-  }
-  else
-#endif
-    return Tensor<T, sizeof...(dims)>(uninitialized, dims...);
-}
-
 template <class A, class B> auto product(A const& a, B const& b)
 {
   using R = tensor_element_t<A>;
-  auto out = allocate(a, a.extent(0), b.extent(1));
+  auto out = make_tensor_like(uninitialized, a, a.extent(0), b.extent(1));
   linalg::gemm(out, R{1}, a, b, R{0});
   return out;
 }
 
-template <class Matrix> auto orthonormalize(Matrix work)
-{
-#if UNI20_BACKEND_CUSOLVER
-  if constexpr (std::same_as<tensor_storage_policy_t<Matrix>, CudaStorage>)
-  {
-    auto span = mdspec_of(work);
-    auto descriptor = cusolver_backend::try_matrix_descriptor(span);
-    if (!descriptor) throw std::length_error("randomized QR exceeds cuSOLVER matrix dimensions");
-    cusolver_backend::range_qr(*descriptor);
-    return work;
-  }
-  else
-#endif
-    return linalg::qr(std::move(work)).q;
-}
-
 template <class Matrix> auto gaussian(Matrix const& a, index_type width, random::Identity identity)
 {
-  auto omega = allocate(a, a.extent(1), width);
+  auto omega = make_tensor_like(uninitialized, a, a.extent(1), width);
   auto leaf = random::child(identity, 0);
-  if constexpr (std::same_as<tensor_element_t<Matrix>, float>)
-    random::fill(omega, leaf, random::detail::RoundedNormalSketch{});
-  else
-    random::fill(omega, leaf, random::Normal{});
+  random::fill(omega, leaf, random::detail::SketchNormal<tensor_element_t<Matrix>>{});
   return omega;
 }
 
@@ -131,25 +91,25 @@ template <RankedTensorView<2> Matrix>
   namespace impl = detail::randomized;
   index_type const m = a.extent(0), n = a.extent(1), k = options.rank;
   auto const width = impl::sketch_width(m, n, options);
-  auto u = impl::allocate(a, m, k);
-  auto s = impl::allocate(a, k);
-  auto vh = impl::allocate(a, k, n);
+  auto u = make_tensor_like(uninitialized, a, m, k);
+  auto s = make_tensor_like(uninitialized, a, k);
+  auto vh = make_tensor_like(uninitialized, a, k, n);
   if (k != 0)
   {
     auto at = permute<1, 0>(a);
-    auto q = impl::orthonormalize(impl::product(a, impl::gaussian(a, width, identity)));
+    auto q = orthonormal_basis(impl::product(a, impl::gaussian(a, width, identity)));
     for (index_type i = 0; i < options.power_iterations; ++i)
     {
-      auto z = impl::orthonormalize(impl::product(at, q));
-      q = impl::orthonormalize(impl::product(a, z));
+      auto z = orthonormal_basis(impl::product(at, q));
+      q = orthonormal_basis(impl::product(a, z));
     }
-    // Factor B^T, which is always tall and is accepted by cuSOLVER gesvd.
+    // Factor B^T, so the projected factorization always has at least as many rows as columns.
     auto bt = impl::product(at, q);
-    auto values = impl::allocate(a, width);
-    auto v = impl::allocate(a, n, width);
-    auto ubt = impl::allocate(a, width, width);
+    auto values = make_tensor_like(uninitialized, a, width);
+    auto v = make_tensor_like(uninitialized, a, n, width);
+    auto ubt = make_tensor_like(uninitialized, a, width, width);
     singular_value_decomposition(values, v, ubt, bt);
-    auto ub = impl::allocate(a, width, k);
+    auto ub = make_tensor_like(uninitialized, a, width, k);
     impl::copy_prefix(ub, permute<1, 0>(ubt));
     using R = tensor_element_t<Matrix>;
     gemm(u, R{1}, q, ub, R{0});

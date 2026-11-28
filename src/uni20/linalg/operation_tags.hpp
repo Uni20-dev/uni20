@@ -181,6 +181,12 @@ struct qr_op
     static constexpr std::string_view name = "qr";
 };
 
+/// \brief Overwrite a tall matrix with the thin Householder Q factor.
+struct orthonormal_basis_op
+{
+    static constexpr std::string_view name = "orthonormal_basis";
+};
+
 /// \brief Reduced dense real LQ factorization operation tag.
 /// \details Backends overwrite an input work matrix and return `L` with shape
 ///          `m x min(m,n)` and `Q` with shape `min(m,n) x n`.

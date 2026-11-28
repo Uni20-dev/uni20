@@ -109,6 +109,15 @@ TEST(RandomizedSvd, TallAndWide)
   check_svd(spectrum_matrix<float>(23, 16));
   check_svd(spectrum_matrix<double>(16, 23));
 }
+TEST(RandomizedSvd, ThinBasisMatchesFullQr)
+{
+  auto a = spectrum_matrix<double>(13, 5);
+  auto q = orthonormal_basis(LapackBackend{}, a);
+  auto reference = qr(a);
+  EXPECT_LT(projector_error(q, reference.q, 5), 1.e-12);
+  EXPECT_THROW((void)orthonormal_basis(permute<1, 0>(a)), std::invalid_argument);
+}
+
 TEST(RandomizedSvd, RankAndEmptyShapes)
 {
   DenseMatrix<double> a(4, 3);
@@ -133,12 +142,46 @@ TEST(RandomizedSvd, CudaTallAndWide)
   if (status == cudaErrorNoDevice || status == cudaErrorInsufficientDriver || (status == cudaSuccess && !devices))
     GTEST_SKIP();
   ASSERT_EQ(status, cudaSuccess);
-  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  auto const ordinals = devices > 1 ? std::vector<int>{0, 1} : std::vector<int>{0};
+  auto runtime = uni20::cuda::initialize({.device_ordinals = ordinals, .streams_per_device = 1});
+  int const ordinal = ordinals.back();
+  for (auto [m, n] : {std::pair{9, 4}, std::pair{4, 9}, std::pair{1, 4}, std::pair{4, 1}, std::pair{1, 1},
+                      std::pair{4, 0}, std::pair{0, 4}})
+  {
+    auto a = spectrum_matrix<double>(m, n);
+    auto device = to_device(a, ordinal);
+    auto [qd, rd] = qr(device);
+    static_assert(std::same_as<decltype(qd), CudaMatrix<double>>);
+    if (std::min(m, n) != 0)
+    {
+      EXPECT_EQ(qd.mdspec().data_descriptor().buffer().device().ordinal(), ordinal);
+    }
+    auto q = to_host(qd);
+    auto r = to_host(rd);
+    int const k = std::min(m, n);
+    ASSERT_EQ(q.extent(1), k);
+    ASSERT_EQ(r.extent(0), k);
+    for (int j = 0; j < n; ++j)
+      for (int i = 0; i < m; ++i)
+      {
+        double value = 0;
+        for (int l = 0; l < k; ++l)
+          value += q[i, l] * r[l, j];
+        EXPECT_NEAR(value, (a[i, j]), 1.e-12);
+      }
+    if (m >= n)
+    {
+      auto only_q = to_host(orthonormal_basis(std::move(device)));
+      for (int j = 0; j < k; ++j)
+        for (int i = 0; i < m; ++i)
+          EXPECT_NEAR((only_q[i, j]), (q[i, j]), 1.e-13);
+    }
+  }
   auto empty = randomized_truncated_svd(to_device(DenseMatrix<float>(0, 4), 0), {0}, random::root(0));
   EXPECT_EQ(empty.right_singular_vectors_adjoint.extent(1), 4);
   auto one = randomized_truncated_svd(to_device(spectrum_matrix<float>(3, 1), 0), {1}, random::root(0));
   EXPECT_NEAR(to_host(one.singular_values)[0], 1.f, 1e-5f);
-  check_svd(to_device(spectrum_matrix<float>(23, 16), 0));
+  check_svd(to_device(spectrum_matrix<float>(23, 16), ordinal));
   check_svd(to_device(spectrum_matrix<double>(16, 23), 0));
 }
 #endif
