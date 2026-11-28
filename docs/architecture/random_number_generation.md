@@ -82,6 +82,25 @@ relying on reproducibility:
 
 Non-goals: cryptographic randomness and quasi-random sequences.
 
+## Interface: Counter Mode
+
+Uni20's random number interface is counter based. Every value is a function of
+an identity and a position, so values can be computed in any order, in
+parallel, on the host or on a device. A value costs the same whatever was drawn
+before it. The interface has no sequential stream mode, and none of it is shaped
+to fit one.
+
+Compatibility with the standard library is offered, but it does not constrain
+the interface. It is an adapter on top:
+
+- A stream type models `std::uniform_random_bit_generator`, so that user code
+  and standard algorithms such as `std::shuffle` can draw from it (see
+  [Monte Carlo Streams](#monte-carlo-streams)).
+- The stream holds an identity, a position and buffered lanes, and it draws
+  through counter-mode evaluations. Its position is a counter, so it can skip
+  ahead in constant time.
+- Uni20's own fills, transforms and randomized algorithms never go through it.
+
 ## Implementation Staging
 
 Uni20 implements this note in four layers. The lower three do not depend on how
@@ -94,7 +113,7 @@ they are made.
 |---|---|---|
 | 1. Bit generator | The Philox4x32-10 bijection ([Bit Generator](#bit-generator)) | Fixed: Philox4x32-10 is specified externally |
 | 2. Transforms | Words to uniform and normal `float` and `double` values, complex normal values, and the lane layout of values ([Transforms](#transforms)) | Fixed for `float` and `double`; open questions 5 and 7 cover the rest |
-| 3. Fill | A dense view filled from a 128-bit identity, a position scheme and a transform ([Positions](#positions)) | Fixed for dense views; the default for packed blocks is open question 10 |
+| 3. Fill and stream | A dense view filled from a 128-bit identity, a position scheme and a transform ([Positions](#positions)), and the standard-compatible stream over the same evaluations ([Monte Carlo Streams](#monte-carlo-streams)) | Fixed for dense views; the default for packed blocks is open question 10 |
 | 4. Derivation and attachment | The root, `child`, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
 
 These rules keep layer 4 open:
@@ -464,11 +483,15 @@ device.
 - **Labels.** Assign streams by sample or walker identity, not by rank, thread
   or device. Any single sample can then be replayed on its own, under the same
   build, by constructing its stream.
-- **Distributions.** A `PhiloxStream` type for host and device code models
-  `std::uniform_random_bit_generator` on the host, so user code can draw from
-  it. Only Uni20's own distributions follow the conventions above. The standard
-  library's distributions are implementation-defined and differ between
-  libstdc++, libc++ and MSVC.
+- **Standard compatibility.** `PhiloxStream` is the adapter of
+  [Interface: Counter Mode](#interface-counter-mode). It runs in host and
+  device code, and models `std::uniform_random_bit_generator` on the host.
+  - A copy is an independent value with the same state, so it repeats the
+    original's draws, as standard engines do. Node handles differ: their
+    copies share one child counter.
+  - Only Uni20's own distributions follow the conventions above. The standard
+    library's distributions are implementation-defined and differ between
+    libstdc++, libc++ and MSVC.
 
 ## Testing
 
@@ -505,6 +528,11 @@ device.
   the circumstances.
 - **64-bit derived keys.** Collisions become likely at realistic scale. The tree
   carries 128-bit identities.
+- **A stream interface as the common denominator.** If the interface were
+  designed so that every source fit the standard library's engine model, each
+  value would depend on draw order, and so on scheduling. Positions could not
+  be evaluated in parallel or out of order. The standard model is offered as an
+  adapter instead (see [Interface: Counter Mode](#interface-counter-mode)).
 - **Sequential engines such as MT19937.** They carry 2.5 KB of state, and their
   values depend on draw order and hence on scheduling. Jump-ahead is expensive,
   copies duplicate streams, and the GF(2)-linear structure fails
