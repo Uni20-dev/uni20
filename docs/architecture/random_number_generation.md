@@ -1,8 +1,7 @@
 # Counter-Based Random Number Generation
 
-**Status:** active design note. Only layer 1 is implemented: the Philox4x32-10
-bijection `uni20::random::philox4x32_10`, in
-[`philox.hpp`](../../src/uni20/random/philox.hpp). Uni20 has no random tensor
+**Status:** active design note. The [Philox4x32-10 bijection](../../src/uni20/random/philox.hpp) and the
+[fixed word transforms](../../src/uni20/random/transforms.hpp) implement layers 1 and 2. Uni20 has no random tensor
 API. The only random engine in the library is the `std::mt19937_64` that
 `DebugScheduler` uses to explore schedules, and this note does not affect it.
 Some examples have small generators of their own. The distributed and persistence sections build on the
