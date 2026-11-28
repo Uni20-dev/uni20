@@ -5,7 +5,7 @@
 #if UNI20_HAS_MPREAL
 #include <uni20/core/mpreal.hpp>
 #include <uni20/random/stream.hpp>
-#include <vector>
+#include <memory>
 #endif
 
 #include <array>
@@ -89,13 +89,21 @@ template <> struct UnitUniform<mpreal>
     {
       PhiloxStream stream{detail::words_to_identity(w.data())};
       auto const bits = precision_.bit_count();
-      std::vector<std::uint32_t> words(1 + (bits - 1) / 32);
-      for (auto& word : words)
-        word = stream();
+      auto const count = static_cast<std::size_t>(1 + (bits - 1) / 32);
+      std::array<std::uint32_t, 64> local_words;
+      std::unique_ptr<std::uint32_t[]> large_words;
+      auto* words = local_words.data();
+      if (count > local_words.size())
+      {
+        large_words = std::make_unique_for_overwrite<std::uint32_t[]>(count);
+        words = large_words.get();
+      }
+      for (std::size_t i = 0; i < count; ++i)
+        words[i] = stream();
 
       uni20::detail::mp_integer mantissa;
       // Import whole lanes in one pass, then discard the unused low bits of the final lane.
-      mpz_import(mantissa.value, words.size(), 1, sizeof(words[0]), 0, 0, words.data());
+      mpz_import(mantissa.value, count, 1, sizeof(words[0]), 0, 0, words);
       mpz_fdiv_q_2exp(mantissa.value, mantissa.value, (32 - bits % 32) % 32);
       if (upper_endpoint) mpz_add_ui(mantissa.value, mantissa.value, 1);
       return uni20::detail::mpreal_access::finite_result(

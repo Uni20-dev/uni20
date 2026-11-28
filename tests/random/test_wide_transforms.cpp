@@ -118,7 +118,7 @@ TEST(WideRandomTransformTest, NestedDrawKeepsBothUniformPrefixesAndOtherElementP
   static_assert(Pair::input_type::size == 2 && Pair::result_type::size == 2);
   static_assert(Circular::input_type::size == 2 && Circular::result_type::size == 1);
   auto const leaf = root(987);
-  auto const reference = Precision::bits(512);
+  static_assert(!std::default_initializable<U>);
   EXPECT_THROW((void)U(Precision::exact()), std::logic_error);
   for (unsigned group : {0u, 3u})
   {
@@ -127,10 +127,11 @@ TEST(WideRandomTransformTest, NestedDrawKeepsBothUniformPrefixesAndOtherElementP
     U::words_type radial{}, angular{};
     std::ranges::copy(radial_block.words, radial.begin());
     std::ranges::copy(angular_block.words, angular.begin());
-    for (int bits : {1, 31, 32, 128, 129, 256})
+    for (int bits : {1, 31, 32, 128, 129, 256, 2048, 2049})
     {
       SCOPED_TRACE(::testing::Message() << "group " << group << ", bits " << bits);
       auto const p = Precision::bits(bits);
+      auto const reference = Precision::bits(bits + 256);
       U const converter{p};
       auto const u1 = converter.open_closed(radial), u2 = converter.closed_open(angular);
       EXPECT_EQ(u1.precision(), p);
