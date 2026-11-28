@@ -907,10 +907,12 @@ double subspace_distance(tensor3 const& U, tensor3 const& V)
 
 template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int repeat)
 {
-  // Every method with an implementation for these tensors; the Jacobi solvers are CUDA only.
+  // Every method with an implementation for these tensors: the Jacobi solvers are CUDA only, and the
+  // divide-and-conquer drivers host only.
   std::vector<cut_method> methods;
   for (cut_method method : all_cut_methods)
-    if (!std::same_as<Place, host_place> || !cut_method_needs_device(method)) methods.push_back(method);
+    if (std::same_as<Place, host_place> ? !cut_method_needs_device(method) : !cut_method_needs_host(method))
+      methods.push_back(method);
   std::size_t method_width = 0;
   for (cut_method method : methods)
     method_width = std::max(method_width, std::string_view(cut_method_name(method)).size());
@@ -1028,8 +1030,9 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
       .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
       .row("--second-cuda-device=N", "With --execution=cuda --check: also check a step on a tensor on device N")
       .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
-      .row("--gram-cut=M", "svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd (default svd): how a step takes the leading "
-                           "vectors of the gram; the jacobi methods need --execution=cuda")
+      .row("--gram-cut=M", "svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd|dc-eigh|dc-svd (default svd): how a step "
+                           "takes the leading vectors of the gram; the jacobi methods need --execution=cuda, and the "
+                           "dc methods --execution=cpu")
       .row("--benchmark-gram-cut", "Time every gram-cut method on the same grams, and a flow with each (fp64)")
       .row("--bonds=D,D,...", "Bonds for --benchmark-gram-cut (default 8,16,24)")
       .row("--repeat=N", "Timed repeats per cut for --benchmark-gram-cut; the fastest is shown (default 3)")
@@ -1167,8 +1170,12 @@ int main(int argc, char** argv)
           method = cut_method::jacobi_eigh;
         else if (value == "jacobi-svd")
           method = cut_method::jacobi_svd;
+        else if (value == "dc-eigh")
+          method = cut_method::dc_eigh;
+        else if (value == "dc-svd")
+          method = cut_method::dc_svd;
         else
-          usage("--gram-cut is svd, eigh, selected-eigh, jacobi-eigh or jacobi-svd");
+          usage("--gram-cut is svd, eigh, selected-eigh, jacobi-eigh, jacobi-svd, dc-eigh or dc-svd");
       }
       else if (name == "--bonds")
       {
@@ -1189,6 +1196,8 @@ int main(int argc, char** argv)
     if (execution != "cpu" && execution != "cuda") usage("--execution is cpu or cuda");
     if (execution == "cpu" && cut_method_needs_device(method))
       usage("--gram-cut=jacobi-eigh and jacobi-svd run only with --execution=cuda");
+    if (execution == "cuda" && cut_method_needs_host(method))
+      usage("--gram-cut=dc-eigh and dc-svd run only with --execution=cpu");
     if (check && precision != "fp64")
       usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
     if (benchmark && (check || precision != "fp64"))

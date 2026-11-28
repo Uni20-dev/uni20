@@ -162,6 +162,39 @@ TYPED_TEST(DenseHotrg, SelectedEighCutKeepsTheSvdCutSubspace)
   }
 }
 
+TYPED_TEST(DenseHotrg, DivideAndConquerCutsKeepTheSvdCutSubspace)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  R const Kc = hotrg::critical_coupling<R>(hotrg::model::clock, 2, C::precision());
+  for (hotrg::cut_method method : {hotrg::cut_method::dc_eigh, hotrg::cut_method::dc_svd})
+  {
+    EXPECT_TRUE(hotrg::cut_method_needs_host(method));
+    if constexpr (!hotrg::divide_and_conquer_supported<R>)
+    {
+      // binary80 and MPFR have only the default drivers.
+      EXPECT_THROW((void)hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 1, nullptr, method),
+                   std::invalid_argument);
+    }
+    else
+    {
+      auto const svd = hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3);
+      auto const dc = hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, Kc), 8, 3, nullptr, method);
+      ASSERT_EQ(dc.lnz.size(), svd.lnz.size());
+      for (std::size_t i = 0; i < svd.lnz.size(); ++i)
+      {
+        expect_error_at_most(dc.lnz[i], svd.lnz[i], 1024 * C::epsilon());
+        expect_error_at_most(dc.discarded_y[i], svd.discarded_y[i], 1024 * C::epsilon());
+        expect_error_at_most(dc.discarded_x[i], svd.discarded_x[i], 1024 * C::epsilon());
+        // As in the selected-eigh test, the gap divides by the smallest kept value.
+        expect_error_at_most(dc.gap_y[i], svd.gap_y[i], 16384 * C::epsilon());
+        expect_error_at_most(dc.gap_x[i], svd.gap_x[i], 16384 * C::epsilon());
+        C::expect_precision(dc.lnz[i]);
+      }
+    }
+  }
+}
+
 TYPED_TEST(DenseHotrg, JacobiCutsNeedCudaTensors)
 {
   using C = TypeParam;
