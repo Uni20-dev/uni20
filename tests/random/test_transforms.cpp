@@ -31,10 +31,14 @@ TEST(RandomTransformTest, UnitUniformsMatchRecordedWords)
 TEST(RandomTransformTest, ScalingAndBoxMullerFollowAnalyticValues)
 {
   constexpr long double eps = std::numeric_limits<double>::epsilon();
+  // Exercise each quarter turn away from its axis, where a reflection or a lane swap changes the result.
+  auto const at_sixteenth_turn = [](std::uint32_t n) { return Philox4x32Block{{~0u, 0x7fffffff, 0, n << 28}}; };
   for (auto words : {Philox4x32Block{}, Philox4x32Block{{~0u, ~0u, ~0u, ~0u}}, mixed,
-                     Philox4x32Block{{0, 0x80000000, 0, 0x40000000}}, Philox4x32Block{{~0u, 0, 0, 0x80000000}}})
+                     Philox4x32Block{{0, 0x80000000, 0, 0x40000000}}, Philox4x32Block{{~0u, 0, 0, 0x80000000}},
+                     at_sixteenth_turn(1), at_sixteenth_turn(5), at_sixteenth_turn(9), at_sixteenth_turn(13)})
   {
     auto const unit = Uniform<double>{}({words});
+    SCOPED_TRACE(::testing::Message() << "angle in turns = " << unit.values[1]);
     long double const radius = std::sqrt(-2 * std::log(static_cast<long double>(unit.values[0]) + 0x1p-53L));
     long double const angle = 2 * std::numbers::pi_v<long double> * unit.values[1];
     std::array ref{radius * std::cos(angle), radius * std::sin(angle)};
