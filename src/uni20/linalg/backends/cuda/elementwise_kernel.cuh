@@ -17,14 +17,13 @@ template <class Accessor> struct ElementwiseOperand
 {
     using accessor_type = Accessor;
     using data_handle_type = typename accessor_type::data_handle_type;
-    using offset_type = typename accessor_type::offset_type;
 
     data_handle_type handle;
     [[no_unique_address]] accessor_type accessor{};
 
     template <class Offset> [[nodiscard]] __device__ constexpr decltype(auto) access(Offset offset) const
     {
-      return accessor.access(handle, static_cast<offset_type>(offset));
+      return accessor.access(handle, offset);
     }
 
     template <class Offset> [[nodiscard]] __device__ constexpr auto load(Offset offset) const

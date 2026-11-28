@@ -42,10 +42,10 @@ inline constexpr bool uni20::enable_accessor_in_domain<NarrowProxyAccessor<Eleme
 
 TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
 {
-  using shape = uni20::extents<int, 3>;
+  using shape = uni20::extents<std::int16_t, 3>;
   using span = uni20::mdspan<int, shape, uni20::layout_signed_stride, NarrowProxyAccessor<int>>;
   std::array<int, 3> storage{};
-  span output{storage.data() + 2, span::mapping_type{shape{}, {-1}}};
+  span output{storage.data(), span::mapping_type{shape{}, {-1}}};
   int values[]{4, 9, 12};
   auto input = uni20::mdspan{values};
   auto backend = uni20::linalg::CpuReferenceBackend{};
@@ -60,11 +60,11 @@ TEST(CpuStridedTransformTest, CopyFillAndUpdateHonorOffsetAndProxyTypes)
 
 TEST(CpuStridedTransformTest, ConjugatesSignedViewWithRvalueAssignableProxy)
 {
-  using shape = uni20::extents<int, 3>;
+  using shape = uni20::extents<std::int16_t, 3>;
   using value = uni20::complex<double>;
   using span = uni20::mdspan<value, shape, uni20::layout_signed_stride, NarrowProxyAccessor<value>>;
   std::array<value, 5> storage{{{1, 2}, {7, 8}, {3, 4}, {9, 10}, {5, 6}}};
-  span output{storage.data() + 4, span::mapping_type{shape{}, {-2}}};
+  span output{storage.data(), span::mapping_type{shape{}, {-2}}};
 
   uni20::conjugate_inplace(uni20::linalg::CpuReferenceBackend{}, output);
 
@@ -126,7 +126,7 @@ TEST(Transform, HostCopyAndLazyTransformsPreserveReversedOffsets)
   auto reversed = uni20::reverse<1>(input);
   static_assert(uni20::AffineMdspanLike<decltype(reversed)>);
   static_assert(!uni20::StridedMdspanLike<decltype(reversed)>);
-  EXPECT_EQ(reversed.data_handle(), values + 2);
+  EXPECT_EQ(reversed.data_handle(), values);
   EXPECT_EQ(reversed.stride(1), -1);
   EXPECT_EQ((reversed[1, 0]), 6);
 

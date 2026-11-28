@@ -387,11 +387,10 @@ An operation chooses one of two position schemes.
   producing `g` values, an element at allocation offset `o` takes output
   `o % g` from the group starting at block `b * (o / g)` (integer division).
   All currently implemented transforms consume one block per group.
-- The strided elementwise plan already computes the output offset relative to
-  the view's data handle. Packed block views fold their offset within the
-  allocation into that handle, so the planner must supply the view's base
-  offset separately: per launch for one view, and per segment in the segmented
-  plan. The fill functor adds the two.
+- For a dense view the element position is `origin + mapping(indices...)`.
+  The mapping supplies the offset from the storage handle, including for a
+  reversed or padded view. The caller's `origin` places that handle within
+  the allocation's position space.
 - An allocation is the physical allocation on every backend: a packed buffer
   is one allocation, even where a backend gives each block its own logical
   buffer over it, as `PartitionedCudaBuffer` does.
@@ -401,8 +400,7 @@ An operation chooses one of two position schemes.
   one, on every backend, so host and device fills of one view agree even where
   a CUDA buffer knows its offset.
 - Without an origin, a fill measures offsets from the start of the view's
-  storage span, not from its index-zero element, which a reversed view places
-  at its highest address. Such view-relative offsets are allowed only under a
+  storage span. Such view-relative offsets are allowed only under a
   leaf that belongs to the view alone, such as a child of the allocation's leaf
   labelled by the block. Under a leaf shared with other views, the origin is
   mandatory: two blocks of one packed allocation filled separately from offset

@@ -125,7 +125,7 @@ TEST(TransformView1D, ThreeSpanWeighted)
 // 1D forward and reversed inputs retain their own offsets
 //----------------------------------------------------------------------
 
-TEST(TransformView1D, ForwardAndReversedInputsPreserveSignedOffsets)
+TEST(TransformView1D, ForwardAndReversedInputsPreserveStorageOffsets)
 {
   std::vector<double> v(6);
   std::iota(v.begin(), v.end(), 1.0);
@@ -140,7 +140,7 @@ TEST(TransformView1D, ForwardAndReversedInputsPreserveSignedOffsets)
     EXPECT_DOUBLE_EQ(Z[i], v[i] + v[5 - i]);
   }
 
-  EXPECT_EQ(Z.mapping()(3), (std::tuple<index_t, index_t>{3, -3}));
+  EXPECT_EQ(Z.mapping()(3), (std::tuple<index_t, index_t>{3, 2}));
   EXPECT_FALSE(Z.is_strided());
   EXPECT_FALSE(Z.is_exhaustive());
   EXPECT_TRUE(Z.is_unique());

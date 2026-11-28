@@ -57,7 +57,7 @@ TEST(MakeIterationPlanTest, InnerNegativeStride)
   ASSERT_EQ(plan.size(), 1);
   EXPECT_EQ(plan[0].stride, 1);
   EXPECT_EQ(plan[0].extent, 10);
-  EXPECT_EQ(offset, -9);
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(MakeIterationPlanTest, OuterNegativeStride)
@@ -67,7 +67,7 @@ TEST(MakeIterationPlanTest, OuterNegativeStride)
   ASSERT_EQ(plan.size(), 2);
   EXPECT_EQ(plan[0].extent, 4);
   EXPECT_EQ(plan[0].stride, 8);
-  EXPECT_EQ(offset, -24);
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(MakeIterationPlanTest, NegativeStrideMiddleDimension)
@@ -75,7 +75,7 @@ TEST(MakeIterationPlanTest, NegativeStrideMiddleDimension)
   auto mapping = make_mapping(std::array<std::size_t, 3>{4, 3, 2}, std::array<index_t, 3>{1, -4, 20});
   auto [plan, offset] = make_iteration_plan_with_offset(mapping);
   EXPECT_EQ(plan.size(), 2);
-  EXPECT_EQ(offset, -8);
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(MakeIterationPlanTest, MixedSignsNoMerge)
@@ -87,7 +87,7 @@ TEST(MakeIterationPlanTest, MixedSignsNoMerge)
   EXPECT_EQ(plan[0].stride, 7);
   EXPECT_EQ(plan[1].extent, 3); // Inner
   EXPECT_EQ(plan[1].stride, 1);
-  EXPECT_EQ(offset, -21); // offset = (extent-1)*stride = (4-1)*-7 = -21
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(MakeIterationPlanTest, MergeableNegativeStrides)
@@ -97,7 +97,7 @@ TEST(MakeIterationPlanTest, MergeableNegativeStrides)
   ASSERT_EQ(plan.size(), 1);
   EXPECT_EQ(plan[0].extent, 20);
   EXPECT_EQ(plan[0].stride, 1);
-  EXPECT_EQ(offset, -19);
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(MakeIterationPlanTest, SizeOneDimsAreDropped)
@@ -135,15 +135,15 @@ TEST(MakeIterationPlanTest, RankZeroMdspanIsScalar)
   EXPECT_EQ(offset, 0);
 }
 
-TEST(IterationPlanTest, NormalizesMinimumNarrowStrideWithoutNarrowing)
+TEST(IterationPlanTest, NormalizesANegativeStrideFromTheStorageOrigin)
 {
-  using shape = uni20::extents<std::int8_t, 2>;
+  using shape = uni20::extents<std::int16_t, 2>;
   uni20::layout_signed_stride::mapping<shape> const mapping{shape{}, {-128}};
   auto [dimensions, offset] = make_iteration_plan_with_offset(mapping);
   ASSERT_EQ(dimensions.size(), 1U);
   EXPECT_EQ(dimensions[0].extent, 2);
   EXPECT_EQ(dimensions[0].stride, 128);
-  EXPECT_EQ(offset, -128);
+  EXPECT_EQ(offset, 0);
 }
 
 TEST(IterationPlanTest, PreservesEachMappingOrigin)
@@ -268,10 +268,10 @@ TEST(MakeMultiIterationPlanTest, OutputNegativeStrideFlipsEveryOperand)
   EXPECT_EQ(plan.dimensions[0].extent, 5);
   EXPECT_EQ(plan.dimensions[0].strides[0], 2);
   EXPECT_EQ(plan.dimensions[0].strides[1], -3);
-  EXPECT_EQ(plan.base_offsets[0], -8);
+  EXPECT_EQ(plan.base_offsets[0], 0);
   EXPECT_EQ(plan.base_offsets[1], 12);
-  EXPECT_EQ(plan.reachable_offsets[0].minimum, -8);
-  EXPECT_EQ(plan.reachable_offsets[0].maximum, 0);
+  EXPECT_EQ(plan.reachable_offsets[0].minimum, 0);
+  EXPECT_EQ(plan.reachable_offsets[0].maximum, 8);
   EXPECT_EQ(plan.reachable_offsets[1].minimum, 0);
   EXPECT_EQ(plan.reachable_offsets[1].maximum, 12);
 }
@@ -289,10 +289,10 @@ TEST(MakeMultiIterationPlanTest, MixedSignsPreventMerge)
   EXPECT_EQ(plan.dimensions[1].extent, 4);
   EXPECT_EQ(plan.dimensions[1].strides[0], 1);
   EXPECT_EQ(plan.dimensions[1].strides[1], 10);
-  EXPECT_EQ(plan.base_offsets[0], -4);
+  EXPECT_EQ(plan.base_offsets[0], 0);
   EXPECT_EQ(plan.base_offsets[1], 40);
-  EXPECT_EQ(plan.reachable_offsets[0].minimum, -4);
-  EXPECT_EQ(plan.reachable_offsets[0].maximum, 3);
+  EXPECT_EQ(plan.reachable_offsets[0].minimum, 0);
+  EXPECT_EQ(plan.reachable_offsets[0].maximum, 7);
   EXPECT_EQ(plan.reachable_offsets[1].minimum, 0);
   EXPECT_EQ(plan.reachable_offsets[1].maximum, 70);
 }

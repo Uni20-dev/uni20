@@ -40,14 +40,11 @@ template <class Pointer> [[nodiscard]] Pointer offset_cuda_pointer(Pointer point
   return pointer + offset;
 }
 
-template <StorageSpanMapping Mapping, class Count>
-void validate_cuda_mapping_range(Mapping const& mapping, Count required, std::size_t offset, std::size_t buffer_size)
+template <class Count> void validate_cuda_mapping_range(Count required, std::size_t offset, std::size_t buffer_size)
 {
-  auto const base_offset = mapping.base_offset();
-  CHECK(base_offset <= offset && offset <= buffer_size, base_offset, offset, buffer_size);
-  auto const span_start = offset - base_offset;
-  CHECK(std::cmp_greater_equal(required, 0) && std::cmp_less_equal(required, buffer_size - span_start), required,
-        span_start, buffer_size);
+  CHECK(offset <= buffer_size && std::cmp_greater_equal(required, 0) &&
+            std::cmp_less_equal(required, buffer_size - offset),
+        required, offset, buffer_size);
 }
 
 struct ValidateCudaStorageSpan
@@ -59,7 +56,7 @@ struct ValidateCudaStorageSpan
       auto const buffer_size = descriptor.buffer().size();
       if constexpr (cuda::enable_mapping_storage_span<Accessor>)
       {
-        validate_cuda_mapping_range(mapping, +mapping.required_span_size(), offset, buffer_size);
+        validate_cuda_mapping_range(+mapping.required_span_size(), offset, buffer_size);
       }
       else if constexpr (requires {
                            { accessor.cuda_storage_span(mapping, offset) } -> std::same_as<cuda::BufferStorageSpan>;

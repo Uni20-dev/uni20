@@ -69,7 +69,7 @@ concept HasConstAccess =
 } // namespace
 
 static_assert(AccessorPolicy<AccessorWithOffset>);
-static_assert(!AccessorPolicy<AccessorWithoutOffset>);
+static_assert(AccessorPolicy<AccessorWithoutOffset>);
 
 using MutableAccessor = AccessorWithOffset;
 using ExpectedConstAccessor = const_accessor_adaptor<MutableAccessor>;

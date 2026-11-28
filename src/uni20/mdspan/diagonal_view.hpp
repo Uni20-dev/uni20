@@ -58,9 +58,6 @@ struct DiagonalLayout
           return static_cast<std::size_t>(last_offset) + 1;
         }
 
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
-        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
-
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::is_convertible_v<Indices, index_type> && ...))
         [[nodiscard]] UNI20_HOST_DEVICE constexpr auto operator()(Indices... indices) const noexcept -> index_type
@@ -91,7 +88,7 @@ struct DiagonalLayout
     };
 };
 
-template <> inline constexpr bool zero_origin_layout<DiagonalLayout> = true;
+template <> inline constexpr bool forward_layout<DiagonalLayout> = true;
 
 template <std::size_t Rank, std::size_t... Axis> consteval bool valid_diagonal_pairs()
 {

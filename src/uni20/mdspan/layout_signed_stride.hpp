@@ -6,12 +6,14 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <limits>
+#include <stdexcept>
 
 namespace uni20
 {
 
 /// \brief Unique affine layout whose strides may have either sign.
-/// \details The handle addresses index zero on every axis.
+/// \details The handle addresses the lowest element of the storage span.
 struct layout_signed_stride
 {
     template <class Extents>
@@ -24,19 +26,40 @@ struct layout_signed_stride
         using rank_type = typename extents_type::rank_type;
         using layout_type = layout_signed_stride;
 
-        UNI20_HOST_DEVICE constexpr mapping() noexcept
+        UNI20_HOST_DEVICE constexpr mapping()
             : mapping(extents_type{}, layout_stride::mapping<extents_type>{}.strides())
         {}
 
         /// \brief Construct a mapping with signed element strides.
-        /// \pre The product of the nonzero extents and the reachable offsets fit in `index_type`.
-        /// \pre The width of the enclosing storage span fits in `std::size_t`.
+        /// \pre The product of the nonzero extents fits in `index_type`.
         /// \pre For a nonempty shape, each varying axis in increasing absolute stride order
         ///      has an absolute stride greater than the total contribution of the preceding axes.
+        /// \throws std::overflow_error On the host, if the storage span does not fit in `index_type`.
         UNI20_HOST_DEVICE constexpr mapping(extents_type const& extents,
-                                            std::array<index_type, extents_type::rank()> const& strides) noexcept
+                                            std::array<index_type, extents_type::rank()> const& strides)
             : extents_(extents), strides_(strides)
-        {}
+        {
+          if (detail::mdspan_empty(extents_)) return;
+          span_size_ = 1;
+          for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
+          {
+            auto const steps = extents_.extent(axis) - 1;
+            if (steps == 0) continue;
+            auto const stride = strides_[axis];
+            auto const limit = (std::numeric_limits<index_type>::max() - span_size_) / steps;
+            if (stride > limit || stride < -limit)
+            {
+#if defined(__CUDA_ARCH__)
+              __trap();
+#else
+              throw std::overflow_error("signed-stride storage span exceeds its index type");
+#endif
+            }
+            auto const delta = steps * stride;
+            if (delta < 0) origin_ -= delta;
+            span_size_ += delta < 0 ? -delta : delta;
+          }
+        }
 
         [[nodiscard]] UNI20_HOST_DEVICE constexpr extents_type const& extents() const noexcept { return extents_; }
 
@@ -50,29 +73,15 @@ struct layout_signed_stride
 
         [[nodiscard]] UNI20_HOST_DEVICE constexpr auto strides() const noexcept { return strides_; }
 
-        /// \brief Return the logical origin's displacement from the start of the storage span.
-        /// \details An empty mapping has base offset zero.
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept
-        {
-          return this->compute_storage_span().base_offset;
-        }
-
         /// \brief Return the width of the enclosing storage span in elements, including padding.
-        /// \details An empty mapping has span size zero.
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t required_span_size() const noexcept
-        {
-          auto const span = this->compute_storage_span();
-          return span.base_offset + span.forward_size;
-        }
-
-        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return false; }
+        [[nodiscard]] UNI20_HOST_DEVICE constexpr index_type required_span_size() const noexcept { return span_size_; }
 
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::convertible_to<Indices, index_type> && ...))
         [[nodiscard]] UNI20_HOST_DEVICE constexpr index_type operator()(Indices... indices) const noexcept
         {
           std::array<index_type, extents_type::rank()> const coordinate{static_cast<index_type>(indices)...};
-          index_type offset = 0;
+          index_type offset = origin_;
           for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
             offset += static_cast<index_type>(coordinate[axis] * strides_[axis]);
           return offset;
@@ -89,48 +98,17 @@ struct layout_signed_stride
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_strided() const noexcept { return true; }
         [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept
         {
-          return this->required_span_size() == detail::mdspan_size<std::size_t>(extents_);
+          return this->required_span_size() == detail::mdspan_size<index_type>(extents_);
         }
 
         friend UNI20_HOST_DEVICE constexpr bool operator==(mapping const&, mapping const&) = default;
 
       private:
-        struct StorageSpan
-        {
-            std::size_t base_offset = 0;
-            std::size_t forward_size = 0;
-        };
-
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr StorageSpan compute_storage_span() const noexcept
-        {
-          if (detail::mdspan_empty(extents_)) return {};
-          StorageSpan span{.forward_size = 1};
-          for (rank_type axis = 0; axis != extents_type::rank(); ++axis)
-          {
-            auto const delta = (extents_.extent(axis) - 1) * strides_[axis];
-            if (delta < 0)
-              span.base_offset += static_cast<std::size_t>(-(delta + 1)) + 1;
-            else
-              span.forward_size += static_cast<std::size_t>(delta);
-          }
-          return span;
-        }
-
         [[no_unique_address]] extents_type extents_{};
         std::array<index_type, extents_type::rank()> strides_{};
+        index_type origin_ = 0;
+        index_type span_size_ = 0;
     };
 };
-
-namespace detail
-{
-
-template <> inline constexpr bool zero_origin_layout<layout_signed_stride> = true;
-
-template <class Layout, class Extents, class Accessor>
-concept LayoutOffsetCompatible =
-    !std::same_as<Layout, layout_signed_stride> ||
-    (std::signed_integral<typename Extents::index_type> && std::signed_integral<typename Accessor::offset_type>);
-
-} // namespace detail
 
 } // namespace uni20

@@ -377,7 +377,7 @@ struct PaddedScalarLayout
         static_assert(Extents::rank() == 0);
         using layout_type = PaddedScalarLayout;
 
-        static constexpr std::size_t base_offset() noexcept { return 1; }
+        UNI20_HOST_DEVICE constexpr uni20::index_type operator()() const noexcept { return 1; }
         static constexpr std::size_t required_span_size() noexcept { return 2; }
         static constexpr bool is_always_exhaustive() noexcept { return false; }
         static constexpr bool is_exhaustive() noexcept { return false; }
@@ -396,8 +396,8 @@ TEST_F(CudaTransformTest, PaddedScalarSpanStartsBeforeTheLogicalOrigin)
   auto padded_descriptor = [](auto const& base) {
     using Base = std::remove_cvref_t<decltype(base)>;
     using Spec = uni20::mdspec<typename Base::element_type, scalar_shape, PaddedScalarLayout,
-                              typename Base::accessor_type, typename Base::data_descriptor_type>;
-    return Spec{base.data_descriptor().offset_by(1), PaddedScalarLayout::mapping<scalar_shape>{}, base.accessor()};
+                               typename Base::accessor_type, typename Base::data_descriptor_type>;
+    return Spec{base.data_descriptor(), PaddedScalarLayout::mapping<scalar_shape>{}, base.accessor()};
   };
   auto writable = padded_descriptor(storage.mdspec());
   auto readable = padded_descriptor(std::as_const(storage).mdspec());

@@ -6,8 +6,8 @@
  * \brief Native borrowed multidimensional views and checked foreign import.
  */
 
-#include <uni20/mdspan/extents.hpp>
 #include <uni20/mdspan/default_accessor.hpp>
+#include <uni20/mdspan/extents.hpp>
 #include <uni20/mdspan/layout_signed_stride.hpp>
 
 #include <array>
@@ -28,6 +28,22 @@ namespace uni20
 
 namespace detail
 {
+
+// Deduce the offset from a call with one index per axis, including rank zero.
+template <typename Mapping, std::size_t... Axis>
+auto mapping_result(std::index_sequence<Axis...>)
+    -> decltype(std::declval<Mapping const&>()(((void)Axis, typename Mapping::index_type{})...));
+
+template <class Mapping>
+using mapping_offset_t = decltype(mapping_result<Mapping>(std::make_index_sequence<Mapping::extents_type::rank()>{}));
+
+template <class Accessor, class Mapping>
+concept MappingAccessor = requires(Accessor const& a, typename Accessor::data_handle_type const& h) {
+  { a.access(h, std::declval<mapping_offset_t<Mapping>>()) } -> std::same_as<typename Accessor::reference>;
+  {
+    a.offset(h, std::declval<mapping_offset_t<Mapping>>())
+  } -> std::convertible_to<typename Accessor::offset_policy::data_handle_type>;
+};
 
 template <class Layout> struct foreign_layout
 {
@@ -162,12 +178,11 @@ template <class ToMapping, ForeignDefaultMdspan Span> constexpr ToMapping import
 
 } // namespace detail
 
-/// \brief Non-owning multidimensional view with an accessor-defined offset type.
-/// \pre The mapping's reachable offsets are representable in the accessor's offset type.
+/// \brief Non-owning multidimensional view with a mapping-defined offset type.
+/// \pre The accessor accepts every reachable mapping result.
 template <class Element, class Extents, class Layout = layout_right, class Accessor = default_accessor<Element>>
-  requires std::same_as<Element, typename Accessor::element_type> &&
-           detail::LayoutOffsetCompatible<Layout, Extents, Accessor> &&
-           requires { typename Accessor::offset_type; }
+  requires requires { Extents::rank(); } && std::same_as<Element, typename Accessor::element_type> &&
+           detail::MappingAccessor<Accessor, typename Layout::template mapping<Extents>>
 class mdspan {
   public:
     using element_type = Element;
@@ -179,7 +194,7 @@ class mdspan {
     using layout_type = Layout;
     using mapping_type = typename layout_type::template mapping<extents_type>;
     using accessor_type = Accessor;
-    using offset_type = typename accessor_type::offset_type;
+    using offset_type = detail::mapping_offset_t<mapping_type>;
     using reference = typename accessor_type::reference;
     using data_handle_type = typename accessor_type::data_handle_type;
 
@@ -195,9 +210,7 @@ class mdspan {
     UNI20_HOST_DEVICE constexpr mdspan(data_handle_type handle, mapping_type const& mapping,
                                        accessor_type const& accessor)
         : handle_(std::move(handle)), mapping_(mapping), accessor_(accessor)
-    {
-      detail::require_zero_strided_origin<layout_type>(mapping_);
-    }
+    {}
 
     UNI20_HOST_DEVICE constexpr mdspan(data_handle_type handle, mapping_type const& mapping)
       requires std::default_initializable<accessor_type>
@@ -308,13 +321,6 @@ class mdspan {
       return mapping_type::is_always_exhaustive();
     }
 
-    /// \brief Report whether the mapping's storage span always starts at the handle.
-    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept
-      requires detail::StorageSpanMapping<mapping_type>
-    {
-      return mapping_type::is_base_offset_always_zero();
-    }
-
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_unique() const noexcept { return mapping_.is_unique(); }
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_strided() const noexcept { return mapping_.is_strided(); }
     [[nodiscard]] UNI20_HOST_DEVICE constexpr bool is_exhaustive() const noexcept { return mapping_.is_exhaustive(); }
@@ -331,7 +337,7 @@ class mdspan {
       requires(sizeof...(Indices) == extents_type::rank() && (std::convertible_to<Indices, index_type> && ...))
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference operator[](Indices... indices) const
     {
-      return accessor_.access(handle_, static_cast<offset_type>(mapping_(static_cast<index_type>(indices)...)));
+      return accessor_.access(handle_, mapping_(static_cast<index_type>(indices)...));
     }
 
     template <class Index>
@@ -354,7 +360,7 @@ class mdspan {
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access_indices(Indices const& indices,
                                                                        std::index_sequence<Axes...>) const
     {
-      return accessor_.access(handle_, static_cast<offset_type>(mapping_(static_cast<index_type>(indices[Axes])...)));
+      return accessor_.access(handle_, mapping_(static_cast<index_type>(indices[Axes])...));
     }
 
     [[no_unique_address]] data_handle_type handle_;

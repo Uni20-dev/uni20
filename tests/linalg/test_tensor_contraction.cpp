@@ -187,7 +187,7 @@ TEST(CpuTensorContractionTest, ContractsRankTwoDiagonalComponentsOnEitherSide)
   std::array<double, 5> component_storage{2.0, 0.0, 3.0, 0.0, 4.0};
   auto const component_mapping =
       component_mapping_type{component_extents_type{3}, std::array<uni20::index_type, 1>{-2}};
-  component_mdspan_type components{component_storage.data() + 4, component_mapping};
+  component_mdspan_type components{component_storage.data(), component_mapping};
 
   uni20::Tensor<double, 2> lhs(2, 3);
   lhs[0, 0] = 1.0;

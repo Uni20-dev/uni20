@@ -119,8 +119,8 @@ acquisition:
 - `data_descriptor_type`.
 
 The `data_handle_type` alias is known from the accessor even though no handle
-value is stored. `offset_type` is the accessor's offset argument type. Accessors
-following the standard interface use `std::size_t` when they omit the alias.
+value is stored. `offset_type` is the result of the mapping. The accessor accepts
+that result directly, including a tuple for a zip view.
 
 The available observers are:
 
@@ -160,8 +160,7 @@ concrete `mdspec` class when a structural constraint is sufficient.
 2. an unresolved structural model exposing mdspan metadata plus
    `data_descriptor_type` and `data_descriptor()`.
 
-Both forms declare an `offset_type` that matches their accessor's
-`offset_type`. Import a supported standard mdspan with
+Both forms derive `offset_type` from their mapping. Import a supported standard mdspan with
 `uni20::mdspan{view}` before passing it to a Uni20 operation.
 
 For Uni20's concrete `Tensor`, immediate accessibility takes precedence over
@@ -618,7 +617,8 @@ launch_kernel(stream, lease.mdspan());
 ```
 
 CUDA acquisition checks the storage span before taking a buffer lease. The
-built-in pointer and conjugating accessors use the mapping's span. A custom
+built-in pointer and conjugating accessors use `required_span_size()` elements
+starting at the descriptor's element offset, including for reversed views. A custom
 accessor that preserves the mapping's element offsets can make the same
 guarantee by specializing `uni20::cuda::enable_mapping_storage_span<Accessor>`
 to `true`. A translating accessor can supply a const host member

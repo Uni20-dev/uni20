@@ -57,9 +57,9 @@ consteval bool gemm_dispatch_types_compatible()
 /// \brief Report direct-GEMM contraction eligibility for the retained GEMM selector.
 template <
     class GemmSelector, std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
-    MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
-    uni20::Scalar Scalar, RankedContractionMdspecLike<LhsRank> LhsMdspec,
-    RankedContractionMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
+    uni20::MutableRankedStridedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+    uni20::Scalar Scalar, uni20::RankedStridedMdspecLike<LhsRank> LhsMdspec,
+    uni20::RankedStridedMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
 consteval auto kernel_accepts_types(DirectGemmContractionBackend<GemmSelector> const&,
                                     contract_op<LhsRank, RhsRank, ContractedRank> const&, OutputMdspec&, Scalar const&,
                                     LhsMdspec&, RhsMdspec&, Scalar const&, PrecisionArgs...)
@@ -74,9 +74,9 @@ consteval auto kernel_accepts_types(DirectGemmContractionBackend<GemmSelector> c
 /// \brief Project a contraction and execute it through one nested GEMM dispatch.
 template <
     class GemmSelector, std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
-    MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
-    uni20::Scalar Scalar, RankedContractionMdspecLike<LhsRank> LhsMdspec,
-    RankedContractionMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
+    uni20::MutableRankedStridedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+    uni20::Scalar Scalar, uni20::RankedStridedMdspecLike<LhsRank> LhsMdspec,
+    uni20::RankedStridedMdspecLike<RhsRank> RhsMdspec, class... PrecisionArgs>
   requires(detail::direct_gemm_contraction_backend::gemm_dispatch_types_compatible<
            GemmSelector, OutputMdspec, Scalar, LhsMdspec, RhsMdspec, PrecisionArgs...>())
 KernelAttempt try_kernel(DirectGemmContractionBackend<GemmSelector> const& backend,

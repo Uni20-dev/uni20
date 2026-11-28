@@ -32,30 +32,6 @@ template <class Extents> [[nodiscard]] UNI20_HOST_DEVICE constexpr bool mdspan_e
   return false;
 }
 
-/// \brief True for Uni20 layouts whose strided mappings map the all-zero coordinate to offset zero by construction.
-/// \details Keyed on the layout policy rather than the mapping, so a mapping derived from a Uni20 mapping
-///          under its own layout policy is still checked.
-template <class Layout> inline constexpr bool zero_origin_layout = false;
-
-/// \brief Enforce the Uni20 rule that an always-strided mapping maps the all-zero coordinate to offset zero.
-/// \details The standard's strided-mapping requirement constrains only differences between neighbouring
-///          coordinates, so it admits `m(i) = c + sum(i_k * s_k)` with `c != 0`. Uni20 does not: consumers that
-///          work from the data handle and the strides would drop `c`. Offsets that move a view belong in its
-///          data handle, as with `std::layout_stride`. Layouts listed in `zero_origin_layout` skip the check.
-///          An empty mapping has no coordinate to evaluate. Device code does not check.
-/// \throws std::invalid_argument If a nonempty always-strided mapping maps the all-zero coordinate elsewhere.
-template <class Layout, class Mapping>
-UNI20_HOST_DEVICE constexpr void require_zero_strided_origin(Mapping const& mapping)
-{
-#if !defined(__CUDA_ARCH__)
-  if constexpr (!zero_origin_layout<Layout> && requires { requires Mapping::is_always_strided(); })
-  {
-    if (!mdspan_empty(mapping.extents()) && mapping_origin(mapping) != 0)
-      throw std::invalid_argument("a strided Uni20 mapping must map the all-zero coordinate to offset zero");
-  }
-#endif
-}
-
 template <class Size, class Extents>
 [[nodiscard]] UNI20_HOST_DEVICE constexpr Size mdspan_size(Extents const& extents) noexcept
 {
@@ -76,13 +52,16 @@ template <class Extents> consteval bool has_static_zero_extent()
 template <class Mapping>
 concept StorageSpanMapping = requires(Mapping const& mapping) {
   { mapping.required_span_size() } -> std::integral;
-  { mapping.base_offset() } -> std::same_as<std::size_t>;
-  { Mapping::is_base_offset_always_zero() } -> std::same_as<bool>;
-  typename std::bool_constant<Mapping::is_base_offset_always_zero()>;
 };
 
+// Forward layouts start at logical index zero and have nonnegative strides.
+// Opt in by layout policy so custom mappings never accidentally inherit this guarantee.
+template <class Layout> inline constexpr bool forward_layout = false;
+
 template <class Mapping>
-concept ZeroBaseOffsetMapping = StorageSpanMapping<Mapping> && (Mapping::is_base_offset_always_zero());
+concept ForwardMapping =
+    StorageSpanMapping<Mapping> && forward_layout<typename Mapping::layout_type> &&
+    std::same_as<Mapping, typename Mapping::layout_type::template mapping<typename Mapping::extents_type>>;
 
 template <class Layout, class Extents, bool Left> class contiguous_mapping {
   public:
@@ -128,9 +107,6 @@ template <class Layout, class Extents, bool Left> class contiguous_mapping {
     {
       return mdspan_size<index_type>(extents_);
     }
-
-    [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
-    [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
 
     /// \brief Return the element stride of an axis.
     /// \pre `axis < extents_type::rank()`.
@@ -273,9 +249,6 @@ struct layout_stride
           return span_size;
         }
 
-        [[nodiscard]] UNI20_HOST_DEVICE constexpr std::size_t base_offset() const noexcept { return 0; }
-        [[nodiscard]] UNI20_HOST_DEVICE static constexpr bool is_base_offset_always_zero() noexcept { return true; }
-
         template <class... Indices>
           requires(sizeof...(Indices) == extents_type::rank() && (std::convertible_to<Indices, index_type> && ...))
         [[nodiscard]] UNI20_HOST_DEVICE constexpr index_type operator()(Indices... indices) const noexcept
@@ -329,9 +302,9 @@ struct layout_stride
 
 namespace detail
 {
-template <> inline constexpr bool zero_origin_layout<layout_left> = true;
-template <> inline constexpr bool zero_origin_layout<layout_right> = true;
-template <> inline constexpr bool zero_origin_layout<layout_stride> = true;
+template <> inline constexpr bool forward_layout<layout_left> = true;
+template <> inline constexpr bool forward_layout<layout_right> = true;
+template <> inline constexpr bool forward_layout<layout_stride> = true;
 } // namespace detail
 
 } // namespace uni20

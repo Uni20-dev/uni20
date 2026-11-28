@@ -42,7 +42,7 @@ class CudaComplexReference {
     using logical_type = uni20::complex<Real>;
     using execution_type = ::cuda::std::complex<Real>;
 
-    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::ptrdiff_t offset) noexcept
+    UNI20_HOST_DEVICE constexpr CudaComplexReference(logical_type* storage, std::size_t offset) noexcept
         : components_(reinterpret_cast<Real*>(storage) + 2 * offset)
     {}
 
@@ -94,16 +94,15 @@ struct CudaPointerAccessor
     using data_handle_type = element_type*;
     using reference = element_type&;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
-                                                               offset_type offset) const noexcept
+                                                               std::size_t offset) const noexcept
     {
       return handle[offset];
     }
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type handle,
-                                                                      offset_type offset) const noexcept
+                                                                      std::size_t offset) const noexcept
     {
       if (offset == 0) return handle;
       return handle + offset;
@@ -117,16 +116,15 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = CudaComplexReference<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
-                                                               offset_type offset) const noexcept
+                                                               std::size_t offset) const noexcept
     {
       return reference{handle, offset};
     }
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type handle,
-                                                                      offset_type offset) const noexcept
+                                                                      std::size_t offset) const noexcept
     {
       if (offset == 0) return handle;
       return handle + offset;
@@ -140,17 +138,16 @@ template <class Real> struct CudaPointerAccessor<uni20::detail::standard_complex
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaPointerAccessor;
-    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
-                                                               offset_type offset) const noexcept
+                                                               std::size_t offset) const noexcept
     {
       auto const* components = reinterpret_cast<Real const*>(handle) + 2 * offset;
       return reference{components[0], components[1]};
     }
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type handle,
-                                                                      offset_type offset) const noexcept
+                                                                      std::size_t offset) const noexcept
     {
       if (offset == 0) return handle;
       return handle + offset;
@@ -185,16 +182,15 @@ struct CudaConjugatingPointerAccessor
     using data_handle_type = element_type*;
     using reference = ::cuda::std::complex<Real>;
     using offset_policy = CudaConjugatingPointerAccessor;
-    using offset_type = std::ptrdiff_t;
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type handle,
-                                                               offset_type offset) const noexcept
+                                                               std::size_t offset) const noexcept
     {
       return CudaConjugate{}(CudaPointerAccessor<element_type>{}.access(handle, offset));
     }
 
     [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type handle,
-                                                                      offset_type offset) const noexcept
+                                                                      std::size_t offset) const noexcept
     {
       return CudaPointerAccessor<element_type>{}.offset(handle, offset);
     }

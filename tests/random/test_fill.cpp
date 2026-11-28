@@ -39,7 +39,7 @@ TEST(DenseRandomFillTest, ReversedPaddedStorageUsesSpanStart)
   std::array<double, 15> storage{};
   using E = dextents<index_type, 2>;
   layout_signed_stride::mapping<E> mapping{E{2, 3}, std::array<index_type, 2>{-7, 2}};
-  auto view = mdspan{storage.data() + 8, mapping};
+  auto view = mdspan{storage.data() + 1, mapping};
   auto leaf = child(root(42), 11);
   for (auto origin : {0u, 31u})
   {

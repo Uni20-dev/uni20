@@ -24,19 +24,6 @@
 namespace uni20::linalg
 {
 
-/// \brief Ranked mdspec usable by contraction stride grouping.
-/// \details Positive-rank operands must expose strides. Rank-zero operands
-///          are accepted without a stride observer because they contribute no
-///          physical axes to any M, N, or K group.
-template <class Mdspec, std::size_t Rank>
-concept RankedContractionMdspecLike =
-    uni20::RankedMdspecLike<Mdspec, Rank> && (Rank == 0 || uni20::StridedMdspecLike<Mdspec>);
-
-/// \brief Mutable ranked mdspec usable as a contraction output.
-template <class Mdspec, std::size_t Rank>
-concept MutableRankedContractionMdspecLike =
-    uni20::MutableRankedMdspecLike<Mdspec, Rank> && (Rank == 0 || uni20::MutableStridedMdspecLike<Mdspec>);
-
 /// \brief M, N, and K stride groups for a normalized pairwise contraction.
 /// \details M dimensions pair left-input and output strides, N dimensions
 ///          pair right-input and output strides, and K dimensions pair the
@@ -54,8 +41,8 @@ template <std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank> 
 /// \brief Build jointly merged M, N, and K stride groups without acquiring data handles.
 template <
     std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
-    MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
-    RankedContractionMdspecLike<LhsRank> LhsMdspec, RankedContractionMdspecLike<RhsRank> RhsMdspec>
+    uni20::MutableRankedStridedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+    uni20::RankedStridedMdspecLike<LhsRank> LhsMdspec, uni20::RankedStridedMdspecLike<RhsRank> RhsMdspec>
 [[nodiscard]] auto make_contraction_stride_groups(OutputMdspec const& output, LhsMdspec const& lhs,
                                                   RhsMdspec const& rhs,
                                                   ContractionAxes<LhsRank, RhsRank, ContractedRank> const& axes)
@@ -164,7 +151,7 @@ template <std::size_t Capacity>
 [[nodiscard]] inline bool projection_is_directly_strided(ContractionMatrixProjection const& projection) noexcept
 {
   // Current no-copy GEMM projections require strictly positive strides.
-  // Negative strides need origin rebasing, while zero normally represents a
+  // BLAS matrix operands use forward storage. A zero stride normally represents a
   // broadcast dimension. A zero-sized layout_right operand can also report a
   // zero surviving-axis stride: K == 0 is mathematically valid, but this
   // planner deliberately declines that representation. The current host
@@ -197,14 +184,15 @@ template <class Mdspec> consteval bool can_offset_contraction_mdspec()
   {
     using accessor_type = typename span_type::accessor_type;
     using offset_accessor_type = typename accessor_type::offset_policy;
-    return uni20::AccessorPolicy<offset_accessor_type> &&
-           requires(span_type& span, uni20::index_type displacement) {
-             requires std::same_as<typename offset_accessor_type::element_type, typename span_type::element_type>;
-             requires std::constructible_from<offset_accessor_type, accessor_type const&>;
-             { span.accessor().offset(span.data_handle(),
-                                      static_cast<typename span_type::offset_type>(displacement)) }
-                 -> std::convertible_to<typename offset_accessor_type::data_handle_type>;
-           };
+    return uni20::detail::MappingAccessor<offset_accessor_type,
+                                          layout_stride::mapping<dextents<typename span_type::index_type, 2>>>&&
+      requires(span_type & span, uni20::index_type displacement)
+    {
+      requires std::same_as<typename offset_accessor_type::element_type, typename span_type::element_type>;
+      requires std::constructible_from<offset_accessor_type, accessor_type const&>;
+      {span.accessor().offset(span.data_handle(), static_cast<typename span_type::offset_type>(displacement))}
+          ->std::convertible_to<typename offset_accessor_type::data_handle_type>;
+    };
   }
   else
   {
@@ -223,8 +211,8 @@ template <class Mdspec> consteval bool can_offset_contraction_mdspec()
 ///         otherwise `std::nullopt`.
 template <
     std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
-    MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
-    RankedContractionMdspecLike<LhsRank> LhsMdspec, RankedContractionMdspecLike<RhsRank> RhsMdspec>
+    uni20::MutableRankedStridedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+    uni20::RankedStridedMdspecLike<LhsRank> LhsMdspec, uni20::RankedStridedMdspecLike<RhsRank> RhsMdspec>
 [[nodiscard]] auto try_make_direct_contraction_gemm_plan(OutputMdspec const& output, LhsMdspec const& lhs,
                                                          RhsMdspec const& rhs,
                                                          ContractionAxes<LhsRank, RhsRank, ContractedRank> const& axes)
@@ -252,8 +240,8 @@ template <
 /// \return A looped plan for one residual M or N dimension, or `std::nullopt`.
 template <
     std::size_t LhsRank, std::size_t RhsRank, std::size_t ContractedRank,
-    MutableRankedContractionMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
-    RankedContractionMdspecLike<LhsRank> LhsMdspec, RankedContractionMdspecLike<RhsRank> RhsMdspec>
+    uni20::MutableRankedStridedMdspecLike<ContractionAxes<LhsRank, RhsRank, ContractedRank>::output_rank> OutputMdspec,
+    uni20::RankedStridedMdspecLike<LhsRank> LhsMdspec, uni20::RankedStridedMdspecLike<RhsRank> RhsMdspec>
 [[nodiscard]] auto try_make_looped_contraction_gemm_plan(OutputMdspec const& output, LhsMdspec const& lhs,
                                                          RhsMdspec const& rhs,
                                                          ContractionAxes<LhsRank, RhsRank, ContractedRank> const& axes)
@@ -296,7 +284,7 @@ template <
 }
 
 /// \brief Rank-two `layout_stride` mdspan type retaining a resolved operand accessor.
-template <uni20::MdspanLike Mdspan>
+template <uni20::StridedMdspanLike Mdspan>
 using contraction_matrix_mdspan_t =
     uni20::mdspan<typename std::remove_cvref_t<Mdspan>::element_type,
                   uni20::dextents<typename std::remove_cvref_t<Mdspan>::index_type, 2>, uni20::layout_stride,
@@ -338,18 +326,18 @@ template <class Mdspec> struct OffsetContractionMatrixMdspec<Mdspec, false>
 } // namespace detail::contraction_strides
 
 /// \brief Rank-two strided metadata type retaining an operand descriptor or immediate handle.
-template <uni20::MdspecLike Mdspec>
+template <uni20::StridedMdspecLike Mdspec>
 using contraction_matrix_mdspec_t =
     typename detail::contraction_strides::ContractionMatrixMdspec<std::remove_cvref_t<Mdspec>>::type;
 
 /// \brief Rank-two strided metadata type whose storage origin may be advanced.
-template <uni20::MdspecLike Mdspec>
+template <uni20::StridedMdspecLike Mdspec>
   requires(detail::contraction_strides::can_offset_contraction_mdspec<Mdspec>())
 using offset_contraction_matrix_mdspec_t =
     typename detail::contraction_strides::OffsetContractionMatrixMdspec<std::remove_cvref_t<Mdspec>>::type;
 
 /// \brief Project a resolved mdspan into one rank-two GEMM operand without changing storage.
-template <uni20::MdspanLike Mdspan>
+template <uni20::StridedMdspanLike Mdspan>
 [[nodiscard]] auto make_contraction_matrix_mdspan(Mdspan& span, ContractionMatrixProjection const& projection)
     -> contraction_matrix_mdspan_t<Mdspan>
 {
@@ -365,7 +353,7 @@ template <uni20::MdspanLike Mdspan>
 /// \details Immediate mdspans remain immediate. Descriptor-backed inputs retain
 ///          a copied data descriptor, mapping, and accessor for acquisition by
 ///          the selected GEMM backend.
-template <uni20::MdspecLike Mdspec>
+template <uni20::StridedMdspecLike Mdspec>
 [[nodiscard]] auto make_contraction_matrix_mdspec(Mdspec& span, ContractionMatrixProjection const& projection)
     -> contraction_matrix_mdspec_t<Mdspec>
 {
@@ -387,7 +375,7 @@ template <uni20::MdspecLike Mdspec>
 ///          and resource identity for the selected GEMM backend.
 /// \pre `element_offset` is nonnegative and identifies a valid element origin
 ///      within the source descriptor.
-template <uni20::MdspecLike Mdspec>
+template <uni20::StridedMdspecLike Mdspec>
 [[nodiscard]] auto make_offset_contraction_matrix_mdspec(Mdspec& span, ContractionMatrixProjection const& projection,
                                                          uni20::index_type element_offset)
     -> offset_contraction_matrix_mdspec_t<Mdspec>
@@ -402,7 +390,7 @@ template <uni20::MdspecLike Mdspec>
   {
     using source_accessor_type = typename std::remove_cvref_t<Mdspec>::accessor_type;
     using offset_accessor_type = typename source_accessor_type::offset_policy;
-    auto const offset = static_cast<typename source_accessor_type::offset_type>(element_offset);
+    auto const offset = static_cast<typename std::remove_cvref_t<Mdspec>::offset_type>(element_offset);
     return result_type{span.accessor().offset(span.data_handle(), offset), mapping,
                        offset_accessor_type{span.accessor()}};
   }

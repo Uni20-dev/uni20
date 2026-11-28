@@ -42,7 +42,7 @@ library or the built-in fallback selected at configure time.
   dispatch policy. CPU execution of iteration plans belongs to the linalg CPU
   backend.
 - `MdspanLike` is the readable view protocol used by leaf kernels. Its
-  descriptor aliases agree with the accessor, including `offset_type`. It exposes
+  alias `offset_type` names the result of the mapping. It exposes
   rank and extent observers, and its rank-dimensional `operator[]` returns the
   declared `reference` type. Import standard mdspans with
   `uni20::mdspan{view}`.
@@ -61,16 +61,16 @@ library or the built-in fallback selected at configure time.
   `MutableRankedStridedMdspanLike` requires an immediately usable mdspan, while
   `MutableRankedStridedMdspecLike` also accepts descriptor-backed
   metadata.
-- `AffineMdspanLike` and `AffineMdspecLike` require an always-strided mapping
-  and stride observers. `StridedMdspanLike` and `StridedMdspecLike` additionally
-  require a statically zero base offset. A native affine mapping addresses
-  the logical origin at offset zero relative to its handle. That handle may
-  sit inside the storage span, at `base_offset()` elements from its start.
+- `AffineMdspanLike` and `AffineMdspecLike` require integral mapping results
+  and a stride observer for each axis. `StridedMdspanLike` and
+  `StridedMdspecLike` additionally require forward layouts. Pointer-backed
+  signed-stride views start at the lowest element of the storage span.
+  Their mapping accounts for the displacement of the logical origin.
 - `DiagonalMdspecLike` refines `MdspecLike` without weakening its full logical
   rank-N interface. Off-diagonal access observes structural zero, while
   `diagonal_components(span)` exposes the physically stored rank-one values for
   specialized kernels. The component view preserves its stride and its
-  layout's zero-base-offset guarantee. The `make_diagonal_mdspan` factory
+  layout's stride direction. The `make_diagonal_mdspan` factory
   accepts a default-accessor component mdspan and produces a host-domain accessor. A future CUDA
   form must retain and propagate the CUDA component accessor rather than
   reclassifying a raw pointer-shaped handle.

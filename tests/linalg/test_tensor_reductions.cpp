@@ -115,7 +115,6 @@ TEST(TensorReductionTest, DiagonalStorageSpanCanExceedItsIndexRange)
   int data[128]{};
   auto source = uni20::mdspan{data, layout::mapping<shape>{shape{}, {64, 63}}};
   auto view = uni20::detail::diagonal_mdspec<0, 1>(source);
-  EXPECT_EQ(view.mapping().base_offset(), 0U);
   EXPECT_EQ(view.mapping().required_span_size(), 128U);
   view[1] = 37;
   EXPECT_EQ(data[127], 37);

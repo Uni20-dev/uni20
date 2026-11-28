@@ -153,9 +153,7 @@ struct ShiftedLayout
     };
 };
 
-// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179), so a shifted
-// origin cannot reach the reduction. The descriptor offset alone moves the view.
-TEST_F(CudaReductionTest, AddsTheDescriptorOffsetAndRejectsAShiftedOrigin)
+TEST_F(CudaReductionTest, ReducesAForwardLayoutAtTheDescriptorOffset)
 {
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
   uni20::Tensor<double, 1> host(4);
@@ -170,8 +168,7 @@ TEST_F(CudaReductionTest, AddsTheDescriptorOffsetAndRejectsAShiftedOrigin)
   using descriptor_type = typename decltype(base)::data_descriptor_type;
 
   using shifted_spec = uni20::mdspec<double const, shape, ShiftedLayout, accessor_type, descriptor_type>;
-  EXPECT_THROW((shifted_spec{base.data_descriptor().offset_by(1), ShiftedLayout::mapping<shape>{}, base.accessor()}),
-               std::invalid_argument);
+  static_assert(!uni20::StridedMdspecLike<shifted_spec>);
 
   using spec = uni20::mdspec<double const, shape, uni20::layout_right, accessor_type, descriptor_type>;
   spec descriptor{base.data_descriptor().offset_by(2), uni20::layout_right::mapping<shape>{}, base.accessor()};

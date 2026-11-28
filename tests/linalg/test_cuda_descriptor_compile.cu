@@ -145,7 +145,7 @@ transform_accessor_probe(typename unary_transform_span::accessor_type unary,
   auto const& binary = binary_parameter.value;
   auto unary_value = unary.access(lhs, 0);
   typename binary_transform_span::data_handle_type handles{lhs, rhs};
-  typename binary_transform_span::accessor_type::offset_type offsets{0, 0};
+  typename binary_transform_span::offset_type offsets{0, 0};
   auto binary_value = binary.access(handles, offsets);
   auto complex_value = complex_transform.access(complex_input, 0);
   if (unary_value == binary_value && complex_value.real() == 0.0F) return;
@@ -162,7 +162,6 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 
 [[maybe_unused]] __global__ void descriptor_shape_probe(shape_descriptor const* descriptor, std::size_t* result)
 {
-  static_assert(shape_descriptor::is_base_offset_always_zero());
   *result = descriptor->empty() ? 0 : descriptor->size();
 }
 
@@ -170,9 +169,8 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 {
   uni20::layout_stride::mapping<extents_type> const mapping{extents_type{3, 2}, {4, 3}};
   auto span = uni20::mdspan{output, mapping};
-  static_assert(decltype(span)::is_base_offset_always_zero());
   std::array<int, 2> const last{2, 1};
-  span[last] = static_cast<double>(span.size() + span.mapping().required_span_size() + span.mapping().base_offset());
+  span[last] = static_cast<double>(span.size() + span.mapping().required_span_size());
 
   using scalar_shape = uni20::extents<uni20::index_type>;
   auto scalar = uni20::mdspan{output, uni20::layout_left::mapping<scalar_shape>{}};
@@ -190,8 +188,7 @@ using shape_descriptor = uni20::mdspec<double, extents_type, uni20::layout_left,
 {
   auto const reversed = uni20::reverse<1>(uni20::mdspan{input, 2, 3});
   auto const& mapping = reversed.mapping();
-  output[0] =
-      reversed[std::array<int, 2>{0, 2}] + static_cast<double>(mapping.base_offset() + mapping.required_span_size());
+  output[0] = reversed[std::array<int, 2>{0, 2}] + static_cast<double>(mapping(0, 0) + mapping.required_span_size());
 }
 
 } // namespace
