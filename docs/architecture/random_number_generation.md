@@ -64,8 +64,8 @@ fresh entropy.
 
 **Best effort: same values under a fixed configuration.** A fixed seed gives
 the same random values when the build and configuration are also the same:
-the rank count, machines, devices, storage layouts and submission order. This
-is a debugging aid. Downstream results can still differ through floating-point
+the rank count, machines, devices, placement of work, storage layouts and
+submission order. This is a debugging aid. Downstream results can still differ through floating-point
 reduction order, library algorithm selection or scheduling.
 
 **Not offered:** bitwise identical random values or results across builds,
@@ -453,6 +453,31 @@ for bit, between host and device or between two host builds:
 The contract accepts both. The transform lives in one header compiled for both
 host and device.
 
+## Dynamic Placement
+
+Algorithms may move work between the host and devices at run time, for example
+to balance load. Where a value is computed is therefore not part of its
+identity:
+
+- **Addresses do not depend on placement.** Identities and positions never
+  depend on the processor that evaluates them. In counter mode, a fill split
+  between the host and a device gives every element the same words for any
+  split. A fill moved to another processor computes positions from the layout
+  of the tensor it fills, never from a staging buffer on the processor that
+  runs it.
+- **Values agree to the transform bounds.** Words and unit uniforms are the
+  same wherever they are computed. Scaled and normal values carry the
+  last-bit behaviour of the processor that computed them. A tensor filled
+  partly on the host and partly on a device mixes the two, and two runs with the
+  same seed and build can differ in those bits when their placement differs.
+- **Streams can move.** A stream's state, its identity, position and buffered
+  lanes, is a trivially copyable value with the same representation on the host
+  and on a device. A walker can therefore continue on another processor.
+- **Decisions are taken once.** A discrete decision taken from a random value,
+  such as accepting a Monte Carlo move, is taken by the processor that
+  evaluates it and is not recomputed elsewhere, as the contract requires for
+  any decision derived from floating-point values.
+
 ## Distributed Execution
 
 - **Replicas.** A replicated component's label is the logical component, never
@@ -574,6 +599,9 @@ host and device.
 - Logical-position fills give the same values for packed and separate storage,
   any `BlockAlignment`, and row- and column-major order.
 - Replicas produced by the generate-once path are identical.
+- A fill split between the host and CUDA in several ways gives the same words
+  and unit uniforms as an undivided fill, and a stream state moved between the
+  host and a device continues with the same words.
 - With a fixed submission order, `DebugScheduler` and `TbbScheduler` produce
   the same random values.
 - Restart:
