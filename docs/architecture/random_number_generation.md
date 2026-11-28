@@ -1,7 +1,9 @@
 # Counter-Based Random Number Generation
 
-**Status:** active design note. Nothing described here is implemented. Uni20
-has no random tensor API. The only random engine in the tree is the
+**Status:** active design note. Only layer 1 is implemented: the Philox4x32-10
+bijection `uni20::random::philox4x32_10`, in
+[`philox.hpp`](../../src/uni20/random/philox.hpp). Uni20 has no random tensor
+API. The only random engine in the tree is the
 `std::mt19937_64` that `DebugScheduler` uses to explore schedules, and this note
 does not affect it. The distributed and persistence sections build on the
 exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.md).
@@ -68,6 +70,10 @@ fresh entropy.
 and the unit uniforms made from them, are the same on every build, machine and
 device. They come from integer operations and an exact conversion. Scaled and
 normal values computed from them are not covered (see [Transforms](#transforms)).
+The promise is per address. Which address a seed reaches depends on the mapping
+version, which can change until layer 4 is fixed (see
+[Implementation Staging](#implementation-staging)), so the unit uniforms that a
+given seed produces can change with it.
 
 **On request: bitwise the same values under a fixed configuration.** This
 follows the project's reproducibility policy (Uni20-dev/uni20#214). A
@@ -80,10 +86,15 @@ two things that otherwise vary between runs:
   balancing does not move them (see [Dynamic Placement](#dynamic-placement)).
   Words and unit uniforms do not need this; scaled and normal values do
   ([open question 14](#open-questions)).
-- **Labels.** Operation labels come from plan-assigned indices or a
-  deterministic submission order, not from the order in which concurrent tasks
-  reach a node's atomic child counter (see
-  [Attaching Identities](#attaching-identities)).
+- **Labels.** Every label on the path is deterministic, not only the
+  operation's. Operation labels, spawn indices, shard ids and walker ids come
+  from the plan or from program order, not from the order in which concurrent
+  tasks reach a node's atomic child counter (see
+  [Attaching Identities](#attaching-identities)). A label taken from the GUID
+  of an object created during the run is deterministic only if the persistent
+  store assigns IDs deterministically, which the MPI proposal leaves open
+  ([open question 16](#open-questions)). The resume point's manifest GUID is
+  not affected: runs that resume from one manifest share it.
 
 Without the option, both can vary between runs, and the values with them.
 Downstream results are reproducible only if the code that consumes the values
@@ -170,8 +181,9 @@ These rules keep layer 4 open:
 - **The first layer-4 implementation is small.** It provides a root from a seed
   and `child(node, label)`, for single-process dense use. Until layer 4 is
   fixed, it may change without notice, and with it the values that a given seed
-  produces. The contract already excludes reproducibility across builds, and
-  nothing stored depends on these values yet.
+  produces. The contract's exact promise is per address, not per seed (see
+  [Reproducibility Contract](#reproducibility-contract)), and nothing stored
+  depends on these values yet.
 - **Derivation tests check properties.** Until layer 4 is fixed, they check that
   identical labels give identical identities, that single-step siblings are
   distinct, and that derivation and value counters do not overlap. Only layers
@@ -616,8 +628,9 @@ identity:
   unused words of its current evaluation. How Uni20's own distributions draw
   from a stream is [open question 15](#open-questions).
 - **Labels.** Assign streams by sample or walker identity, not by rank, thread
-  or device. Any single sample can then be replayed on its own, under the same
-  build, by constructing its stream.
+  or device. Any single sample can then be replayed on its own by constructing
+  its stream. Its words and unit uniforms replay exactly under the same mapping
+  version, and its scaled and normal values within one configuration.
 - **Standard compatibility.** `PhiloxStream` is the adapter of
   [Interface: Counter Mode](#interface-counter-mode). It runs in host and
   device code. On the host it meets the uniform random bit generator
@@ -779,6 +792,12 @@ question 13 concerns randomized algorithms. All five decide layer 4 (see
     buffered words when the distribution changes. Until this is written, the
     stream's standard-compatible word interface is fixed, and its use by
     Uni20's distributions is not.
+16. **Object IDs under the reproducible option.** A component label can be the
+    GUID of an object created during the run. Choose one:
+    - require the persistent store to assign object IDs deterministically under
+      the option;
+    - or have the option label such components by operation and component
+      index instead of by GUID.
 
 ## References
 
