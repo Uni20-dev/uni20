@@ -5,6 +5,8 @@ has no random tensor API. The only random engine in the tree is the
 `std::mt19937_64` that `DebugScheduler` uses to explore schedules, and this note
 does not affect it. The distributed and persistence sections build on the
 exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.md).
+The implementation proceeds in layers, and only the lower layers are fixed; see
+[Implementation Staging](#implementation-staging).
 
 This note defines how Uni20 produces random tensor values, randomized-algorithm
 inputs and Monte Carlo streams. Every draw has an identity: a path in a tree
@@ -28,9 +30,9 @@ Related notes:
 
 ## Reproducibility Contract
 
-**Guaranteed: no unintended reuse.** No two draws share a Philox key and
-counter, apart from chance identity collisions with probability about
-`N² / 2¹²⁹` (see [Identity Tree](#identity-tree)), provided that:
+**Guaranteed: no unintended reuse.** No two Philox evaluations share a key and
+counter, apart from chance identity collisions (see
+[Identity Tree](#identity-tree)), provided that:
 
 - the runs being compared have distinct roots. Fresh entropy gives this by
   default (see [Restart and Persistence](#restart-and-persistence)). With a
@@ -42,6 +44,12 @@ counter, apart from chance identity collisions with probability about
 Under those conditions the guarantee holds across operations, components,
 ranks, devices, restarts and branches from a checkpoint. Monte Carlo statistics
 and randomized algorithms depend on it for correctness.
+
+The guarantee is about evaluations, not individual values. One evaluation
+returns four 32-bit words, and a transform turns them into one to four values
+(see [Transforms](#transforms)). A value is therefore identified by its key, its
+counter, and its lane within the evaluation, which the transform defines. Each
+lane feeds at most one value.
 
 Reuse is deliberate in one case. Rerunning with the same seed, or resuming two
 jobs from one checkpoint with the same seed, reproduces the same draws. That is
@@ -73,6 +81,44 @@ relying on reproducibility:
   makes them, as the MPI proposal already requires for global decisions.
 
 Non-goals: cryptographic randomness and quasi-random sequences.
+
+## Implementation Staging
+
+Uni20 implements this note in four layers. The lower three do not depend on how
+identities are derived, so they can be implemented and fixed now. The fourth
+depends on decisions that block tensors and distributed execution have still to
+make ([open questions 9 to 12](#open-questions)). It stays provisional until
+they are made.
+
+| Layer | Content | Status |
+|---|---|---|
+| 1. Bit generator | The Philox4x32-10 bijection ([Bit Generator](#bit-generator)) | Fixed: Philox4x32-10 is specified externally |
+| 2. Transforms | Words to uniform and normal `float` and `double` values, complex normal values, and the lane layout of values ([Transforms](#transforms)) | Fixed for `float` and `double`; open questions 5 and 7 cover the rest |
+| 3. Fill | A dense view filled from a 128-bit identity, a position scheme and a transform ([Positions](#positions)) | Fixed for dense views; the default for packed blocks is open question 10 |
+| 4. Derivation and attachment | The root, `child`, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
+
+These rules keep layer 4 open:
+
+- **Fills never see the tree.** A fill receives a leaf identity and does not
+  know how it was derived. A change of derivation therefore changes no fill
+  code, on the host or on a device.
+- **Algorithms take a generator.** Randomized algorithms take a generator node
+  argument (see [Randomized Algorithms](#randomized-algorithms)). A change of
+  derivation therefore changes none of their signatures.
+- **The first layer-4 implementation is small.** It provides a root from a seed
+  and `child(node, label)`, for single-process dense use. Until layer 4 is
+  fixed, it may change without notice, and with it the values that a given seed
+  produces. The contract already excludes reproducibility across builds, and
+  nothing stored depends on these values yet.
+- **Derivation tests check properties.** Until layer 4 is fixed, they check that
+  identical labels give identical identities, that siblings are distinct, and
+  that derivation and value counters do not overlap. Only layers 1 and 2 are
+  tested against recorded values: the Philox known-answer vectors, and the
+  values that a transform makes from given words.
+- **Stored descriptors wait.** A random tensor stored as a descriptor (see
+  [Restart and Persistence](#restart-and-persistence)) regenerates only while
+  its mapping version stays implemented. Descriptors are therefore not stored
+  until layer 4 is fixed.
 
 ## Bit Generator
 
@@ -122,8 +168,15 @@ run root          seed, or entropy drawn once
 The levels are a convention, not a fixed schema. A path may skip levels or add
 more, provided each label is unique among its siblings when it is assigned.
 
-A node's identity is 128 bits: a 64-bit Philox key `k` and a 64-bit counter
-prefix `h`. One primitive both derives children and generates values:
+Three quantities are easy to confuse:
+
+- the Philox **counter**, 128 bits, which is one input of an evaluation;
+- a node's **identity** `(k, h)`, 128 bits: the 64-bit Philox key `k`, and the
+  high 64 bits `h` of every counter that the node uses;
+- the node's **local counter**, the low 64 bits of the counter. Its bit 63
+  separates child labels from value positions, so a node has 2⁶³ of each.
+
+One primitive both derives children and generates values:
 
 ```text
 child(node, label)     = Philox4x32-10 under k at counter (h, label)          label    < 2⁶³
@@ -134,8 +187,10 @@ The 128 output bits of `child` are the child's `(k, h)`. Bit 63 of the low
 64-bit half of the counter separates derivation from value generation, so a
 node can both spawn children and generate values without overlap.
 
-Version 1 maps the 64-bit quantities onto Philox's 32-bit words as follows,
-with `[hi:lo]` joining two words:
+The first mapping version maps the 64-bit quantities onto Philox's 32-bit words
+as follows, with `[hi:lo]` joining two words. The key, counter and child lines
+belong to layer 4 and are provisional. The lane layout after them belongs to
+layer 2 (see [Implementation Staging](#implementation-staging)).
 
 ```text
 key     = [key[1] : key[0]]                = k
@@ -149,20 +204,36 @@ two-word uniform it is `[out[2i + 1] : out[2i]]`, with the top 53 bits used.
 This mapping fixes the values, so it is part of the mapping version, and any
 cross-check against another Philox implementation must use it.
 
-Properties:
+Properties, with what holds exactly kept apart from what is a statistical
+assumption:
 
-- **Siblings never collide.** For a fixed key, Philox is a bijection on the
-  counter, so distinct labels give distinct child identities. This is exact.
-- **Other nodes collide only by chance.** With `N` identities in play the
-  probability is about `N² / 2¹²⁹`, or 1.5×10⁻¹⁵ for 10¹² identities. No
-  registry is needed.
+- **Siblings never collide (exact).** For a fixed key, Philox is a bijection on
+  the counter. Distinct labels under one parent therefore give distinct 128-bit
+  child identities.
+- **Distinct identities never share an evaluation (exact).** A node evaluates
+  Philox only under its key `k`, at counters whose high half is `h`. Two nodes
+  whose identities differ in `k` or in `h` therefore use disjoint inputs, over
+  both their child labels and their value positions.
+- **Other identities coincide only by chance (heuristic).** Identities that are
+  not siblings can coincide. If derived identities behave like independent
+  uniform 128-bit values, the probability that any two of `N` coincide is about
+  `N(N − 1) / 2¹²⁹`, or 1.5×10⁻¹⁵ for 10¹² identities, and no registry is needed.
+  That is an assumption, not a theorem: bijectivity for each key says nothing
+  about outputs under different keys or along deep derivations. It rests on the
+  statistical quality of Philox output.
+- **Why 128 bits.** Reuse needs both halves of an identity to agree. Two nodes
+  with the same key `k` and different prefixes `h` use disjoint counters, so
+  equal keys alone reuse nothing. What can coincide by chance is the whole
+  identity, so its width sets the estimate above. JAX derives keys the same way
+  with Threefry, but a node there is a 64-bit key, and the estimate
+  `N(N − 1) / 2⁶⁵` becomes significant around 10⁹ identities.
 - **Derivation is cheap.** It costs one Philox evaluation on host or device,
-  so a kernel can derive per-walker identities itself. JAX derives keys the same
-  way with Threefry, but with 64-bit keys. At 64 bits the collision probability
-  `N² / 2⁶⁵` becomes significant around 10⁹ identities, which is why the tree
-  carries 128.
-- **No bit budget.** Positions run to 2⁶³ evaluations per node. No field split
-  has to be chosen per operation.
+  so a kernel can derive per-walker identities itself.
+- **One fixed split, not one per level.** The counter is divided once: 64 bits
+  for `h`, one bit that separates derivation from values, and 63 bits for a
+  label or a position. Each node therefore has at most 2⁶³ children and 2⁶³
+  value evaluations. What the tree avoids is a split among the operation,
+  component and allocation levels, chosen per operation.
 
 Labels are 63-bit integers. Longer labels, such as 128-bit GUIDs or strings, are
 absorbed over several derivation steps with a prefix-free encoding: a tag and
@@ -174,6 +245,9 @@ A change of bit generator, derivation or transform therefore starts a different
 tree.
 
 ## Attaching Identities
+
+Which label each level uses is part of layer 4, and provisional. The block and
+distributed entries depend on [open questions 9 to 12](#open-questions).
 
 | Level | Label | Supplied by | When |
 |---|---|---|---|
@@ -327,9 +401,15 @@ device.
     hand the same label to different operations, and those draws are reused.
     Debug builds should compare operation identities across ranks at each
     random operation.
-- **Per-rank seeds** (`seed + rank`) are not used. They overlap: block 1 under
-  seed `s` equals block 0 under seed `s + 1`. They also make the values depend
-  on the decomposition.
+- **Per-rank seeds** (`seed + rank`) are not used:
+  - They make the values depend on the decomposition. The same seed gives
+    different values on a different number of ranks.
+  - They leave the separation of the streams unspecified. If the seed is the
+    starting counter under one common key `K`, the streams overlap: block 1
+    under seed `s` is `F_K(s + 1)`, which is block 0 under seed `s + 1`. If each
+    seed instead becomes its own key, `F_{K_s}(1)` and `F_{K_{s+1}}(0)` are
+    unrelated, and the separation then depends on how seeds become keys, which
+    a rank offset does not say.
 
 ## Restart and Persistence
 
@@ -453,6 +533,35 @@ device.
    `mpreal`.
 8. **Python surface.** `numpy.random.SeedSequence.spawn` is the closest
    existing analogue of the identity tree.
+
+Questions 9 to 12 concern block tensors and distributed execution, and decide
+layer 4 (see [Implementation Staging](#implementation-staging)):
+
+9. **Block labels.** Label a block by its symmetry key or by its ordinal.
+   - A key stays the same when other blocks are added, removed or reordered,
+     and on every rank. It is several words long, so it needs the label
+     encoding of question 2.
+   - An ordinal is one word, but it depends on the set of blocks and their
+     order, so two tensors with the same block but different other blocks
+     label it differently.
+10. **Positions in block storage.** Choose the default position scheme for a
+    `BlockTensor`.
+    - Allocation offsets are cheapest, but the values then depend on the
+      packing and on `BlockAlignment`.
+    - Logical indices give the same values in any layout. Replicas need that,
+      and so does regenerating a block in place of communicating it.
+    - A block split across ranks gives the same values for any split only if
+      each shard uses positions from the logical index of the whole block,
+      not of the shard.
+11. **Who derives operation nodes in distributed execution.** In
+    root-controller mode, root derives them and command descriptors carry them.
+    In SPMD mode, every rank derives them by running the same program. The
+    choice follows the MPI design, which is still exploratory.
+12. **Redistribution.** A block that moves between ranks or devices takes its
+    values with it. Decide whether a block may instead be regenerated after a
+    move. That keeps its values only if its label and position scheme depend on
+    neither the rank, the device nor the packing, which would make logical
+    positions a requirement for it.
 
 ## References
 
