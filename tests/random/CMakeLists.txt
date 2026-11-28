@@ -1,0 +1,6 @@
+if(TARGET uni20_backend_cuda)
+  add_test_module(philox SOURCES test_philox.cpp test_philox_cuda.cu LIBS uni20_core uni20_backend_cuda)
+  set_target_properties(uni20_philox_tests PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+else()
+  add_test_module(philox SOURCES test_philox.cpp LIBS uni20_core)
+endif()
