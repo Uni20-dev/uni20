@@ -26,7 +26,8 @@ heterogeneous-execution layers fit together.
 - [Counter-Based Random Number Generation](random_number_generation.md) defines
   the reproducibility contract, the identity tree that derives Philox keys and
   counters, how identities attach to allocations in distributed and persistent
-  settings, and Monte Carlo streams. Not implemented.
+  settings, and Monte Carlo streams. Only the Philox4x32-10 bijection is
+  implemented so far.
 
 ## Exploratory Design
 

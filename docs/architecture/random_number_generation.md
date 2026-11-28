@@ -1,10 +1,14 @@
 # Counter-Based Random Number Generation
 
-**Status:** active design note. Nothing described here is implemented. Uni20
-has no random tensor API. The only random engine in the tree is the
-`std::mt19937_64` that `DebugScheduler` uses to explore schedules, and this note
-does not affect it. The distributed and persistence sections build on the
+**Status:** active design note. Only layer 1 is implemented: the Philox4x32-10
+bijection `uni20::random::philox4x32_10`, in
+[`philox.hpp`](../../src/uni20/random/philox.hpp). Uni20 has no random tensor
+API. The only random engine in the library is the `std::mt19937_64` that
+`DebugScheduler` uses to explore schedules, and this note does not affect it.
+Some examples have small generators of their own. The distributed and persistence sections build on the
 exploratory [MPI persistent-store proposal](../backends/mpi/persistent_dispatch.md).
+The implementation proceeds in layers, and only the lower layers are fixed; see
+[Implementation Staging](#implementation-staging).
 
 This note defines how Uni20 produces random tensor values, randomized-algorithm
 inputs and Monte Carlo streams. Every draw has an identity: a path in a tree
@@ -28,9 +32,10 @@ Related notes:
 
 ## Reproducibility Contract
 
-**Guaranteed: no unintended reuse.** No two draws share a Philox key and
-counter, apart from chance identity collisions with probability about
-`N² / 2¹²⁹` (see [Identity Tree](#identity-tree)), provided that:
+**Guaranteed: no unintended reuse.** Each value is drawn from an *address*: a
+Philox key, a counter, and the value's index within that evaluation. No two logically
+independent draws are assigned the same address, apart from chance identity
+collisions (see [Identity Tree](#identity-tree)), provided that:
 
 - the runs being compared have distinct roots. Fresh entropy gives this by
   default (see [Restart and Persistence](#restart-and-persistence)). With a
@@ -43,20 +48,71 @@ Under those conditions the guarantee holds across operations, components,
 ranks, devices, restarts and branches from a checkpoint. Monte Carlo statistics
 and randomized algorithms depend on it for correctness.
 
+An evaluation returns four 32-bit words, and a transform turns them into `g`
+values, numbered 0 to `g − 1` by their value index. The transform says which
+words each value index uses (see [Transforms](#transforms)); the two values of a
+normal `double` evaluation, for example, both use all four words. The
+guarantee is about how addresses are assigned, not about how often an address is
+evaluated. Evaluating an assigned address again is deliberate, and gives the same
+words:
+
+- one-element-at-a-time evaluation computes a block once for each of its values;
+- a lazy view read twice evaluates its addresses twice;
+- a regenerated replica revisits its original's addresses;
+- a copied stream replays the original's draws.
+
 Reuse is deliberate in one case. Rerunning with the same seed, or resuming two
-jobs from one checkpoint with the same seed, reproduces the same draws. That is
-what a fixed seed asks for, so independent replicas need different seeds or
-fresh entropy.
+jobs from one checkpoint with the same seed, can reproduce the same draws, and
+does under the reproducible option. That is what a fixed seed asks for, so
+independent replicas need different seeds or fresh entropy.
 
-**Best effort: same values under a fixed configuration.** A fixed seed gives
-the same random values when the build and configuration are also the same:
-the rank count, devices, storage layouts and submission order. This is a
-debugging aid. Downstream results can still differ through floating-point
-reduction order, library algorithm selection or scheduling.
+**Guaranteed: exact words and unit uniforms.** The Philox words of an address,
+and the unit uniforms made from them, are the same on every build, machine and
+device. They come from integer operations and an exact conversion. Scaled and
+normal values computed from them are not covered (see [Transforms](#transforms)).
+The promise is per address. Which address a seed reaches depends on the mapping
+version, which can change until layer 4 is fixed (see
+[Implementation Staging](#implementation-staging)), so the unit uniforms that a
+given seed produces can change with it.
 
-**Not offered:** bitwise identical random values or results across builds,
-compilers, compiler flags, devices, rank counts or storage layouts. Normal
-values computed on the host and on a CUDA device differ in the last unit or so.
+**On request: bitwise the same values under a fixed configuration.** This
+follows the project's reproducibility policy (Uni20-dev/uni20#214). A
+configuration is the build, the machine and device types, the rank count and
+the storage layouts. Under the reproducible option, a fixed seed gives bitwise
+the same random values in every run of one configuration. The option pins the
+two things that otherwise vary between runs:
+
+- **Placement.** Random fills and streams run where the plan put them, and load
+  balancing does not move them (see [Dynamic Placement](#dynamic-placement)).
+  Words and unit uniforms do not need this; scaled and normal values do
+  ([open question 14](#open-questions)).
+- **Labels.** Every label on the path is deterministic, not only the
+  operation's. Operation labels, spawn indices, shard ids and walker ids come
+  from the plan or from program order, not from the order in which concurrent
+  tasks reach a node's atomic child counter (see
+  [Attaching Identities](#attaching-identities)). A label taken from the GUID
+  of an object created during the run is deterministic only if the persistent
+  store assigns IDs deterministically, which the MPI proposal leaves open
+  ([open question 16](#open-questions)). The same holds for the resume point's
+  label, the GUID of a checkpoint manifest. Two runs that resume one recorded
+  manifest share it, but a repeated chain of jobs commits manifests of its own,
+  with GUIDs that the MPI proposal does not make deterministic.
+
+Without the option, both can vary between runs, and the values with them.
+Downstream results are reproducible only if the code that consumes the values
+also makes reproducible choices: reduction order, library algorithm selection
+and scheduling. Uni20 documents each of its own functions that can vary. Where a
+reasonable reproducible route exists, the documentation recommends it: an
+option, an alternative function or a different algorithm. Otherwise a caller
+who needs bitwise results uses a different approach (Uni20-dev/uni20#214).
+
+**Not offered:** bitwise identical scaled or normal values, or results, across
+builds, compilers, compiler flags, math libraries, machines, devices, rank
+counts or storage layouts. Math library functions differ between
+implementations and versions, and a library may choose its implementation by
+CPU feature at run time, so even one build can give different normal values on
+two machines. Normal values computed on the host and on a CUDA device differ in
+the last unit or so.
 Bitwise reproducibility of results would fix the floating-point evaluation
 order everywhere (reduction trees, BLAS algorithm choice, FMA contraction). It
 would cost performance and would still break between two compilations.
@@ -65,14 +121,82 @@ Where bitwise agreement matters, the design provides it directly instead of
 relying on reproducibility:
 
 - Data meant to be identical on several ranks (replicas) is generated once and
-  copied, or generated by the same code on the same device type with the same
-  layout.
+  copied. Replicas generated independently have the same words and unit
+  uniforms, but their scaled and normal values agree bitwise only within one
+  configuration under the reproducible option.
 - Discrete decisions derived from floating-point values are made once and
   distributed, not recomputed independently on each rank. Examples are
   truncation ranks, pivots and convergence tests. In the controller model, root
   makes them, as the MPI proposal already requires for global decisions.
 
 Non-goals: cryptographic randomness and quasi-random sequences.
+
+## Interface: Counter Mode
+
+Uni20's random number interface is counter based. Every value is a function of
+an identity and a position, so values can be computed in any order, in
+parallel, on the host or on a device. A value costs the same whatever was drawn
+before it. The interface has no sequential stream mode, and none of it is shaped
+to fit one.
+
+Compatibility with the standard library is offered, but it does not constrain
+the interface. It is an adapter on top:
+
+- A stream type meets the standard's uniform random bit generator
+  requirements, so that user code and standard algorithms such as
+  `std::shuffle` can draw from it (see [Monte Carlo Streams](#monte-carlo-streams)).
+  That takes more than the `std::uniform_random_bit_generator` concept: the
+  requirements in [rand.req.urng] also name a nested `result_type`, which
+  `std::shuffle` uses.
+- The stream holds an identity, a position and buffered words, and it draws
+  through counter-mode evaluations. Its position is a counter, so it can skip
+  ahead in constant time.
+- Uni20's own fills, transforms and randomized algorithms never go through it.
+
+## Implementation Staging
+
+Uni20 implements this note in four layers. The lower three do not depend on how
+identities are derived, so they can be implemented and fixed now. The fourth
+depends on decisions that block tensors and distributed execution have still to
+make ([open questions 9 to 12](#open-questions)). It stays provisional until
+they are made.
+
+| Layer | Content | Status |
+|---|---|---|
+| 1. Bit generator | The Philox4x32-10 bijection ([Bit Generator](#bit-generator)) | Fixed: Philox4x32-10 is specified externally |
+| 2. Transforms | Words to values of each element type and distribution: the bits used, the endpoints, and which words each value uses ([Transforms](#transforms)) | Fixed for uniform `float` and `double`, normal `double` and complex normal `complex<double>`. The `float` normal rows wait for open question 5, and extended scalars for question 7 |
+| 3. Fill and stream | A dense view filled from a leaf identity, a position scheme and a transform ([Positions](#positions)), and the standard-compatible stream over the same evaluations ([Monte Carlo Streams](#monte-carlo-streams)). Both obtain words only through `value_block(leaf, position)` | Fixed for dense views and for the stream's word interface. The default for packed blocks is open question 10, and how Uni20's distributions draw from a stream is question 15 |
+| 4. Derivation and attachment | The root, `child`, how `value_block` packs a leaf and a position into a Philox key and counter, the word layout of identities, label encoding, and which label each level uses ([Identity Tree](#identity-tree), [Attaching Identities](#attaching-identities)) | Provisional |
+
+These rules keep layer 4 open:
+
+- **Fills never see the tree.** A fill receives a leaf identity and does not
+  know how it was derived. A change of derivation therefore changes no fill
+  code, on the host or on a device. Fills and streams obtain words only through
+  `value_block(leaf, position)`, which belongs to layer 4, so a change to the
+  counter packing does not touch them either.
+- **Algorithms take a generator.** Randomized algorithms take a generator node
+  argument (see [Randomized Algorithms](#randomized-algorithms)). A change of
+  derivation therefore changes none of their signatures. Before they accept a
+  shared generator, layer 4 has to say who supplies each call's fresh operation
+  label ([open question 13](#open-questions)).
+- **The first layer-4 implementation is small.** It provides a root from a seed
+  and `child(node, label)`, for single-process dense use. Until layer 4 is
+  fixed, it may change without notice, and with it the values that a given seed
+  produces. The contract's exact promise is per address, not per seed (see
+  [Reproducibility Contract](#reproducibility-contract)), and nothing stored
+  depends on these values yet.
+- **Derivation tests check properties.** Until layer 4 is fixed, they check that
+  identical labels give identical identities, that single-step siblings are
+  distinct, and that derivation and value counters do not overlap. Only layers
+  1 and 2 are tested against recorded values: the Philox known-answer vectors,
+  and the unit uniforms that a transform makes from given words, exactly.
+  Scaled and normal values from given words are tested against the transform
+  bounds, since a recorded value from one host can differ on another.
+- **Stored descriptors wait.** A random tensor stored as a descriptor (see
+  [Restart and Persistence](#restart-and-persistence)) regenerates only while
+  its mapping version stays implemented. Descriptors are therefore not stored
+  until layer 4 is fixed.
 
 ## Bit Generator
 
@@ -122,20 +246,29 @@ run root          seed, or entropy drawn once
 The levels are a convention, not a fixed schema. A path may skip levels or add
 more, provided each label is unique among its siblings when it is assigned.
 
-A node's identity is 128 bits: a 64-bit Philox key `k` and a 64-bit counter
-prefix `h`. One primitive both derives children and generates values:
+Three quantities are easy to confuse:
+
+- the Philox **counter**, 128 bits, which is one input of an evaluation;
+- a node's **identity** `(k, h)`, 128 bits: the 64-bit Philox key `k`, and the
+  high 64 bits `h` of every counter that the node uses;
+- the node's **local counter**, the low 64 bits of the counter. Its bit 63
+  separates child labels from value positions, so a node has 2⁶³ of each.
+
+One primitive both derives children and generates values:
 
 ```text
-child(node, label)     = Philox4x32-10 under k at counter (h, label)          label    < 2⁶³
-values(node, position) = Philox4x32-10 under k at counter (h, 2⁶³ + position)  position < 2⁶³
+child(node, label)          = Philox4x32-10 under k at counter (h, label)          label    < 2⁶³
+value_block(node, position) = Philox4x32-10 under k at counter (h, 2⁶³ + position)  position < 2⁶³
 ```
 
 The 128 output bits of `child` are the child's `(k, h)`. Bit 63 of the low
 64-bit half of the counter separates derivation from value generation, so a
 node can both spawn children and generate values without overlap.
 
-Version 1 maps the 64-bit quantities onto Philox's 32-bit words as follows,
-with `[hi:lo]` joining two words:
+The first mapping version maps the 64-bit quantities onto Philox's 32-bit words
+as follows, with `[hi:lo]` joining two words. The key, counter and child lines
+belong to layer 4 and are provisional. The layout of values after them belongs
+to layer 2 (see [Implementation Staging](#implementation-staging)).
 
 ```text
 key     = [key[1] : key[0]]                = k
@@ -144,36 +277,62 @@ counter = [ctr[3] : ctr[2] : ctr[1] : ctr[0]]  where [ctr[3] : ctr[2]] = h
 child   : k = [out[1] : out[0]],  h = [out[3] : out[2]]
 ```
 
-Lane `i` of a value evaluation for a one-word uniform is `out[i]`. For a
-two-word uniform it is `[out[2i + 1] : out[2i]]`, with the top 53 bits used.
+Value `i` of an evaluation of one-word uniforms uses `out[i]`. Value `i` of an
+evaluation of two-word uniforms uses `[out[2i + 1] : out[2i]]`, with the top 53
+bits used.
 This mapping fixes the values, so it is part of the mapping version, and any
 cross-check against another Philox implementation must use it.
 
-Properties:
+Properties, with what holds exactly kept apart from what is a statistical
+assumption:
 
-- **Siblings never collide.** For a fixed key, Philox is a bijection on the
-  counter, so distinct labels give distinct child identities. This is exact.
-- **Other nodes collide only by chance.** With `N` identities in play the
-  probability is about `N² / 2¹²⁹`, or 1.5×10⁻¹⁵ for 10¹² identities. No
-  registry is needed.
+- **Single-step siblings never collide (exact).** For a fixed key, Philox is a
+  bijection on the counter. Distinct 63-bit labels passed to `child` under one
+  parent therefore give distinct 128-bit child identities. A label absorbed
+  over several steps (below) is not covered. Once two such labels differ before
+  their last chunk, their last steps run under different keys, and their final
+  identities coincide only by chance, as for other identities.
+- **Distinct identities never share an evaluation (exact).** A node evaluates
+  Philox only under its key `k`, at counters whose high half is `h`. Two nodes
+  whose identities differ in `k` or in `h` therefore use disjoint inputs, over
+  both their child labels and their value positions.
+- **Other identities coincide only by chance (heuristic).** Identities that are
+  not siblings can coincide. If derived identities behave like independent
+  uniform 128-bit values, the probability that any two of `N` coincide is about
+  `N(N − 1) / 2¹²⁹`, or 1.5×10⁻¹⁵ for 10¹² identities, and no registry is needed.
+  That is an assumption, not a theorem: bijectivity for each key says nothing
+  about outputs under different keys or along deep derivations. It rests on the
+  statistical quality of Philox output.
+- **Why 128 bits.** Reuse needs both halves of an identity to agree. Two nodes
+  with the same key `k` and different prefixes `h` use disjoint counters, so
+  equal keys alone reuse nothing. What can coincide by chance is the whole
+  identity, so its width sets the estimate above. JAX derives keys the same way
+  with Threefry, but a node there is a 64-bit key, and the estimate
+  `N(N − 1) / 2⁶⁵` becomes significant around 10⁹ identities.
 - **Derivation is cheap.** It costs one Philox evaluation on host or device,
-  so a kernel can derive per-walker identities itself. JAX derives keys the same
-  way with Threefry, but with 64-bit keys. At 64 bits the collision probability
-  `N² / 2⁶⁵` becomes significant around 10⁹ identities, which is why the tree
-  carries 128.
-- **No bit budget.** Positions run to 2⁶³ evaluations per node. No field split
-  has to be chosen per operation.
+  so a kernel can derive per-walker identities itself.
+- **One fixed split, not one per level.** The counter is divided once: 64 bits
+  for `h`, one bit that separates derivation from values, and 63 bits for a
+  label or a position. Each node therefore has at most 2⁶³ children and 2⁶³
+  value evaluations. What the tree avoids is a split among the operation,
+  component and allocation levels, chosen per operation.
 
 Labels are 63-bit integers. Longer labels, such as 128-bit GUIDs or strings, are
 absorbed over several derivation steps with a prefix-free encoding: a tag and
 length in the first chunk. This keeps a two-chunk label at one level from
-matching two one-chunk levels ([open question 2](#open-questions)).
+matching two one-chunk levels ([open question 2](#open-questions)). If plain
+integer labels and encoded labels can share a parent, the encoding also
+reserves a range for its first chunks that no plain integer label uses. A
+multi-step label gets the heuristic guarantee, not the exact one.
 
 The root identity is derived from the seed or entropy and the mapping version.
 A change of bit generator, derivation or transform therefore starts a different
 tree.
 
 ## Attaching Identities
+
+Which label each level uses is part of layer 4, and provisional. The block and
+distributed entries depend on [open questions 9 to 12](#open-questions).
 
 | Level | Label | Supplied by | When |
 |---|---|---|---|
@@ -212,7 +371,9 @@ Outputs are therefore labelled by operation and component index
 
 - A node's child counter is atomic. Labels stay unique when several tasks
   derive from one node concurrently, which satisfies the no-reuse guarantee.
-- The labels are deterministic only if the submission order is.
+- The labels are deterministic only if the submission order is. The
+  reproducible option (see the [contract](#reproducibility-contract)) takes
+  them from plan-assigned indices or a deterministic submission order.
 - Copies of a node handle share its counter. This is unlike standard-library
   engines, where a copy silently duplicates the stream.
 
@@ -222,7 +383,7 @@ An operation chooses one of two position schemes.
 
 **Allocation offset (default).**
 
-- An element at offset `o` within its allocation takes lane `o mod g` of
+- An element at offset `o` within its allocation takes value `o mod g` of
   evaluation `⌊o / g⌋`, where `g` is the number of values per evaluation (see
   [Transforms](#transforms)).
 - The strided elementwise plan already computes the output offset relative to
@@ -230,6 +391,21 @@ An operation chooses one of two position schemes.
   allocation into that handle, so the planner must supply the view's base
   offset separately: per launch for one view, and per segment in the segmented
   plan. The fill functor adds the two.
+- An allocation is the physical allocation on every backend: a packed buffer
+  is one allocation, even where a backend gives each block its own logical
+  buffer over it, as `PartitionedCudaBuffer` does.
+- A view passed on its own does not carry its allocation's origin on the host.
+  A block view taken from packed storage points at its first element, and the
+  owner keeps the offset. A fill uses an origin only when the caller passes
+  one, on every backend, so host and device fills of one view agree even where
+  a CUDA buffer knows its offset.
+- Without an origin, a fill measures offsets from the start of the view's
+  storage span, not from its index-zero element, which a reversed view places
+  at its highest address. Such view-relative offsets are allowed only under a
+  leaf that belongs to the view alone, such as a child of the allocation's leaf
+  labelled by the block. Under a leaf shared with other views, the origin is
+  mandatory: two blocks of one packed allocation filled separately from offset
+  0 under one leaf would otherwise get the same addresses.
 - A random fill is then an ordinary nullary elementwise operation with no index
   decoding. The current `apply` passes only loaded values, so it needs a small
   extension to pass the output offset and the base.
@@ -252,7 +428,9 @@ An operation chooses one of two position schemes.
 - A random tensor of this kind is a generated view
   ([`generated.hpp`](../../src/uni20/tensor/generated.hpp)) whose generator
   holds the component identity and distribution parameters. Laziness is safe,
-  because evaluating it twice gives the same values on the same device type.
+  because evaluating it twice gives the same words. Scaled and normal values
+  then agree bitwise when both evaluations run on the same processor, and to the
+  transform bounds otherwise.
 - No CUDA kernel accepts a generated source yet, so these views materialize on
   the host.
 
@@ -265,13 +443,27 @@ distribution. Each evaluation yields `g` values:
 |---|---|---|
 | uniform `float` | 1 (24 bits used) | 4 |
 | uniform `double` | 2 (53 bits used) | 2 |
-| normal `float` | 1 | 4 (two Box–Muller pairs) |
+| normal `float` | provisional ([question 5](#open-questions)) | 4 or 2 |
 | normal `double` | 2 | 2 (one pair) |
-| complex normal `complex<float>` | 1 | 2 |
+| complex normal `complex<float>` | provisional ([question 5](#open-questions)) | 2 or 1 |
 | complex normal `complex<double>` | 2 | 1 |
 
+The fixed rows convert words as follows. `w` is the 32-bit word `out[i]`, and
+`W` the 64-bit word `[out[2i + 1] : out[2i]]`:
+
+| Value | Conversion |
+|---|---|
+| uniform `float`, value `i` | `u = (w >> 8) · 2⁻²⁴`, so `u ∈ [0, 1)` |
+| uniform `double`, value `i` | `u = (W >> 11) · 2⁻⁵³`, so `u ∈ [0, 1)` |
+| Box–Muller radius, from 64-bit word 0 | `u1 = ((W >> 11) + 1) · 2⁻⁵³`, so `u1 ∈ (0, 1]` |
+| Box–Muller angle, from 64-bit word 1 | `u2 = (W >> 11) · 2⁻⁵³`, so `u2 ∈ [0, 1)` |
+
+A normal `double` evaluation gives value 0 = `r cos 2πu2` and value 1 =
+`r sin 2πu2`. A complex normal `complex<double>` evaluation gives one value,
+whose real and imaginary parts come from those two.
+
 An implementation may evaluate one element at a time and discard the other
-lanes, or evaluate an aligned group per thread. The values are identical either
+values, or evaluate an aligned group per thread. The values are identical either
 way.
 
 Normal values use Box–Muller: `u1 ∈ (0, 1]`, `u2 ∈ [0, 1)`,
@@ -284,6 +476,7 @@ Uniform resolution matters in large runs:
 - A 32-bit `u1` caps `|x|` at `sqrt(64 ln 2) ≈ 6.66σ`, where the two-sided
   tail probability is about 2.7×10⁻¹¹. A run that draws 10¹² normal values
   should see about 27 values beyond the cap and sees none.
+- A 24-bit `u1`, the resolution of a uniform `float`, caps it at about 5.77σ.
 - With 53-bit uniforms the cap is about 8.57σ.
 
 Double-precision values therefore use 53-bit uniforms
@@ -298,18 +491,58 @@ Conventions:
   imaginary parts are the cosine and sine halves of one Box–Muller pair. They
   are independent, each with standard deviation `sigma / sqrt(2)`.
 
-Words and uniforms agree bit for bit between host and device. Normal values go
-through `log`, `sqrt`, `sin` and `cos`, so they agree to a few ulp, which the
-contract accepts. The transform lives in one header compiled for both host and
-device.
+Words and unit uniforms `u` are the same everywhere: they come from integer
+operations and an exact conversion. Nothing computed from them is promised bit
+for bit, between host and device or between two host builds:
+
+- **Scaled values.** `low + (high - low) u` and `mu + sigma x` are a multiply
+  and an add. A compiler may contract them into one fused multiply-add on one
+  side and not the other, or under one set of flags and not another. The
+  results then differ by the rounding of those operations: a few ulp of
+  `|low| + |high - low| u`, or of `|mu| + sigma |x|`. The bound is absolute, not
+  relative to the result, because the result can cancel to zero.
+- **Normal values.** `x` itself goes through `log`, `sqrt`, `sin` and `cos`.
+  Their results differ between math libraries, between versions, and between
+  the code paths a library selects for a CPU, so `x` agrees only to the
+  libraries' error bounds, a few ulp.
+
+The contract accepts both. The transform lives in one header compiled for both
+host and device.
+
+## Dynamic Placement
+
+Algorithms may move work between the host and devices at run time, for example
+to balance load. Where a value is computed is therefore not part of its
+identity:
+
+- **Addresses do not depend on placement.** Identities and positions never
+  depend on the processor that evaluates them. In counter mode, a fill split
+  between the host and a device gives every element the same words for any
+  split. A fill moved to another processor computes positions from the layout
+  of the tensor it fills, never from a staging buffer on the processor that
+  runs it.
+- **Values agree to the transform bounds.** Words and unit uniforms are the
+  same wherever they are computed. Scaled and normal values carry the
+  last-bit behaviour of the processor that computed them. A tensor filled
+  partly on the host and partly on a device mixes the two, and two runs with the
+  same seed and build can differ in those bits when their placement differs.
+  The reproducible option pins placement (see the
+  [contract](#reproducibility-contract)).
+- **Streams can move.** A stream's state, its identity, position and buffered
+  words, is a trivially copyable value with the same representation on the host
+  and on a device. A walker can therefore continue on another processor.
+- **Decisions are taken once.** A discrete decision taken from a random value,
+  such as accepting a Monte Carlo move, is taken by the processor that
+  evaluates it and is not recomputed elsewhere, as the contract requires for
+  any decision derived from floating-point values.
 
 ## Distributed Execution
 
 - **Replicas.** A replicated component's label is the logical component, never
   the rank or the allocation address. With allocation-offset positions,
   replicas must also share a layout. Otherwise use logical positions, or
-  generate once and copy. A replica generated on the host and one generated on
-  a device differ in the last bits of normal values. That matters only when
+  generate once and copy. Replicas generated on different machines or devices
+  can differ in the last bits of scaled and normal values. That matters only when
   something takes a discrete decision from them, which the contract already
   routes through a single decision maker.
 - **Regenerate instead of communicate.** In a distributed randomized SVD, row
@@ -325,11 +558,22 @@ device.
     owned component or the walker id.
   - If rank-dependent control flow advances a replicated node, the replicas
     hand the same label to different operations, and those draws are reused.
-    Debug builds should compare operation identities across ranks at each
-    random operation.
-- **Per-rank seeds** (`seed + rank`) are not used. They overlap: block 1 under
-  seed `s` equals block 0 under seed `s + 1`. They also make the values depend
-  on the decomposition.
+    Debug builds should check, at each random operation and at a rendezvous
+    the participating ranks share, that the ranks agree on both the operation
+    identity and a plan-level description of the operation, such as its kind
+    and output descriptor. Identities alone miss a reordering. If one rank
+    submits initialization then sketching on a replicated generator, and
+    another submits them the other way round, both see `child(g, 0)` first and
+    `child(g, 1)` second.
+- **Per-rank seeds** (`seed + rank`) are not used:
+  - They make the values depend on the decomposition. The same seed gives
+    different values on a different number of ranks.
+  - They leave the separation of the streams unspecified. If the seed is the
+    starting counter under one common key `K`, the streams overlap: block 1
+    under seed `s` is `F_K(s + 1)`, which is block 0 under seed `s + 1`. If each
+    seed instead becomes its own key, `F_{K_s}(1)` and `F_{K_{s+1}}(0)` are
+    unrelated, and the separation then depends on how seeds become keys, which
+    a rank offset does not say.
 
 ## Restart and Persistence
 
@@ -340,8 +584,9 @@ device.
 - **Fixed seed:**
   - The resume-point label, which is the GUID of the restored manifest,
     separates draws after a restart from the draws before the checkpoint.
-  - Two jobs that resume from the same checkpoint with the same fixed seed draw
-    the same numbers, which is what a fixed seed asks for. Independent replicas
+  - Two jobs that resume from the same checkpoint with the same fixed seed can
+    draw the same numbers, and do under the reproducible option, which is what
+    a fixed seed asks for. Independent replicas
     use different seeds or fresh entropy.
 - **Exact continuation is not a goal.** A resumed run that reproduced the
   uninterrupted run would need every live node's child counter saved with the
@@ -351,9 +596,11 @@ device.
   configuration.
 - **Descriptors instead of payload.**
   - A random tensor can be stored as a descriptor: mapping version, identity,
-    position scheme, layout and distribution parameters.
-  - It regenerates bit for bit on the same device type, and to a few ulp
-    elsewhere.
+    position scheme, layout, base and distribution parameters.
+  - It regenerates its words and unit uniforms exactly. Values computed from
+    them regenerate only to the bounds in [Transforms](#transforms), even on
+    the same kind of machine. A value that must not change at all needs a
+    stored payload.
   - Whether the store keeps the payload, the descriptor or both is cache
     policy. A descriptor-only store requires its mapping version to remain
     implemented.
@@ -371,60 +618,96 @@ device.
   rotations within degenerate singular subspaces) already makes bitwise
   comparison meaningless. Tests compare singular values, projectors and
   reconstruction error against tolerances.
-- **Reproducing a failure.** Rerunning a failing case with the same seed, build
-  and configuration reproduces the sketch, which is usually enough to debug it.
+- **Reproducing a failure.** If the failing run used the reproducible option,
+  rerunning it with the same seed, build and configuration under the option
+  reproduces the sketch, which is usually enough to debug it. A run without the
+  option may have load-balanced its fills or taken labels in submission order,
+  and provenance records neither, so turning the option on afterwards need not
+  reproduce it.
 
 ## Monte Carlo Streams
 
 - **Stream families.** A stream family is an operation node, and walker `w`
   draws from `child(operation, w)`. That node can be derived on the host or by
   the kernel that runs the walker. A walker has 2⁶³ evaluations.
-- **State.** A stream's state is its 128-bit identity, its position, and up to
-  `g - 1` buffered lanes.
+- **State.** A stream's state is its 128-bit identity, its position, and the
+  unused words of its current evaluation. How Uni20's own distributions draw
+  from a stream is [open question 15](#open-questions).
+- **Word interface.** A stream starts at position 0. Successive calls return
+  `out[0]` to `out[3]` of `value_block(node, 0)`, then of position 1, and so on,
+  and skipping ahead counts words. This is the sequence of `std::philox4x32`
+  with key `k` and counter `(h, 2⁶³ + p)` set at position `p`, so the stream can
+  be tested against the standard engine, as the bijection is.
 - **Labels.** Assign streams by sample or walker identity, not by rank, thread
-  or device. Any single sample can then be replayed on its own, under the same
-  build, by constructing its stream.
-- **Distributions.** A `PhiloxStream` type for host and device code models
-  `std::uniform_random_bit_generator` on the host, so user code can draw from
-  it. Only Uni20's own distributions follow the conventions above. The standard
-  library's distributions are implementation-defined and differ between
-  libstdc++, libc++ and MSVC.
+  or device. Any single sample can then be replayed on its own by constructing
+  its stream. Its words and unit uniforms replay exactly under the same mapping
+  version. Its scaled and normal values replay exactly in the same build on the
+  same processor, or under the reproducible option with its original
+  placement.
+- **Standard compatibility.** `PhiloxStream` is the adapter of
+  [Interface: Counter Mode](#interface-counter-mode). It runs in host and
+  device code. On the host it meets the uniform random bit generator
+  requirements: it models the concept and provides `result_type`, which is
+  `std::uint32_t`.
+  - A copy is an independent value with the same state, so it repeats the
+    original's draws, as standard engines do. Node handles differ: their
+    copies share one child counter.
+  - Only Uni20's own distributions follow the conventions above. The standard
+    library's distributions are implementation-defined and differ between
+    libstdc++, libc++ and MSVC.
 
 ## Testing
 
 - Philox4x32-10 known-answer vectors from Random123, on host and CUDA.
 - Derivation:
   - identical labels give identical identities;
-  - siblings are distinct;
+  - single-step siblings are distinct;
   - derivation and value counters never overlap.
 - Allocation-offset fills:
   - padding stays zero;
   - one-element and grouped evaluation agree;
-  - host and CUDA words and uniforms agree bit for bit, and normal values agree
-    within a stated ulp bound.
+  - host and CUDA words and unit uniforms agree bit for bit, and scaled and
+    normal values agree within the bounds in [Transforms](#transforms).
 - Logical-position fills give the same values for packed and separate storage,
   any `BlockAlignment`, and row- and column-major order.
 - Replicas produced by the generate-once path are identical.
-- With a fixed submission order, `DebugScheduler` and `TbbScheduler` produce
-  the same random values.
+- A fill split between the host and CUDA in several ways gives the same words
+  and unit uniforms as an undivided fill, and a stream state moved between the
+  host and a device continues with the same words.
+- Under the reproducible option, runs under `DebugScheduler` with different
+  random orders and under `TbbScheduler` produce bitwise the same random
+  values, scaled and normal values included.
 - Restart:
-  - after a fresh-entropy restart, and after a fixed-seed resume, no draw
-    repeats a draw from before the checkpoint;
+  - after a fresh-entropy restart, and after a fixed-seed resume, no address
+    assigned after the checkpoint was assigned before it. The test compares
+    addresses, not values: distinct addresses can give equal values, two
+    24-bit floats for example;
   - two jobs resuming from the same checkpoint with fresh entropy draw
-    different values.
+    different values;
+  - under the reproducible option, a repeated three-job chain reproduces every
+    job's addresses, and a rewind, which restores an earlier checkpoint and
+    writes a new one, draws no address that the abandoned branch drew.
+- On the host, an ordinary `std::shuffle` call compiles and runs with the
+  stream.
 - Distribution checks against independent expected values: mean, variance, and
   a χ² or Kolmogorov–Smirnov test for each distribution. For complex normal
   values, check `E[z] = mu`, `E|z - mu|² = sigma²` and `E[(z - mu)²] = 0`.
 
 ## Rejected Alternatives
 
-- **Bitwise reproducibility as a requirement.** See the contract.
+- **Bitwise reproducibility across configurations.** See the contract. Within
+  one configuration it is offered on request.
 - **A fixed bit-field counter layout** (operation, block and position fields
   with a per-operation split). It cannot carry GUIDs or deeper hierarchies, it
   needs a split chosen per operation, and the right block identity varies with
   the circumstances.
 - **64-bit derived keys.** Collisions become likely at realistic scale. The tree
   carries 128-bit identities.
+- **A stream interface as the common denominator.** If the interface were
+  designed so that every source fit the standard library's engine model, each
+  value would depend on draw order, and so on scheduling. Positions could not
+  be evaluated in parallel or out of order. The standard model is offered as an
+  adapter instead (see [Interface: Counter Mode](#interface-counter-mode)).
 - **Sequential engines such as MT19937.** They carry 2.5 KB of state, and their
   values depend on draw order and hence on scheduling. Jump-ahead is expensive,
   copies duplicate streams, and the GF(2)-linear structure fails
@@ -445,8 +728,11 @@ device.
    default seed.
 4. **Reserved IDs.** Decide whether the persistent store should reserve object
    IDs before commit, so that outputs can be labelled by GUID.
-5. **Single-precision normal values.** Keep 32-bit uniforms with the 6.66σ cap,
-   or use two words per uniform.
+5. **Single-precision normal values.** Use one word per uniform, giving four
+   real values per evaluation and a cap of 6.66σ with 32-bit uniforms or 5.77σ
+   with 24-bit ones, or two words, giving two values and 8.57σ. The choice
+   changes which evaluation and value index each element uses. The `float` normal
+   rows, and any fill that uses them, stay provisional until it is made.
 6. **Default node.** Decide whether the run context owns a run-level default
    generator node, seeded from configuration.
 7. **Extended scalars.** Words per value and transforms for binary128 and
@@ -454,11 +740,102 @@ device.
 8. **Python surface.** `numpy.random.SeedSequence.spawn` is the closest
    existing analogue of the identity tree.
 
+Questions 9 to 12 concern block tensors and distributed execution, and
+question 13 concerns randomized algorithms. All five decide layer 4 (see
+[Implementation Staging](#implementation-staging)):
+
+9. **Block labels.** Label a block by its symmetry key or by its ordinal.
+   - A key stays the same when other blocks are added, removed or reordered,
+     and on every rank. It is several words long, so it needs the label
+     encoding of question 2.
+   - An ordinal is one word, but it depends on the set of blocks and their
+     order, so two tensors with the same block but different other blocks
+     label it differently.
+10. **Positions in block storage.** Choose the default position scheme for a
+    `BlockTensor`.
+    - Allocation offsets are cheapest, but the values then depend on the
+      packing and on `BlockAlignment`.
+    - Logical indices give the same positions in any layout. Replicas and
+      regeneration in place of communication can use them, or allocation
+      offsets when every copy has the same layout and base.
+    - A block split across ranks gives the same words for any split only if
+      every element gets the same leaf and the same position under each split.
+      The leaf is then derived only from labels that do not depend on the
+      decomposition, with no shard or allocation level below the block. The
+      position is the logical index of the whole block, not of the shard, so
+      each shard carries the whole block's coordinate origin and extents.
+    - If the segmented plan of Uni20-dev/uni20#125 fuses adjacent segments, it
+      must not fuse segments that have different leaf identities.
+11. **Who derives operation nodes in distributed execution.** In
+    root-controller mode, root derives them and command descriptors carry them.
+    In SPMD mode, every rank derives them by running the same program. The
+    choice follows the MPI design, which is still exploratory.
+12. **Redistribution.** A block that moves between ranks or devices takes its
+    values with it. Decide whether a block may instead be regenerated after a
+    move. Two cases differ:
+    - Regenerating an existing block after a move. Keeping its original
+      position map (its leaf, layout and base, or each shard's leaf and origin
+      if it was generated as shards) as small metadata gives the same Philox
+      inputs and value indices in any destination layout, even with
+      allocation-offset positions. Whole-block logical indices also work if the
+      destination keeps the original leaf.
+    - Generating the same block independently under two decompositions. Each
+      element needs the same leaf and the same position in both: a leaf
+      derived only from decomposition-independent labels (question 10), and
+      whole-block logical indices, or allocation offsets with the same layout
+      and base.
+
+    In both cases the words and unit uniforms agree exactly, and values
+    computed from them agree to the bounds in [Transforms](#transforms).
+13. **Fresh operation labels.** Decide who supplies the label of each call's
+    operation node: the generator node's atomic child counter, as
+    [Attaching Identities](#attaching-identities) proposes, or the caller, who
+    passes a fresh node to every call. `child(node, label)` is deterministic,
+    so without one of the two, two calls given the same label reuse a sketch.
+    This must be settled before randomized algorithms accept a shared
+    generator.
+14. **Reproducible transforms.** Choose how the reproducible option makes
+    scaled and normal values reproducible.
+    - Pin their placement, as the contract says. This is simple, but it gives
+      up load balancing for random fills under the option.
+    - Or compute the transforms with explicitly rounded operations: Uni20's own
+      `log` and `sincos`, `fma` wherever a multiply and an add meet, and no
+      contraction. Host and device then agree bit for bit, and placement can
+      stay dynamic, at some cost in speed.
+15. **Stream draw rule.** Specify how Uni20's own distributions draw from a
+    stream: the order in which they take words, whether each draw starts at an
+    evaluation boundary or continues from buffered words, and what happens to
+    buffered words when the distribution changes. Until this is written, the
+    stream's standard-compatible word interface is fixed, and its use by
+    Uni20's distributions is not.
+16. **Object IDs under the reproducible option.** Two labels can be GUIDs of
+    objects created during the run: a component label, and the resume point's
+    label, which is the GUID of a checkpoint manifest. Under the option, a
+    repeated chain of jobs must give each of its checkpoints the label the first
+    chain gave it, while different checkpoints keep distinct labels, or draws
+    are reused across "restarts and branches from a checkpoint". Choose one:
+    - require the persistent store to assign object IDs, manifest IDs included,
+      deterministically under the option;
+    - or have the option use indices instead of GUIDs: operation and component
+      indices for components, and for the resume point a path that follows the
+      checkpoint's history. The manifest stores the resume node of the job that
+      wrote it, and a job that restores it takes two `child` steps from that
+      node: the checkpoint's ordinal within the writing job, then a job label
+      given with the restore, supplied by the plan or the user as the seed is.
+      Checkpoints of one job are then exactly distinct, and a repeated history
+      derives the same path. The job label keeps apart two jobs that restore
+      one checkpoint; with equal job labels they are replicas, as two jobs with
+      one seed are.
+    - A flat index does not work. Numbered per job, every job's first
+      checkpoint gets the same index, so consecutive jobs of a chain share a
+      resume label. Numbered per chain, a rewind repeats an index. Numbered from
+      zero, a first checkpoint collides with the fresh-start label.
+
 ## References
 
 - J. K. Salmon, M. A. Moraes, R. O. Dror and D. E. Shaw, "Parallel random
   numbers: as easy as 1, 2, 3", SC '11 (2011). Defines Philox and Threefry.
-- C. Manssen, M. Weigel and A. K. Hartmann, "Random number generators for
+- M. Manssen, M. Weigel and A. K. Hartmann, "Random number generators for
   massively parallel simulations on GPU", Eur. Phys. J. Special Topics 210, 53
   (2012), arXiv:1204.6193.
 - arXiv:2203.04058: TestU01, PractRand and Gjrand results for a set of
