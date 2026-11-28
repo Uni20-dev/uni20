@@ -64,13 +64,17 @@ fresh entropy.
 
 **Best effort: same values under a fixed configuration.** A fixed seed gives
 the same random values when the build and configuration are also the same:
-the rank count, devices, storage layouts and submission order. This is a
-debugging aid. Downstream results can still differ through floating-point
+the rank count, machines, devices, storage layouts and submission order. This
+is a debugging aid. Downstream results can still differ through floating-point
 reduction order, library algorithm selection or scheduling.
 
 **Not offered:** bitwise identical random values or results across builds,
-compilers, compiler flags, devices, rank counts or storage layouts. Normal
-values computed on the host and on a CUDA device differ in the last unit or so.
+compilers, compiler flags, math libraries, machines, devices, rank counts or
+storage layouts. Math library functions differ between implementations and
+versions, and a library may choose its implementation by CPU feature at run
+time, so even one build can give different normal values on two machines.
+Normal values computed on the host and on a CUDA device differ in the last unit
+or so.
 Bitwise reproducibility of results would fix the floating-point evaluation
 order everywhere (reduction trees, BLAS algorithm choice, FMA contraction). It
 would cost performance and would still break between two compilations.
@@ -431,8 +435,9 @@ Conventions:
   imaginary parts are the cosine and sine halves of one Box–Muller pair. They
   are independent, each with standard deviation `sigma / sqrt(2)`.
 
-Words and unit uniforms `u` agree bit for bit between host and device.
-Everything computed from them can differ in the last bits:
+Words and unit uniforms `u` are the same everywhere: they come from integer
+operations and an exact conversion. Nothing computed from them is promised bit
+for bit, between host and device or between two host builds:
 
 - **Scaled values.** `low + (high - low) u` and `mu + sigma x` are a multiply
   and an add. A compiler may contract them into one fused multiply-add on one
@@ -440,8 +445,10 @@ Everything computed from them can differ in the last bits:
   results then differ by the rounding of those operations: a few ulp of
   `|low| + |high - low| u`, or of `|mu| + sigma |x|`. The bound is absolute, not
   relative to the result, because the result can cancel to zero.
-- **Normal values.** `x` itself goes through `log`, `sqrt`, `sin` and `cos`, so
-  it agrees only to a few ulp.
+- **Normal values.** `x` itself goes through `log`, `sqrt`, `sin` and `cos`.
+  Their results differ between math libraries, between versions, and between
+  the code paths a library selects for a CPU, so `x` agrees only to the
+  libraries' error bounds, a few ulp.
 
 The contract accepts both. The transform lives in one header compiled for both
 host and device.
@@ -451,8 +458,8 @@ host and device.
 - **Replicas.** A replicated component's label is the logical component, never
   the rank or the allocation address. With allocation-offset positions,
   replicas must also share a layout. Otherwise use logical positions, or
-  generate once and copy. A replica generated on the host and one generated on
-  a device differ in the last bits of normal values. That matters only when
+  generate once and copy. Replicas generated on different machines or devices
+  can differ in the last bits of scaled and normal values. That matters only when
   something takes a discrete decision from them, which the contract already
   routes through a single decision maker.
 - **Regenerate instead of communicate.** In a distributed randomized SVD, row
@@ -506,10 +513,10 @@ host and device.
 - **Descriptors instead of payload.**
   - A random tensor can be stored as a descriptor: mapping version, identity,
     position scheme, layout and distribution parameters.
-  - It regenerates bit for bit only under a compatible implementation of the
-    transform: the same device type, contraction and math library (see
-    [Transforms](#transforms)). Elsewhere it regenerates to the bounds given
-    there. A value that must not change at all needs a stored payload.
+  - It regenerates its words and unit uniforms exactly. Values computed from
+    them regenerate only to the bounds in [Transforms](#transforms), even on
+    the same kind of machine. A value that must not change at all needs a
+    stored payload.
   - Whether the store keeps the payload, the descriptor or both is cache
     policy. A descriptor-only store requires its mapping version to remain
     implemented.
@@ -665,9 +672,8 @@ question 13 concerns randomized algorithms. All five decide layer 4 (see
     - Generating the same block independently under two decompositions. Only
       whole-block logical indices give that.
 
-    In both cases the values agree bit for bit only under a compatible
-    transform implementation (see [Transforms](#transforms)). Across device
-    types they agree to its bounds.
+    In both cases the words and unit uniforms agree exactly, and values
+    computed from them agree to the bounds in [Transforms](#transforms).
 13. **Fresh operation labels.** Decide who supplies the label of each call's
     operation node: the generator node's atomic child counter, as
     [Attaching Identities](#attaching-identities) proposes, or the caller, who
