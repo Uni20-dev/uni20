@@ -59,7 +59,8 @@ template <class Matrix> void check_svd(Matrix const& a)
   auto original = host_factors(a);
   auto ref = svd(original);
   auto id = random::root(17);
-  auto [ud, sd, vhd, info] = randomized_truncated_svd(a, {k, p, q}, id);
+  // Exercise the default power count against the explicit two-step replay below.
+  auto [ud, sd, vhd, info] = randomized_truncated_svd(a, {.rank = k, .oversampling = p}, id);
   auto u = host_factors(ud);
   auto s = host_factors(sd);
   auto vh = host_factors(vhd);

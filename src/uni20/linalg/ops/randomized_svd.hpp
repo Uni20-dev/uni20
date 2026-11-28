@@ -19,7 +19,7 @@ struct RandomizedRangeOptions
 {
     index_type rank;
     index_type oversampling = 8;
-    index_type power_iterations = 1;
+    index_type power_iterations = 2;
 };
 
 /// \brief Retained factor extent and actual number of Gaussian columns used.

@@ -9,7 +9,7 @@ records the retained extent and actual sketch width. Use the exact
 
 ```cpp
 auto [u, s, vh, info] = uni20::linalg::randomized_truncated_svd(
-    a, {.rank = 12, .oversampling = 8, .power_iterations = 1}, uni20::random::root(42));
+    a, {.rank = 12}, uni20::random::root(42));
 ```
 
 The caller chooses an identity for each operation. Reusing the identity
@@ -18,6 +18,7 @@ a common root. The first child (`child(identity, 0)`) supplies
 the sketch. Float sketches round the standard normal draws to float.
 Singular-vector signs and bases within repeated singular values depend on the solver.
 
+The defaults are eight extra columns ($p=8$) and two power iterations ($q=2$).
 The sketch width is $\ell=\min(k+p,m,n)$ for $k>0$. The rank must lie in
 $[0,\min(m,n)]$ and both oversampling $p$ and the power count $q$ must be
 nonnegative. Rank zero returns empty factors immediately. Increasing $p$ samples
