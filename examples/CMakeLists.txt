@@ -123,6 +123,9 @@ add_test(NAME IsingHotrgRejectFixedBits COMMAND ising_hotrg_example --precision=
 set_tests_properties(IsingHotrgRejectFixedBits PROPERTIES WILL_FAIL TRUE)
 add_test(NAME IsingHotrgEighFlow COMMAND ising_hotrg_example --gram-cut=eigh --bond=8 --rounds=6)
 add_test(NAME IsingHotrgSelectedEighFlow COMMAND ising_hotrg_example --gram-cut=selected-eigh --bond=8 --rounds=6)
+# The Jacobi cuts have only CUDA implementations.
+add_test(NAME IsingHotrgRejectHostJacobi COMMAND ising_hotrg_example --gram-cut=jacobi-eigh --bond=4 --rounds=1)
+set_tests_properties(IsingHotrgRejectHostJacobi PROPERTIES WILL_FAIL TRUE)
 add_test(NAME IsingHotrgCutBenchmark COMMAND ising_hotrg_example --benchmark-gram-cut --bonds=4,8 --rounds=2
                                              --repeat=1)
 if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
@@ -134,9 +137,14 @@ if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
   add_test(NAME IsingHotrgCudaSecondDevice COMMAND ising_hotrg_example --execution=cuda --second-cuda-device=1 --check)
   add_test(NAME IsingHotrgCudaCutBenchmark COMMAND ising_hotrg_example --execution=cuda --benchmark-gram-cut
                                                    --bonds=4,8 --rounds=2 --repeat=1)
+  add_test(NAME IsingHotrgCudaJacobiEighFlow COMMAND ising_hotrg_example --execution=cuda --gram-cut=jacobi-eigh
+                                                     --bond=8 --rounds=6)
+  add_test(NAME IsingHotrgCudaJacobiSvdFlow COMMAND ising_hotrg_example --execution=cuda --gram-cut=jacobi-svd
+                                                    --bond=8 --rounds=6)
   # The example exits with 77 when a CUDA device is not available, which CTest reports as skipped.
   set_tests_properties(IsingHotrgCudaCheck IsingHotrgCudaFlow IsingHotrgCudaFloat32 IsingHotrgCudaSecondDevice
-                       IsingHotrgCudaCutBenchmark PROPERTIES SKIP_RETURN_CODE 77)
+                       IsingHotrgCudaCutBenchmark IsingHotrgCudaJacobiEighFlow IsingHotrgCudaJacobiSvdFlow
+                       PROPERTIES SKIP_RETURN_CODE 77)
 else()
   add_test(NAME IsingHotrgRejectCuda COMMAND ising_hotrg_example --execution=cuda --bond=4 --rounds=1)
   set_tests_properties(IsingHotrgRejectCuda PROPERTIES WILL_FAIL TRUE)

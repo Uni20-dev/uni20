@@ -253,13 +253,19 @@ gram of size `D^2 x D^2` at the plateau. `--gram-cut=M` chooses how:
 | `svd` (default) | `truncated_svd` (LAPACK `gesvd`, or MPLAPACK) | the full cuSOLVER SVD, then the leading columns by a GEMM |
 | `eigh` | `eigh` (LAPACK `syev`, or MPLAPACK) | cuSOLVER `syevd`, then the trailing columns by a GEMM |
 | `selected-eigh` | `eigh` over an index range (LAPACK `syevr`, or MPLAPACK binary128) | cuSOLVER `syevdx`, then the columns by a GEMM |
+| `jacobi-eigh` | none | `eigh_jacobi` (cuSOLVER `syevj`), then the trailing columns by a GEMM |
+| `jacobi-svd` | none | `svd_jacobi` (cuSOLVER `gesvdj`), then the leading columns by a GEMM |
 
 `selected-eigh` asks for only the top `D + 1` eigenpairs: `D` to keep and one
 more for the gap at the cut. It covers float, double and binary128; binary80
 and MPFR runs reject it, since their adapters have only the full solver.
 
-All three keep the same subspace when the gap at the cut is not tiny; the flows
-agree to rounding.
+The Jacobi methods run only with `--execution=cuda`, and the host benchmark
+leaves them out. A Jacobi solve that stops at its sweep limit ends the run
+rather than cutting with unconverged vectors.
+
+All the methods keep the same subspace when the gap at the cut is not tiny; the
+flows agree to rounding.
 
 `--benchmark-gram-cut` compares the methods at fp64 on the selected place, for
 the bonds in `--bonds=D,D,...`:
@@ -286,3 +292,10 @@ A five-round flow takes 15.7 s, 9.2 s and 9.2 s on the GV100 at bond 64, and
 14.1 s, 8.5 s and 7.0 s on the host at bond 32. On the GPU, `syevdx` still
 reduces the whole gram to tridiagonal form, which dominates; asking for fewer
 eigenpairs saves little there.
+
+On the same GV100, the Jacobi solvers are slower and less accurate than
+`syevd` on these grams. At bond 64, `jacobi-eigh` cuts in 7.7 s and `jacobi-svd`
+in 13.7 s, against 0.41 s for `eigh`. Their spectrum errors are 2.9e-12 and
+3.2e-13, against 2.1e-15, and a five-round flow's ln Z/N is off the `svd` flow by
+1.6e-14 and 1.5e-14, against 2.2e-16. These runs use cuSOLVER's default
+tolerance (machine precision) and sweep limit.
