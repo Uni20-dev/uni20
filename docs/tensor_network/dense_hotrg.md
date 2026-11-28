@@ -67,7 +67,9 @@ at every precision. `selected-eigh`, `dc-eigh` and `dc-svd` need LAPACK drivers
 that cover `fp32`, `fp64` and `fp128`, so `fp80` and `mpreal` reject them. The
 two Jacobi methods use cuSOLVER and need `--execution=cuda`; the two `dc`
 methods run only on the host. The randomized `rsvd` and `nystrom` cuts support
-fp32 and fp64 on host and CUDA. They accept `--seed`, `--oversampling` and
+`fp32` and `fp64` on both host and CUDA. On the host, they also support `fp80`,
+`fp128` and `mpreal` (MPFR) when the corresponding MPLAPACK provider is enabled.
+They accept `--seed`, `--oversampling` and
 `--power-iterations`. HOTRG defaults to seed 1, eight extra columns and three
 power steps. Both cuts report the gap from one extra approximate value when
 truncating. `--benchmark-gram-cut` compares the methods (see

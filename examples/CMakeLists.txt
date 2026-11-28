@@ -126,8 +126,15 @@ add_test(NAME IsingHotrgSelectedEighFlow COMMAND ising_hotrg_example --gram-cut=
 foreach(method IN ITEMS rsvd nystrom)
   add_test(NAME IsingHotrgFlow_${method} COMMAND ising_hotrg_example --gram-cut=${method} --bond=8 --rounds=3
            --seed=71 --oversampling=5 --power-iterations=2 --onsager-points=16)
-  add_test(NAME IsingHotrgRejectWide_${method} COMMAND ising_hotrg_example --gram-cut=${method} --precision=fp128)
-  set_tests_properties(IsingHotrgRejectWide_${method} PROPERTIES WILL_FAIL TRUE)
+  foreach(precision IN ITEMS fp80 fp128 mpreal)
+    if((precision STREQUAL fp80 AND UNI20_HAS_MPLAPACK_FLOAT80) OR
+       (precision STREQUAL fp128 AND UNI20_HAS_MPLAPACK_FLOAT128) OR
+       (precision STREQUAL mpreal AND UNI20_HAS_MPLAPACK_MPREAL))
+      add_test(NAME IsingHotrgFlow_${method}_${precision}
+               COMMAND ising_hotrg_example --gram-cut=${method} --precision=${precision}
+                       --bond=4 --rounds=2 --onsager-points=16)
+    endif()
+  endforeach()
 endforeach()
 # The Jacobi cuts have only CUDA implementations.
 add_test(NAME IsingHotrgRejectHostJacobi COMMAND ising_hotrg_example --gram-cut=jacobi-eigh --bond=4 --rounds=1)

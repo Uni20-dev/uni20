@@ -42,6 +42,11 @@ Float128 means a 113-bit significand, not MPLAPACK's fallback alias to a narrowe
 `long double`. That alias mode is reported as unavailable for this case.
 Float80 similarly requires Uni20's native 64-bit-significand format detection.
 
+The real randomized-range probe checks thin Q against the input column space.
+A seven-dimensional matrix with three nonzero eigenvalues lets a three-column
+sketch capture its entire range. The test checks the leading spectral increment
+and both solver residuals against the epsilon of the input precision.
+
 Dense decomposition probes force `LapackBackend` for real/complex QR, LQ,
 self-adjoint eigensystems, SVD and general eigenanalysis. They cover float32/64,
 configured binary80/binary128 and MPFR at 128/256 bits. Binary80 complex

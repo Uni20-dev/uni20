@@ -28,6 +28,8 @@ template <class S> Precision working_precision(Precision p)
   return p;
 }
 template <class S>
+concept BasisScalar = requires(std::size_t n, std::span<S> a, Precision p) { mplapack::orthonormal_basis(n, n, a, p); };
+template <class S>
 concept QrScalar = requires(std::size_t n, std::span<S> a, Precision p) { mplapack::qr(n, n, a, a, a, p); };
 template <class S>
 concept LqScalar = requires(std::size_t n, std::span<S> a, Precision p) { mplapack::lq(n, n, a, a, a, p); };

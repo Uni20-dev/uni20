@@ -31,6 +31,7 @@ general eigensystems through `LapackBackend`.
 | LU reciprocal condition estimate (one/infinity norm) | `Rgecon` | `Cgecon` |
 | Three-precision LU refinement | Reuses `Rgetrf`/`Rgetrs`; host residual/update arithmetic | Reuses `Cgetrf`/`Cgetrs`; host residual/update arithmetic |
 | Rank-aware minimum-norm least squares | `Rgelss` | `Cgelss` |
+| Thin Q only, tall or square workspace | `Rgeqrf`, `Rorgqr` | unsupported by the packed adapter |
 | Reduced QR | `Rgeqrf`, `Rorgqr` | `Cgeqrf`, `Cungqr` |
 | Full-column-rank least squares | Reduced QR above, then scalar triangular solve | Reduced QR above, then scalar triangular solve |
 | Reduced LQ | `Rgelqf`, `Rorglq` | `Cgelqf`, `Cunglq` |
@@ -83,6 +84,9 @@ inputs with cuSOLVER `geqrf` and `orgqr`. The destructive kernel takes
 column-major work and outputs on the same device, including wide work matrices.
 `orthonormal_basis` selects the Q-only kernel on tall or square inputs. Both
 the LAPACK and cuSOLVER kernels form Q in the workspace and skip extracting R.
+The direct host kernel also serves MPLAPACK binary128. The binary80 and MPFR
+adapters convert the column-major workspace to provider scalars, form Q and
+convert it back at the operation precision.
 
 The optional cuSOLVER backend provides blocking exact SVD through
 `cusolverDnSgesvd` and `cusolverDnDgesvd`. Its first operation accepts destructive
@@ -203,6 +207,7 @@ the project [Scalar Policy](../tensor/scalar_policy.md):
 | Dense real symmetric indefinite reciprocal condition estimate | yes | yes | n/a | n/a | Dense projected symmetric indefinite one-norm reciprocal condition estimate through LAPACK `sytrf`/`sycon`. |
 | Dense real symmetric indefinite factorized reciprocal condition estimate | yes | yes | n/a | n/a | Dense projected symmetric indefinite one-norm reciprocal condition estimate from reusable Bunch-Kaufman factors through LAPACK `sycon`. |
 | Dense real compact QR factor application | yes | yes | n/a | n/a | Dense projected Householder QR factor application through LAPACK `ormqr`. |
+| Thin Q of a tall or square matrix | yes | yes | yes | yes | `orthonormal_basis_op` forms Q in the workspace with `geqrf` and `orgqr`/`ungqr`. |
 | Dense real/complex QR factorization | yes | yes | yes | yes | Active `qr_op` dispatch computes reduced QR through LAPACK `geqrf` and `orgqr`/`ungqr`. `qr_factorization` exposes destructive workspace semantics; `qr` preserves its input and returns owning column-major factors. |
 | Dense real compact LQ factor application | yes | yes | n/a | n/a | Dense projected Householder LQ factor application through LAPACK `ormlq`. |
 | Dense real/complex LQ factorization | yes | yes | yes | yes | Active `lq_op` dispatch computes reduced LQ through LAPACK `gelqf` and `orglq`/`unglq`. `lq_factorization` exposes destructive workspace semantics; `lq` preserves its input and returns owning column-major factors. |
@@ -272,7 +277,7 @@ provider/helper support; algorithm-level binary128 coverage remains in
 | MPBLAS wrapper surface | yes | yes | Current wrapper surface covers projected `gemm`, `gemv`, rank-update, symmetric-rank, and Hermitian-rank operations used by active paths. |
 | Checked LAPACK norms, core LU, orthogonal factorizations, and SVD wrappers | yes | yes | Provider wrappers cover `lange`, `lansy`/`lanhe`, `lantr`, `gesv`, `getrf`, `getrs`, `getri`, `gecon`, real `geqrf`/`orgqr` and `gelqf`/`orglq`, plus `gesvd`, `gesdd`, and `gesvdx`. |
 | Dispatched SVD least squares and LU conditioning | yes | yes | `svd_least_squares_op` uses `Rgelss`/`Cgelss`; `lu_rcond_op` uses `Rgecon`/`Cgecon`, with shared precision probes. |
-| Tensor/linalg CPU helper probes | yes | n/a | Current probes cover dispatched real one-norm evaluation, dense solve, reduced QR/LQ, tensor reductions, and matrix-exponential prescaling in binary128 over `uni20::DenseMatrix`. |
+| Tensor/linalg CPU helper probes | yes | n/a | Current probes cover dispatched real one-norm evaluation, dense solve, Q-only and reduced QR/LQ, tensor reductions, and matrix-exponential prescaling in binary128 over `uni20::DenseMatrix`. |
 | Broad dense projected real helper inventory | regression | n/a | Quarantined API inventory exercised by the optional MPLAPACK binary128 regression target. |
 | Dense projected complex eigensystem and Schur helper inventory | n/a | regression | Quarantined API inventory exercised by the optional MPLAPACK binary128 regression target. |
 | Symmetric tridiagonal projected eigensystem | yes | n/a | Uses MPLAPACK `Rsterf`/`Rsteqr`; this is the projected problem behind real and complex Hermitian Lanczos. |

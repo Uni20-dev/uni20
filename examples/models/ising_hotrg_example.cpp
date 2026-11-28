@@ -1207,8 +1207,6 @@ int main(int argc, char** argv)
       usage("--gram-cut=jacobi-eigh and jacobi-svd run only with --execution=cuda");
     if (execution == "cuda" && cut_method_needs_host(method))
       usage("--gram-cut=dc-eigh and dc-svd run only with --execution=cpu");
-    if (uses_sketch(method) && precision != "fp32" && precision != "fp64")
-      usage("rsvd and nystrom require --precision=fp32 or fp64");
     if (check && precision != "fp64")
       usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
     if (benchmark && (check || precision != "fp64"))

@@ -97,6 +97,7 @@ enum class PrecisionProbe
   CpuLuRefinement,
   ProviderLuRefinement,
   CpuLuRefinementMixedResidual,
+  RandomizedRangeFactors,
   DecompositionFactors,
   DecompositionSpectrum,
   DecompositionAccuracyImprovesWithPrecision,
@@ -207,6 +208,7 @@ inline constexpr std::array precision_probes{
     ProbeDescription{"NumericalLinalg", "CpuLuRefinement", "cpu_float32_factors"},
     ProbeDescription{"NumericalLinalg", "ProviderLuRefinement", "lapack_float32_factors"},
     ProbeDescription{"NumericalLinalg", "CpuLuRefinementMixedResidual", "cpu_float32_factors"},
+    ProbeDescription{"NumericalLinalg", "RandomizedRangeFactors", "host"},
     ProbeDescription{"NumericalLinalg", "DecompositionFactors", "lapack"},
     ProbeDescription{"NumericalLinalg", "DecompositionSpectrum", "lapack"},
     ProbeDescription{"NumericalLinalg", "DecompositionAccuracyImprovesWithPrecision", "lapack"},
@@ -235,9 +237,12 @@ template <class C> constexpr ProbeCoverage probe_coverage(PrecisionProbe probe)
   else
   {
     using enum PrecisionProbe;
-    bool const decomposition = probe == ProviderLeastSquares || probe == ProviderSvdLeastSquares ||
-                               probe == ProviderLuCondition || probe == DecompositionFactors ||
-                               probe == DecompositionSpectrum || probe == DecompositionAccuracyImprovesWithPrecision;
+    if (probe == RandomizedRangeFactors && C::is_complex)
+      return {"unsupported", "randomized range finders use real sketches"};
+    bool const decomposition = probe == RandomizedRangeFactors || probe == ProviderLeastSquares ||
+                               probe == ProviderSvdLeastSquares || probe == ProviderLuCondition ||
+                               probe == DecompositionFactors || probe == DecompositionSpectrum ||
+                               probe == DecompositionAccuracyImprovesWithPrecision;
     if (decomposition)
     {
       if constexpr (C::binary80_provider)

@@ -222,16 +222,21 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<complex160 const> a, std::
   getrs_impl(n, nrhs, a, pivots, b);
 }
 #endif
+void orthonormal_basis(std::size_t m, std::size_t n, std::span<float80> a, Precision p)
+{
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::basis, m, n, a, {}, {}, p);
+}
+
 void qr(std::size_t m, std::size_t n, std::span<float80> a, std::span<float80> q, std::span<float80> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::qr, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<float80> a, std::span<float80> q, std::span<float80> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::lq, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<float80> a, std::span<float80> values, bool vectors, char triangle, Precision p)
@@ -255,13 +260,13 @@ void eigen(std::size_t n, std::span<float80> a, std::span<complex160> values, st
 void qr(std::size_t m, std::size_t n, std::span<complex160> a, std::span<complex160> q,
         std::span<complex160> triangular, Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::qr, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<complex160> a, std::span<complex160> q,
         std::span<complex160> triangular, Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::lq, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<complex160> a, std::span<float80> values, bool vectors, char triangle, Precision p)

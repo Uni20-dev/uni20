@@ -103,7 +103,24 @@ template <class Matrix> void check_svd(Matrix const& a)
 }
 template <class R>
 concept AcceptsSketch = requires(DenseMatrix<R> const& a) { randomized_truncated_svd(a, {1}, random::root(0)); };
-static_assert(!AcceptsSketch<long double> && !AcceptsSketch<uni20::complex<double>>);
+static_assert(!AcceptsSketch<uni20::complex<double>>);
+#if UNI20_HAS_FLOAT80
+static_assert(AcceptsSketch<float80> == bool(UNI20_HAS_MPLAPACK_FLOAT80));
+#endif
+
+template <class Tensor, class... P>
+constexpr auto basis_acceptance =
+    uni20::linalg::detail::backend_type_acceptance<LapackBackend, orthonormal_basis_op,
+                                                   decltype(mdspec_of(std::declval<Tensor&>())), P...>();
+static_assert(basis_acceptance<DenseMatrix<double>> == KernelTypeAcceptance::maybe);
+static_assert(basis_acceptance<DenseMatrix<double>, Precision> == KernelTypeAcceptance::no);
+static_assert(basis_acceptance<DenseMatrix<int>> == KernelTypeAcceptance::no);
+static_assert(basis_acceptance<Tensor<double, 1>> == KernelTypeAcceptance::no);
+#if UNI20_HAS_MPLAPACK_MPREAL
+static_assert(basis_acceptance<DenseMatrix<mpreal>, Precision> == KernelTypeAcceptance::maybe);
+static_assert(basis_acceptance<DenseMatrix<mpreal>> == KernelTypeAcceptance::no);
+#endif
+
 TEST(RandomizedSvd, TallAndWide)
 {
   check_svd(spectrum_matrix<float>(23, 16));

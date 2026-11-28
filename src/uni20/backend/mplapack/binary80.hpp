@@ -30,6 +30,9 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<float80 const> a, std::spa
 void getrs(std::size_t n, std::size_t nrhs, std::span<complex160 const> a, std::span<std::size_t const> pivots,
            std::span<complex160> b);
 #endif
+/// \brief Overwrite a packed tall real matrix with its thin Householder Q.
+void orthonormal_basis(std::size_t m, std::size_t n, std::span<float80> a, Precision p);
+
 /// \brief Overwrite m-by-n input work and return Q (m-by-k) and R (k-by-n), k=min(m,n).
 void qr(std::size_t m, std::size_t n, std::span<float80> a, std::span<float80> q, std::span<float80> triangular,
         Precision p);

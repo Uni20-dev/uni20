@@ -9,7 +9,7 @@ namespace uni20::linalg
 /// \details Supply a fresh identity for an independent sketch. The returned U, s and Vh are
 ///          in the input storage domain; the fourth member records retained rank and sketch width.
 template <RankedTensorView<2> Matrix>
-  requires detail::randomized::SketchReal<tensor_element_t<Matrix>>
+  requires detail::randomized::SketchMatrix<Matrix>
 [[nodiscard]] auto randomized_truncated_svd(Matrix const& a, RandomizedRangeOptions options, random::Identity identity)
 {
   namespace impl = detail::randomized;
