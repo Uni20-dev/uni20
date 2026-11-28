@@ -180,6 +180,29 @@ TEST_F(CusolverSvdTest, ParallelPackedBlockSvdDispatchesIndependentChargeSectors
   EXPECT_NEAR(decomposition.spectrum()[3].singular_value, 2.0, 1.0e-12);
 }
 
+TEST_F(CusolverSvdTest, WideBlockSvdDeclinesDivideAndConquer)
+{
+  using storage = uni20::PackedCompleteBlockStorage<uni20::CudaStorage>;
+  using matrix_type =
+      uni20::BlockTensor<double, uni20::Domain<uni20::BlockSpace>, uni20::Codomain<uni20::BlockSpace>, storage>;
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  uni20::Symmetry const symmetry{"N:U(1)"};
+  auto const q0 = uni20::QNum::identity(symmetry);
+  uni20::BlockSpace const domain(symmetry, {{q0, 3}}, "domain");
+  uni20::BlockSpace const codomain(symmetry, {{q0, 2}}, "codomain");
+  matrix_type matrix(symmetry, uni20::Domain{domain}, uni20::Codomain{codomain});
+  uni20::ColumnMajorTensor<double, 2> block(3, 2);
+  block[0, 0] = 3.0;
+  block[1, 1] = 2.0;
+  uni20::copy(matrix.block_by_ordinal(0), block);
+
+  bool const previous = trace::get_formatting_options().errors_abort();
+  trace::get_formatting_options().set_errors_abort(false);
+  EXPECT_THROW((void)uni20::block_svd(matrix, {.driver = uni20::linalg::SvdDriver::DivideAndConquer}),
+               uni20::linalg::KernelDispatchError);
+  trace::get_formatting_options().set_errors_abort(previous);
+}
+
 TEST_F(CusolverSvdTest, FullRightNullSpaceRetainsUnmatchedDomainCharge)
 {
   using storage = uni20::PackedCompleteBlockStorage<uni20::CudaStorage>;

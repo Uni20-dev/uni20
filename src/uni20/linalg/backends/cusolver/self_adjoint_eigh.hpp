@@ -89,6 +89,7 @@ consteval auto kernel_accepts_types(CusolverBackend const&, self_adjoint_eigh_op
 template <uni20::MutableRankedStridedMdspecLike<1> Values, uni20::MutableRankedStridedMdspecLike<2> Matrix>
 KernelAttempt try_kernel(CusolverBackend, self_adjoint_eigh_op const& operation, Values& values, Matrix& matrix)
 {
+  if (operation.driver != EighDriver::Default) return KernelAttempt::unsupported_instance;
   using namespace detail::cusolver_backend;
   CHECK_EQUAL(matrix.extent(0), matrix.extent(1));
   CHECK_EQUAL(values.extent(0), matrix.extent(0));

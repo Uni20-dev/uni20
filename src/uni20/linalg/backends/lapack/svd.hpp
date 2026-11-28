@@ -112,6 +112,71 @@ KernelAttempt run_gesvd(char jobu, char jobvt, std::size_t rank,
   return KernelAttempt::success;
 }
 
+struct GesddAuxiliaryWorkspace
+{
+    std::size_t integer_work;
+    std::size_t real_work;
+};
+
+/// \brief Validate the documented GESDD workspace bounds for full or reduced vectors.
+/// \details Validate LWORK before querying the provider. Complex RWORK offsets are
+///          also formed in LAPACK integers, even though no LRWORK is passed.
+template <uni20::LapackScalar Scalar>
+constexpr std::optional<GesddAuxiliaryWorkspace> try_gesdd_workspace(bool full, std::size_t rank, std::size_t largest)
+{
+  auto const iwork = try_lapack_workspace_size(rank, 8);
+  if (!iwork) return std::nullopt;
+  GesddAuxiliaryWorkspace result{.integer_work = static_cast<std::size_t>(*iwork), .real_work = 0};
+  if constexpr (uni20::LapackReal<Scalar>)
+  {
+    auto const coefficient = try_lapack_workspace_size(rank, 4, full ? 6 : 7);
+    if (!coefficient || !try_lapack_workspace_size(rank, static_cast<std::size_t>(*coefficient), full ? largest : 0))
+      return std::nullopt;
+  }
+  else
+  {
+    auto const coefficient = try_lapack_workspace_size(rank, 1, full ? 2 : 3);
+    if (!coefficient || !try_lapack_workspace_size(rank, static_cast<std::size_t>(*coefficient), full ? largest : 0))
+      return std::nullopt;
+
+    auto const square = try_lapack_workspace_size(rank, 5, 5);
+    auto const rank_term = try_lapack_workspace_size(rank, 2, 1);
+    if (!square || !rank_term) return std::nullopt;
+    auto const rectangle = try_lapack_workspace_size(largest, 2, static_cast<std::size_t>(*rank_term));
+    if (!rectangle) return std::nullopt;
+    auto const rwork = try_lapack_workspace_size(rank, static_cast<std::size_t>(std::max(*square, *rectangle)));
+    if (!rwork) return std::nullopt;
+    result.real_work = static_cast<std::size_t>(*rwork);
+  }
+  return result;
+}
+
+template <uni20::LapackScalar Scalar, class Matrix, class Values>
+KernelAttempt run_gesdd(char job, std::size_t rank, Matrix const& matrix, Values const& values, Scalar* left,
+                        blas_int ldu, Scalar* right, blas_int ldvt)
+{
+  using Real = uni20::make_real_t<Scalar>;
+  auto const largest = static_cast<std::size_t>(std::max(matrix.rows, matrix.cols));
+  auto const auxiliary = try_gesdd_workspace<Scalar>(job == 'A', rank, largest);
+  if (!auxiliary) return KernelAttempt::unsupported_shape;
+  std::vector<blas_int> iwork(auxiliary->integer_work);
+  std::vector<Real> rwork(auxiliary->real_work);
+  auto run = [&](Scalar* work, blas_int lwork) {
+    if constexpr (uni20::LapackReal<Scalar>)
+      uni20::lapack::gesdd(job, matrix.rows, matrix.cols, matrix.data, matrix.leading_dimension, values.data, left, ldu,
+                           right, ldvt, work, lwork, iwork.data());
+    else
+      uni20::lapack::gesdd(job, matrix.rows, matrix.cols, matrix.data, matrix.leading_dimension, values.data, left, ldu,
+                           right, ldvt, work, lwork, rwork.data(), iwork.data());
+  };
+  Scalar query{};
+  run(&query, -1);
+  auto const lwork = workspace_size(query);
+  std::vector<Scalar> work(static_cast<std::size_t>(lwork));
+  run(work.data(), lwork);
+  return KernelAttempt::success;
+}
+
 template <class SingularValueMdspan, class MatrixMdspan>
 KernelAttempt try_singular_values_kernel(char jobu, char jobvt, SingularValueMdspan&& singular_values,
                                          MatrixMdspan&& matrix_work)
@@ -431,6 +496,13 @@ KernelAttempt try_svd(svd_op const& op, SingularValueMdspan& singular_values, Le
   CHECK_EQUAL(left->cols, left_columns);
   CHECK_EQUAL(right->rows, right_rows_blas);
   CHECK_EQUAL(right->cols, matrix->cols);
+  if (op.driver == SvdDriver::DivideAndConquer)
+  {
+    bool const reduced = left_cols == rank && right_rows == rank;
+    if (!reduced && (left_cols != rows || right_rows != cols)) return KernelAttempt::unsupported_instance;
+    return run_gesdd(reduced ? 'S' : 'A', rank, *matrix, *values, left->data, left->leading_dimension, right->data,
+                     right->leading_dimension);
+  }
   return run_gesvd(svd_job(op.left), svd_job(op.right), rank, *matrix, *values, left->data, left->leading_dimension,
                    right->data, right->leading_dimension);
 }
@@ -442,6 +514,7 @@ template <uni20::MutableRankedStridedMdspanLike<1> SingularValueMdspan,
 KernelAttempt try_svd(svd_op const& op, SingularValueMdspan& singular_values, OtherFactorMdspan& other_factor,
                       MatrixMdspan& matrix_work)
 {
+  if (op.driver != SvdDriver::Default) return KernelAttempt::unsupported_instance;
   using matrix_scalar = std::remove_cv_t<typename std::remove_cvref_t<MatrixMdspan>::element_type>;
   std::size_t const rows = static_cast<std::size_t>(matrix_work.extent(0));
   std::size_t const cols = static_cast<std::size_t>(matrix_work.extent(1));

@@ -45,7 +45,7 @@ template <uni20::MutableRankedTensorView<1> EigenvalueTensor, uni20::MutableRank
   ERROR_IF(matrix_work.extent(0) != matrix_work.extent(1), "self-adjoint eigensystem requires a square matrix");
   uni20::prepare_output(eigenvalues,
                         self_adjoint_eigenvalue_extents{static_cast<uni20::index_type>(matrix_work.extent(0))});
-  return {.compute_vectors = options.compute_vectors, .triangle = options.triangle};
+  return {.compute_vectors = options.compute_vectors, .triangle = options.triangle, .driver = options.driver};
 }
 
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<1> EigenvalueTensor,
@@ -222,12 +222,12 @@ template <class MatrixTensor>
 template <KernelBackendSelector BackendSelector, uni20::OwningTensor MatrixTensor>
   requires uni20::MutableRankedImmediateTensorView<MatrixTensor, 2>
 [[nodiscard]] auto eigh_from_work_matrix(BackendSelector&& selector, MatrixTensor matrix_work, MatrixTriangle triangle,
-                                         Precision p)
+                                         Precision p, EighDriver driver = EighDriver::Default)
 {
   using real_type = uni20::make_real_t<uni20::tensor_element_t<MatrixTensor>>;
   uni20::Tensor<real_type, 1> eigenvalues;
   self_adjoint_eigh(std::forward<BackendSelector>(selector), eigenvalues, matrix_work,
-                    SelfAdjointEighOptions{.compute_vectors = true, .triangle = triangle}, p);
+                    SelfAdjointEighOptions{.compute_vectors = true, .triangle = triangle, .driver = driver}, p);
   return SelfAdjointEighResult<decltype(eigenvalues), MatrixTensor>{.eigenvalues = std::move(eigenvalues),
                                                                     .eigenvectors = std::move(matrix_work)};
 }
@@ -308,6 +308,18 @@ template <uni20::RankedTensorView<2> MatrixTensor>
     auto selector = detail::select_self_adjoint_eigh_backend<decltype(matrix_work)>(triangle);
     return detail::eigh_from_work_matrix(std::move(selector), std::move(matrix_work), triangle, p);
   }
+}
+
+/// \brief Preserve a host matrix and select the algorithm for its complete eigensystem.
+template <uni20::RankedTensorView<2> MatrixTensor>
+[[nodiscard]] auto eigh(MatrixTensor const& matrix, EighDriver driver, MatrixTriangle triangle = MatrixTriangle::Upper,
+                        std::optional<Precision> requested = {})
+{
+  auto const p = detail::decomposition_precision(matrix, requested);
+  ERROR_IF(matrix.extent(0) != matrix.extent(1), "self-adjoint eigensystem requires a square matrix");
+  auto work = uni20::detail::make_host_work_tensor<uni20::ColumnMajor>(matrix);
+  auto selector = detail::select_self_adjoint_eigh_backend<decltype(work)>(triangle);
+  return detail::eigh_from_work_matrix(std::move(selector), std::move(work), triangle, p, driver);
 }
 
 /// \brief Preserve a matrix and compute the eigenpairs in a half-open index range.

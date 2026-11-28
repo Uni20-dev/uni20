@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -327,3 +328,61 @@ TEST(SelfAdjointEighTest, SelectedRealEigenpairsCanKeepAnInteriorRange)
   EXPECT_NEAR(result.eigenvalues[0], 3, 1e-13);
   EXPECT_NEAR(std::abs(result.eigenvectors[2, 0]), 1, 1e-13);
 }
+
+TEST(SelfAdjointEighTest, DivideAndConquerChecksWorkspaceBeforeQuery)
+{
+  using uni20::linalg::lapack_detail::divide_and_conquer_eigh_workspace_fits;
+  constexpr auto limit = std::size_t{1} << (std::numeric_limits<uni20::blas_int>::digits / 2);
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<float>(true, limit - 2));
+  EXPECT_FALSE(divide_and_conquer_eigh_workspace_fits<float>(true, limit - 1));
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<float>(false, limit - 1));
+
+  using Complex = uni20::complex<float>;
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<Complex>(true, limit - 2));
+  EXPECT_FALSE(divide_and_conquer_eigh_workspace_fits<Complex>(true, limit - 1));
+  EXPECT_TRUE(divide_and_conquer_eigh_workspace_fits<Complex>(false, limit - 1));
+}
+
+TEST(SelfAdjointEighTest, WorkspaceQueryCoversRoundedSinglePrecisionLengths)
+{
+  using uni20::linalg::lapack_detail::workspace_size;
+  // CHEEVD with vectors at n=3000 needs 18,015,001 real entries.
+  constexpr uni20::blas_int lrwork = 1 + 5 * 3000 + 2 * 3000 * 3000;
+  EXPECT_GE(workspace_size(static_cast<float>(lrwork)), lrwork);
+  // Complex WORK queries encode LWORK in their real component. At this
+  // magnitude the spacing is four, so adding just one entry is insufficient.
+  constexpr uni20::blas_int lwork = 33'554'434;
+  EXPECT_GE(workspace_size(uni20::complex<float>{static_cast<float>(lwork), 0}), lwork);
+  EXPECT_EQ(workspace_size(16'777'215.0f), 16'777'215);
+  EXPECT_EQ(workspace_size(static_cast<double>(lrwork)), lrwork);
+}
+
+TEST(SelfAdjointEighTest, DivideAndConquerReturnsHermitianEigenpairs)
+{
+  using namespace uni20::linalg;
+  using Scalar = uni20::complex<double>;
+  uni20::DenseMatrix<Scalar, uni20::RowMajor> matrix(2, 2);
+  matrix[0, 0] = 3;
+  matrix[1, 1] = 3;
+  matrix[0, 1] = Scalar{0, 1};
+  matrix[1, 0] = Scalar{0, -1};
+  auto result = eigh(matrix, EighDriver::DivideAndConquer);
+  EXPECT_NEAR(result.eigenvalues[0], 2, 1e-13);
+  EXPECT_NEAR(result.eigenvalues[1], 4, 1e-13);
+  check_eigenvector_residuals([&](auto row, auto col) { return matrix[row, col]; }, result.eigenvectors,
+                              result.eigenvalues, 1e-13);
+}
+
+#if UNI20_HAS_MPLAPACK_FLOAT128
+TEST(SelfAdjointEighTest, DivideAndConquerSupportsBinary128)
+{
+  using namespace uni20::linalg;
+  using Real = uni20::float128;
+  uni20::DenseMatrix<Real> matrix(2, 2);
+  matrix[0, 0] = Real{2};
+  matrix[1, 1] = Real{4};
+  auto result = eigh(matrix, EighDriver::DivideAndConquer);
+  EXPECT_TRUE(result.eigenvalues[0] == Real{2});
+  EXPECT_TRUE(result.eigenvalues[1] == Real{4});
+}
+#endif
