@@ -38,7 +38,8 @@ struct Uniform
     using result_type = typename group_type::result_type;
     T low{0};
     T high{1};
-    [[no_unique_address]] UnitUniform<T> converter = {};
+    // CUDA 12.9 mispasses by-value fill arguments when an empty converter uses [[no_unique_address]].
+    UnitUniform<T> converter = {};
 
     UNI20_HOST_DEVICE constexpr ValueBlock<T, 1> from_uniforms(T u) const { return {{low + (high - low) * u}}; }
     UNI20_HOST_DEVICE constexpr result_type operator()(input_type const& group) const
@@ -58,7 +59,7 @@ template <class Real> struct RealNormalDistribution
     using result_type = group_type::result_type;
     Real mu{0};
     Real sigma{1};
-    [[no_unique_address]] UnitUniform<Real> converter = {};
+    UnitUniform<Real> converter = {};
 
     UNI20_HOST_DEVICE ValueBlock<Real, 2> from_uniforms(Real u1, Real u2) const
     {
@@ -83,7 +84,7 @@ template <class Real> struct ComplexNormalDistribution
     using result_type = group_type::result_type;
     complex<Real> mu = {};
     Real sigma{1};
-    [[no_unique_address]] UnitUniform<Real> converter = {};
+    UnitUniform<Real> converter = {};
 
     UNI20_HOST_DEVICE ValueBlock<complex<Real>, 1> from_uniforms(Real u1, Real u2) const
     {
