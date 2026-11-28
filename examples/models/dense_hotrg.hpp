@@ -42,6 +42,8 @@
 #include <uni20/core/math.hpp>
 #include <uni20/core/scalar_io.hpp>
 #include <uni20/linalg/ops/contract.hpp>
+#include <uni20/linalg/ops/randomized_nystrom.hpp>
+#include <uni20/linalg/ops/randomized_svd.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/truncated_svd.hpp>
 #include <uni20/tensor/copy.hpp>
@@ -72,6 +74,7 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <numbers>
 #include <stdexcept>
@@ -101,8 +104,7 @@ enum class model
 };
 
 // How a step cuts the gram.  The gram is symmetric positive semidefinite, so its leading singular
-// vectors are its leading eigenvectors and both methods keep the same subspace; they differ in cost
-// and in the solver's rounding.
+// vectors are its leading eigenvectors. Randomized methods approximate their subspace.
 //   svd   the leading singular vectors: `truncated_svd` on the host, the full cuSOLVER SVD on a device
 //   eigh  the leading eigenvectors: `eigh` on the host (LAPACK, or MPLAPACK for the wide types) and on
 //         a device (cuSOLVER syevd)
@@ -113,6 +115,7 @@ enum class model
 //   dc-eigh  the leading eigenvectors by LAPACK divide and conquer (syevd); host tensors only, since
 //            eigh on a device already uses cuSOLVER's divide-and-conquer syevd
 //   dc-svd   the leading singular vectors of a divide-and-conquer SVD (LAPACK gesdd); host tensors only
+//   rsvd, nystrom  leading triplets or PSD eigenpairs from a Gaussian sketch on the host or device
 enum class cut_method
 {
   svd,
@@ -121,12 +124,33 @@ enum class cut_method
   jacobi_eigh,
   jacobi_svd,
   dc_eigh,
-  dc_svd
+  dc_svd,
+  rsvd,
+  nystrom
 };
 
 inline constexpr std::array all_cut_methods{cut_method::svd,         cut_method::eigh,       cut_method::selected_eigh,
                                             cut_method::jacobi_eigh, cut_method::jacobi_svd, cut_method::dc_eigh,
-                                            cut_method::dc_svd};
+                                            cut_method::dc_svd,      cut_method::rsvd,       cut_method::nystrom};
+
+struct sketch_options
+{
+    std::uint64_t seed = 1;
+    idx oversampling = 8;
+    idx power_iterations = 3;
+};
+
+// Location of this Gram in the physical flow, including when the x step exchanges tensor axes.
+struct cut_position
+{
+    std::uint64_t round = 0;
+    axis along = axis::y;
+};
+
+[[nodiscard]] constexpr bool uses_sketch(cut_method method)
+{
+  return method == cut_method::rsvd || method == cut_method::nystrom;
+}
 
 // Whether a method has only a CUDA implementation: the cuSOLVER Jacobi solvers have no host counterpart.
 [[nodiscard]] constexpr bool cut_method_needs_device(cut_method method)
@@ -165,6 +189,10 @@ template <uni20::Real R> inline constexpr bool divide_and_conquer_supported = un
       return "dc-eigh";
     case cut_method::dc_svd:
       return "dc-svd";
+    case cut_method::rsvd:
+      return "rsvd";
+    case cut_method::nystrom:
+      return "nystrom";
   }
   return "?";
 }
@@ -635,8 +663,68 @@ void cut_from_eigenvalues(R& gap, std::vector<R>& S, R& discarded, Values const&
     gap = R{0}; // the cut falls inside the null space
 }
 
+// Descending values include the first omitted value whenever the cut truncates the Gram.
+template <uni20::Real R, class Place, class Values>
+void record_descending_cut(gram_cut<R, Place>& cut, Values const& values, idx rows, idx k, R trace)
+{
+  auto const p = uni20::precision_of(trace);
+  R kept = uni20::scalar_at_precision<R>(0, p);
+  cut.S.reserve(k);
+  for (idx i = 0; i < k; ++i)
+  {
+    cut.S.push_back(R(values[i]));
+    kept += cut.S.back();
+  }
+  cut.discarded = 1 - kept / trace;
+  if (k == rows)
+    cut.gap = uni20::scalar_at_precision<R>(1, p);
+  else if (cut.S.back() > 0)
+    cut.gap = (cut.S.back() - R(values[k])) / cut.S.back();
+  else
+    cut.gap = uni20::scalar_at_precision<R>(0, p);
+}
+
+// Both randomized solvers return descending values and owning column-major vectors in the input's place.
+template <class Tensor4>
+[[nodiscard]] auto randomized_cut(Tensor4 const& theta, idx k, typename Tensor4::value_type trace, cut_method method,
+                                  sketch_options const& sketch, cut_position position)
+{
+  using R = typename Tensor4::value_type;
+  using Place = place_type<Tensor4>;
+  idx const n = theta.extent(0), rows = n * n;
+  uni20::linalg::RandomizedRangeOptions options{
+      .rank = k < rows ? k + 1 : k, .oversampling = sketch.oversampling, .power_iterations = sketch.power_iterations};
+  auto const round = random::child(random::root(sketch.seed), position.round);
+  auto const identity = random::child(round, static_cast<std::uint64_t>(position.along));
+  auto const matrix = uni20::reshape_view(theta, rows, rows);
+  lap const timer(spent().cut);
+  auto finish = [&](auto vectors, auto const& values) {
+    // Keep the column-major prefix in place. The allocation owns at most one extra column for the gap.
+    using V = decltype(vectors);
+    static_assert(std::same_as<typename V::layout_type, uni20::ColumnMajor>);
+    vectors.replace_mapping(typename V::mapping_type{typename V::extents_type{rows, k}});
+    gram_cut<R, Place> cut{.U = uni20::reshape(std::move(vectors), n, n, k), .S = {}, .discarded = 0, .gap = 0};
+    wait_for(cut.U);
+#if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
+    if constexpr (std::same_as<Place, device_place>)
+      record_descending_cut(cut, uni20::to_host(values), rows, k, trace);
+    else
+#endif
+      record_descending_cut(cut, values, rows, k, trace);
+    return cut;
+  };
+  if (method == cut_method::rsvd)
+  {
+    auto result = uni20::linalg::randomized_truncated_svd(matrix, options, identity);
+    return finish(std::move(result.left_singular_vectors), result.singular_values);
+  }
+  auto result = uni20::linalg::randomized_nystrom(matrix, options, identity);
+  return finish(std::move(result.eigenvectors), result.eigenvalues);
+}
+
 template <uni20::Real R>
-[[nodiscard]] inline gram_cut<R, host_place> cut_gram(tensor4<R> const& theta, std::size_t D, cut_method method)
+[[nodiscard]] inline gram_cut<R, host_place> cut_gram(tensor4<R> const& theta, std::size_t D, cut_method method,
+                                                      sketch_options const& sketch = {}, cut_position position = {})
 {
   auto const p = uni20::precision_of(theta);
   idx const n = theta.extent(0);
@@ -647,6 +735,13 @@ template <uni20::Real R>
     throw std::invalid_argument(std::string("dense_hotrg: the ") + cut_method_name(method) +
                                 " cut runs only on CUDA tensors");
   idx const k = static_cast<idx>(std::min(D, rows));
+  if (uses_sketch(method))
+  {
+    if constexpr (std::same_as<R, float> || std::same_as<R, double>)
+      return randomized_cut(theta, k, trace, method, sketch, position);
+    else
+      throw std::invalid_argument("dense_hotrg: randomized Gram cuts require fp32 or fp64");
+  }
   // Ascending eigenpairs, `count` of them: U is the last k eigenvectors in descending order.
   auto const from_ascending = [&](auto const& decomposition, idx count) {
     gram_cut<R, host_place> result{
@@ -666,19 +761,7 @@ template <uni20::Real R>
       for (idx b = 0; b < n; ++b)
         for (idx a = 0; a < n; ++a)
           result.U[a, b, c] = R(decomposition.left_singular_vectors[a + n * b, c]);
-    R kept = uni20::scalar_at_precision<R>(0, p);
-    for (idx i = 0; i < k; ++i)
-    {
-      result.S.push_back(R(decomposition.singular_values[i]));
-      kept += result.S.back();
-    }
-    result.discarded = 1 - kept / trace;
-    if (k == n * n)
-      result.gap = uni20::scalar_at_precision<R>(1, p); // nothing was discarded
-    else if (result.S.back() > 0)
-      result.gap = (result.S.back() - R(decomposition.singular_values[k])) / result.S.back();
-    else
-      result.gap = uni20::scalar_at_precision<R>(0, p); // the cut falls inside the null space
+    record_descending_cut(result, decomposition.singular_values, n * n, k, trace);
     return result;
   };
 
@@ -774,7 +857,8 @@ template <uni20::Real R>
 // on the device, and U is the eigenvector matrix times the last k columns of the identity in reverse
 // order, so it is descending.  jacobi-svd (gesvdj) gives the reduced SVD, used as the full one is.
 template <uni20::Real R>
-[[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D, cut_method method)
+[[nodiscard]] inline gram_cut<R, device_place> cut_gram(uni20::CudaTensor<R, 4> theta, std::size_t D, cut_method method,
+                                                        sketch_options const& sketch = {}, cut_position position = {})
 {
   auto const p = uni20::precision_of(theta);
   auto const place = place_of(theta);
@@ -786,6 +870,8 @@ template <uni20::Real R>
     throw std::invalid_argument(fmt::format("dense_hotrg: the {} cut runs only on host tensors; on CUDA, eigh "
                                             "already uses cuSOLVER's divide-and-conquer syevd",
                                             cut_method_name(method)));
+
+  if (uses_sketch(method)) return randomized_cut(theta, k, trace, method, sketch, position);
 
   // U is the solver's vectors times a selector, columns of the identity, in one GEMM on the device.
   auto const keep_columns = [&](auto& U, auto const& vectors, idx count, bool trailing) {
@@ -857,27 +943,17 @@ template <uni20::Real R>
   }();
 
   gram_cut<R, device_place> result{.U = std::move(U), .S = {}, .discarded = R{0}, .gap = R{0}};
-  R kept = R{0};
-  for (idx i = 0; i < k; ++i)
-  {
-    result.S.push_back(R(s[i]));
-    kept += result.S.back();
-  }
-  result.discarded = 1 - kept / trace;
-  if (k == rows)
-    result.gap = R{1}; // nothing was discarded
-  else if (result.S.back() > 0)
-    result.gap = (result.S.back() - R(s[k])) / result.S.back();
-  else
-    result.gap = R{0}; // the cut falls inside the null space
+  record_descending_cut(result, s, rows, k, trace);
   return result;
 }
 #endif
 
-template <class Tensor4> [[nodiscard]] inline auto coarse_grain_y(Tensor4 const& t, std::size_t D, cut_method method)
+template <class Tensor4>
+[[nodiscard]] inline auto coarse_grain_y(Tensor4 const& t, std::size_t D, cut_method method,
+                                         sketch_options const& sketch, cut_position position)
 {
   using R = typename Tensor4::value_type;
-  auto cut = cut_gram(gram_y(t), D, method);
+  auto cut = cut_gram(gram_y(t), D, method, sketch, position);
   step_result<R, place_type<Tensor4>> result{.T = apply_isometry(t, t, cut.U),
                                              .U = std::move(cut.U),
                                              .S = std::move(cut.S),
@@ -902,10 +978,11 @@ template <class Tensor4> [[nodiscard]] inline auto gram(Tensor4 const& t, axis a
 // exchange the names ym <-> xm, yp <-> xp in every picture.  The tensor may be on the host or, in a
 // CUDA build, on the device; the result is in the same place.
 template <class Tensor4>
-[[nodiscard]] inline auto coarse_grain(Tensor4 const& t, axis along, std::size_t D, cut_method method = cut_method::svd)
+[[nodiscard]] inline auto coarse_grain(Tensor4 const& t, axis along, std::size_t D, cut_method method = cut_method::svd,
+                                       sketch_options const& sketch = {}, std::uint64_t round = 0)
 {
-  if (along == axis::y) return detail::coarse_grain_y(t, D, method);
-  auto result = detail::coarse_grain_y(exchange_axes(t), D, method);
+  if (along == axis::y) return detail::coarse_grain_y(t, D, method, sketch, {round, along});
+  auto result = detail::coarse_grain_y(exchange_axes(t), D, method, sketch, {round, along});
   result.T = exchange_axes(result.T);
   return result;
 }
@@ -937,7 +1014,7 @@ template <uni20::Real R> struct flow_record
 ///          and the tensor given to the observer, are on the host.
 template <class Place = host_place, uni20::Real R, class Observer = std::nullptr_t>
 [[nodiscard]] flow_record<R> flow(scaled_tensor<R> unit, std::size_t D, int steps, Observer observe = nullptr,
-                                  cut_method method = cut_method::svd)
+                                  cut_method method = cut_method::svd, sketch_options const& sketch = {})
 {
   detail::require(steps >= 0 && D > 0, "nonnegative rounds and positive bond dimension required");
   auto const p = uni20::precision_of(unit.tensor);
@@ -962,8 +1039,8 @@ template <class Place = host_place, uni20::Real R, class Observer = std::nullptr
     {
       auto const start = std::chrono::steady_clock::now();
       seconds_spent const before = spent();
-      auto along_y = coarse_grain(T, axis::y, D, method);
-      auto along_x = coarse_grain(along_y.T, axis::x, D, method);
+      auto along_y = coarse_grain(T, axis::y, D, method, sketch, step);
+      auto along_x = coarse_grain(along_y.T, axis::x, D, method, sketch, step);
       T = std::move(along_x.T);
       record.log2_width.push_back(step + 1);
       record.log_norm_y.push_back(uni20::math::log(along_y.norm));

@@ -252,6 +252,8 @@ gram of size `D^2 x D^2` at the plateau. `--gram-cut=M` chooses how:
 | --- | --- | --- |
 | `svd` (default) | `truncated_svd` (LAPACK `gesvd`, or MPLAPACK) | the full cuSOLVER SVD, then the leading columns by a GEMM |
 | `eigh` | `eigh` (LAPACK `syev`, or MPLAPACK) | cuSOLVER `syevd`, then the trailing columns by a GEMM |
+| `rsvd` | Gaussian randomized truncated SVD | Device-resident randomized SVD |
+| `nystrom` | Randomized Nyström PSD eigensolver | Device-resident Nyström eigensolver |
 | `selected-eigh` | `eigh` over an index range (LAPACK `syevr`, or MPLAPACK binary128) | cuSOLVER `syevdx`, then the columns by a GEMM |
 | `jacobi-eigh` | none | `eigh_jacobi` (cuSOLVER `syevj`), then the trailing columns by a GEMM |
 | `jacobi-svd` | none | `svd_jacobi` (cuSOLVER `gesvdj`), then the leading columns by a GEMM |
@@ -267,8 +269,19 @@ leaves them out. The divide-and-conquer methods run only on the host, and cover
 float, double and binary128; binary80 and MPFR runs reject them. A Jacobi solve that stops at its sweep limit ends the run
 rather than cutting with unconverged vectors.
 
-All the methods keep the same subspace when the gap at the cut is not tiny; the
-flows agree to rounding.
+The deterministic methods agree to rounding when the cut separates the kept
+subspace. The two randomized cuts approximate it in fp32 or fp64. Both ask
+for one extra value when truncating, so the displayed gap estimates the
+separation at the cut. Their discarded fraction uses the approximate kept
+spectrum and the trace of the original Gram.
+
+`--seed=N` defaults to 1. Each cut derives its sketch from the seed, the
+zero-based round, and the physical axis (y = 0, x = 1). Repeating a flow with
+the same settings on the same backend replays the sketches.
+`--oversampling=P` adds extra Gaussian columns (default 8).
+`--power-iterations=Q` sets the number of stabilized power steps (default 3).
+Nyström makes `Q+1` passes over the Gram and rSVD makes `2Q+2`. Both accept
+zero oversampling and zero power steps.
 
 `--benchmark-gram-cut` compares the methods at fp64 on the selected place, for
 the bonds in `--bonds=D,D,...`:
@@ -306,5 +319,31 @@ tolerance (machine precision) and sweep limit.
 On the host at bond 32, the divide-and-conquer drivers cut the gram in 0.090 s
 (`dc-eigh`, LAPACK `syevd`) and 0.24 s (`dc-svd`, `gesdd`), against 0.48 s for
 `eigh` and 1.95 s for `svd`. Their five-round flows take 7.1 s and 7.7 s, against
-8.7 s and 14.2 s, and agree with the `svd` flow to rounding. Only `selected-eigh`
-is faster, at 0.047 s for the cut.
+8.7 s and 14.2 s, and agree with the `svd` flow to rounding. The `selected-eigh` cut takes 0.047 s.
+
+#### Randomized cuts at bond 32
+
+The following fp64 measurements use a 1024 × 1024 critical-Ising Gram after
+four rounds. Each cut time is the fastest of three calls on the same Gram.
+Flow times cover five rounds. The seed is 1, with eight extra columns and three
+power steps per solver. Host BLAS uses one thread. Each machine builds its
+reference flow locally, so its basis within a degenerate subspace can differ.
+
+| Execution | Cut | Cut (ms) | Five-round flow (s) | Spectrum error | Subspace distance | Absolute error in final $X_1$ vs SVD |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Intel Alder Lake, OpenBLAS | selected-eigh | 46.8 | 7.04 | 4.67e-16 | 1.2e-13 | 5.83e-16 |
+| Intel Alder Lake, OpenBLAS | rsvd | 18.1 | 6.82 | 1.14e-10 | 0.00158 | 3.42e-11 |
+| Intel Alder Lake, OpenBLAS | nystrom | 10.4 | 6.8 | 4.65e-7 | 0.0524 | 2.49e-9 |
+| Quadro GV100, CUDA 12.9 | selected-eigh | 14.6 | 0.193 | 2.33e-16 | 2e-12 | 1.53e-15 |
+| Quadro GV100, CUDA 12.9 | rsvd | 6.15 | 0.168 | 1.09e-12 | 0.000154 | 3.84e-11 |
+| Quadro GV100, CUDA 12.9 | nystrom | 5.81 | 0.18 | 1.72e-8 | 0.00987 | 2.59e-8 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | selected-eigh | 21 | 0.55 | 4.67e-16 | 1.88e-12 | 5.27e-16 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | rsvd | 6.52 | 0.488 | 9.83e-12 | 0.000462 | 7.37e-11 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | nystrom | 5.32 | 0.485 | 8.61e-8 | 0.0252 | 4.09e-8 |
+
+On the GV100, the three-step Nyström cut and the one-step rSVD cut each
+read the Gram four times. Nyström took 5.81 ms with subspace distance 0.00987,
+and rSVD took 4.5 ms with distance 0.0394. At the HOTRG default, rSVD read the
+Gram eight times and reached distance 0.000154 in 6.15 ms.
+The flow also includes tensor contractions and axis regroupings, so its
+speedup can be much smaller than the speedup of the cut.

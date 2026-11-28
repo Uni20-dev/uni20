@@ -123,6 +123,12 @@ add_test(NAME IsingHotrgRejectFixedBits COMMAND ising_hotrg_example --precision=
 set_tests_properties(IsingHotrgRejectFixedBits PROPERTIES WILL_FAIL TRUE)
 add_test(NAME IsingHotrgEighFlow COMMAND ising_hotrg_example --gram-cut=eigh --bond=8 --rounds=6)
 add_test(NAME IsingHotrgSelectedEighFlow COMMAND ising_hotrg_example --gram-cut=selected-eigh --bond=8 --rounds=6)
+foreach(method IN ITEMS rsvd nystrom)
+  add_test(NAME IsingHotrgFlow_${method} COMMAND ising_hotrg_example --gram-cut=${method} --bond=8 --rounds=3
+           --seed=71 --oversampling=5 --power-iterations=2 --onsager-points=16)
+  add_test(NAME IsingHotrgRejectWide_${method} COMMAND ising_hotrg_example --gram-cut=${method} --precision=fp128)
+  set_tests_properties(IsingHotrgRejectWide_${method} PROPERTIES WILL_FAIL TRUE)
+endforeach()
 # The Jacobi cuts have only CUDA implementations.
 add_test(NAME IsingHotrgRejectHostJacobi COMMAND ising_hotrg_example --gram-cut=jacobi-eigh --bond=4 --rounds=1)
 set_tests_properties(IsingHotrgRejectHostJacobi PROPERTIES WILL_FAIL TRUE)
@@ -144,6 +150,11 @@ if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
                                                      --bond=8 --rounds=6)
   add_test(NAME IsingHotrgCudaJacobiSvdFlow COMMAND ising_hotrg_example --execution=cuda --gram-cut=jacobi-svd
                                                     --bond=8 --rounds=6)
+  foreach(method IN ITEMS rsvd nystrom)
+    add_test(NAME IsingHotrgCudaFlow_${method} COMMAND ising_hotrg_example --execution=cuda --gram-cut=${method}
+             --precision=fp32 --bond=8 --rounds=3 --seed=71 --oversampling=5 --power-iterations=2 --onsager-points=16)
+    set_tests_properties(IsingHotrgCudaFlow_${method} PROPERTIES SKIP_RETURN_CODE 77)
+  endforeach()
   # The example exits with 77 when a CUDA device is not available, which CTest reports as skipped.
   set_tests_properties(IsingHotrgCudaCheck IsingHotrgCudaFlow IsingHotrgCudaFloat32 IsingHotrgCudaSecondDevice
                        IsingHotrgCudaCutBenchmark IsingHotrgCudaJacobiEighFlow IsingHotrgCudaJacobiSvdFlow
