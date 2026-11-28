@@ -62,9 +62,9 @@ words:
 - a copied stream replays the original's draws.
 
 Reuse is deliberate in one case. Rerunning with the same seed, or resuming two
-jobs from one checkpoint with the same seed, reproduces the same draws. That is
-what a fixed seed asks for, so independent replicas need different seeds or
-fresh entropy.
+jobs from one checkpoint with the same seed, can reproduce the same draws, and
+does under the reproducible option. That is what a fixed seed asks for, so
+independent replicas need different seeds or fresh entropy.
 
 **Guaranteed: exact words and unit uniforms.** The Philox words of an address,
 and the unit uniforms made from them, are the same on every build, machine and
@@ -93,8 +93,10 @@ two things that otherwise vary between runs:
   [Attaching Identities](#attaching-identities)). A label taken from the GUID
   of an object created during the run is deterministic only if the persistent
   store assigns IDs deterministically, which the MPI proposal leaves open
-  ([open question 16](#open-questions)). The resume point's manifest GUID is
-  not affected: runs that resume from one manifest share it.
+  ([open question 16](#open-questions)). The same holds for the resume point's
+  label, the GUID of a checkpoint manifest. Two runs that resume one recorded
+  manifest share it, but a repeated chain of jobs commits manifests of its own,
+  with GUIDs that the MPI proposal does not make deterministic.
 
 Without the option, both can vary between runs, and the values with them.
 Downstream results are reproducible only if the code that consumes the values
@@ -630,7 +632,8 @@ identity:
 - **Labels.** Assign streams by sample or walker identity, not by rank, thread
   or device. Any single sample can then be replayed on its own by constructing
   its stream. Its words and unit uniforms replay exactly under the same mapping
-  version, and its scaled and normal values within one configuration.
+  version. Its scaled and normal values replay exactly on the same processor, or
+  under the reproducible option with its original placement.
 - **Standard compatibility.** `PhiloxStream` is the adapter of
   [Interface: Counter Mode](#interface-counter-mode). It runs in host and
   device code. On the host it meets the uniform random bit generator
@@ -792,12 +795,19 @@ question 13 concerns randomized algorithms. All five decide layer 4 (see
     buffered words when the distribution changes. Until this is written, the
     stream's standard-compatible word interface is fixed, and its use by
     Uni20's distributions is not.
-16. **Object IDs under the reproducible option.** A component label can be the
-    GUID of an object created during the run. Choose one:
-    - require the persistent store to assign object IDs deterministically under
-      the option;
-    - or have the option label such components by operation and component
-      index instead of by GUID.
+16. **Object IDs under the reproducible option.** Two labels can be GUIDs of
+    objects created during the run: a component label, and the resume point's
+    label, which is the GUID of a checkpoint manifest. Under the option, a
+    repeated chain of jobs must give each of its checkpoints the label the first
+    chain gave it, while different checkpoints keep distinct labels, or draws
+    are reused across "restarts and branches from a checkpoint". Choose one:
+    - require the persistent store to assign object IDs, manifest IDs included,
+      deterministically under the option;
+    - or have the option use indices instead of GUIDs: operation and component
+      indices for components, and for the resume point an index that names the
+      checkpoint within its run, not a count of restarts. A plain restart count
+      gives two different checkpoints of one run, each restored once, the same
+      resume label.
 
 ## References
 
