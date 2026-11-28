@@ -62,11 +62,27 @@ jobs from one checkpoint with the same seed, reproduces the same draws. That is
 what a fixed seed asks for, so independent replicas need different seeds or
 fresh entropy.
 
-**Best effort: same values under a fixed configuration.** A fixed seed gives
-the same random values when the build and configuration are also the same:
-the rank count, machines, devices, placement of work, storage layouts and
-submission order. This is a debugging aid. Downstream results can still differ through floating-point
-reduction order, library algorithm selection or scheduling.
+**On request: bitwise the same values under a fixed configuration.** This
+follows the project's reproducibility policy (Uni20-dev/uni20#214). A
+configuration is the build, the machine and device types, the rank count and
+the storage layouts. Under the reproducible option, a fixed seed gives bitwise
+the same random values in every run of one configuration. The option pins the
+two things that otherwise vary between runs:
+
+- **Placement.** Random fills and streams run where the plan put them, and load
+  balancing does not move them (see [Dynamic Placement](#dynamic-placement)).
+  Words and unit uniforms do not need this; scaled and normal values do
+  ([open question 14](#open-questions)).
+- **Labels.** Operation labels come from plan-assigned indices or a
+  deterministic submission order, not from the order in which concurrent tasks
+  reach a node's atomic child counter (see
+  [Attaching Identities](#attaching-identities)).
+
+Without the option, both can vary between runs, and the values with them.
+Downstream results are reproducible only if the code that consumes the values
+also makes reproducible choices: reduction order, library algorithm selection
+and scheduling. Uni20 documents each of its own functions that can vary, and
+offers a reproducible option for it (Uni20-dev/uni20#214).
 
 **Not offered:** bitwise identical random values or results across builds,
 compilers, compiler flags, math libraries, machines, devices, rank counts or
@@ -329,7 +345,9 @@ Outputs are therefore labelled by operation and component index
 
 - A node's child counter is atomic. Labels stay unique when several tasks
   derive from one node concurrently, which satisfies the no-reuse guarantee.
-- The labels are deterministic only if the submission order is.
+- The labels are deterministic only if the submission order is. The
+  reproducible option (see the [contract](#reproducibility-contract)) takes
+  them from plan-assigned indices or a deterministic submission order.
 - Copies of a node handle share its counter. This is unlike standard-library
   engines, where a copy silently duplicates the stream.
 
@@ -470,6 +488,8 @@ identity:
   last-bit behaviour of the processor that computed them. A tensor filled
   partly on the host and partly on a device mixes the two, and two runs with the
   same seed and build can differ in those bits when their placement differs.
+  The reproducible option pins placement (see the
+  [contract](#reproducibility-contract)).
 - **Streams can move.** A stream's state, its identity, position and buffered
   lanes, is a trivially copyable value with the same representation on the host
   and on a device. A walker can therefore continue on another processor.
@@ -602,8 +622,9 @@ identity:
 - A fill split between the host and CUDA in several ways gives the same words
   and unit uniforms as an undivided fill, and a stream state moved between the
   host and a device continues with the same words.
-- With a fixed submission order, `DebugScheduler` and `TbbScheduler` produce
-  the same random values.
+- Under the reproducible option, runs under `DebugScheduler` with different
+  random orders and under `TbbScheduler` produce bitwise the same random
+  values, scaled and normal values included.
 - Restart:
   - after a fresh-entropy restart, and after a fixed-seed resume, no address
     assigned after the checkpoint was assigned before it. The test compares
@@ -619,7 +640,8 @@ identity:
 
 ## Rejected Alternatives
 
-- **Bitwise reproducibility as a requirement.** See the contract.
+- **Bitwise reproducibility across configurations.** See the contract. Within
+  one configuration it is offered on request.
 - **A fixed bit-field counter layout** (operation, block and position fields
   with a per-operation split). It cannot carry GUIDs or deeper hierarchies, it
   needs a split chosen per operation, and the right block identity varies with
@@ -709,6 +731,14 @@ question 13 concerns randomized algorithms. All five decide layer 4 (see
     so without one of the two, two calls given the same label reuse a sketch.
     This must be settled before randomized algorithms accept a shared
     generator.
+14. **Reproducible transforms.** Choose how the reproducible option makes
+    scaled and normal values reproducible.
+    - Pin their placement, as the contract says. This is simple, but it gives
+      up load balancing for random fills under the option.
+    - Or compute the transforms with explicitly rounded operations: Uni20's own
+      `log` and `sincos`, `fma` wherever a multiply and an add meet, and no
+      contraction. Host and device then agree bit for bit, and placement can
+      stay dynamic, at some cost in speed.
 
 ## References
 
