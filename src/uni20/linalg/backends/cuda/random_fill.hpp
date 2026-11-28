@@ -7,7 +7,8 @@ namespace uni20::linalg::detail::cuda_reference
 {
 template <class T>
 concept CudaRandomTransform = std::same_as<T, random::Uniform<float>> || std::same_as<T, random::Uniform<double>> ||
-                              std::same_as<T, random::Normal> || std::same_as<T, random::ComplexNormal>;
+                              std::same_as<T, random::detail::RoundedNormalSketch> || std::same_as<T, random::Normal> ||
+                              std::same_as<T, random::ComplexNormal>;
 
 /// \brief Write the mapped elements of a CUDA storage span using allocation-relative random addresses.
 template <CudaRandomTransform Transform>

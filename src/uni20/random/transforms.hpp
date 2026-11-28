@@ -100,4 +100,19 @@ using Normal = detail::RealNormalDistribution<double>;
 /// \brief One circular complex Box–Muller value per Philox block at double precision.
 using ComplexNormal = detail::ComplexNormalDistribution<double>;
 
+namespace detail
+{
+// Float range finders reuse the double Gaussian sketch and round each draw once.
+struct RoundedNormalSketch
+{
+    using input_type = Normal::input_type;
+    using result_type = ValueBlock<float, 2>;
+    UNI20_HOST_DEVICE result_type operator()(input_type const& block) const
+    {
+      auto const pair = Normal{}(block);
+      return {{static_cast<float>(pair.values[0]), static_cast<float>(pair.values[1])}};
+    }
+};
+} // namespace detail
+
 } // namespace uni20::random

@@ -78,6 +78,8 @@ synchronized before return. Packed BlockTensor tests cover nonzero descriptor
 offsets. General strided reductions and accessor transformations remain for a
 CUDA reference reduction backend.
 
+The randomized range finder uses cuSOLVER `S/Dgeqrf` and `S/Dorgqr` to construct a thin Q on the device.
+
 The optional cuSOLVER backend provides blocking exact SVD through
 `cusolverDnSgesvd` and `cusolverDnDgesvd`. Its first operation accepts destructive
 tall column-major CUDA-buffer matrices, real `float` or `double`, and reduced or

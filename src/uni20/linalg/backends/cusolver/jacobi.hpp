@@ -17,14 +17,6 @@
 namespace uni20::linalg::detail::cusolver_backend
 {
 
-template <class Scalar, auto Single, auto Double>
-inline constexpr auto real_jacobi_routine = [] {
-  if constexpr (std::same_as<Scalar, float>)
-    return Single;
-  else
-    return Double;
-}();
-
 struct SyevjParameters
 {
     using info_type = syevjInfo_t;
@@ -113,8 +105,8 @@ template <CusolverRealScalar Scalar>
 [[nodiscard]] JacobiConvergence execute_syevj(int n, MatrixTriangle triangle, CudaJacobiOptions options,
                                               cuda::CudaBuffer<Scalar>& matrix, cuda::CudaBuffer<Scalar>& values)
 {
-  constexpr auto query = real_jacobi_routine<Scalar, cusolverDnSsyevj_bufferSize, cusolverDnDsyevj_bufferSize>;
-  constexpr auto solve = real_jacobi_routine<Scalar, cusolverDnSsyevj, cusolverDnDsyevj>;
+  constexpr auto query = real_routine<Scalar, cusolverDnSsyevj_bufferSize, cusolverDnDsyevj_bufferSize>;
+  constexpr auto solve = real_routine<Scalar, cusolverDnSsyevj, cusolverDnDsyevj>;
   auto const fill = triangle == MatrixTriangle::Upper ? CUBLAS_FILL_MODE_UPPER : CUBLAS_FILL_MODE_LOWER;
   return run_jacobi<SyevjParameters>(
       options,
@@ -132,8 +124,8 @@ template <CusolverRealScalar Scalar>
                                                cuda::CudaBuffer<Scalar>& matrix, cuda::CudaBuffer<Scalar>& values,
                                                cuda::CudaBuffer<Scalar>& left, cuda::CudaBuffer<Scalar>& right)
 {
-  constexpr auto query = real_jacobi_routine<Scalar, cusolverDnSgesvdj_bufferSize, cusolverDnDgesvdj_bufferSize>;
-  constexpr auto solve = real_jacobi_routine<Scalar, cusolverDnSgesvdj, cusolverDnDgesvdj>;
+  constexpr auto query = real_routine<Scalar, cusolverDnSgesvdj_bufferSize, cusolverDnDgesvdj_bufferSize>;
+  constexpr auto solve = real_routine<Scalar, cusolverDnSgesvdj, cusolverDnDgesvdj>;
   constexpr int economy = 1;
   return run_jacobi<GesvdjParameters>(
       options,

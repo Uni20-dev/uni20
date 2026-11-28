@@ -27,6 +27,14 @@ namespace uni20::linalg::detail::cusolver_backend
 template <class Scalar>
 concept CusolverRealScalar = std::same_as<Scalar, float> || std::same_as<Scalar, double>;
 
+template <class Scalar, auto Single, auto Double>
+inline constexpr auto real_routine = [] {
+  if constexpr (std::same_as<Scalar, float>)
+    return Single;
+  else
+    return Double;
+}();
+
 template <class Mdspec, class Scalar, std::size_t Rank>
 concept RawWritableCudaMdspec =
     uni20::MutableRankedStridedMdspecLike<Mdspec, Rank> && uni20::cuda::BufferMdspec<Mdspec> &&
