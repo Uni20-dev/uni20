@@ -88,7 +88,13 @@ template <class Real> struct ComplexNormalDistribution
     UNI20_HOST_DEVICE ValueBlock<complex<Real>, 1> from_uniforms(Real u1, Real u2) const
     {
       auto const pair = detail::standard_normal_pair(u1, u2);
-      Real const scale = sigma * (std::numbers::sqrt2_v<Real> / 2);
+#ifdef __CUDA_ARCH__
+      constexpr double inverse_sqrt_two = std::numbers::sqrt2 / 2;
+#else
+      // The uniform supplies finite working precision even when sigma is exact.
+      Real const inverse_sqrt_two = math::sqrt(scalar_like(u1, 0.5));
+#endif
+      Real const scale = sigma * inverse_sqrt_two;
       return {{complex<Real>{mu.real() + scale * pair.values[0], mu.imag() + scale * pair.values[1]}}};
     }
     UNI20_HOST_DEVICE result_type operator()(input_type const& group) const { return group_type::apply(group, *this); }
