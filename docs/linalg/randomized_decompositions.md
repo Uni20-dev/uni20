@@ -1,7 +1,7 @@
 # Randomized dense decompositions
 
-`uni20::linalg::randomized_truncated_svd(a, options, identity)` preserves a real
-float or double matrix and returns owning `[u, s, vh, info]` on its host or CUDA
+`uni20::linalg::randomized_truncated_svd(a, options, identity)` preserves its real
+input matrix and returns owning `[u, s, vh, info]` on its host or CUDA
 device. For an $m$ by $n$ input and target rank $k$, the shapes are $m$ by $k$,
 $k$, and $k$ by $n$. Singular values are in descending order. The metadata
 records the retained extent and actual sketch width. Use the exact
@@ -18,10 +18,12 @@ a common root. The first child (`child(identity, 0)`) supplies
 the sketch. Float sketches round the standard normal draws to float.
 Singular-vector signs and bases within repeated singular values depend on the solver.
 
-Host RNG transforms can also produce fp80, fp128 and MPFR sketches. The
-Q-only `orthonormal_basis` operation used by both randomized decompositions
-has no provider for these three types. The randomized solvers and their HOTRG
-Gram cuts therefore accept fp32 and fp64.
+Both randomized solvers support fp32 and fp64 on the host and CUDA.
+The corresponding MPLAPACK providers add host fp80, fp128 and MPFR. The
+wide sketches use the input scalar's uniform grid and Box–Muller transform.
+For MPFR, give the input tensor a finite default working precision. The
+sketch, QR, projected decomposition, Nyström cutoff and returned factors
+all use that precision.
 
 The defaults are eight extra columns ($p=8$) and two power iterations ($q=2$).
 The sketch width is $\ell=\min(k+p,m,n)$ for $k>0$. The rank must lie in

@@ -21,7 +21,7 @@ template <class Values, class Vectors> struct NystromResult
 /// \details Each power step applies the input once and reorthogonalizes the sketch.
 ///          Null directions of the projected Gram matrix use a numerical pseudoinverse.
 template <RankedTensorView<2> Matrix>
-  requires detail::randomized::SketchReal<tensor_element_t<Matrix>>
+  requires detail::randomized::SketchMatrix<Matrix>
 [[nodiscard]] auto randomized_nystrom(Matrix const& a, RandomizedRangeOptions options, random::Identity identity)
 {
   namespace impl = detail::randomized;

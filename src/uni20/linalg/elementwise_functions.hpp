@@ -7,6 +7,7 @@
  */
 
 #include <uni20/core/compiler_attributes.hpp>
+#include <uni20/core/math.hpp>
 
 #include <cmath>
 #include <type_traits>
@@ -66,9 +67,20 @@ struct reciprocal
 template <class R> struct relative_inverse_sqrt
 {
     R tolerance;
-    [[nodiscard]] UNI20_HOST_DEVICE R operator()(R value, R reference) const
+    [[nodiscard]] UNI20_HOST_DEVICE R operator()(R const& value, R const& reference) const
     {
-      return value > R{0} && reference > R{0} && value / reference > tolerance ? R{1} / std::sqrt(value) : R{0};
+      if (value > R{0} && reference > R{0} && value / reference > tolerance)
+      {
+#ifdef __CUDA_ARCH__
+        return R{1} / std::sqrt(value);
+#else
+        return R{1} / math::sqrt(value);
+#endif
+      }
+      if constexpr (has_runtime_precision_v<R>)
+        return scalar_like(tolerance, 0);
+      else
+        return R{0};
     }
 };
 

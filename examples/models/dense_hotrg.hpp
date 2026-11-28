@@ -703,7 +703,7 @@ template <class Tensor4>
     using V = decltype(vectors);
     static_assert(std::same_as<typename V::layout_type, uni20::ColumnMajor>);
     vectors.replace_mapping(typename V::mapping_type{typename V::extents_type{rows, k}});
-    gram_cut<R, Place> cut{.U = uni20::reshape(std::move(vectors), n, n, k), .S = {}, .discarded = 0, .gap = 0};
+    gram_cut<R, Place> cut{.U = uni20::reshape(std::move(vectors), n, n, k), .S = {}, .discarded = R{0}, .gap = R{0}};
     wait_for(cut.U);
 #if UNI20_EXAMPLE_DENSE_HOTRG_DEVICE
     if constexpr (std::same_as<Place, device_place>)
@@ -737,10 +737,10 @@ template <uni20::Real R>
   idx const k = static_cast<idx>(std::min(D, rows));
   if (uses_sketch(method))
   {
-    if constexpr (std::same_as<R, float> || std::same_as<R, double>)
+    if constexpr (uni20::linalg::detail::randomized::SketchReal<R>)
       return randomized_cut(theta, k, trace, method, sketch, position);
     else
-      throw std::invalid_argument("dense_hotrg: randomized Gram cuts require fp32 or fp64");
+      throw std::invalid_argument("dense_hotrg: randomized Gram cuts require a QR and SVD provider at this precision");
   }
   // Ascending eigenpairs, `count` of them: U is the last k eigenvectors in descending order.
   auto const from_ascending = [&](auto const& decomposition, idx count) {

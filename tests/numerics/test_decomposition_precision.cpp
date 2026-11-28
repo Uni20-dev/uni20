@@ -2,6 +2,8 @@
 #include <uni20/linalg/ops/lq.hpp>
 #include <uni20/linalg/ops/nonsymmetric_eigen.hpp>
 #include <uni20/linalg/ops/qr.hpp>
+#include <uni20/linalg/ops/randomized_nystrom.hpp>
+#include <uni20/linalg/ops/randomized_svd.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/svd.hpp>
 
@@ -30,6 +32,73 @@ template <class C, class Q> void check_orthogonal(Q const& q, bool rows)
       expect_error_at_most(sum, C::scalar(i == j), C::real(64) * C::epsilon());
     }
 }
+UNI20_PRECISION_TEST(NumericalLinalg, RandomizedRangeFactors)
+{
+  using C = TypeParam;
+  using R = typename C::real_type;
+  auto tall = C::matrix(5, 2);
+  tall[0, 0] = C::real(1);
+  tall[3, 0] = C::real(2);
+  tall[1, 1] = C::real(3);
+  tall[3, 1] = C::real(-1);
+  auto q = linalg::orthonormal_basis(linalg::LapackBackend{}, tall);
+  check_orthogonal<C>(q, false);
+  // Every input column must lie in the span of Q, regardless of Householder signs.
+  for (index_type j = 0; j < 2; ++j)
+    for (index_type i = 0; i < 5; ++i)
+    {
+      auto projection = C::real(0);
+      for (index_type c = 0; c < 2; ++c)
+      {
+        auto dot = C::real(0);
+        for (index_type k = 0; k < 5; ++k)
+          dot += q[k, c] * tall[k, j];
+        projection += q[i, c] * dot;
+      }
+      expect_error_at_most(projection, R(tall[i, j]), 64 * C::epsilon());
+    }
+  C::expect_precision(q[0, 0]);
+
+  // Three nonzero eigenvalues in seven dimensions. A three-column sketch can recover
+  // the range exactly, so only arithmetic error remains in the leading two modes.
+  auto a = C::matrix(7, 7);
+  R const expected[] = {C::real(4) + 512 * C::epsilon(), C::real(2)};
+  for (index_type i = 0; i < 2; ++i)
+    for (index_type j = 0; j < 2; ++j)
+    {
+      a[i, j] = expected[0] / 2;
+      a[i + 2, j + 2] = i == j ? expected[1] / 2 : -expected[1] / 2;
+    }
+  a[4, 4] = C::real(1) / 4;
+  linalg::RandomizedRangeOptions options{.rank = 2, .oversampling = 1, .power_iterations = 1};
+  auto [u, svals, vh, svinfo] = linalg::randomized_truncated_svd(a, options, random::root(18));
+  auto [evals, v, nyinfo] = linalg::randomized_nystrom(a, options, random::root(24));
+  EXPECT_EQ(svinfo.sketch_width, 3);
+  EXPECT_EQ(nyinfo.sketch_width, 3);
+  check_orthogonal<C>(u, false);
+  check_orthogonal<C>(vh, true);
+  check_orthogonal<C>(v, false);
+  auto const tol = 128 * C::epsilon();
+  for (index_type j = 0; j < 2; ++j)
+  {
+    C::expect_precision(svals[j]);
+    C::expect_precision(evals[j]);
+    expect_error_at_most(R(svals[j]), expected[j], tol);
+    expect_error_at_most(R(evals[j]), expected[j], tol);
+    for (index_type i = 0; i < 7; ++i)
+    {
+      auto av = C::real(0), au = C::real(0);
+      for (index_type k = 0; k < 7; ++k)
+      {
+        av += a[i, k] * v[k, j];
+        au += a[i, k] * vh[j, k];
+      }
+      expect_error_at_most(av, R(evals[j] * v[i, j]), tol);
+      expect_error_at_most(au, R(svals[j] * u[i, j]), tol);
+    }
+  }
+}
+
 UNI20_PRECISION_TEST(NumericalLinalg, DecompositionFactors)
 {
   using C = TypeParam;

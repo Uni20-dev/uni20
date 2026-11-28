@@ -29,7 +29,16 @@ struct RandomizedRankInfo
 namespace detail::randomized
 {
 template <class R>
-concept SketchReal = std::same_as<R, float> || std::same_as<R, double>;
+concept SketchReal =
+#if UNI20_HAS_MPLAPACK_FLOAT80 || UNI20_HAS_MPLAPACK_MPREAL
+    packed_detail::BasisScalar<R> ||
+#endif
+    LapackReal<R>;
+
+template <class Matrix>
+concept SketchMatrix = SketchReal<tensor_element_t<Matrix>> &&
+                       (HostReadableTensor<Matrix> || std::same_as<tensor_element_t<Matrix>, float> ||
+                        std::same_as<tensor_element_t<Matrix>, double>);
 
 inline index_type sketch_width(index_type m, index_type n, RandomizedRangeOptions options)
 {
@@ -52,7 +61,11 @@ template <class Matrix> auto gaussian(Matrix const& a, index_type width, random:
 {
   auto omega = make_tensor_like(uninitialized, a, a.extent(1), width);
   auto leaf = random::child(identity, 0);
-  random::fill(omega, leaf, random::detail::SketchNormal<tensor_element_t<Matrix>>{});
+  using R = tensor_element_t<Matrix>;
+  if constexpr (has_runtime_precision_v<R>)
+    random::fill(omega, leaf, random::NormalFor<R>{.converter = {precision_of(a)}});
+  else
+    random::fill(omega, leaf, random::detail::SketchNormal<R>{});
   return omega;
 }
 

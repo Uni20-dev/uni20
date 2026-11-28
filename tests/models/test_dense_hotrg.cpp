@@ -170,52 +170,46 @@ TYPED_TEST(DenseHotrg, RandomizedCutsTrackTheSvdFlow)
   auto run = [&](hotrg::cut_method method, hotrg::sketch_options sketch = {}) {
     return hotrg::flow(hotrg::vertex(hotrg::model::clock, 2, K), 8, 3, nullptr, method, sketch);
   };
-  if constexpr (!std::same_as<R, float> && !std::same_as<R, double>)
+  auto const reference = run(hotrg::cut_method::svd);
+  for (auto method : {hotrg::cut_method::rsvd, hotrg::cut_method::nystrom})
   {
-    for (auto method : {hotrg::cut_method::rsvd, hotrg::cut_method::nystrom})
-      EXPECT_THROW((void)run(method), std::invalid_argument);
-  }
-  else
-  {
-    auto const reference = run(hotrg::cut_method::svd);
-    for (auto method : {hotrg::cut_method::rsvd, hotrg::cut_method::nystrom})
+    SCOPED_TRACE(hotrg::cut_method_name(method));
+    auto const cut = run(method);
+    EXPECT_EQ(cut.gap_y, run(method, {.power_iterations = 3}).gap_y);
+    hotrg::sketch_options weak{.seed = 19, .oversampling = 0, .power_iterations = 0};
+    auto const first = run(method, weak);
+    auto const replay = run(method, weak);
+    EXPECT_EQ(first.lnz, replay.lnz);
+    EXPECT_EQ(first.discarded_x, replay.discarded_x);
+    EXPECT_EQ(first.gap_y, replay.gap_y);
+    ++weak.seed;
+    EXPECT_GT(math::abs(first.gap_y.back() - run(method, weak).gap_y.back()), 32 * C::epsilon());
+    for (std::size_t i = 0; i < reference.lnz.size(); ++i)
     {
-      SCOPED_TRACE(hotrg::cut_method_name(method));
-      auto const cut = run(method);
-      EXPECT_EQ(cut.gap_y, run(method, {.power_iterations = 3}).gap_y);
-      hotrg::sketch_options weak{.seed = 19, .oversampling = 0, .power_iterations = 0};
-      auto const first = run(method, weak);
-      auto const replay = run(method, weak);
-      EXPECT_EQ(first.lnz, replay.lnz);
-      EXPECT_EQ(first.discarded_x, replay.discarded_x);
-      EXPECT_EQ(first.gap_y, replay.gap_y);
-      ++weak.seed;
-      EXPECT_GT(std::abs(first.gap_y.back() - run(method, weak).gap_y.back()), 32 * C::epsilon());
-      for (std::size_t i = 0; i < reference.lnz.size(); ++i)
-      {
-        // Give sketch error a budget of 2% of the trace the exact cut already discards.
-        // The arithmetic floor covers the sum and subtraction even on an untruncated step.
-        R const budget = R(0.02) * std::max(reference.discarded_y[i], reference.discarded_x[i]) + 32 * C::epsilon();
-        expect_error_at_most(cut.lnz[i], reference.lnz[i], budget);
-        expect_error_at_most(cut.discarded_y[i], reference.discarded_y[i], budget);
-        expect_error_at_most(cut.discarded_x[i], reference.discarded_x[i], budget);
-      }
-      // The gap is relative to the last retained value. Resolve it to five percentage points
-      // where the reference has a genuine cut; reporting 1 unconditionally fails this check.
-      EXPECT_NEAR(cut.gap_x.back(), reference.gap_x.back(), 0.05);
-      EXPECT_NEAR(cut.gap_y.back(), reference.gap_y.back(), 0.05);
-      // Deliberately undersample the *same* plateau Gram so sketch differences are measurable.
-      auto const theta = hotrg::gram(reference.T0, hotrg::axis::y);
-      auto probe = [&](std::uint64_t seed, hotrg::cut_position position) {
-        return hotrg::detail::cut_gram(theta, 8, method, {.seed = seed, .oversampling = 0, .power_iterations = 0},
-                                       position)
-            .gap;
-      };
-      R const gap = probe(1, {3, hotrg::axis::y});
-      EXPECT_GT(std::abs(gap - probe(2, {3, hotrg::axis::y})), 32 * C::epsilon());
-      EXPECT_GT(std::abs(gap - probe(1, {3, hotrg::axis::x})), 32 * C::epsilon());
-      EXPECT_GT(std::abs(gap - probe(1, {4, hotrg::axis::y})), 32 * C::epsilon());
+      // Give sketch error a budget of 2% of the trace the exact cut already discards.
+      // The arithmetic floor covers the sum and subtraction even on an untruncated step.
+      R const budget =
+          (C::real(1) / 50) * std::max(reference.discarded_y[i], reference.discarded_x[i]) + 32 * C::epsilon();
+      C::expect_precision(cut.lnz[i]);
+      expect_error_at_most(cut.lnz[i], reference.lnz[i], budget);
+      expect_error_at_most(cut.discarded_y[i], reference.discarded_y[i], budget);
+      expect_error_at_most(cut.discarded_x[i], reference.discarded_x[i], budget);
     }
+    // The gap is relative to the last retained value. Resolve it to five percentage points
+    // where the reference has a genuine cut; reporting 1 unconditionally fails this check.
+    expect_error_at_most(cut.gap_x.back(), reference.gap_x.back(), C::real(1) / 20);
+    expect_error_at_most(cut.gap_y.back(), reference.gap_y.back(), C::real(1) / 20);
+    // Deliberately undersample the *same* plateau Gram so sketch differences are measurable.
+    auto const theta = hotrg::gram(reference.T0, hotrg::axis::y);
+    auto probe = [&](std::uint64_t seed, hotrg::cut_position position) {
+      return hotrg::detail::cut_gram(theta, 8, method, {.seed = seed, .oversampling = 0, .power_iterations = 0},
+                                     position)
+          .gap;
+    };
+    R const gap = probe(1, {3, hotrg::axis::y});
+    EXPECT_GT(math::abs(gap - probe(2, {3, hotrg::axis::y})), 32 * C::epsilon());
+    EXPECT_GT(math::abs(gap - probe(1, {3, hotrg::axis::x})), 32 * C::epsilon());
+    EXPECT_GT(math::abs(gap - probe(1, {4, hotrg::axis::y})), 32 * C::epsilon());
   }
 }
 

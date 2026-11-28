@@ -103,7 +103,10 @@ template <class Matrix> void check_svd(Matrix const& a)
 }
 template <class R>
 concept AcceptsSketch = requires(DenseMatrix<R> const& a) { randomized_truncated_svd(a, {1}, random::root(0)); };
-static_assert(!AcceptsSketch<long double> && !AcceptsSketch<uni20::complex<double>>);
+static_assert(!AcceptsSketch<uni20::complex<double>>);
+#if UNI20_HAS_FLOAT80
+static_assert(AcceptsSketch<float80> == bool(UNI20_HAS_MPLAPACK_FLOAT80));
+#endif
 TEST(RandomizedSvd, TallAndWide)
 {
   check_svd(spectrum_matrix<float>(23, 16));

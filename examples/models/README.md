@@ -270,7 +270,9 @@ float, double and binary128; binary80 and MPFR runs reject them. A Jacobi solve 
 rather than cutting with unconverged vectors.
 
 The deterministic methods agree to rounding when the cut separates the kept
-subspace. The two randomized cuts approximate it in fp32 or fp64. Both ask
+subspace. The two randomized cuts approximate it in fp32 or fp64 on either host or CUDA.
+On the host they also support fp80, fp128 and MPFR with the corresponding MPLAPACK
+provider. For MPFR, `--bits` sets the precision of the sketch and factorization. Both ask
 for one extra value when truncating, so the displayed gap estimates the
 separation at the cut. Their discarded fraction uses the approximate kept
 spectrum and the trace of the original Gram.
