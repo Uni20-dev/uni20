@@ -110,17 +110,23 @@ enum class model
 //         cuSOLVER syevdx on a device
 //   jacobi-eigh  the leading eigenvectors by cuSOLVER Jacobi (syevj); CUDA tensors only
 //   jacobi-svd   the leading singular vectors by cuSOLVER Jacobi (gesvdj); CUDA tensors only
+//   dc-eigh  the leading eigenvectors by LAPACK divide and conquer (syevd); host tensors only, since
+//            eigh on a device already uses cuSOLVER's divide-and-conquer syevd
+//   dc-svd   the leading singular vectors of a divide-and-conquer SVD (LAPACK gesdd); host tensors only
 enum class cut_method
 {
   svd,
   eigh,
   selected_eigh,
   jacobi_eigh,
-  jacobi_svd
+  jacobi_svd,
+  dc_eigh,
+  dc_svd
 };
 
-inline constexpr std::array all_cut_methods{cut_method::svd, cut_method::eigh, cut_method::selected_eigh,
-                                            cut_method::jacobi_eigh, cut_method::jacobi_svd};
+inline constexpr std::array all_cut_methods{cut_method::svd,         cut_method::eigh,       cut_method::selected_eigh,
+                                            cut_method::jacobi_eigh, cut_method::jacobi_svd, cut_method::dc_eigh,
+                                            cut_method::dc_svd};
 
 // Whether a method has only a CUDA implementation: the cuSOLVER Jacobi solvers have no host counterpart.
 [[nodiscard]] constexpr bool cut_method_needs_device(cut_method method)
@@ -128,9 +134,18 @@ inline constexpr std::array all_cut_methods{cut_method::svd, cut_method::eigh, c
   return method == cut_method::jacobi_eigh || method == cut_method::jacobi_svd;
 }
 
+// Whether a method has only a host implementation: the explicit LAPACK divide-and-conquer drivers (#205).
+[[nodiscard]] constexpr bool cut_method_needs_host(cut_method method)
+{
+  return method == cut_method::dc_eigh || method == cut_method::dc_svd;
+}
+
 // Whether the selected eigensolver (#204) covers a host scalar type: the raw LAPACK wrappers, which take
 // float and double and, when configured, MPLAPACK binary128.  binary80 and MPFR have only the full solver.
 template <uni20::Real R> inline constexpr bool selected_eigh_supported = uni20::LapackReal<R>;
+
+// The divide-and-conquer drivers (#205) cover the same scalars; binary80 and MPFR decline them.
+template <uni20::Real R> inline constexpr bool divide_and_conquer_supported = uni20::LapackReal<R>;
 
 [[nodiscard]] inline char const* cut_method_name(cut_method method)
 {
@@ -146,6 +161,10 @@ template <uni20::Real R> inline constexpr bool selected_eigh_supported = uni20::
       return "jacobi-eigh";
     case cut_method::jacobi_svd:
       return "jacobi-svd";
+    case cut_method::dc_eigh:
+      return "dc-eigh";
+    case cut_method::dc_svd:
+      return "dc-svd";
   }
   return "?";
 }
@@ -627,6 +646,42 @@ template <uni20::Real R>
   if (cut_method_needs_device(method))
     throw std::invalid_argument(std::string("dense_hotrg: the ") + cut_method_name(method) +
                                 " cut runs only on CUDA tensors");
+  idx const k = static_cast<idx>(std::min(D, rows));
+  // Ascending eigenpairs, `count` of them: U is the last k eigenvectors in descending order.
+  auto const from_ascending = [&](auto const& decomposition, idx count) {
+    gram_cut<R, host_place> result{
+        .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+    for (idx c = 0; c < k; ++c)
+      for (idx b = 0; b < n; ++b)
+        for (idx a = 0; a < n; ++a)
+          result.U[a, b, c] = R(decomposition.eigenvectors[a + n * b, count - 1 - c]);
+    cut_from_eigenvalues(result.gap, result.S, result.discarded, decomposition.eigenvalues, count, k, trace);
+    return result;
+  };
+  // A complete SVD, singular values descending: U is the leading k left vectors.
+  auto const from_complete_svd = [&](auto const& decomposition) {
+    gram_cut<R, host_place> result{
+        .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+    for (idx c = 0; c < k; ++c)
+      for (idx b = 0; b < n; ++b)
+        for (idx a = 0; a < n; ++a)
+          result.U[a, b, c] = R(decomposition.left_singular_vectors[a + n * b, c]);
+    R kept = uni20::scalar_at_precision<R>(0, p);
+    for (idx i = 0; i < k; ++i)
+    {
+      result.S.push_back(R(decomposition.singular_values[i]));
+      kept += result.S.back();
+    }
+    result.discarded = 1 - kept / trace;
+    if (k == n * n)
+      result.gap = uni20::scalar_at_precision<R>(1, p); // nothing was discarded
+    else if (result.S.back() > 0)
+      result.gap = (result.S.back() - R(decomposition.singular_values[k])) / result.S.back();
+    else
+      result.gap = uni20::scalar_at_precision<R>(0, p); // the cut falls inside the null space
+    return result;
+  };
+
   if (method == cut_method::selected_eigh)
   {
     if constexpr (!selected_eigh_supported<R>)
@@ -634,22 +689,40 @@ template <uni20::Real R>
           "dense_hotrg: the selected-eigh cut needs a LAPACK scalar (float, double, MPLAPACK binary128); use eigh");
     else
     {
-      idx const k = static_cast<idx>(std::min(D, rows)), r = n * n;
+      idx const r = n * n;
       idx const first = std::max<idx>(r - k - 1, 0); // one more than kept, for the gap
       auto const decomposition = [&] {
         lap const timer(spent().cut);
         return uni20::linalg::eigh(uni20::reshape_view(theta, r, r), uni20::linalg::EigenvalueIndexRange{first, r},
                                    uni20::linalg::MatrixTriangle::Upper, p); // ascending
       }();
-      idx const count = r - first;
-      gram_cut<R, host_place> result{
-          .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
-      for (idx c = 0; c < k; ++c)
-        for (idx b = 0; b < n; ++b)
-          for (idx a = 0; a < n; ++a)
-            result.U[a, b, c] = R(decomposition.eigenvectors[a + n * b, count - 1 - c]);
-      cut_from_eigenvalues(result.gap, result.S, result.discarded, decomposition.eigenvalues, count, k, trace);
-      return result;
+      return from_ascending(decomposition, r - first);
+    }
+  }
+  if (method == cut_method::dc_eigh || method == cut_method::dc_svd)
+  {
+    if constexpr (!divide_and_conquer_supported<R>)
+      throw std::invalid_argument(std::string("dense_hotrg: the ") + cut_method_name(method) +
+                                  " cut needs a LAPACK scalar (float, double, MPLAPACK binary128); use eigh or svd");
+    else
+    {
+      auto const matrix = uni20::reshape_view(theta, n * n, n * n);
+      if (method == cut_method::dc_eigh)
+      {
+        auto const decomposition = [&] {
+          lap const timer(spent().cut);
+          return uni20::linalg::eigh(matrix, uni20::linalg::EighDriver::DivideAndConquer,
+                                     uni20::linalg::MatrixTriangle::Upper, p); // ascending
+        }();
+        return from_ascending(decomposition, n * n);
+      }
+      auto const decomposition = [&] {
+        lap const timer(spent().cut);
+        return uni20::linalg::svd(matrix,
+                                  uni20::linalg::SvdOptions{.driver = uni20::linalg::SvdDriver::DivideAndConquer},
+                                  p); // descending
+      }();
+      return from_complete_svd(decomposition);
     }
   }
   if (method == cut_method::eigh)
@@ -658,15 +731,7 @@ template <uni20::Real R>
       lap const timer(spent().cut);
       return uni20::linalg::eigh(uni20::reshape_view(theta, n * n, n * n), p); // ascending
     }();
-    idx const k = static_cast<idx>(std::min(D, rows));
-    gram_cut<R, host_place> result{
-        .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
-    for (idx c = 0; c < k; ++c)
-      for (idx b = 0; b < n; ++b)
-        for (idx a = 0; a < n; ++a)
-          result.U[a, b, c] = R(decomposition.eigenvectors[a + n * b, n * n - 1 - c]);
-    cut_from_eigenvalues(result.gap, result.S, result.discarded, decomposition.eigenvalues, n * n, k, trace);
-    return result;
+    return from_ascending(decomposition, n * n);
   }
   auto decomposition = [&] {
     lap const timer(spent().cut);
@@ -674,13 +739,13 @@ template <uni20::Real R>
         uni20::reshape_view(theta, n * n, n * n),
         uni20::linalg::SvdTruncationPolicy<R>{.maximum_retained_extent = std::min(D, rows)}, p);
   }();
-  idx const k = static_cast<idx>(decomposition.singular_values.extent(0));
+  idx const kept_extent = static_cast<idx>(decomposition.singular_values.extent(0));
 
   gram_cut<R, host_place> result{
-      .U = tensor3<R>(uni20::uninitialized, n, n, k, p), .S = {}, .discarded = R{0}, .gap = R{0}};
-  uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, k));
+      .U = tensor3<R>(uni20::uninitialized, n, n, kept_extent, p), .S = {}, .discarded = R{0}, .gap = R{0}};
+  uni20::copy(result.U, uni20::reshape_view(decomposition.left_singular_vectors, n, n, kept_extent));
   R kept = uni20::scalar_at_precision<R>(0, p);
-  for (idx i = 0; i < k; ++i)
+  for (idx i = 0; i < kept_extent; ++i)
   {
     result.S.push_back(R(decomposition.singular_values[i]));
     kept += result.S.back();
@@ -717,6 +782,10 @@ template <uni20::Real R>
   idx const n = theta.extent(0), rows = n * n;
   idx const k = static_cast<idx>(std::min<std::size_t>(D, static_cast<std::size_t>(rows)));
   R const trace = gram_trace(theta);
+  if (cut_method_needs_host(method))
+    throw std::invalid_argument(fmt::format("dense_hotrg: the {} cut runs only on host tensors; on CUDA, eigh "
+                                            "already uses cuSOLVER's divide-and-conquer syevd",
+                                            cut_method_name(method)));
 
   // U is the solver's vectors times a selector, columns of the identity, in one GEMM on the device.
   auto const keep_columns = [&](auto& U, auto const& vectors, idx count, bool trailing) {

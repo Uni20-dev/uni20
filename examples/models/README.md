@@ -255,13 +255,16 @@ gram of size `D^2 x D^2` at the plateau. `--gram-cut=M` chooses how:
 | `selected-eigh` | `eigh` over an index range (LAPACK `syevr`, or MPLAPACK binary128) | cuSOLVER `syevdx`, then the columns by a GEMM |
 | `jacobi-eigh` | none | `eigh_jacobi` (cuSOLVER `syevj`), then the trailing columns by a GEMM |
 | `jacobi-svd` | none | `svd_jacobi` (cuSOLVER `gesvdj`), then the leading columns by a GEMM |
+| `dc-eigh` | `eigh` with `EighDriver::DivideAndConquer` (LAPACK `syevd`) | none: `eigh` on CUDA is already `syevd` |
+| `dc-svd` | `svd` with `SvdDriver::DivideAndConquer` (LAPACK `gesdd`), then the leading columns | none |
 
 `selected-eigh` asks for only the top `D + 1` eigenpairs: `D` to keep and one
 more for the gap at the cut. It covers float, double and binary128; binary80
 and MPFR runs reject it, since their adapters have only the full solver.
 
 The Jacobi methods run only with `--execution=cuda`, and the host benchmark
-leaves them out. A Jacobi solve that stops at its sweep limit ends the run
+leaves them out. The divide-and-conquer methods run only on the host, and cover
+float, double and binary128; binary80 and MPFR runs reject them. A Jacobi solve that stops at its sweep limit ends the run
 rather than cutting with unconverged vectors.
 
 All the methods keep the same subspace when the gap at the cut is not tiny; the

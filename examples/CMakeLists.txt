@@ -126,6 +126,9 @@ add_test(NAME IsingHotrgSelectedEighFlow COMMAND ising_hotrg_example --gram-cut=
 # The Jacobi cuts have only CUDA implementations.
 add_test(NAME IsingHotrgRejectHostJacobi COMMAND ising_hotrg_example --gram-cut=jacobi-eigh --bond=4 --rounds=1)
 set_tests_properties(IsingHotrgRejectHostJacobi PROPERTIES WILL_FAIL TRUE)
+# The explicit divide-and-conquer cuts have only host implementations.
+add_test(NAME IsingHotrgDcEighFlow COMMAND ising_hotrg_example --gram-cut=dc-eigh --bond=8 --rounds=6)
+add_test(NAME IsingHotrgDcSvdFlow COMMAND ising_hotrg_example --gram-cut=dc-svd --bond=8 --rounds=6)
 add_test(NAME IsingHotrgCutBenchmark COMMAND ising_hotrg_example --benchmark-gram-cut --bonds=4,8 --rounds=2
                                              --repeat=1)
 if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
@@ -145,6 +148,9 @@ if(UNI20_BACKEND_CUDA AND UNI20_BACKEND_CUBLAS AND UNI20_BACKEND_CUSOLVER)
   set_tests_properties(IsingHotrgCudaCheck IsingHotrgCudaFlow IsingHotrgCudaFloat32 IsingHotrgCudaSecondDevice
                        IsingHotrgCudaCutBenchmark IsingHotrgCudaJacobiEighFlow IsingHotrgCudaJacobiSvdFlow
                        PROPERTIES SKIP_RETURN_CODE 77)
+  add_test(NAME IsingHotrgRejectCudaDc COMMAND ising_hotrg_example --execution=cuda --gram-cut=dc-eigh --bond=4
+                                               --rounds=1)
+  set_tests_properties(IsingHotrgRejectCudaDc PROPERTIES WILL_FAIL TRUE)
 else()
   add_test(NAME IsingHotrgRejectCuda COMMAND ising_hotrg_example --execution=cuda --bond=4 --rounds=1)
   set_tests_properties(IsingHotrgRejectCuda PROPERTIES WILL_FAIL TRUE)
