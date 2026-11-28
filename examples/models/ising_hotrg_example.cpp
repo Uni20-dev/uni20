@@ -807,9 +807,16 @@ template <uni20::Real R> R read_real(std::string_view text, uni20::Precision p)
     return uni20::parse_real<R>(text);
 }
 
+void report_sketch(p::report_builder& setup, sketch_options const& sketch)
+{
+  setup.field("Seed", sketch.seed)
+      .field("Oversampling", sketch.oversampling)
+      .field("Power iterations", sketch.power_iterations);
+}
+
 template <uni20::Real R, class Place = host_place>
 int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Precision precision, int quadrature_points,
-             cut_method method)
+             cut_method method, sketch_options const& sketch)
 {
   R const ratio = read_real<R>(temperature, precision);
   if (!uni20::isfinite(ratio) || ratio <= 0) throw std::invalid_argument("temperature must be finite and positive");
@@ -823,6 +830,7 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
       .field("Width", "2^log2(width)")
       .field("Tensors", Place::name)
       .field("Gram cut", cut_method_name(method));
+  if (uses_sketch(method)) report_sketch(setup, sketch);
   d::emit(std::move(setup), d::stream::out);
   auto results = make_flow_table<R>(precision);
   results.attach(p::terminal_sink());
@@ -846,7 +854,7 @@ int run_flow(std::size_t D, int rounds, std::string_view temperature, uni20::Pre
                        R((r.lnz[i] - exact) / exact), level(1), reference_level(1), level(2), reference_level(2),
                        spectrum.asymmetry);
       },
-      method);
+      method, sketch);
   results.finish();
   double all = 0, contractions = 0, regroup = 0, svd = 0;
   for (std::size_t i = 0; i < record.seconds.size(); ++i)
@@ -905,7 +913,8 @@ double subspace_distance(tensor3 const& U, tensor3 const& V)
   return std::sqrt(2.0 * residual);
 }
 
-template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int repeat)
+template <class Place>
+int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int repeat, sketch_options const& sketch)
 {
   // Every method with an implementation for these tensors: the Jacobi solvers are CUDA only, and the
   // divide-and-conquer drivers host only.
@@ -924,6 +933,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
       .field("Gram", "the y-step gram of a 4-round flow's coarse tensor, (D^2 x D^2)")
       .field("Reference", "host eigh of the same gram")
       .field("Repeats", repeat);
+  report_sketch(setup, sketch);
   d::emit(std::move(setup), d::stream::out);
 
   auto cuts = p::make_data_table(
@@ -951,7 +961,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
         if constexpr (std::same_as<Place, host_place>)
         {
           auto const start = clock::now();
-          auto cut = detail::cut_gram(theta, D, method);
+          auto cut = detail::cut_gram(theta, D, method, sketch, {.round = 4, .along = axis::y});
           best = std::min(best, std::chrono::duration<double>(clock::now() - start).count());
           U.emplace(std::move(cut.U));
           S = std::move(cut.S);
@@ -964,7 +974,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
           auto on_device = Place{}.upload(theta);
           wait_for(on_device);
           auto const start = clock::now();
-          auto cut = detail::cut_gram(std::move(on_device), D, method);
+          auto cut = detail::cut_gram(std::move(on_device), D, method, sketch, {.round = 4, .along = axis::y});
           wait_for(cut.U);
           best = std::min(best, std::chrono::duration<double>(clock::now() - start).count());
           U.emplace(uni20::to_host(cut.U));
@@ -994,7 +1004,7 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
     for (cut_method method : methods)
     {
       auto const start = clock::now();
-      flow_record const record = flow<Place>(vertex(model::clock, 2, K), D, rounds, nullptr, method);
+      flow_record const record = flow<Place>(vertex(model::clock, 2, K), D, rounds, nullptr, method, sketch);
       double const seconds = std::chrono::duration<double>(clock::now() - start).count();
       auto const X = scaling_dimensions(ring_levels(record.T0).eigenvalues);
       double const lnz = record.lnz.back(), x1 = X.size() > 1 ? X[1] : HUGE_VAL;
@@ -1030,9 +1040,13 @@ template <class Place> int run_cut_benchmark(std::vector<std::size_t> const& bon
       .row("--cuda-device=N", "Device ordinal for --execution=cuda (default 0)")
       .row("--second-cuda-device=N", "With --execution=cuda --check: also check a step on a tensor on device N")
       .row("--check", "Original double-precision definition and flow checks; with cuda, also the CUDA step")
-      .row("--gram-cut=M", "svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd|dc-eigh|dc-svd (default svd): how a step "
-                           "takes the leading vectors of the gram; the jacobi methods need --execution=cuda, and the "
-                           "dc methods --execution=cpu")
+      .row("--gram-cut=M",
+           "svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd|dc-eigh|dc-svd|rsvd|nystrom (default svd): how a step "
+           "takes the leading vectors of the gram; the jacobi methods need --execution=cuda, and the "
+           "dc methods --execution=cpu")
+      .row("--seed=N", "Seed for randomized cuts, including the benchmark (default 1)")
+      .row("--oversampling=P", "Extra Gaussian columns for rsvd and nystrom (default 8)")
+      .row("--power-iterations=Q", "Stabilized power steps for rsvd and nystrom (default 1)")
       .row("--benchmark-gram-cut", "Time every gram-cut method on the same grams, and a flow with each (fp64)")
       .row("--bonds=D,D,...", "Bonds for --benchmark-gram-cut (default 8,16,24)")
       .row("--repeat=N", "Timed repeats per cut for --benchmark-gram-cut; the fastest is shown (default 3)")
@@ -1114,6 +1128,7 @@ int main(int argc, char** argv)
   [[maybe_unused]] int cuda_device = 0;
   [[maybe_unused]] std::optional<int> second_device;
   cut_method method = cut_method::svd;
+  sketch_options sketch;
   std::vector<std::size_t> bonds{8, 16, 24};
   int repeat = 3;
   bool check = false, explicit_bits = false, benchmark = false;
@@ -1158,24 +1173,18 @@ int main(int argc, char** argv)
         cuda_device = parse_integer<int>(value, 0);
       else if (name == "--second-cuda-device")
         second_device = parse_integer<int>(value, 0);
+      else if (name == "--seed")
+        sketch.seed = parse_integer<std::uint64_t>(value, 0);
+      else if (name == "--oversampling")
+        sketch.oversampling = parse_integer<idx>(value, 0);
+      else if (name == "--power-iterations")
+        sketch.power_iterations = parse_integer<idx>(value, 0);
       else if (name == "--gram-cut")
       {
-        if (value == "svd")
-          method = cut_method::svd;
-        else if (value == "eigh")
-          method = cut_method::eigh;
-        else if (value == "selected-eigh")
-          method = cut_method::selected_eigh;
-        else if (value == "jacobi-eigh")
-          method = cut_method::jacobi_eigh;
-        else if (value == "jacobi-svd")
-          method = cut_method::jacobi_svd;
-        else if (value == "dc-eigh")
-          method = cut_method::dc_eigh;
-        else if (value == "dc-svd")
-          method = cut_method::dc_svd;
-        else
-          usage("--gram-cut is svd, eigh, selected-eigh, jacobi-eigh, jacobi-svd, dc-eigh or dc-svd");
+        auto it = std::find_if(all_cut_methods.begin(), all_cut_methods.end(),
+                               [&](cut_method m) { return value == cut_method_name(m); });
+        if (it == all_cut_methods.end()) usage("unknown --gram-cut method");
+        method = *it;
       }
       else if (name == "--bonds")
       {
@@ -1198,6 +1207,8 @@ int main(int argc, char** argv)
       usage("--gram-cut=jacobi-eigh and jacobi-svd run only with --execution=cuda");
     if (execution == "cuda" && cut_method_needs_host(method))
       usage("--gram-cut=dc-eigh and dc-svd run only with --execution=cpu");
+    if (uses_sketch(method) && precision != "fp32" && precision != "fp64")
+      usage("rsvd and nystrom require --precision=fp32 or fp64");
     if (check && precision != "fp64")
       usage("--check runs the original double checks; use uni20_models_tests for precision coverage");
     if (benchmark && (check || precision != "fp64"))
@@ -1210,16 +1221,16 @@ int main(int argc, char** argv)
       if (check) return on_cuda_device(cuda_device, second_device, [] { return run_checks(true); });
       if (benchmark)
         return on_cuda_device(cuda_device, std::nullopt,
-                              [&] { return run_cut_benchmark<device_place>(bonds, rounds, repeat); });
+                              [&] { return run_cut_benchmark<device_place>(bonds, rounds, repeat, sketch); });
       if (precision == "fp32")
         return on_cuda_device(cuda_device, std::nullopt, [&] {
           return run_flow<float, device_place>(bond, rounds, temperature, uni20::native_precision<float>(), points,
-                                               method);
+                                               method, sketch);
         });
       if (precision == "fp64")
         return on_cuda_device(cuda_device, std::nullopt, [&] {
           return run_flow<double, device_place>(bond, rounds, temperature, uni20::native_precision<double>(), points,
-                                                method);
+                                                method, sketch);
         });
       usage("--execution=cuda takes --precision=fp32 or fp64");
 #else
@@ -1227,24 +1238,24 @@ int main(int argc, char** argv)
 #endif
     }
     if (check) return run_checks(false);
-    if (benchmark) return run_cut_benchmark<host_place>(bonds, rounds, repeat);
+    if (benchmark) return run_cut_benchmark<host_place>(bonds, rounds, repeat, sketch);
     if (precision == "fp32")
-      return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points, method);
+      return run_flow<float>(bond, rounds, temperature, uni20::native_precision<float>(), points, method, sketch);
     if (precision == "fp64")
-      return run_flow<double>(bond, rounds, temperature, uni20::native_precision<double>(), points, method);
+      return run_flow<double>(bond, rounds, temperature, uni20::native_precision<double>(), points, method, sketch);
 #if UNI20_HAS_MPLAPACK_FLOAT80
     if (precision == "fp80")
       return run_flow<uni20::float80>(bond, rounds, temperature, uni20::native_precision<uni20::float80>(), points,
-                                      method);
+                                      method, sketch);
 #endif
 #if UNI20_HAS_MPLAPACK_FLOAT128
     if (precision == "fp128")
       return run_flow<uni20::float128>(bond, rounds, temperature, uni20::native_precision<uni20::float128>(), points,
-                                       method);
+                                       method, sketch);
 #endif
 #if UNI20_HAS_MPLAPACK_MPREAL
     if (precision == "mpreal")
-      return run_flow<uni20::mpreal>(bond, rounds, temperature, uni20::Precision::bits(bits), points, method);
+      return run_flow<uni20::mpreal>(bond, rounds, temperature, uni20::Precision::bits(bits), points, method, sketch);
 #endif
     usage("unknown precision or its LAPACK provider is not configured");
   }

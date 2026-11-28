@@ -61,12 +61,15 @@ precision setting is needed.
 | `mpreal --bits=N` | N binary digits (default 128) | MPLAPACK MPFR |
 
 Unavailable choices are rejected. `--bits` is valid only with `mpreal`.
-`--gram-cut=svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd|dc-eigh|dc-svd`
+`--gram-cut=svd|eigh|selected-eigh|jacobi-eigh|jacobi-svd|dc-eigh|dc-svd|rsvd|nystrom`
 chooses how a step takes the leading vectors of the gram. `svd` and `eigh` work
 at every precision. `selected-eigh`, `dc-eigh` and `dc-svd` need LAPACK drivers
 that cover `fp32`, `fp64` and `fp128`, so `fp80` and `mpreal` reject them. The
 two Jacobi methods use cuSOLVER and need `--execution=cuda`; the two `dc`
-methods run only on the host. `--benchmark-gram-cut` compares the methods (see
+methods run only on the host. The randomized `rsvd` and `nystrom` cuts support
+fp32 and fp64 on host and CUDA. They accept `--seed`, `--oversampling` and
+`--power-iterations` and report the gap from one extra approximate value when
+truncating. `--benchmark-gram-cut` compares the methods (see
 the [model examples](../../examples/models/)).
 `--execution=cuda` runs the same step on CUDA tensors for `fp32` and `fp64`,
 in a build with the CUDA, cuBLAS and cuSOLVER backends; the wider types are host
