@@ -60,7 +60,9 @@ template <class Matrix> void check_svd(Matrix const& a)
   auto ref = svd(original);
   auto id = random::root(17);
   auto [ud, sd, vhd, info] = randomized_truncated_svd(a, {k, p, q}, id);
-  auto u = host_factors(ud), s = host_factors(sd), vh = host_factors(vhd);
+  auto u = host_factors(ud);
+  auto s = host_factors(sd);
+  auto vh = host_factors(vhd);
   EXPECT_EQ(info.retained_rank, k);
   EXPECT_EQ(info.sketch_width, k + p);
   // Power iteration suppresses the unresolved tail by (sigma[width]/sigma[k-1])^(2q+1).
@@ -82,8 +84,9 @@ template <class Matrix> void check_svd(Matrix const& a)
   EXPECT_LT(projector_error(u, ref.left_singular_vectors, k), bound);
   EXPECT_LT(projector_error(permute<1, 0>(vh), permute<1, 0>(ref.right_singular_vectors_adjoint), k), bound);
   auto replay = randomized_truncated_svd(a, {k, p, q}, id);
-  auto u2 = host_factors(replay.left_singular_vectors), s2 = host_factors(replay.singular_values),
-       vh2 = host_factors(replay.right_singular_vectors_adjoint);
+  auto u2 = host_factors(replay.left_singular_vectors);
+  auto s2 = host_factors(replay.singular_values);
+  auto vh2 = host_factors(replay.right_singular_vectors_adjoint);
   for (int j = 0; j < k; ++j)
   {
     EXPECT_NEAR(s[j], s2[j], bound);

@@ -107,7 +107,7 @@ template <class Output, class Source> void copy_prefix(Output& out, Source const
   std::array<index_type, S::rank()> strides{};
   for (unsigned d = 0; d < S::rank(); ++d)
     strides[d] = input.stride(d);
-  layout_stride::mapping<E> map(out.extents(), strides);
+  layout_stride::mapping<E> map(dest.extents(), strides);
   using T = typename S::element_type;
   using A = typename S::accessor_type;
   auto cropped = [&] {
@@ -129,7 +129,7 @@ template <RankedTensorView<2> Matrix>
 [[nodiscard]] auto randomized_truncated_svd(Matrix const& a, RandomizedRangeOptions options, random::Identity identity)
 {
   namespace impl = detail::randomized;
-  auto const m = a.extent(0), n = a.extent(1), k = options.rank;
+  index_type const m = a.extent(0), n = a.extent(1), k = options.rank;
   auto const width = impl::sketch_width(m, n, options);
   auto u = impl::allocate(a, m, k);
   auto s = impl::allocate(a, k);

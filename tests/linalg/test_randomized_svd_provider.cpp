@@ -19,7 +19,9 @@ template <class R> auto vendor_svd(CudaTensor<R, 2> const& input, RandomizedRang
   auto m = input.extent(0), n = input.extent(1), k = opts.rank;
   auto a = to_device(input, resources);
   // Use the full buffer dimensions specified by NVIDIA for Xgesvdr.
-  auto values = rd::allocate(a, std::min(m, n)), left = rd::allocate(a, m, m), right = rd::allocate(a, n, n);
+  auto values = rd::allocate(a, std::min(m, n));
+  auto left = rd::allocate(a, m, m);
+  auto right = rd::allocate(a, n, n);
   {
     auto lease = cusolver::execution_pool(resources).acquire();
     auto const& stream = lease.stream();
@@ -56,7 +58,9 @@ template <class R> auto vendor_svd(CudaTensor<R, 2> const& input, RandomizedRang
     vw.release_after_synchronization();
     EXPECT_EQ(status, 0);
   }
-  auto u = rd::allocate(a, m, k), s = rd::allocate(a, k), vh = rd::allocate(a, k, n);
+  auto u = rd::allocate(a, m, k);
+  auto s = rd::allocate(a, k);
+  auto vh = rd::allocate(a, k, n);
   rd::copy_prefix(u, left);
   rd::copy_prefix(s, values);
   rd::copy_prefix(vh, permute<1, 0>(right));
@@ -83,8 +87,9 @@ template <class R> void compare_providers()
         ms[repeat] = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
       if (repeat == 2)
       {
-        auto s = to_host(factors.singular_values), u = to_host(factors.left_singular_vectors),
-             vh = to_host(factors.right_singular_vectors_adjoint);
+        auto s = to_host(factors.singular_values);
+        auto u = to_host(factors.left_singular_vectors);
+        auto vh = to_host(factors.right_singular_vectors_adjoint);
         for (int j = 0; j < k; ++j)
         {
           value_error = std::max(value_error, std::abs(double(s[j]) / a[j, j] - 1));
