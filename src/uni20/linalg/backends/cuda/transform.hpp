@@ -66,9 +66,8 @@ concept SupportedScaleMdspecs =
     supports_elementwise_scale<transform_scalar_t<OutputMdspec>, std::remove_cvref_t<Factor>>;
 
 template <class OutputMdspec, class LhsMdspec, class RhsMdspec, class Function>
-concept SupportedStatelessBinaryMdspecs =
-    RawCudaOverwriteMdspecs<OutputMdspec, LhsMdspec, RhsMdspec> && RegisteredStatelessBinary<Function> &&
-    supports_elementwise_arithmetic<transform_scalar_t<OutputMdspec>>;
+concept SupportedBinaryMdspecs = RawCudaOverwriteMdspecs<OutputMdspec, LhsMdspec, RhsMdspec> &&
+                                 CompiledBinaryTransform<Function, transform_scalar_t<OutputMdspec>>;
 
 template <class OutputMdspec, class Factor>
 concept SupportedInplaceScaleMdspec =
@@ -133,10 +132,9 @@ template <std::size_t MaximumRank, class OutputMdspec, class... InputMdspecs>
   requires uni20::MutableMdspecLike<OutputMdspec> && (uni20::MdspecLike<InputMdspecs> && ...) &&
            ((std::remove_cvref_t<OutputMdspec>::rank() == std::remove_cvref_t<InputMdspecs>::rank()) && ...) &&
            (ElementwiseLayout<OutputMdspec> && (ElementwiseLayout<InputMdspecs> && ...))
-[[nodiscard]] bool
-try_make_elementwise_transform_plan(OutputMdspec const& output,
-                                    LoweredStridedElementwisePlan<sizeof...(InputMdspecs) + 1, MaximumRank>& plan,
-                                    InputMdspecs const&... inputs)
+[[nodiscard]] bool try_make_elementwise_transform_plan(
+    OutputMdspec const& output, LoweredStridedElementwisePlan<sizeof...(InputMdspecs) + 1, MaximumRank>& plan,
+    InputMdspecs const&... inputs)
 {
   auto host_plan = make_multi_iteration_plan(std::tuple{output.mapping(), inputs.mapping()...});
   return try_lower_strided_elementwise_plan<MaximumRank>(host_plan, plan);
@@ -298,8 +296,8 @@ template <class OutputMdspec, class InputMdspec, class Factor>
 }
 
 template <class Function, class OutputMdspec, class LhsMdspec, class RhsMdspec>
-  requires SupportedStatelessBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>
-[[nodiscard]] auto prepare_stateless_binary(OutputMdspec& output, LhsMdspec& lhs, RhsMdspec& rhs)
+  requires SupportedBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>
+[[nodiscard]] auto prepare_binary(OutputMdspec& output, LhsMdspec& lhs, RhsMdspec& rhs)
 {
   using scalar_type = transform_scalar_t<OutputMdspec>;
   return prepare_overwrite_transform(BinaryArithmeticPlan<scalar_type>{}, output, lhs, rhs);
@@ -406,20 +404,14 @@ template <class Scalar, class Factor> void execute_scale(ScalePlan<Scalar, Facto
   });
 }
 
-template <class Scalar, RegisteredStatelessBinary Function>
-void execute_stateless_binary(BinaryArithmeticPlan<Scalar> const& plan, Function function)
+template <class Scalar, class Function>
+  requires CompiledBinaryTransform<Function, Scalar>
+void execute_binary(BinaryArithmeticPlan<Scalar> const& plan, Function function)
 {
   execute_overwrite_transform(plan, [&](Scalar* output, auto const& inputs, cudaStream_t stream, int device) {
-    if constexpr (supports_elementwise_arithmetic<Scalar>)
-    {
-      plan.elementwise_plan.visit([&](auto const& elementwise_plan) {
-        enqueue_elementwise_binary(output, inputs[0], inputs[1], function, elementwise_plan, stream, device);
-      });
-    }
-    else
-    {
-      PANIC("unsupported scalar reached CUDA reference binary arithmetic");
-    }
+    plan.elementwise_plan.visit([&](auto const& elementwise_plan) {
+      enqueue_elementwise_binary(output, inputs[0], inputs[1], function, elementwise_plan, stream, device);
+    });
   });
 }
 
@@ -542,28 +534,27 @@ KernelAttempt try_kernel(CudaReferenceBackend, transform_op<scale<Factor>> const
   return KernelAttempt::success;
 }
 
-/// \brief Report CUDA eligibility for a registered stateless binary transform.
-template <detail::cuda_reference::RegisteredStatelessBinary Function, uni20::MutableMdspecLike OutputMdspec,
-          uni20::MdspecLike LhsMdspec, uni20::MdspecLike RhsMdspec>
+/// \brief Report CUDA eligibility for a registered binary transform.
+template <class Function, uni20::MutableMdspecLike OutputMdspec, uni20::MdspecLike LhsMdspec,
+          uni20::MdspecLike RhsMdspec>
 consteval auto kernel_accepts_types(CudaReferenceBackend const&, transform_op<Function> const&, OutputMdspec&,
                                     LhsMdspec&, RhsMdspec&)
 {
-  if constexpr (detail::cuda_reference::SupportedStatelessBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>)
+  if constexpr (detail::cuda_reference::SupportedBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>)
     return kernel_types_maybe;
   else
     return kernel_types_no;
 }
 
-/// \brief Apply a registered stateless binary transform to CUDA mdspec operands.
-template <detail::cuda_reference::RegisteredStatelessBinary Function, class OutputMdspec, class LhsMdspec,
-          class RhsMdspec>
-  requires detail::cuda_reference::SupportedStatelessBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>
+/// \brief Apply a registered binary transform to CUDA mdspec operands.
+template <class Function, class OutputMdspec, class LhsMdspec, class RhsMdspec>
+  requires detail::cuda_reference::SupportedBinaryMdspecs<OutputMdspec, LhsMdspec, RhsMdspec, Function>
 KernelAttempt try_kernel(CudaReferenceBackend, transform_op<Function> const& operation, OutputMdspec& output,
                          LhsMdspec& lhs, RhsMdspec& rhs)
 {
-  auto preparation = detail::cuda_reference::prepare_stateless_binary<Function>(output, lhs, rhs);
+  auto preparation = detail::cuda_reference::prepare_binary<Function>(output, lhs, rhs);
   if (!kernel_attempt_succeeded(preparation.attempt)) return preparation.attempt;
-  detail::cuda_reference::execute_stateless_binary(preparation, operation.function);
+  detail::cuda_reference::execute_binary(preparation, operation.function);
   return KernelAttempt::success;
 }
 

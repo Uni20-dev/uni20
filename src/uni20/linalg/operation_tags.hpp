@@ -181,11 +181,10 @@ struct qr_op
     static constexpr std::string_view name = "qr";
 };
 
-/// \brief Scale orthogonal columns by a thresholded inverse square root of their eigenvalues.
-template <class R> struct nystrom_whiten_op
+/// \brief Right-multiply a matrix in place by a diagonal specified as a vector.
+struct scale_columns_op
 {
-    static constexpr std::string_view name = "nystrom_whiten";
-    R tolerance;
+    static constexpr std::string_view name = "scale_columns";
 };
 
 /// \brief Overwrite a tall matrix with the thin Householder Q factor.

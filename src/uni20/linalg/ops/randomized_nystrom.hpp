@@ -1,7 +1,8 @@
 #pragma once
 
-#include <uni20/linalg/detail/nystrom_whitening.hpp>
 #include <uni20/linalg/detail/randomized_range.hpp>
+#include <uni20/linalg/detail/spectral_weights.hpp>
+#include <uni20/linalg/ops/scale_columns.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/svd.hpp>
 #include <uni20/tensor/transform.hpp>
@@ -39,7 +40,8 @@ template <RankedTensorView<2> Matrix>
     auto spectrum = make_tensor_like(uninitialized, a, width);
     self_adjoint_eigh(spectrum, projected);
     // If W = V D V^T, the Nyström approximation is F F^T with F = Y V (D^+)^{1/2}.
-    impl::whiten_columns(projected, spectrum);
+    auto weights = impl::inverse_sqrt_weights(spectrum);
+    scale_columns(projected, weights);
     auto factor = impl::product(y, projected);
     auto basis = make_tensor_like(uninitialized, a, n, width);
     auto right = make_tensor_like(uninitialized, a, width, width);

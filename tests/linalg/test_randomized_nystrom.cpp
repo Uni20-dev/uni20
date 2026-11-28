@@ -106,6 +106,29 @@ template <class Matrix> void check_deficient(Matrix const& a, double scale)
   EXPECT_NEAR(e[2] / scale, 0., 1e-13);
   EXPECT_NEAR(std::abs(v[0, 0]), 1., 1e-12);
 }
+template <class Place> void check_spectral_cutoff(Place place)
+{
+  constexpr double largest = 0x1p-500;
+  double const cutoff = 6 * numeric_limits<double>::epsilon() * largest;
+  Tensor<double, 1> spectrum(6);
+  spectrum[0] = -largest;
+  spectrum[1] = 0;
+  spectrum[2] = cutoff / 2;
+  spectrum[3] = cutoff;
+  spectrum[4] = 4 * cutoff;
+  spectrum[5] = largest;
+  auto w = on_host(linalg::detail::randomized::inverse_sqrt_weights(place(spectrum)));
+  for (int i = 0; i != 4; ++i)
+    EXPECT_EQ(w[i], 0.);
+  EXPECT_DOUBLE_EQ(w[4], 1. / std::sqrt(spectrum[4]));
+  EXPECT_DOUBLE_EQ(w[5], 1. / std::sqrt(largest));
+}
+
+TEST(RandomizedNystrom, StrictRelativeCutoff)
+{
+  check_spectral_cutoff([](auto const& spectrum) -> auto const& { return spectrum; });
+}
+
 TEST(RandomizedNystrom, GramComparison)
 {
   compare(rotated_gram<float>(128));
@@ -173,6 +196,7 @@ TEST(RandomizedNystrom, CudaGramComparisonAndRankDeficiency)
     GTEST_SKIP();
   ASSERT_EQ(status, cudaSuccess);
   auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 1});
+  check_spectral_cutoff([](auto const& spectrum) { return to_device(spectrum, 0); });
   compare(to_device(rotated_gram<float>(128), 0));
   compare(to_device(rotated_gram<double>(128), 0));
   DenseMatrix<double> a(9, 9);

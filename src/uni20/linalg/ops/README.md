@@ -77,3 +77,5 @@ Operation values and diagnostic names are defined centrally in
 - [Tensor operations](../../../../docs/tensor/operations.md)
 - [Mdspan linear algebra dispatch](../../../../docs/linalg/mdspan_dispatch.md)
 - [Kernel dispatch](../../../../docs/architecture/kernel_dispatch.md)
+
+`scale_columns(matrix, factors)` computes `matrix[i,j] *= factors[j]` in place for a rectangular matrix and a disjoint vector. The vector length must equal the number of columns. The host and CUDA reference backends reuse their strided elementwise multiply with a read-only broadcast of the vector.

@@ -47,6 +47,11 @@ inline constexpr bool supports_elementwise_arithmetic =
     std::same_as<Scalar, float> || std::same_as<Scalar, double> || std::same_as<Scalar, uni20::cfloat> ||
     std::same_as<Scalar, uni20::cdouble>;
 
+template <class Function, class Scalar>
+concept CompiledBinaryTransform = (RegisteredStatelessBinary<Function> && supports_elementwise_arithmetic<Scalar>) ||
+                                  (std::same_as<Function, relative_inverse_sqrt<Scalar>> &&
+                                   (std::same_as<Scalar, float> || std::same_as<Scalar, double>));
+
 template <class Scalar>
 void enqueue_elementwise_fill(Scalar* output, Scalar value, ElementwiseFillPlan32 const& plan, cudaStream_t stream,
                               int device);

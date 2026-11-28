@@ -47,8 +47,7 @@ $YW^\dagger Y^T$. If $W=VDV^T$, a thin SVD of $YV(D^\dagger)^{1/2}$ yields
 its eigenvectors. Squaring the retained singular values gives its eigenvalues.
 This requires $q+1$ applications of the input, compared with $2q+2$ for the
 randomized SVD. The remaining work acts on $n$ by $\ell$ or $\ell$ by $\ell$
-matrices. The CUDA path keeps the whitening factors and all decomposition work
-on the device.
+matrices. An elementwise transform reads each eigenvalue and the largest eigenvalue in place to form the inverse-square-root weights. The dispatched `scale_columns(matrix, weights)` then multiplies each column by its weight. Both operations keep their operands on the input device.
 
 A positive projected eigenvalue is retained when its ratio to the largest
 exceeds $\ell\,\epsilon$ at the working precision. All other projected modes

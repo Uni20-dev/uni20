@@ -6,7 +6,7 @@ endif()
 
 add_test_module(lu_refine SOURCES test_lu_refine.cpp LIBS uni20_linalg)
 
-add_test_module(randomized_nystrom SOURCES test_randomized_nystrom.cpp LIBS uni20_linalg)
+add_test_module(randomized_nystrom SOURCES test_randomized_nystrom.cpp test_scale_columns.cpp LIBS uni20_linalg)
 
 add_test_module(randomized_svd SOURCES test_randomized_svd.cpp test_randomized_svd_provider.cpp LIBS uni20_linalg)
 

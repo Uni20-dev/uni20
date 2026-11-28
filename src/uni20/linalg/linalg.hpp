@@ -22,6 +22,7 @@
 #include <uni20/linalg/ops/qr.hpp>
 #include <uni20/linalg/ops/randomized_nystrom.hpp>
 #include <uni20/linalg/ops/randomized_svd.hpp>
+#include <uni20/linalg/ops/scale_columns.hpp>
 #include <uni20/linalg/ops/schur.hpp>
 #include <uni20/linalg/ops/self_adjoint_eigh.hpp>
 #include <uni20/linalg/ops/slogdet.hpp>
