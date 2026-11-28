@@ -68,7 +68,8 @@ that cover `fp32`, `fp64` and `fp128`, so `fp80` and `mpreal` reject them. The
 two Jacobi methods use cuSOLVER and need `--execution=cuda`; the two `dc`
 methods run only on the host. The randomized `rsvd` and `nystrom` cuts support
 fp32 and fp64 on host and CUDA. They accept `--seed`, `--oversampling` and
-`--power-iterations` and report the gap from one extra approximate value when
+`--power-iterations`. HOTRG defaults to seed 1, eight extra columns and three
+power steps. Both cuts report the gap from one extra approximate value when
 truncating. `--benchmark-gram-cut` compares the methods (see
 the [model examples](../../examples/models/)).
 `--execution=cuda` runs the same step on CUDA tensors for `fp32` and `fp64`,

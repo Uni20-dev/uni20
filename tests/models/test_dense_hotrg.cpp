@@ -182,6 +182,7 @@ TYPED_TEST(DenseHotrg, RandomizedCutsTrackTheSvdFlow)
     {
       SCOPED_TRACE(hotrg::cut_method_name(method));
       auto const cut = run(method);
+      EXPECT_EQ(cut.gap_y, run(method, {.power_iterations = 3}).gap_y);
       hotrg::sketch_options weak{.seed = 19, .oversampling = 0, .power_iterations = 0};
       auto const first = run(method, weak);
       auto const replay = run(method, weak);

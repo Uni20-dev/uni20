@@ -279,7 +279,7 @@ spectrum and the trace of the original Gram.
 zero-based round, and the physical axis (y = 0, x = 1). Repeating a flow with
 the same settings on the same backend replays the sketches.
 `--oversampling=P` adds extra Gaussian columns (default 8).
-`--power-iterations=Q` sets the number of stabilized power steps (default 1).
+`--power-iterations=Q` sets the number of stabilized power steps (default 3).
 Nyström makes `Q+1` passes over the Gram and rSVD makes `2Q+2`. Both accept
 zero oversampling and zero power steps.
 
@@ -325,25 +325,25 @@ On the host at bond 32, the divide-and-conquer drivers cut the gram in 0.090 s
 
 The following fp64 measurements use a 1024 × 1024 critical-Ising Gram after
 four rounds. Each cut time is the fastest of three calls on the same Gram.
-Flow times cover five rounds. The seed is 1, with eight extra columns and one
-power step per solver. Host BLAS uses one thread. Each machine builds its
+Flow times cover five rounds. The seed is 1, with eight extra columns and three
+power steps per solver. Host BLAS uses one thread. Each machine builds its
 reference flow locally, so its basis within a degenerate subspace can differ.
 
 | Execution | Cut | Cut (ms) | Five-round flow (s) | Spectrum error | Subspace distance | Absolute error in final $X_1$ vs SVD |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Intel Alder Lake, OpenBLAS | selected-eigh | 47.4 | 6.93 | 4.67e-16 | 1.20e-13 | 5.83e-16 |
-| Intel Alder Lake, OpenBLAS | rsvd | 9.24 | 6.75 | 9.54e-7 | 0.157 | 1.90e-7 |
-| Intel Alder Lake, OpenBLAS | nystrom | 5.98 | 6.98 | 2.02e-5 | 0.728 | 2.14e-9 |
-| Quadro GV100, CUDA 12.9 | selected-eigh | 14.6 | 0.192 | 2.33e-16 | 2.00e-12 | 1.53e-15 |
-| Quadro GV100, CUDA 12.9 | rsvd | 4.62 | 0.156 | 4.00e-8 | 0.0394 | 2.38e-7 |
-| Quadro GV100, CUDA 12.9 | nystrom | 4.87 | 0.159 | 4.69e-6 | 0.221 | 1.16e-6 |
-| RTX PRO 4500 Blackwell, CUDA 13.5 | selected-eigh | 20.4 | 0.527 | 4.67e-16 | 1.88e-12 | 5.27e-16 |
-| RTX PRO 4500 Blackwell, CUDA 13.5 | rsvd | 3.73 | 0.459 | 1.77e-7 | 0.0843 | 9.16e-8 |
-| RTX PRO 4500 Blackwell, CUDA 13.5 | nystrom | 4.01 | 0.463 | 9.24e-6 | 0.325 | 9.73e-7 |
+| Intel Alder Lake, OpenBLAS | selected-eigh | 46.8 | 7.04 | 4.67e-16 | 1.2e-13 | 5.83e-16 |
+| Intel Alder Lake, OpenBLAS | rsvd | 18.1 | 6.82 | 1.14e-10 | 0.00158 | 3.42e-11 |
+| Intel Alder Lake, OpenBLAS | nystrom | 10.4 | 6.8 | 4.65e-7 | 0.0524 | 2.49e-9 |
+| Quadro GV100, CUDA 12.9 | selected-eigh | 14.6 | 0.193 | 2.33e-16 | 2e-12 | 1.53e-15 |
+| Quadro GV100, CUDA 12.9 | rsvd | 6.15 | 0.168 | 1.09e-12 | 0.000154 | 3.84e-11 |
+| Quadro GV100, CUDA 12.9 | nystrom | 5.81 | 0.18 | 1.72e-8 | 0.00987 | 2.59e-8 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | selected-eigh | 21 | 0.55 | 4.67e-16 | 1.88e-12 | 5.27e-16 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | rsvd | 6.52 | 0.488 | 9.83e-12 | 0.000462 | 7.37e-11 |
+| RTX PRO 4500 Blackwell, CUDA 13.5 | nystrom | 5.32 | 0.485 | 8.61e-8 | 0.0252 | 4.09e-8 |
 
-At equal numbers of passes on the GV100, Nyström with three power steps and
-rSVD with one each read the Gram four times. The Nyström cut then took 5.76 ms
-with subspace distance 0.00987, compared with 4.62 ms and 0.0394 for rSVD.
-With three power steps, rSVD took 6.47 ms and reached distance 0.000154.
+On the GV100, the three-step Nyström cut and the one-step rSVD cut each
+read the Gram four times. Nyström took 5.81 ms with subspace distance 0.00987,
+and rSVD took 4.5 ms with distance 0.0394. At the HOTRG default, rSVD read the
+Gram eight times and reached distance 0.000154 in 6.15 ms.
 The flow also includes tensor contractions and axis regroupings, so its
 speedup can be much smaller than the speedup of the cut.

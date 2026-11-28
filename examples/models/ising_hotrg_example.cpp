@@ -1046,7 +1046,7 @@ int run_cut_benchmark(std::vector<std::size_t> const& bonds, int rounds, int rep
            "dc methods --execution=cpu")
       .row("--seed=N", "Seed for randomized cuts, including the benchmark (default 1)")
       .row("--oversampling=P", "Extra Gaussian columns for rsvd and nystrom (default 8)")
-      .row("--power-iterations=Q", "Stabilized power steps for rsvd and nystrom (default 1)")
+      .row("--power-iterations=Q", "Stabilized power steps for rsvd and nystrom (default 3)")
       .row("--benchmark-gram-cut", "Time every gram-cut method on the same grams, and a flow with each (fp64)")
       .row("--bonds=D,D,...", "Bonds for --benchmark-gram-cut (default 8,16,24)")
       .row("--repeat=N", "Timed repeats per cut for --benchmark-gram-cut; the fastest is shown (default 3)")

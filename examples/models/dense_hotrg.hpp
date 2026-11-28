@@ -137,7 +137,7 @@ struct sketch_options
 {
     std::uint64_t seed = 1;
     idx oversampling = 8;
-    idx power_iterations = 1;
+    idx power_iterations = 3;
 };
 
 // Location of this Gram in the physical flow, including when the x step exchanges tensor axes.
