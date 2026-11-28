@@ -96,10 +96,12 @@ uni20::CudaTensor<float, 2> output(uni20::uninitialized, 32, 48);
 
 Ordinary shape construction initializes every element to numerical zero.
 For nonempty allocations, CUDA zero initialization accepts native arithmetic
-types, the configured `uni20::float128` when present, and their `uni20::complex` counterparts, whose
-zero representations are known to contain only zero bytes. Other element
-types are rejected with `std::invalid_argument`; CUDA storage does not execute
-arbitrary host default constructors. Host tensors can value-initialize
+types and their `uni20::complex` counterparts, whose zero representations contain
+only zero bytes. With `UNI20_ENABLE_FLOAT128=ON`, CUDA storage also supports
+bytewise zero initialization and transfers of `uni20::float128` and
+`uni20::complex<uni20::float128>`. Uni20 performs binary128 arithmetic on the host.
+Zero initialization of other element types throws `std::invalid_argument`.
+CUDA storage does not execute arbitrary host default constructors. Host tensors can value-initialize
 nonnumeric elements with `T{}`. Such elements can still use explicitly
 uninitialized CUDA storage or raw `CudaBuffer` allocation, with their contents
 supplied by an appropriate device operation or transfer.

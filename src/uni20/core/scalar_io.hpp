@@ -193,10 +193,12 @@ template <typename T> [[nodiscard]] std::string fmt_real(T value, scalar_format_
 }
 
 #if UNI20_HAS_FLOAT128 && UNI20_FLOAT128_PROVIDER_MPLAPACK
-[[nodiscard]] inline std::string format_float128(uni20::float128 value, scalar_format_options const& options)
+// Query the host compiler's binary128 limits only when formatting a binary128 value.
+template <std::same_as<uni20::float128> T>
+[[nodiscard]] std::string format_float128(T value, scalar_format_options const& options)
 {
 #if defined(MPLAPACK_BINARY128_MODE) && (MPLAPACK_BINARY128_MODE == MPLAPACK_BINARY128_MODE_FLOAT128)
-  int const precision = effective_precision<uni20::float128>(options);
+  int const precision = effective_precision<T>(options);
   char const notation = printf_notation(options.notation);
   std::string const format = fmt::format("%.{}{}", precision, notation);
 

@@ -116,7 +116,8 @@ template <> struct exponential_math_provider<long double> : portable_exponential
 template <> struct exponential_math_provider<float128> : portable_exponential_math<float128>
 {
 #if UNI20_HAS_EXP10_FLOAT128
-    static float128 exp10(float128 x)
+    // CUDA translation units include this header but may lack host binary128 numeric limits.
+    template <std::same_as<float128> R> static R exp10(R x)
     {
       return scaled_decimal_exponential(x, [](float128 value) { return ::exp10f128(value); });
     }
