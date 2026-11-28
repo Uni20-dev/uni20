@@ -7,6 +7,9 @@
  */
 
 #include "common.hpp"
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+#include "decompositions_packed.hpp"
+#endif
 
 #include <uni20/backend/blas/blas_int.hpp>
 #include <uni20/backend/lapack/lapack.hpp>
@@ -153,25 +156,45 @@ KernelAttempt try_kernel(LapackBackend, qr_op const&, QMdspec& q, RMdspec& r, Ma
       q, r, matrix_work);
 }
 
-template <MutableRankedStridedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
-           DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
-consteval auto kernel_accepts_types(LapackBackend, orthonormal_basis_op, A&)
+namespace lapack_detail
 {
-  return kernel_types_maybe;
+template <MutableRankedStridedMdspanLike<2> Span>
+  requires LapackScalar<typename Span::value_type> && DefaultAccessorMdspanLike<Span>
+KernelAttempt form_thin_q(Span& span)
+{
+  return form_q(span, [] {});
 }
 
-template <MutableRankedStridedMdspecLike<2> A>
-  requires HostWritableMdspec<A> && LapackScalar<typename A::value_type> &&
-           DefaultAccessorMdspanLike<host_write_mdspan_t<A>>
-KernelAttempt try_kernel(LapackBackend, orthonormal_basis_op, A& matrix)
+#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
+// The Q-only frontend materializes arbitrary input views into this column-major workspace.
+template <MutableRankedMdspanLike<2> Span, class... P>
+  requires packed_detail::BasisScalar<typename Span::value_type> && DefaultAccessorMdspanLike<Span> &&
+           std::same_as<typename Span::layout_type, ColumnMajor> &&
+           packed_detail::KernelPrecision<typename Span::value_type, P...>
+KernelAttempt form_thin_q(Span& span, P... precision)
+{
+  auto const p = packed_detail::working_precision<typename Span::value_type>(precision...);
+  std::span work(span.data_handle(), static_cast<std::size_t>(span.size()));
+  mplapack::orthonormal_basis(span.extent(0), span.extent(1), work, p);
+  return KernelAttempt::success;
+}
+#endif
+} // namespace lapack_detail
+
+template <HostWritableMdspec A, class... P>
+consteval auto kernel_accepts_types(LapackBackend, orthonormal_basis_op, A&, P... precision)
+{
+  if constexpr (requires(host_write_mdspan_t<A>& span) { lapack_detail::form_thin_q(span, precision...); })
+    return kernel_types_maybe;
+  else
+    return kernel_types_no;
+}
+
+template <class A, class... P> KernelAttempt try_kernel(LapackBackend, orthonormal_basis_op, A& matrix, P... precision)
 {
   if (matrix.extent(0) < matrix.extent(1)) return KernelAttempt::unsupported_shape;
-  return lapack_detail::with_host_write_mdspans([](auto& a) { return lapack_detail::form_q(a, [] {}); }, matrix);
+  return lapack_detail::with_host_write_mdspans(
+      [&](auto& span) { return lapack_detail::form_thin_q(span, precision...); }, matrix);
 }
 
 } // namespace uni20::linalg
-
-#if UNI20_HAS_MPLAPACK_MPREAL || UNI20_HAS_MPLAPACK_FLOAT80
-#include "decompositions_packed.hpp"
-#endif

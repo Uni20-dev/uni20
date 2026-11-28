@@ -55,7 +55,7 @@ template <CusolverQrMatrix A> consteval auto kernel_accepts_types(CusolverBacken
   return kernel_types_maybe;
 }
 
-template <CusolverQrMatrix A> KernelAttempt try_kernel(CusolverBackend, orthonormal_basis_op, A& work)
+template <class A> KernelAttempt try_kernel(CusolverBackend, orthonormal_basis_op, A& work)
 {
   using namespace detail::cusolver_backend;
   if (work.extent(0) < work.extent(1)) return KernelAttempt::unsupported_shape;
