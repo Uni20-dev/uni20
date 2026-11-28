@@ -12,8 +12,9 @@ Both choices use signed or unsigned integer index types, including signed and
 unsigned char.
 
 Uni20 owns its views and mappings to provide stride observers at every rank,
-signed offsets, and storage-span queries. `uni20::mdspec` uses the same
-mapping and accessor vocabulary before the data handle is acquired.
+tuple-valued mapping results for zip, and device-callable views.
+`uni20::mdspec` uses the same mapping and accessor vocabulary before the
+data handle is acquired.
 
 ## Why Not the Standard Types
 
@@ -28,19 +29,13 @@ it fails to compile. With the standard layouts, Uni20's strided concepts would
 need a rank-zero escape and generic code a free stride helper; pull request #148
 tried that and is superseded by this design.
 
-**Offsets.** The standard accessor policy takes a `size_t` offset, and
-`layout_stride` requires positive strides. `required_span_size`,
-`is_exhaustive` and `is_unique` assume nonnegative strides. Each Uni20 accessor
-declares its own `offset_type`, and `mdspan` passes the mapped offset to `access`
-in that type. Host tensors and CUDA pointer accessors use `std::ptrdiff_t`.
-The diagonal and generated accessors retain their own offset types. Const,
-conjugating and unary transform adaptors inherit the wrapped accessor's offset
-type. Multi-operand transform accessors keep an offset type for each operand.
-
-The iteration plan computes in `std::ptrdiff_t` and normalizes negative
-strides. A diagonal can borrow values in reverse order through
-`layout_signed_stride` and the signed default accessor. Forward component
-views keep `layout_stride`.
+**Mapping results.** The standard permits a custom layout with signed strides
+and nonnegative scalar offsets. The built-in `std::layout_stride` only covers
+forward strides. With standard extents, `std::mdspan` can use
+`uni20::layout_signed_stride` with its default accessor. Uni20 also
+supports zip mappings, which return a tuple with
+one offset per operand. Indexing passes the mapping result directly to the
+accessor. The view exposes its type as `offset_type`.
 
 **Control.** Owning the types lets every mapping and mdspan member be
 `UNI20_HOST_DEVICE`, report precondition failures through Uni20 diagnostics,
@@ -97,7 +92,7 @@ All live in namespace `uni20`, in new headers under `src/uni20/mdspan/`.
 | `extents`, `dextents`, `dynamic_extent` | Standard extents semantics. Use `std::dynamic_extent` from `<span>` in either configuration. |
 | `layout_left`, `layout_right`, `layout_stride` | Uni20 mappings with the standard semantics for nonnegative strides, plus the rules below. |
 | `layout_signed_stride` | A strided mapping whose strides may have either sign. |
-| `default_accessor<T>` | `offset_type` is `std::ptrdiff_t`; `access(p, i)` is `p[i]`, `offset(p, i)` is `p + i`. |
+| `default_accessor<T>` | Accepts a `std::size_t` element offset. `access(p, i)` returns `p[i]` and `offset(p, i)` returns `p + i`. |
 | `mdspan<T, Extents, Layout, Accessor>` | Same interface as `std::mdspan`, with the offset rule below. |
 | `mdspec<T, Extents, Layout, Accessor, Descriptor>` | Existing; specified to match `mdspan`; see mdspec below. |
 | `offset_range` | Inclusive `[minimum, maximum]` of handle-relative offsets, with `std::ptrdiff_t` bounds, empty when `minimum > maximum`; the existing `iteration_offset_range` moves here. |
@@ -120,71 +115,33 @@ elements. A view of shape `(2, 2)` with strides `(3, 1)` therefore has
    `mdspan` and in `mdspec`, with precondition `r < rank()`. At rank zero no axis meets it, so a
    call fails the precondition, while a loop over the axes compiles and never
    calls it.
-2. **Both views expose the accessor's offset type.** Native `mdspan` and
-   `mdspec` declare `using offset_type = typename accessor_type::offset_type;`.
-   Generic code names `typename S::offset_type`. The accessor declares the
-   argument type for `access` and `offset`, and the mdspan passes the mapping
-   result in that type. The default accessor uses `std::ptrdiff_t`. A transform
-   that forwards the offset preserves its wrapped accessor's type, and a zip
-   accessor can take a tuple of offsets. Pairing a mapping with an accessor
-   establishes that every reachable offset fits whenever the types alone
-   cannot guarantee it.
-3. **Single-buffer mappings with element offsets describe their storage span.**
-   `required_span_size()` is the number of elements in that span, including
-   padding. `base_offset()` is the displacement from the start of that span to
-   the data handle. A native affine mapping returns zero for the all-zero
-   coordinate, so the handle addresses the logical origin. Both storage queries
-   return zero for an empty mapping. A mapping that describes a storage span
-   provides `required_span_size()`, `base_offset()`, and a static
-   `constexpr bool is_base_offset_always_zero()`. The built-in nonnegative
-   layouts return true from this classifier. Both `mdspan` and `mdspec`
-   forward it when the mapping provides all three observers.
-   The rule covers a mapping that returns
-   one offset, read by an accessor that uses it as an element offset into one
-   buffer. This includes paired-axis diagonal views and accessors that forward
-   the offset unchanged, such as conjugation over a CUDA pointer accessor.
-   The zip layouts are outside it. `StridedZipLayout` and
-   `GeneralZipLayout` return one offset per span, so they are Uni20 mappings
-   rather than conforming layout mappings, and they should not claim to be:
-   they provide neither `required_span_size()` nor `base_offset()`. They
-   work with the accessors and operations written for them, and anything that
-   needs those queries, such as buffer validation or conversion to the
-   standard, does not accept them. PR #152 removed the conformance claims and
-   the zip span-size query. Generated layouts also sit outside the storage-span
-   contract since their offsets encode logical coordinates. A translating
-   accessor is outside the rule too: `diagonal_accessor`
-   maps a logical offset to a stored component, so element `(2, 2)` of a 3×3
-   diagonal is mapping offset 8 but component 2, and validating its buffer is
-   left to the accessor.
-4. **Affine layouts expose a stride per axis and have a zero origin.**
-   `AffineMdspanLike` and `AffineMdspecLike` require `is_always_strided()`
-   and a declared `stride(axis)` at every rank. An always-strided mapping in a
-   Uni20 view maps the all-zero coordinate to offset zero. An offset that moves
-   the view belongs in its data handle, as with `std::layout_stride` and
-   `submdspan`. The standard's strided-mapping requirement constrains only the
-   differences between neighbouring coordinates, so it admits
-   `m(i) = c + Σ iₖsₖ` with `c ≠ 0`. In `std::mdspan` that is the only way to
-   express a negative stride. Uni20 uses `layout_signed_stride` instead, and
-   code that works from the handle and the strides, such as `StridedZipLayout`
-   and `diagonal_components`, would drop `c`. Uni20's own layouts have a zero
-   origin by construction. Forming an `mdspan` or `mdspec` with any other
-   always-strided layout checks a nonempty mapping on the host and throws
-   `std::invalid_argument` for a nonzero origin
-   ([#179](https://github.com/Uni20-dev/uni20/issues/179)).
-   Explicit import of a standard rank-zero mapping preserves the scalar shape
-   without querying a stride.
-5. **Signed strides have a dedicated layout.** `AffineMdspanLike` and
-   `AffineMdspecLike` admit `layout_signed_stride`.
-   `StridedMdspanLike` and `StridedMdspecLike` additionally require a statically
-   zero base offset. For native affine layouts, that describes nonnegative
-   element strides on the varying axes. Both layout families can have a signed
-   `index_type`. An `mdspan` or `mdspec` with
-   `layout_signed_stride` requires a signed
-   `index_type` and a signed `offset_type`. An accessor taking `size_t`
-   therefore cannot be paired with this layout. Uni20's `index_type` is already
-   `std::ptrdiff_t` ([`core/types.hpp`](../../src/uni20/core/types.hpp)), and
-   the default Tensor extents use it. Explicit Tensor extents can use another
-   index type.
+2. **Both views name the mapping result.** `mdspan::offset_type` and
+   `mdspec::offset_type` denote the type returned by the stored mapping called
+   with one `index_type` per axis. The accessor must accept every reachable
+   result. A mapping may return a move-only value. Indexing forwards it to
+   the accessor. When the accessor accepts a const reference, a caller can
+   save the result in `auto n = mapping(indices...)` and reuse it with
+   `accessor.access(handle, n)`. Accessors may omit the alias. An affine mapping
+   returns an integer. A zip mapping returns one offset per operand and
+   has no single storage span.
+3. **Storage bounds begin at the handle.** For a mapping whose offsets
+   address elements in one buffer, `required_span_size()` includes any gaps.
+   An empty mapping has span size zero. With a translating accessor the
+   physical buffer size is determined by the accessor. For example, offset
+   eight in the logical mapping of a 3×3 compressed diagonal addresses its
+   third stored component.
+4. **Affine layouts expose a stride per axis.** `AffineMdspanLike` and
+   `AffineMdspecLike` require integral mapping results, constant differences
+   between neighbouring coordinates, and a stride observer at every rank.
+   A nonempty affine view's logical origin is `mapping(0, …, 0)`. Forward
+   layouts guarantee zero origin and nonnegative strides by construction.
+   `StridedMdspanLike` and `StridedMdspecLike` select those layouts for
+   operations that reconstruct offsets from strides alone. Other affine
+   layouts retain their full mappings when composed in zip.
+5. **Signed strides have a dedicated layout.** `layout_signed_stride` uses a
+   signed `index_type` for strides, mapped offsets and the enclosing span
+   size. The constructor checks that the full span fits. Select a wider index
+   type for a wider span. The default tensor index type is `std::ptrdiff_t`.
 6. **Empty mappings constrain their strides less.** The standard requires
    `layout_stride` strides to be positive and to admit an axis order in which
    no two axes overlap, even when the mapping has no elements. Uni20's
@@ -254,40 +211,27 @@ standard is expected to:
 
 ### Signed-stride Semantics
 
-`layout_signed_stride` keeps the handle at the element with all indices zero,
-as NumPy does, so offsets below the handle are negative. `operator()` is
-`sum(index[k] * stride[k])`. The lowest element offset is the sum of
-`(extent[k] - 1) * stride[k]` for axes with negative strides. Its magnitude is
-`base_offset()`. The width from the lowest through the highest element offset,
-inclusive, is `required_span_size()`. Both observers return `std::size_t`, so
-the span may be wider than the mapping's signed index range. An empty mapping
-returns zero for both queries, while a rank-zero mapping has base offset zero
-and span size one. The constructor requires unique offsets, using increasing
-absolute stride order. The mapping is exhaustive when the span size equals
-the logical element count.
+The handle addresses the lowest reachable element of a nonempty signed-stride
+view. The mapping stores the displacement of its logical origin from there.
+For a coordinate `i` the offset is
 
-`layout_signed_stride` is view-only. An owning Tensor requires a mapping
-whose storage span starts at the handle. `reverse<Axis>(span)` borrows from a native pointer-backed span
-with a nonnegative layout and signed indices. For a nonempty view with more
-than one element along that axis, it moves the handle to the last element
-along the axis and negates the stride. Empty views and singleton axes
-retain the original handle and strides.
+```text
+origin = sum((extent[k] - 1) * abs(stride[k]) for each negative stride)
+offset = origin + sum(i[k] * stride[k])
+```
 
-Host copy and elementwise transforms use the affine iteration plan to
-normalize negative strides. If any extent is zero, the plan returns before
-normalizing strides. Precompiled CUDA kernels and BLAS and LAPACK lowering
-require nonnegative layouts. BLAS's negative-increment convention and
-LAPACK's positive leading dimensions each require separate consideration.
+For a 3×4 matrix with reversed columns, the strides are `(4, -1)` and the
+mapping returns `3 + 4*i - j`. The span size is 12. With row pitch 6 the
+same view spans 16 elements including the padding. Rank zero has origin zero
+and span size one. An empty view has no logical origin to evaluate.
 
-Uni20's C++ API keeps temporaries explicit, within reason: an operation that
-does not accept an operand's layout rejects it rather than copying it. Copies
-that make a call succeed belong to layers built on Uni20. Python bindings would
-copy a negatively strided NumPy array that an operation does not accept, as
-NumPy itself copies before calling BLAS. A convenience C++ library, in the
-style of MATLAB, could make the same trade for code where the answer matters
-more than the cost. Rule 5 makes such a layer simple: acceptance is a
-compile-time property, so the layer can test it with a concept and insert the
-copy only where it is needed, without catching run-time declines.
+`reverse<Axis>(span)` borrows a native pointer-backed view with signed
+indices. It preserves the storage handle and negates the selected stride
+when that axis varies. Reversing twice restores the original offsets.
+Empty and singleton axes retain their strides. Owning tensors and direct
+BLAS/LAPACK projections use forward layouts. CPU elementwise iteration and
+CUDA random fill can normalize signed strides. Dense random fill selects
+the element position `origin_argument + mapping(indices...)` on both backends.
 
 ### Rejected Alternatives
 
@@ -366,19 +310,12 @@ applies to it:
 - **Strides at every rank (rules 1 and 4).** Native strided mappings provide
   `mdspec::stride(r)` at every rank with the precondition `r < rank()`.
   `StridedMdspecLike` and `StridedMdspanLike` use the same requirement.
-- **Offsets (rules 2 and 5).** `S::offset_type` names the accessor offset on
-  a deferred descriptor just as it does on an immediate view. Pairing the
-  mapping and accessor establishes representability before a handle is
-  acquired. For example,
-  `layout_signed_stride` requires a signed accessor offset type in both
-  `mdspec` and the resolved `mdspan`.
-- **Storage span (rule 3).** Acquisition validates the descriptor's logical
-  origin against the buffer. [CUDA acquisition](mdspec.md#cuda-vertical-slice)
-  requires the accessor to opt into the mapping span or supply its own. When
-  using the mapping span, acquisition subtracts `base_offset()` from the
-  descriptor offset and checks that `required_span_size()` elements fit from
-  there. The acquired handle still addresses the descriptor's origin. An empty
-  view permits a one-past origin.
+- **Offsets (rules 2 and 5).** The mapping determines `S::offset_type` before
+  acquisition. The resolved accessor accepts that mapping result.
+- **Storage span (rule 3).** [CUDA acquisition](mdspec.md#cuda-vertical-slice)
+  checks that `required_span_size()` elements fit starting at the descriptor's
+  element offset for a storage-preserving accessor. A translating accessor
+  can provide its own physical range. An empty view permits a one-past handle.
 - **Empty mappings and representable products (rules 6 and 7)** come with the
   mapping and need nothing separate.
 - **Resolution.** Acquisition combines the leased handle, the mapping and the
@@ -395,62 +332,15 @@ expose the same observers with the same types and values.
 
 ## Migration
 
-The steps below give a suggested order. Move producers and their callers
-together as needed. [Issue #173](https://github.com/Uni20-dev/uni20/issues/173)
-tracks the implementation. PR #152 already addressed the zip layouts'
-conformance claims (rule 3).
-
-1. **Types.** The mappings, `default_accessor`, `mdspan`, and conversions
-   (including the explicit foreign constructor and deduction guide).
-   Native layouts with element offsets expose `base_offset()` and
-   `required_span_size()`. Both views expose
-   `offset_type`, and `mdspec` gains `size()` and `empty()`. Conformance tests
-   cover rank zero, signed accessor offsets, device compilation and agreement
-   between the two views. Test
-   direct construction from a supported foreign view, preservation of const
-   and static extents, rejection of unsupported accessors, and native copying.
-2. **Producers.** `RowMajor` and `ColumnMajor` alias the Uni20 layouts; Tensor
-   `mdspan()`, `mdspec` mapping types, storage policies and the CUDA accessors
-   produce Uni20 types, and acquisition resolves an `mdspec` to a
-   `uni20::mdspan`. The CUDA pointer accessors declare `std::ptrdiff_t` offsets.
-   Use the view's or accessor's nested offset type. Where zip composes
-   mappings, use each component mapping's result type.
-   The strided concepts require `stride()` at every rank. The layout comparisons
-   use the Uni20 layouts. Tensors allocate the storage span at a zero base
-   offset. Descriptor acquisition validates the span at its actual position
-   within the buffer. Generic code calls the
-   member `stride()`, which exists at every rank, so no free stride helper is
-   needed. Tests that assert a producer's exact layout type, in
-   `test_cuda_copy.cpp` and `test_self_adjoint_eigh.cpp`, change with the
-   producer. CUDA `ScalarTensor` transfers, copies and reductions start to compile
-   here, with the rank-zero CUDA tests from #148. When #137's `permute`
-   returns a Uni20 layout, permute the strides and extents together. Remove
-   the empty-stride reconstruction and the blanket positive-stride check.
-   Test an empty permutation and a nonempty transpose from shape `(1,3)`,
-   strides `(0,1)`, to shape `(3,1)`, strides `(1,0)`. The latter visits
-   the same three values. Exercise both mdspan and mdspec.
-
-   Register the new default accessor for host access, `Tensor::data()` and
-   direct BLAS calls, including its const form. When BLAS probes an output
-   before allocation or resizing, pass its prospective mapping and accessor
-   as metadata. Construct the mdspan once the output has storage.
-3. **Tests and examples.** Producers, tests and examples use Uni20 names.
-   GCC 13 exercises fallback extents. The GCC 16 CI job exercises standard
-   extents and explicit import, including rejection of unrepresentable views.
-4. **Signed strides.** Add `layout_signed_stride` and `reverse`. Host copy
-   and elementwise transforms use the affine iteration plan. Diagonal component
-   views use the source component layout's zero-base-offset guarantee to
-   choose between the nonnegative and signed layouts. Zip with a
-   signed operand uses `GeneralZipLayout` to preserve each operand's mapping.
-   The tests cover empty mappings with mixed strides and signed offsets through
-   unary transform and zip accessors.
+[Issue #173](https://github.com/Uni20-dev/uni20/issues/173) records the migration
+from Kokkos to the native views. [Issue #219](https://github.com/Uni20-dev/uni20/issues/219)
+revises the signed-stride representation and the accessor requirements.
 
 ## Relation to #148
 
 Pull request #148 kept the standard types, added a free `uni20::stride` that
 exists at every rank, and gave the strided concepts a rank-zero escape. Uni20's
-own layouts make both unnecessary, so that approach is superseded. Its rank-zero
-CUDA tests move into phase 2.
+own layouts make both unnecessary, so that approach is superseded.
 
 Local CI once reported GCC 13.4 crashing in its IPA modref pass on that pull
 request's rank-zero CUDA test on Fracton. Four repeat compiles with the same

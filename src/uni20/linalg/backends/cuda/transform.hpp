@@ -35,6 +35,11 @@ namespace detail::cuda_reference
 
 template <class Mdspec> using transform_scalar_t = std::remove_cv_t<typename std::remove_cvref_t<Mdspec>::element_type>;
 
+template <class Spec>
+concept ElementwiseLayout =
+    uni20::StridedMdspecLike<Spec> ||
+    (std::remove_cvref_t<Spec>::rank() == 0 && std::integral<typename std::remove_cvref_t<Spec>::offset_type>);
+
 template <class OutputMdspec, class... InputMdspecs>
 concept RawCudaOverwriteMdspecs =
     uni20::MutableMdspecLike<OutputMdspec> && (uni20::MdspecLike<InputMdspecs> && ...) &&
@@ -43,8 +48,7 @@ concept RawCudaOverwriteMdspecs =
     (uni20::detail::StorageSpanMapping<typename std::remove_cvref_t<InputMdspecs>::mapping_type> && ...) &&
     ((std::remove_cvref_t<OutputMdspec>::rank() == std::remove_cvref_t<InputMdspecs>::rank()) && ...) &&
     (std::same_as<transform_scalar_t<OutputMdspec>, transform_scalar_t<InputMdspecs>> && ...) &&
-    (std::remove_cvref_t<OutputMdspec>::rank() == 0 ||
-     (uni20::StridedMdspecLike<OutputMdspec> && (uni20::StridedMdspecLike<InputMdspecs> && ...)));
+    ElementwiseLayout<OutputMdspec> && (ElementwiseLayout<InputMdspecs> && ...);
 
 template <class OutputMdspec, class Value>
 concept SupportedFillMdspec = RawCudaOverwriteMdspecs<OutputMdspec> &&
@@ -128,11 +132,11 @@ struct AddScaledPlan : OverwriteTransformPlan<Scalar, 1, elementwise_arithmetic_
 template <std::size_t MaximumRank, class OutputMdspec, class... InputMdspecs>
   requires uni20::MutableMdspecLike<OutputMdspec> && (uni20::MdspecLike<InputMdspecs> && ...) &&
            ((std::remove_cvref_t<OutputMdspec>::rank() == std::remove_cvref_t<InputMdspecs>::rank()) && ...) &&
-           (std::remove_cvref_t<OutputMdspec>::rank() == 0 ||
-            (uni20::StridedMdspecLike<OutputMdspec> && (uni20::StridedMdspecLike<InputMdspecs> && ...)))
-[[nodiscard]] bool try_make_elementwise_transform_plan(
-    OutputMdspec const& output, LoweredStridedElementwisePlan<sizeof...(InputMdspecs) + 1, MaximumRank>& plan,
-    InputMdspecs const&... inputs)
+           (ElementwiseLayout<OutputMdspec> && (ElementwiseLayout<InputMdspecs> && ...))
+[[nodiscard]] bool
+try_make_elementwise_transform_plan(OutputMdspec const& output,
+                                    LoweredStridedElementwisePlan<sizeof...(InputMdspecs) + 1, MaximumRank>& plan,
+                                    InputMdspecs const&... inputs)
 {
   auto host_plan = make_multi_iteration_plan(std::tuple{output.mapping(), inputs.mapping()...});
   return try_lower_strided_elementwise_plan<MaximumRank>(host_plan, plan);
@@ -192,8 +196,7 @@ template <class Plan, class OutputMdspec, class... InputMdspecs>
   auto output_descriptor = output.data_descriptor();
   plan.output_buffer = std::addressof(output_descriptor.buffer());
   plan.output_offset = output_descriptor.element_offset();
-  uni20::detail::validate_cuda_mapping_range(output.mapping(), *output_span_size, plan.output_offset,
-                                             plan.output_buffer->size());
+  uni20::detail::validate_cuda_mapping_range(*output_span_size, plan.output_offset, plan.output_buffer->size());
 
   if constexpr (sizeof...(InputMdspecs) > 0)
   {
@@ -205,8 +208,7 @@ template <class Plan, class OutputMdspec, class... InputMdspecs>
       auto input_descriptor = input.data_descriptor();
       auto const* input_buffer = std::addressof(input_descriptor.buffer());
       auto const input_offset = input_descriptor.element_offset();
-      uni20::detail::validate_cuda_mapping_range(input.mapping(), *input_span_size, input_offset,
-                                                 input_buffer->size());
+      uni20::detail::validate_cuda_mapping_range(*input_span_size, input_offset, input_buffer->size());
 
       plan.input_buffers[input_index] = input_buffer;
       plan.input_offsets[input_index] = input_offset;

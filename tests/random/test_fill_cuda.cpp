@@ -35,7 +35,7 @@ TEST_F(DenseRandomCudaTest, PaddedReverseHonoursExplicitOrStandaloneOrigin)
   auto leaf = child(root(1), 2);
   using E = dextents<index_type, 2>;
   layout_signed_stride::mapping<E> map{E{2, 3}, std::array<index_type, 2>{-8, 2}};
-  auto out = subview(allocation.mdspec(), 10, map);
+  auto out = subview(allocation.mdspec(), 2, map);
   for (unsigned origin : {0u, 2u})
   {
     if (origin == 0)

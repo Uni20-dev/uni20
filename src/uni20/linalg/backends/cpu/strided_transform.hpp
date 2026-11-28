@@ -87,12 +87,9 @@ class strided_transform_executor {
     template <std::size_t Operand> decltype(auto) access(std::ptrdiff_t offset)
     {
       using span_type = std::tuple_element_t<Operand, std::tuple<Output, Inputs...>>;
-      using mapping_offset_type =
-          decltype(uni20::detail::mapping_origin(std::declval<typename span_type::mapping_type const&>()));
-      // The plan visits reachable mapping offsets. Convert as mdspan indexing does.
+      // Preserve the mapping result type when a planned offset is passed to an overloaded accessor.
       return std::as_const(std::get<Operand>(accessors_))
-          .access(std::get<Operand>(handles_),
-                  static_cast<typename span_type::offset_type>(static_cast<mapping_offset_type>(offset)));
+          .access(std::get<Operand>(handles_), static_cast<typename span_type::offset_type>(offset));
     }
 
     void apply(offset_type const& offsets)

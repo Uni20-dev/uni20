@@ -218,8 +218,7 @@ template <class LogicalIndex, class Offset, std::size_t OperandCount, std::size_
 } // namespace elementwise_plan_detail
 
 /// \brief Lower a backend-neutral affine plan to a CUDA 32- or 64-bit payload.
-/// \details Positive and zero strides are supported. Negative reachable offsets
-///          or strides decline until signed CUDA descriptor rebasing is defined.
+/// \details The CUDA payload requires nonnegative reachable offsets and strides after axis normalization.
 ///          Dimensions beyond `MaximumRank` become host-loop dimensions.
 /// \tparam MaximumRank Maximum compact rank of one kernel launch.
 /// \param source Backend-neutral compact iteration plan.

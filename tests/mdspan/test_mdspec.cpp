@@ -123,7 +123,7 @@ static_assert(std::same_as<typename mdspec_type::element_type, int>);
 static_assert(std::same_as<typename mdspec_type::value_type, int>);
 static_assert(std::same_as<typename mdspec_type::data_handle_type, int*>);
 static_assert(std::same_as<typename mdspec_type::reference, int&>);
-static_assert(std::same_as<typename mdspec_type::offset_type, StatefulAccessor::offset_type>);
+static_assert(std::same_as<typename mdspec_type::offset_type, extents_type::index_type>);
 
 TEST(MdspecTest, LogicalSizeIgnoresPadding)
 {
@@ -131,7 +131,7 @@ TEST(MdspecTest, LogicalSizeIgnoresPadding)
   using spec = uni20::mdspec<int, shape, uni20::layout_stride, uni20::default_accessor<int>, RegionDescriptor>;
   constexpr spec view{RegionDescriptor{}, spec::mapping_type{shape{3}, std::array{1, 5}}, {}};
   static_assert(std::same_as<decltype(view.size()), shape::size_type>);
-  static_assert(std::same_as<spec::offset_type, std::ptrdiff_t>);
+  static_assert(std::same_as<spec::offset_type, short>);
   static_assert(view.size() == 6 && !view.empty());
   EXPECT_EQ(view.mapping().required_span_size(), 12);
 }
@@ -210,6 +210,11 @@ struct ShiftedOriginLayout
         using base_type = uni20::layout_stride::mapping<Extents>;
         using layout_type = ShiftedOriginLayout;
         using base_type::base_type;
+        constexpr auto required_span_size() const
+        {
+          auto n = base_type::required_span_size();
+          return n ? n + 1 : 0;
+        }
 
         template <class... Indices> constexpr typename Extents::index_type operator()(Indices... indices) const noexcept
         {
@@ -218,12 +223,12 @@ struct ShiftedOriginLayout
     };
 };
 
-// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179).
-TEST(MdspecTest, RejectsAStridedMappingWithAShiftedOrigin)
+TEST(MdspecTest, PreservesAShiftedMappingBeforeAcquisition)
 {
   using shifted_type = uni20::mdspec<int, extents_type, ShiftedOriginLayout, StatefulAccessor, RegionDescriptor>;
   auto const mapping = ShiftedOriginLayout::mapping<extents_type>{extents_type{2, 3}, std::array<std::size_t, 2>{3, 1}};
-  EXPECT_THROW((shifted_type{RegionDescriptor{}, mapping, StatefulAccessor{}}), std::invalid_argument);
+  shifted_type spec{RegionDescriptor{}, mapping, StatefulAccessor{}};
+  EXPECT_EQ(spec.mapping()(0, 0), 1U);
 }
 
 } // namespace

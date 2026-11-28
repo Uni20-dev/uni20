@@ -47,9 +47,9 @@ template <bool SuppliesSpan> struct ReflectingCudaAccessor
     uni20::cuda::BufferStorageSpan cuda_storage_span(Mapping const& mapping, std::size_t origin) const
       requires SuppliesSpan
     {
-      auto const size = mapping.required_span_size();
+      auto const size = static_cast<std::size_t>(mapping.required_span_size());
       if (size == 0) return {origin, 0};
-      auto const reflected_base = size - mapping.base_offset() - 1;
+      auto const reflected_base = size - 1;
       if (reflected_base > origin) throw std::out_of_range("reflected span starts before the buffer");
       return {origin - reflected_base, size};
     }
@@ -573,7 +573,7 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionResolvesPolicyFreePointerMdspans)
   EXPECT_EQ(output, input);
 }
 
-TEST_F(CudaTensorTest, SignedDescriptorAcquisitionPreservesTheLogicalOrigin)
+TEST_F(CudaTensorTest, SignedDescriptorAcquisitionUsesTheStorageStart)
 {
   uni20::cuda::DeviceResources resources({.device = uni20::cuda::Device::get(0), .stream_count = 1});
   tensor_type const tensor(resources, 3, 3);
@@ -585,10 +585,9 @@ TEST_F(CudaTensorTest, SignedDescriptorAcquisitionPreservesTheLogicalOrigin)
   using layout = uni20::layout_signed_stride;
   using spec = uni20::mdspec<double const, shape, layout, typename decltype(source)::accessor_type,
                              typename decltype(source)::data_descriptor_type>;
-  spec const signed_view{source.data_descriptor().offset_by(6), layout::mapping<shape>{shape{3, 2}, {-3, 2}},
-                         source.accessor()};
+  spec const signed_view{source.data_descriptor(), layout::mapping<shape>{shape{3, 2}, {-3, 2}}, source.accessor()};
   auto const signed_lease = uni20::acquire_cuda_read_access_sync(signed_view);
-  EXPECT_EQ(signed_lease.mdspan().data_handle(), allocation + 6);
+  EXPECT_EQ(signed_lease.mdspan().data_handle(), allocation);
   EXPECT_EQ(signed_lease.mdspan().mapping().required_span_size(), 9U);
 
   spec const empty_view{source.data_descriptor().offset_by(9), layout::mapping<shape>{shape{0, 2}, {-3, 2}},
@@ -615,7 +614,7 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionUsesTranslatingAccessorSpan)
   using layout = uni20::layout_signed_stride;
   using spec = uni20::mdspec<double const, shape, layout, ReflectingCudaAccessor<true>, decltype(descriptor)>;
   layout::mapping<shape> const mapping{shape{2}, {-1}};
-  spec const reflected{descriptor, mapping, {}};
+  spec const reflected{descriptor.offset_by(1), mapping, {}};
 
   {
     auto const lease = uni20::acquire_cuda_read_access_sync(reflected);
@@ -630,8 +629,8 @@ TEST_F(CudaTensorTest, DescriptorAcquisitionUsesTranslatingAccessorSpan)
     EXPECT_EQ(output, input);
   }
 
-  // The mapping alone fits at offset one, but reflection would address element two.
-  spec const outside{descriptor.offset_by(1), mapping, {}};
+  // Reflection about the start of the allocation would address an element before it.
+  spec const outside{descriptor, mapping, {}};
   EXPECT_THROW((void)uni20::acquire_cuda_read_access_sync(outside), std::out_of_range);
 }
 

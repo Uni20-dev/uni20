@@ -24,7 +24,7 @@ TEST(DiagonalMdspecTest, PresentsStridedComponentsAsAFullLogicalTensor)
 
   std::array<double, 6> storage{10.0, 0.0, 20.0, 0.0, 30.0, 0.0};
   auto const component_mapping = component_mapping_type{component_extents_type{3}, std::array<index_type, 1>{-2}};
-  component_mdspan_type components{storage.data() + 4, component_mapping};
+  component_mdspan_type components{storage.data(), component_mapping};
   auto diagonal = make_diagonal_mdspan(logical_extents_type{3, 4}, components);
 
   static_assert(DiagonalMdspecLike<decltype(diagonal)>);
@@ -48,7 +48,7 @@ TEST(DiagonalMdspecTest, PresentsStridedComponentsAsAFullLogicalTensor)
   static_assert(!StridedMdspanLike<decltype(observed_components)>);
   EXPECT_EQ(observed_components.extent(0), 3);
   EXPECT_EQ(observed_components.stride(0), -2);
-  EXPECT_EQ(observed_components.data_handle(), storage.data() + 4);
+  EXPECT_EQ(observed_components.data_handle(), storage.data());
   EXPECT_DOUBLE_EQ(observed_components[0], 30.0);
   EXPECT_DOUBLE_EQ(observed_components[1], 25.0);
   EXPECT_DOUBLE_EQ(observed_components[2], 10.0);
@@ -118,25 +118,19 @@ struct ShiftedSignedComponentLayout
 
         constexpr mapping() noexcept : base_type(Extents{}, {-2}) {}
         constexpr int operator()(int i) const noexcept { return 1 + base_type::operator()(i); }
-        constexpr std::size_t base_offset() const noexcept { return 1; }
+        constexpr int required_span_size() const noexcept { return 4; }
     };
 };
 
-// A strided Uni20 mapping maps the all-zero coordinate to offset zero (#179), so a shifted
-// origin cannot reach the diagonal factories. The offset belongs in the handle instead.
-TEST(DiagonalMdspecTest, RejectsComponentViewsWithAShiftedOrigin)
+TEST(DiagonalMdspecTest, RebasesShiftedComponentsToTheirLowestElement)
 {
   using shape = uni20::extents<int, 2>;
   using mapping = ShiftedSignedComponentLayout::mapping<shape>;
   std::array<int, 4> storage{5, 10, 20, 30};
-  EXPECT_THROW((uni20::mdspan<int, shape, ShiftedSignedComponentLayout>{storage.data() + 2, mapping{}}),
-               std::invalid_argument);
-
-  uni20::mdspan<int, shape, uni20::layout_signed_stride> components{
-      storage.data() + 3, uni20::layout_signed_stride::mapping<shape>{shape{}, {-2}}};
+  uni20::mdspan<int, shape, ShiftedSignedComponentLayout> components{storage.data(), mapping{}};
   auto diagonal = make_diagonal_mdspan(uni20::extents<int, 2, 2>{}, components);
   auto recovered = diagonal_components(diagonal);
-  EXPECT_EQ(recovered.data_handle(), storage.data() + 3);
+  EXPECT_EQ(recovered.data_handle(), storage.data() + 1);
   EXPECT_EQ((diagonal[0, 0]), 30);
   EXPECT_EQ((diagonal[1, 1]), 10);
 }
@@ -148,6 +142,11 @@ template <int Origin> struct ShiftedStrideLayout
         using base_type = layout_stride::mapping<Extents>;
         using layout_type = ShiftedStrideLayout;
         using base_type::base_type;
+        constexpr auto required_span_size() const
+        {
+          auto n = base_type::required_span_size();
+          return n ? Origin + n : 0;
+        }
 
         template <class... Indices> constexpr typename Extents::index_type operator()(Indices... indices) const noexcept
         {
@@ -156,9 +155,7 @@ template <int Origin> struct ShiftedStrideLayout
     };
 };
 
-// The #176 review reproducer: diagonal_components decodes the handle alone, so a logical view
-// with mapping(i, j) = 4 + 3i + j over a 3x3 diagonal would recover the wrong components.
-TEST(DiagonalMdspecTest, RejectsLogicalViewsWithAShiftedOrigin)
+TEST(DiagonalMdspecTest, RecoversComponentsFromAShiftedLogicalOrigin)
 {
   using original_extents_type = uni20::dextents<index_type, 2>;
   using view_extents_type = uni20::dextents<index_type, 2>;
@@ -169,9 +166,10 @@ TEST(DiagonalMdspecTest, RejectsLogicalViewsWithAShiftedOrigin)
   std::array<double, 3> storage{2.0, 3.0, 5.0};
   auto const mapping =
       layout_type::mapping<view_extents_type>{view_extents_type{2, 2}, std::array<index_type, 2>{3, 1}};
-  EXPECT_THROW(
-      (view_type{diagonal_data_handle<double>{storage.data(), 0}, mapping, accessor_type{original_extents_type{3, 3}}}),
-      std::invalid_argument);
+  view_type view{diagonal_data_handle<double>{storage.data(), 0}, mapping, accessor_type{original_extents_type{3, 3}}};
+  auto values = diagonal_components(view);
+  EXPECT_EQ(values[0], 3.0);
+  EXPECT_EQ(values[1], 5.0);
 }
 
 TEST(DiagonalMdspecTest, PreservesLinearLogicalOffsetsWithNarrowExtents)

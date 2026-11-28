@@ -225,17 +225,10 @@ UNI20_HOST_DEVICE constexpr std::array<IndexType, Rank> mapping_strides(Mapping 
   return mapping_strides_impl<IndexType, Rank>(mapping, std::make_index_sequence<Rank>{});
 }
 
-// Preserve the actual result of each child's mapping, including tuple-valued offsets.
-template <typename Mapping, std::size_t... Axis>
-auto mapping_result(std::index_sequence<Axis...>)
-    -> decltype(std::declval<Mapping const&>()(((void)Axis, typename Mapping::index_type{})...));
-
 template <class Mapping, class Index>
-concept ZipOffsetsFit =
-    zip_index_fits<decltype(mapping_result<Mapping>(std::make_index_sequence<Mapping::extents_type::rank()>{})),
-                   Index> &&
-    (Mapping::extents_type::rank() == 0 ||
-     requires(Mapping const& m) { requires zip_index_fits<decltype(m.stride(0)), Index>; });
+concept ZipOffsetsFit = zip_index_fits<mapping_offset_t<Mapping>, Index> &&
+                        (Mapping::extents_type::rank() == 0 ||
+                         requires(Mapping const& m) { requires zip_index_fits<decltype(m.stride(0)), Index>; });
 
 // build a std::tuple of N default-constructed T’s
 template <typename T, std::size_t... I> constexpr auto make_tuple_n_impl(std::index_sequence<I...>)
@@ -352,13 +345,15 @@ template <std::size_t NumSpans> struct StridedZipLayout
         /// \param maps Existing mappings whose strides are copied into this layout.
         /// \ingroup mdspan_ext
         template <typename... Mappings>
-          requires(detail::ZipOffsetsFit<Mappings, index_type> && ...)
+          requires(sizeof...(Mappings) == num_spans && (detail::ForwardMapping<Mappings> && ...) &&
+                   (detail::ZipOffsetsFit<Mappings, index_type> && ...))
         UNI20_HOST_DEVICE constexpr mapping(extents_type const& exts, Mappings... maps) noexcept
             : extents_(exts), all_strides_{detail::mapping_strides<index_type, Ext::rank()>(maps)...}
         {}
 
         /// \brief Construct from shared extents and per-span raw strides.
-        /// \pre The reachable offsets of each operand are representable in `index_type`.
+        /// \pre Each operand has zero origin and nonnegative strides, and its reachable offsets are representable in
+        /// `index_type`.
         /// \param exts         Common extents of the view.
         /// \param strides_pack strides_pack[s][d] is the stride of span s in dimension d.
         /// \ingroup mdspan_ext
@@ -457,8 +452,7 @@ template <typename... Mappings> struct GeneralZipLayout
         using rank_type = typename Extents::rank_type;
         UNI20_HOST_DEVICE static constexpr rank_type rank() noexcept { return Extents::rank(); }
         UNI20_HOST_DEVICE static constexpr rank_type rank_dynamic() noexcept { return Extents::rank_dynamic(); }
-        using offset_type =
-            std::tuple<decltype(detail::mapping_result<Mappings>(std::make_index_sequence<Extents::rank()>{}))...>;
+        using offset_type = std::tuple<detail::mapping_offset_t<Mappings>...>;
         using mapping_type = mapping<Extents>;
 
         /// \brief Always unique for uni20 tensors.

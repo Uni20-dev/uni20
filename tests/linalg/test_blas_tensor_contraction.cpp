@@ -25,24 +25,51 @@ using direct_blas_backend = uni20::linalg::DirectGemmContractionBackend<BlasBack
 using looped_blas_backend = uni20::linalg::LoopedGemmContractionBackend<BlasBackend>;
 using host_backends = uni20::linalg::backend_list<direct_blas_backend, looped_blas_backend, CpuReferenceBackend>;
 
-struct OffsetPolicyWithoutOffsetType
+struct ShiftedScalarLayout
+{
+    template <class Extents> struct mapping : uni20::layout_right::mapping<Extents>
+    {
+        using layout_type = ShiftedScalarLayout;
+        constexpr int operator()() const noexcept { return 1; }
+        constexpr int required_span_size() const noexcept { return 2; }
+        static constexpr bool is_always_exhaustive() noexcept { return false; }
+        static constexpr bool is_exhaustive() noexcept { return false; }
+    };
+};
+
+TEST(BlasTensorContractionTest, ShiftedScalarUsesItsMappedElement)
+{
+  using shape = uni20::extents<int>;
+  using span = uni20::mdspan<double const, shape, ShiftedScalarLayout>;
+  double data[]{-1.0, 9.0};
+  span shifted{data, span::mapping_type{}};
+  uni20::MdspecTensorView<span, span, uni20::HostStorage> lhs{shifted, shifted};
+  uni20::ScalarTensor<double> rhs;
+  uni20::ScalarTensor<double> out;
+  rhs[] = 2.0;
+  std::array<std::pair<std::size_t, std::size_t>, 0> axes{};
+  uni20::linalg::contract(out, 1.0, lhs, rhs, axes, 0.0);
+  EXPECT_DOUBLE_EQ(out[], 18.0);
+}
+
+struct OffsetPolicyWithoutAccess
 {
     using element_type = double const;
     using data_handle_type = element_type*;
 
-    explicit OffsetPolicyWithoutOffsetType(uni20::default_accessor<element_type> const&) {}
+    explicit OffsetPolicyWithoutAccess(uni20::default_accessor<element_type> const&) {}
 };
 
 struct ReadAccessor : uni20::default_accessor<double const>
 {
-    using offset_policy = OffsetPolicyWithoutOffsetType;
+    using offset_policy = OffsetPolicyWithoutAccess;
 };
 
 struct MappingOffset
 {
     int value;
 
-    explicit MappingOffset(int value_) : value(value_) {}
+    MappingOffset(int value_) : value(value_) {}
     MappingOffset(std::ptrdiff_t) = delete;
 };
 
@@ -323,9 +350,9 @@ TEST(BlasTensorContractionTest, NonmergeableGroupDeclinesWithoutModifyingOutput)
         EXPECT_DOUBLE_EQ((output[i, j, n]), -7.0);
 }
 
-TEST(BlasTensorContractionTest, DefaultSelectorFallsBackWhenOffsetProjectionIsUnsupported)
+TEST(BlasTensorContractionTest, LoopedProjectionUsesTheSourceMappingOffsetAndResultPolicy)
 {
-  auto check = []<class Accessor>() {
+  auto check = []<class Accessor>(std::string_view expected_backend) {
     using shape = uni20::dextents<int, 3>;
     using span_type = uni20::mdspan<double const, shape, uni20::layout_stride, Accessor>;
     std::array<double, 9> const values{1, 2, 3, 4, 0, 5, 6, 7, 8};
@@ -347,10 +374,10 @@ TEST(BlasTensorContractionTest, DefaultSelectorFallsBackWhenOffsetProjectionIsUn
     std::array<double, 8> const expected{2, 6, 6, 12, 10, 18, 14, 24};
     for (std::size_t i = 0; i != expected.size(); ++i)
       EXPECT_EQ(output.data()[i], expected[i]);
-    EXPECT_EQ(selected_backend(events, "contract"), "cpu_reference");
+    EXPECT_EQ(selected_backend(events, "contract"), expected_backend);
   };
-  check.template operator()<ReadAccessor>();
-  check.template operator()<ReadAccessorWithIntOffset>();
+  check.template operator()<ReadAccessor>("cpu_reference");
+  check.template operator()<ReadAccessorWithIntOffset>("looped_gemm_contraction");
 }
 
 TEST(BlasTensorContractionTest, SingletonAxisDoesNotForceLoopedContraction)

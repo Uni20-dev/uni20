@@ -24,25 +24,15 @@ namespace uni20
 
 /// \concept AccessorPolicy
 /// \brief An accessor policy for a Uni20 mdspan or mdspec.
-/// \details Requirements for \c AP:
-///          - nested types: element_type, data_handle_type, offset_type, offset_policy, reference.
-///          - \c offset(dh, off) returns a type convertible to
-///            \c offset_policy::data_handle_type.
-///          - \c access(dh, off) returns exactly \c AP::reference.
-///          Access may throw when the accessor deliberately applies a throwing
-///          transformation.
+/// \details The mapping and accessor together determine the offset accepted by access and offset.
 /// \tparam AP The accessor policy to test.
 /// \ingroup mdspan_ext
 template <class AP>
 concept AccessorPolicy = requires {
   typename AP::element_type;
   typename AP::data_handle_type;
-  typename AP::offset_type;
   typename AP::offset_policy;
   typename AP::reference;
-} && requires(AP a, typename AP::data_handle_type dh, typename AP::offset_type off) {
-  { a.offset(dh, off) } -> std::convertible_to<typename AP::offset_policy::data_handle_type>;
-  { a.access(dh, off) } -> std::same_as<typename AP::reference>;
 };
 
 /// \brief Execution domain in which ordinary host code may evaluate an accessor.
@@ -100,18 +90,17 @@ class const_accessor_adaptor {
     using reference = element_type&;
     using data_handle_type = typename Accessor::data_handle_type;
     using offset_policy = const_accessor_adaptor;
-    using offset_type = typename Accessor::offset_type;
 
     UNI20_HOST_DEVICE constexpr const_accessor_adaptor(Accessor const& to_be_wrapped) : wrapped_{to_be_wrapped} {}
 
-    UNI20_HOST_DEVICE constexpr reference access(data_handle_type p, offset_type i) const
+    template <class Offset> UNI20_HOST_DEVICE constexpr reference access(data_handle_type p, Offset&& i) const
     {
-      return wrapped_.access(p, i);
+      return wrapped_.access(p, std::forward<Offset>(i));
     }
 
-    UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type p, offset_type i) const
+    template <class Offset> UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type p, Offset&& i) const
     {
-      return wrapped_.offset(p, i);
+      return wrapped_.offset(p, std::forward<Offset>(i));
     }
 
     /// \brief Return the accessor whose storage and values are used.
@@ -229,7 +218,8 @@ concept SpanMetadata =
     std::same_as<typename span_type_t<S>::mapping_type,
                  typename span_type_t<S>::layout_type::template mapping<typename span_type_t<S>::extents_type>> &&
     std::same_as<typename span_type_t<S>::data_handle_type, typename span_type_t<S>::accessor_type::data_handle_type> &&
-    std::same_as<typename span_type_t<S>::offset_type, typename span_type_t<S>::accessor_type::offset_type> &&
+    std::same_as<typename span_type_t<S>::offset_type, mapping_offset_t<typename span_type_t<S>::mapping_type>> &&
+    MappingAccessor<typename span_type_t<S>::accessor_type, typename span_type_t<S>::mapping_type> &&
     std::same_as<typename span_type_t<S>::reference, typename span_type_t<S>::accessor_type::reference> &&
     (span_type_t<S>::rank() == span_type_t<S>::extents_type::rank());
 
@@ -251,7 +241,7 @@ concept MdspecDescriptor = SpanMetadata<S> && requires(span_type_t<S> const& spa
 /// \details In addition to the standard mdspan descriptor aliases, a model
 ///          exposes its static rank, extents, mapping, accessor, data handle,
 ///          and an `operator[]` accepting one index per rank whose result is
-///          exactly `reference`. Its `offset_type` agrees with the accessor.
+///          exactly `reference`. Its `offset_type` is the result of its mapping.
 ///          Import a standard mdspan with `uni20::mdspan{view}`.
 /// \tparam S The type being tested for MdspanLike requirements.
 /// \ingroup mdspan_ext
@@ -304,10 +294,12 @@ concept MdspanIndexPack = MdspanLike<Span> && (sizeof...(Index) == span_type_t<S
                           (std::is_convertible_v<Index, typename span_type_t<Span>::index_type> && ...) &&
                           (std::is_nothrow_constructible_v<typename span_type_t<Span>::index_type, Index> && ...);
 
-template <class Accessor>
+template <class Accessor, class Offset>
 concept AccessorReferenceAssignable =
-    requires(Accessor const& accessor, typename Accessor::data_handle_type handle, typename Accessor::offset_type offset,
-             std::remove_const_t<typename Accessor::element_type> value) { accessor.access(handle, offset) = value; };
+    requires(Accessor const& accessor, typename Accessor::data_handle_type const& handle,
+             std::remove_const_t<typename Accessor::element_type> value) {
+      accessor.access(handle, std::declval<Offset>()) = value;
+    };
 
 } // namespace detail
 
@@ -365,30 +357,29 @@ concept MutableMdspanLike =
 template <class S>
 concept MutableMdspecLike =
     MdspecLike<S> && (!std::is_const_v<typename detail::span_type_t<S>::element_type>) &&
-    (MutableMdspanLike<S> || detail::AccessorReferenceAssignable<typename detail::span_type_t<S>::accessor_type>);
+    (MutableMdspanLike<S> || detail::AccessorReferenceAssignable<typename detail::span_type_t<S>::accessor_type,
+                                                                 typename detail::span_type_t<S>::offset_type>);
 
 /// \brief An affine mdspec-like type with a stride observer for each axis.
-/// \details Its mapping sends the all-zero coordinate to offset zero, so the data handle and `stride()`
-///          locate every element. `uni20::mdspan` and `uni20::mdspec` check this when they are formed.
+/// \details Each stride is the difference between neighbouring mapped offsets.
 template <class S>
-concept AffineMdspecLike = MdspecLike<S> && detail::span_type_t<S>::is_always_strided() &&
-                           requires(detail::span_type_t<S> const& span, std::size_t axis) {
-                             { span.stride(axis) } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
-                             {
-                               span.mapping().stride(axis)
-                             } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
-                           };
+concept AffineMdspecLike =
+    MdspecLike<S> && std::integral<typename detail::span_type_t<S>::offset_type> &&
+    detail::span_type_t<S>::is_always_strided() && requires(detail::span_type_t<S> const& span, std::size_t axis) {
+      { span.stride(axis) } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
+      { span.mapping().stride(axis) } -> std::convertible_to<typename detail::span_type_t<S>::index_type>;
+    };
 
 /// \brief An immediate affine view with a stride observer for each axis.
 template <class S>
 concept AffineMdspanLike = MdspanLike<S> && AffineMdspecLike<S>;
 
-/// \brief An affine descriptor whose mapping has a statically zero base offset.
+/// \brief An affine descriptor with a zero logical origin and nonnegative strides by construction.
 template <class S>
 concept StridedMdspecLike =
-    AffineMdspecLike<S> && detail::ZeroBaseOffsetMapping<typename detail::span_type_t<S>::mapping_type>;
+    AffineMdspecLike<S> && detail::ForwardMapping<typename detail::span_type_t<S>::mapping_type>;
 
-/// \brief An immediate affine view whose mapping has a statically zero base offset.
+/// \brief An immediate affine view with a zero logical origin and nonnegative strides by construction.
 template <class S>
 concept StridedMdspanLike = MdspanLike<S> && StridedMdspecLike<S>;
 

@@ -256,10 +256,10 @@ constexpr auto diagonal_logical_extents(uni20::extents<Index, Axes...> extents, 
 }
 
 template <class Mapping, std::size_t... Axis>
-[[nodiscard]] constexpr auto diagonal_mapping_step(Mapping const& mapping, std::index_sequence<Axis...>)
+[[nodiscard]] constexpr auto diagonal_mapping_at_one(Mapping const& mapping, std::index_sequence<Axis...>)
 {
   using index_type = typename Mapping::extents_type::index_type;
-  return mapping(((void)Axis, index_type{1})...) - mapping(((void)Axis, index_type{0})...);
+  return mapping(((void)Axis, index_type{1})...);
 }
 
 template <class Layout, std::integral Index>
@@ -270,8 +270,8 @@ constexpr void validate_diagonal_component_span(std::size_t count, Index stride)
   if (count == 0) return;
 
   Index last_offset{};
-  if (__builtin_mul_overflow(count - 1, stride, &last_offset) ||
-      (std::same_as<Layout, layout_stride> && last_offset == std::numeric_limits<Index>::max()))
+  if (__builtin_mul_overflow(count - 1, stride, &last_offset) || last_offset == std::numeric_limits<Index>::max() ||
+      (std::signed_integral<Index> && last_offset <= -std::numeric_limits<Index>::max()))
     throw std::overflow_error("diagonal component span exceeds its index range");
 }
 
@@ -310,7 +310,7 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
   auto* data = span.data_handle().data;
   if (extents.extent(0) > 0)
   {
-    auto const origin = span.accessor().component_index(span.data_handle());
+    auto const origin = span.accessor().component_index(span.data_handle(), detail::mapping_origin(span.mapping()));
     if (!origin.present)
       throw std::invalid_argument("diagonal component view does not begin on the represented diagonal");
     index_type origin_offset{};
@@ -318,10 +318,9 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
       throw std::overflow_error("diagonal component origin exceeds its index range");
     if (extents.extent(0) > 1)
     {
-      auto const step = detail::diagonal_mapping_step(span.mapping(), std::make_index_sequence<Extents::rank()>{});
-      if constexpr (std::signed_integral<std::remove_cv_t<decltype(step)>>)
-        if (step < 0) throw std::invalid_argument("diagonal component view has a negative logical step");
-      auto const next = span.accessor().component_index(span.data_handle(), static_cast<std::size_t>(step));
+      auto const next_offset =
+          detail::diagonal_mapping_at_one(span.mapping(), std::make_index_sequence<Extents::rank()>{});
+      auto const next = span.accessor().component_index(span.data_handle(), next_offset);
       if (!next.present || next.index < origin.index)
         throw std::invalid_argument("diagonal component view does not preserve the represented diagonal");
       if (__builtin_mul_overflow(next.index - origin.index, component_stride, &component_stride))
@@ -331,6 +330,7 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
   }
   detail::validate_diagonal_component_span<ComponentLayout>(count, component_stride);
   auto const mapping = component_mapping_type{extents, std::array<index_type, 1>{component_stride}};
+  if (count != 0) data -= mapping(0);
   return component_mdspan_type{data, mapping};
 }
 
@@ -338,7 +338,7 @@ template <class ElementType, class Extents, class LayoutPolicy, class AccessorEx
 /// \details The resulting mdspan has the supplied logical rank-N extents.
 ///          It reads as zero unless every logical index is equal and delegates
 ///          diagonal values to the supplied component view. The accessor
-///          preserves the component layout's zero-base-offset guarantee.
+///          preserves the component layout and stride direction.
 /// \throws std::invalid_argument If the component extent differs from the logical diagonal extent
 ///         or the component stride is negative for a forward component layout.
 /// \throws std::overflow_error If the logical size, component count, stride, or rebased span exceeds its index range.

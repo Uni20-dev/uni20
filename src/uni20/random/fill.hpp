@@ -24,10 +24,6 @@ template <WordTransform Transform, class Mapping> auto storage_fill_plan(Mapping
   // Validate the caller's address interval once, before writing or launching.
   constexpr auto last = last_element<Transform>;
   if (origin > last || std::cmp_greater(span - 1, last - origin)) address_out_of_range();
-  auto const base = static_cast<std::ptrdiff_t>(mapping.base_offset());
-  plan.base_offsets[0] += base;
-  plan.reachable_offsets[0].minimum += base;
-  plan.reachable_offsets[0].maximum += base;
   return plan;
 }
 } // namespace detail
@@ -44,7 +40,7 @@ void fill(View output, Identity leaf, Transform transform, std::uint64_t origin 
 {
   auto const plan = detail::storage_fill_plan<Transform>(output.mapping(), origin);
   if (plan.empty()) return;
-  auto* storage = output.data_handle() - output.mapping().base_offset();
+  auto* storage = output.data_handle();
   constexpr auto g = Transform::result_type::size;
   std::uint64_t cached = detail::value_domain;
   typename Transform::result_type block{};
@@ -84,9 +80,9 @@ void fill(View output, Identity leaf, Transform transform, std::uint64_t origin 
     throw std::length_error("random fill exceeds CUDA iteration limits");
   auto const descriptor = output.data_descriptor();
   plan.output_buffer = std::addressof(descriptor.buffer());
-  uni20::detail::validate_cuda_mapping_range(output.mapping(), output.mapping().required_span_size(),
-                                             descriptor.element_offset(), plan.output_buffer->size());
-  plan.output_offset = descriptor.element_offset() - output.mapping().base_offset();
+  uni20::detail::validate_cuda_mapping_range(output.mapping().required_span_size(), descriptor.element_offset(),
+                                             plan.output_buffer->size());
+  plan.output_offset = descriptor.element_offset();
   plan.has_work = true;
   plan.attempt = linalg::KernelAttempt::success;
   backend::execute_overwrite_transform(plan, [&](auto* storage, auto const&, cudaStream_t stream, int device) {

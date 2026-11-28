@@ -67,7 +67,6 @@ class conjugated_accessor {
     using reference = std::invoke_result_t<detail::conjugate_function, typename Accessor::reference>;
     using data_handle_type = typename Accessor::data_handle_type;
     using offset_policy = conjugated_accessor;
-    using offset_type = typename Accessor::offset_type;
 
     UNI20_HOST_DEVICE constexpr conjugated_accessor()
       requires std::default_initializable<Accessor>
@@ -80,15 +79,17 @@ class conjugated_accessor {
     {}
 
     /// \brief Return the conjugated value at a handle-relative offset.
-    [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type ptr, offset_type offset) const
+    template <class Offset>
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr reference access(data_handle_type ptr, Offset&& offset) const
     {
-      return detail::conjugate_function{}(accessor_.access(ptr, offset));
+      return detail::conjugate_function{}(accessor_.access(ptr, std::forward<Offset>(offset)));
     }
 
     /// \brief Delegate handle offsetting to the wrapped accessor.
-    [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type ptr, offset_type offset) const
+    template <class Offset>
+    [[nodiscard]] UNI20_HOST_DEVICE constexpr data_handle_type offset(data_handle_type ptr, Offset&& offset) const
     {
-      return accessor_.offset(ptr, offset);
+      return accessor_.offset(ptr, std::forward<Offset>(offset));
     }
 
     /// \brief Return the wrapped accessor.
