@@ -141,6 +141,12 @@ configuration it aliases `mplapack_binary128_t`, whose concrete spelling is
 selected by the resolved MPLAPACK package. Code that is not gated by
 `UNI20_HAS_FLOAT128` must not name `uni20::float128`.
 
+In a mixed C++/CUDA build, compile binary128 numerical operations and formatting
+in C++23 host translation units. CUDA translation units can include the same
+headers even when nvcc's standard library lacks binary128 arithmetic traits or
+numeric limits. See [CUDA tensor storage](../backends/cuda/buffers.md#tensor-storage)
+for zero initialization and transfers.
+
 When MPFR is also enabled, binary128 imports use `mpreal{value, precision}` and
 exports use `static_cast<float128>(value)`. Both avoid intermediate narrowing to
 `long double`. Approximate and exact-rational exports round to nearest, ties to

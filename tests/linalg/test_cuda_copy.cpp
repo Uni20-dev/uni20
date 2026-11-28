@@ -525,6 +525,27 @@ TEST_F(CudaCopyTest, PageableHostRoundTripUsesExplicitTransferFunctions)
   expect_matrix(result);
 }
 
+#if UNI20_HAS_FLOAT128
+TEST_F(CudaCopyTest, Binary128StorageZerosAndRoundTripsRealAndComplex)
+{
+  auto runtime = uni20::cuda::initialize({.device_ordinals = {0}, .streams_per_device = 2});
+  auto& resources = runtime.device_resources(0);
+  auto check = [&]<class T>(T value) {
+    uni20::CudaTensor<T, 1> device(resources, 1);
+    auto host = uni20::to_host(device);
+    EXPECT_TRUE(host[0] == T{});
+    host[0] = value;
+    uni20::copy(device, host);
+    EXPECT_TRUE(uni20::to_host(device)[0] == value);
+  };
+
+  using R = uni20::float128;
+  R const value = R{1} + uni20::numeric_limits<R>::epsilon();
+  check(value);
+  check(uni20::complex<R>{value, -value});
+}
+#endif
+
 TEST_F(CudaCopyTest, MaterializationKeepsCudaSourcesOnTheirDevice)
 {
   if (device_count_ < 2) GTEST_SKIP() << "requires two CUDA devices";
