@@ -62,7 +62,35 @@ template <class V, class A> auto compute_svd(V& v, A& a, char jobu, char jobvt, 
     v[i] = w[i];
   return std::pair(std::move(u), std::move(vh));
 }
+// The Q-only frontend materializes arbitrary input views into this workspace.
+template <class A>
+concept BasisWorkspace = DecompositionMatrix<A> && BasisScalar<typename A::value_type> &&
+                         DefaultAccessorMdspanLike<host_write_mdspan_t<A>> &&
+                         std::same_as<typename host_write_mdspan_t<A>::layout_type, ColumnMajor>;
 } // namespace packed_detail
+
+/// \brief Accept a packed column-major workspace for a real Q-only provider.
+template <packed_detail::BasisWorkspace A, class... P>
+  requires packed_detail::KernelPrecision<typename A::value_type, P...>
+consteval auto kernel_accepts_types(LapackBackend, orthonormal_basis_op, A&, P...)
+{
+  return kernel_types_maybe;
+}
+
+template <packed_detail::BasisWorkspace A, class... P>
+  requires packed_detail::KernelPrecision<typename A::value_type, P...>
+KernelAttempt try_kernel(LapackBackend, orthonormal_basis_op, A& matrix, P... precision)
+{
+  if (matrix.extent(0) < matrix.extent(1)) return KernelAttempt::unsupported_shape;
+  auto const p = packed_detail::working_precision<typename A::value_type>(precision...);
+  return lapack_detail::with_host_write_mdspans(
+      [&](auto& span) {
+        std::span work(span.data_handle(), static_cast<std::size_t>(span.size()));
+        mplapack::orthonormal_basis(span.extent(0), span.extent(1), work, p);
+        return KernelAttempt::success;
+      },
+      matrix);
+}
 
 /// \brief Accept real or complex host matrices for reduced QR at explicit precision.
 template <packed_detail::DecompositionMatrix A, class X, class Y, class... P>

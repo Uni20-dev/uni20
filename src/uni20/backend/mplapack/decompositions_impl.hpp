@@ -31,14 +31,27 @@ inline std::size_t auxiliary_size(std::size_t count, std::size_t factor)
   return std::max<std::size_t>(1, count * factor);
 }
 
-template <class Adapter, class Scalar>
-void orthogonal_factor_impl(bool lq, std::size_t m, std::size_t n, std::span<Scalar> a, std::span<Scalar> q,
-                            std::span<Scalar> triangular, Precision p)
+enum class OrthogonalFactor
 {
+  qr,
+  lq,
+  basis
+};
+
+template <class Adapter, class Scalar>
+void orthogonal_factor_impl(OrthogonalFactor mode, std::size_t m, std::size_t n, std::span<Scalar> a,
+                            std::span<Scalar> q, std::span<Scalar> triangular, Precision p)
+{
+  bool const lq = mode == OrthogonalFactor::lq;
+  bool const both = mode != OrthogonalFactor::basis;
+  if (!both && m < n) throw std::invalid_argument("orthonormal_basis requires rows >= columns");
   auto k = std::min(m, n);
   Adapter::check_size(a.size(), m, n);
-  Adapter::check_size(q.size(), lq ? k : m, lq ? n : k);
-  Adapter::check_size(triangular.size(), lq ? m : k, lq ? k : n);
+  if (both)
+  {
+    Adapter::check_size(q.size(), lq ? k : m, lq ? n : k);
+    Adapter::check_size(triangular.size(), lq ? m : k, lq ? k : n);
+  }
   auto pm = Adapter::integer(m), pn = Adapter::integer(n), pk = Adapter::integer(k);
   typename Adapter::precision_scope scope(p);
   if (!k) return;
@@ -61,11 +74,14 @@ void orthogonal_factor_impl(bool lq, std::size_t m, std::size_t n, std::span<Sca
         Cgeqrf(pm, pn, av.data(), pm, tau.data(), work, length, info);
     }
   });
-  auto tr = lq ? m : k, tc = lq ? k : n;
-  for (std::size_t j = 0; j < tc; ++j)
-    for (std::size_t i = 0; i < tr; ++i)
-      triangular[i + j * tr] =
-          (lq ? i >= j : i <= j) ? Adapter::get_value(av[i + j * m], p) : scalar_at_precision<Scalar>(0, p);
+  if (both)
+  {
+    auto tr = lq ? m : k, tc = lq ? k : n;
+    for (std::size_t j = 0; j < tc; ++j)
+      for (std::size_t i = 0; i < tr; ++i)
+        triangular[i + j * tr] =
+            (lq ? i >= j : i <= j) ? Adapter::get_value(av[i + j * m], p) : scalar_at_precision<Scalar>(0, p);
+  }
   Adapter::template workspace<P>(lq ? "orglq" : "orgqr", [&](P* work, mplapackint length, mplapackint& info) {
     if constexpr (Real<Scalar>)
     {
@@ -82,10 +98,13 @@ void orthogonal_factor_impl(bool lq, std::size_t m, std::size_t n, std::span<Sca
         Cungqr(pm, pk, pk, av.data(), pm, tau.data(), work, length, info);
     }
   });
-  auto qr = lq ? k : m, qc = lq ? n : k;
-  for (std::size_t j = 0; j < qc; ++j)
-    for (std::size_t i = 0; i < qr; ++i)
-      q[i + j * qr] = Adapter::get_value(av[i + j * m], p);
+  if (both)
+  {
+    auto qr = lq ? k : m, qc = lq ? n : k;
+    for (std::size_t j = 0; j < qc; ++j)
+      for (std::size_t i = 0; i < qr; ++i)
+        q[i + j * qr] = Adapter::get_value(av[i + j * m], p);
+  }
   Adapter::unpack_values(av, a, p);
 }
 

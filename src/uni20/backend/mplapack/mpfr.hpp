@@ -36,6 +36,9 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<mpreal const> a, std::span
 /// \brief Complex counterpart of the packed real LU solve adapter.
 void getrs(std::size_t n, std::size_t nrhs, std::span<mpcomplex const> a, std::span<std::size_t const> pivots,
            std::span<mpcomplex> b, Precision p);
+/// \brief Overwrite a packed tall real matrix with its thin Householder Q.
+void orthonormal_basis(std::size_t m, std::size_t n, std::span<mpreal> a, Precision p);
+
 /// \brief Overwrite m-by-n input work and return Q (m-by-k) and R (k-by-n), k=min(m,n).
 void qr(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> q, std::span<mpreal> triangular,
         Precision p);

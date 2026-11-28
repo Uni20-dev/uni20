@@ -211,16 +211,21 @@ void getrs(std::size_t n, std::size_t nrhs, std::span<mpcomplex const> a, std::s
 {
   getrs_impl(n, nrhs, a, pivots, b, p);
 }
+void orthonormal_basis(std::size_t m, std::size_t n, std::span<mpreal> a, Precision p)
+{
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::basis, m, n, a, {}, {}, p);
+}
+
 void qr(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> q, std::span<mpreal> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::qr, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<mpreal> a, std::span<mpreal> q, std::span<mpreal> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::lq, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<mpreal> a, std::span<mpreal> values, bool vectors, char triangle, Precision p)
@@ -243,13 +248,13 @@ void eigen(std::size_t n, std::span<mpreal> a, std::span<mpcomplex> values, std:
 void qr(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> q, std::span<mpcomplex> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(false, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::qr, m, n, a, q, triangular, p);
 }
 
 void lq(std::size_t m, std::size_t n, std::span<mpcomplex> a, std::span<mpcomplex> q, std::span<mpcomplex> triangular,
         Precision p)
 {
-  detail::orthogonal_factor_impl<DecompositionAdapter>(true, m, n, a, q, triangular, p);
+  detail::orthogonal_factor_impl<DecompositionAdapter>(detail::OrthogonalFactor::lq, m, n, a, q, triangular, p);
 }
 
 void eigh(std::size_t n, std::span<mpcomplex> a, std::span<mpreal> values, bool vectors, char triangle, Precision p)
