@@ -53,8 +53,16 @@ template <class Mdspec> [[nodiscard]] auto try_matrix_descriptor(Mdspec& span)
 {
   using scalar_type = typename std::remove_cvref_t<Mdspec>::element_type;
   auto stage = blas::try_mdspan_matrix_stage(span);
-  if (!stage || stage->unit_stride_axis != 0 || stage->needs_conjugation)
+  if (!stage || stage->needs_conjugation)
     return std::optional<MatrixDescriptor<scalar_type>>{};
+  // A contiguous 1-by-n row also has a column-major representation with ld = 1.
+  // BLAS staging prefers the non-singleton axis, whereas cuSOLVER requires logical orientation.
+  if (stage->unit_stride_axis != 0)
+  {
+    if (stage->extent0 != 1) return std::optional<MatrixDescriptor<scalar_type>>{};
+    stage->unit_stride_axis = 0;
+    stage->nonunit_stride = 1;
+  }
   auto matrix = blas::blas_writable_matrix(*stage);
   if (!std::in_range<int>(matrix.rows) || !std::in_range<int>(matrix.cols) ||
       !std::in_range<int>(matrix.leading_dimension))

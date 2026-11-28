@@ -49,8 +49,22 @@ void prepare_qr(QTensor& q, RTensor& r, MatrixTensor const& matrix_work)
   auto const rows = static_cast<uni20::index_type>(matrix_work.extent(0));
   auto const cols = static_cast<uni20::index_type>(matrix_work.extent(1));
   auto const rank = std::min(rows, cols);
-  uni20::prepare_output(q, qr_matrix_extents{rows, rank});
-  uni20::prepare_output(r, qr_matrix_extents{rank, cols});
+  auto prepare = [&](auto& output, qr_matrix_extents shape) {
+    if constexpr (requires {
+                    prepare_output(output, shape, mdspec_of(matrix_work).data_descriptor().buffer().device());
+                  })
+    {
+      auto desc = mdspec_of(matrix_work).data_descriptor();
+      if (desc)
+      {
+        prepare_output(output, shape, desc.buffer().device());
+        return;
+      }
+    }
+    prepare_output(output, shape);
+  };
+  prepare(q, qr_matrix_extents{rows, rank});
+  prepare(r, qr_matrix_extents{rank, cols});
 }
 
 template <KernelBackendSelector BackendSelector, uni20::MutableRankedTensorView<2> QTensor,

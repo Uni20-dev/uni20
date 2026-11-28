@@ -156,6 +156,14 @@ TEST(RandomizedSvd, CudaTallAndWide)
     {
       EXPECT_EQ(qd.mdspec().data_descriptor().buffer().device().ordinal(), ordinal);
     }
+    if (m == 9)
+    {
+      CudaMatrix<double> qo(0, 0), ro(0, 0);
+      auto work = to_device(a, ordinal);
+      qr_factorization(qo, ro, work);
+      EXPECT_EQ(ro.mdspec().data_descriptor().buffer().device().ordinal(), ordinal);
+      EXPECT_EQ(qo.mdspec().data_descriptor().buffer().device().ordinal(), ordinal);
+    }
     auto q = to_host(qd);
     auto r = to_host(rd);
     int const k = std::min(m, n);
